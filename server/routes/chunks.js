@@ -880,7 +880,7 @@ router.get("/chunks/:saveName", async (req, res) => {
       for (const file of files) {
         // Common formats: map_X_Y.bin, chunkdata_X_Y.bin, X_Y.bin
         const match = file.match(
-          /(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
+          /^(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
         );
         if (match) {
           const x = parseInt(match[1], 10);
@@ -1018,7 +1018,7 @@ router.get("/chunks/:saveName", async (req, res) => {
 
         const chunkEntries = [];
         for (const file of validFiles) {
-          const match = file.match(/(\d+)_(\d+)(?:_\d+)?\.bin$/i);
+          const match = file.match(/^(\d+)_(\d+)(?:_\d+)?\.bin$/i);
           if (match) {
             const rawX = parseInt(match[1], 10);
             const rawY = parseInt(match[2], 10);
@@ -1688,7 +1688,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
 
       for (const file of files) {
         const match = file.match(
-          /(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
+          /^(?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$/i,
         );
         if (match) {
           const x = parseInt(match[1], 10);

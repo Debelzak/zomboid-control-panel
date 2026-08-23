@@ -398,6 +398,37 @@ describe("partial failure: does the response report what actually happened?", ()
   });
 });
 
+describe("legacy flat-file regex: anchored to reject aux-family filenames", () => {
+  // Regression for the accidental unanchored tail-match on zpop_/apop_/
+  // isoregiondata_-style names: (?:map_|chunkdata_|chunk_)?(\d+)_(\d+)(?:_\d+)?\.bin$
+  // had no `^`, so `zpop_5_5.bin` matched via the empty alternative even
+  // though "zpop_" was never one of the intended prefixes (see the comment
+  // one line above the regex listing the real formats). Real zpop_/apop_
+  // files never live inside map/ -- they have their own top-level sibling
+  // folders -- but this pins the fix at the regex level regardless of real
+  // save layout, in case anything is ever misplaced there by hand or by a
+  // future bug.
+  it("delete-region ignores an aux-family filename sitting in map/, even though it falls inside the requested region", async () => {
+    const realChunk = path.join(savePath, "map", "3_3.bin"); // x=3,y=3 -- real B41 flat chunk
+    const auxLookalike = path.join(savePath, "map", "zpop_4_4.bin"); // x=4,y=4 if matched -- must NOT be
+    writeFileDeep(realChunk, "a");
+    writeFileDeep(auxLookalike, "b");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 10,
+      minY: 0,
+      maxY: 10,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(realChunk)).toBe(false);
+    expect(fs.existsSync(auxLookalike), "zpop_4_4.bin must survive -- it is not a chunk file").toBe(true);
+  });
+});
+
 describe("DELETE_CHUNKS_TOO_MANY sends { count } on the wire, not just an unparameterized message", () => {
   it("reports the actual submitted chunk count when it exceeds the 100,000 cap", async () => {
     const chunks = Array.from({ length: 100001 }, (_, i) => ({
