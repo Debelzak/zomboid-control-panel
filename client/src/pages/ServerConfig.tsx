@@ -666,7 +666,11 @@ function SectionHeader({
 }
 
 export default function ServerConfig() {
-  const { t } = useTranslation('serverconfig')
+  const { t, i18n } = useTranslation('serverconfig')
+  // List separator is a language property, not something a joined list of
+  // translated setting labels can be assumed to want a Latin ", " for --
+  // zh-CN enumerates nouns with the ideographic comma instead.
+  const listSep = i18n.language === 'zh-CN' ? '、' : ', '
   const [activeTab, setActiveTab] = useState('ini')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1240,7 +1244,7 @@ export default function ServerConfig() {
       if (invalidIniSettings.length > 0) {
         toast({
           title: t('toasts.invalidIniTitle'),
-          description: t('toasts.fixSettings', { settings: invalidIniSettings.map(getIniSettingLabel).join(', ') }),
+          description: t('toasts.fixSettings', { settings: invalidIniSettings.map(getIniSettingLabel).join(listSep) }),
           variant: 'destructive',
         })
         return
@@ -1298,7 +1302,7 @@ export default function ServerConfig() {
       if (editorMode === 'structured' && invalidSandboxSettings.length > 0) {
         toast({
           title: t('toasts.invalidSandboxTitle'),
-          description: t('toasts.fixSettings', { settings: invalidSandboxSettings.map(getSandboxSettingLabel).join(', ') }),
+          description: t('toasts.fixSettings', { settings: invalidSandboxSettings.map(getSandboxSettingLabel).join(listSep) }),
           variant: 'destructive',
         })
         return
@@ -1958,7 +1962,7 @@ export default function ServerConfig() {
             <AlertCircle className="h-4 w-4 text-destructive" />
             <AlertTitle>{t('invalidValuesAlert.title')}</AlertTitle>
             <AlertDescription>
-              {t('invalidValuesAlert.description', { settings: invalidSandboxSettings.map(getSandboxSettingLabel).join(', ') })}
+              {t('invalidValuesAlert.description', { settings: invalidSandboxSettings.map(getSandboxSettingLabel).join(listSep) })}
             </AlertDescription>
           </Alert>
         )}
@@ -3244,7 +3248,7 @@ export default function ServerConfig() {
                     )}
                     {modSettingsLastLoaded && (
                       <span className="text-xs text-muted-foreground/60 ml-auto">
-                        {t('modSettingsTab.loadedAt', { time: modSettingsLastLoaded.toLocaleTimeString() })}
+                        {t('modSettingsTab.loadedAt', { time: modSettingsLastLoaded.toLocaleTimeString(i18n.language) })}
                       </span>
                     )}
                   </div>
@@ -3610,7 +3614,7 @@ export default function ServerConfig() {
                           <div className="min-w-0">
                             <p className="break-all text-sm font-medium font-mono" dir="auto" title={backup.filename}>{backup.filename}</p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(backup.created).toLocaleString()} • {t('backupsDialog.sizeKb', { size: Math.round(backup.size / 1024) })}
+                              {new Date(backup.created).toLocaleString(i18n.language)} • {t('backupsDialog.sizeKb', { size: Math.round(backup.size / 1024) })}
                             </p>
                           </div>
                         </div>
@@ -3708,7 +3712,7 @@ export default function ServerConfig() {
                           <p className="mt-1 break-words text-sm text-muted-foreground" dir="auto" title={template.description}>{template.description}</p>
                         )}
                         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                          <span>{t('templatesDialog.createdLabel', { date: new Date(template.created).toLocaleDateString() })}</span>
+                          <span>{t('templatesDialog.createdLabel', { date: new Date(template.created).toLocaleDateString(i18n.language) })}</span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
                             {template.hasIni && <CheckCircle className="w-3 h-3 text-primary" />}
