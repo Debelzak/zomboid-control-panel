@@ -8241,6 +8241,16 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
 // Cache lives at <dataDir>/mod-thumbnails/<workshopId>.img — single file per
 // mod, no extension games. Content-Type is always reported as image/jpeg;
 // browsers handle the actual decoding regardless (Steam serves JPEG or PNG).
+//
+// A resolution FAILURE is never written to that disk cache (there is nothing
+// worth persisting), which used to mean a host where resolution is broken —
+// missing preview_url and an unreachable/failing Steam — re-ran the full
+// Steam round trip for every tracked mod on every single page load, forever.
+// THUMB_FAIL_CACHE remembers a failure for THUMB_FAIL_TTL_MS so it can be
+// skipped cheaply instead of retried immediately, without ever writing
+// anything to disk, so it can never be confused with a real cached image.
+// It must expire — a transient outage should not blank a thumbnail forever —
+// so failures are retried periodically rather than cached indefinitely.
 const THUMB_FETCH_TIMEOUT_MS = 12_000;
 const THUMB_MAX_BYTES = 5 * 1024 * 1024; // 5 MB hard cap
 const THUMB_INFLIGHT = new Map(); // workshopId → Promise<Buffer|null>
@@ -8248,6 +8258,51 @@ const THUMB_EMPTY_GIF = Buffer.from(
   "R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
   "base64",
 );
+// Retry a failed resolve sooner than "never" — same interval mapProxy.js
+// uses for the same reason (B42_DIR_RETRY_MS), for consistency across the
+// codebase's failed-external-resolution retry windows.
+const THUMB_FAIL_TTL_MS = 5 * 60 * 1000;
+const THUMB_FAIL_CACHE = new Map(); // workshopId → { failedAt, reason }
+let _thumbLastFailure = null; // { workshopId, reason, at } — outlives any one entry's TTL, for diagnostics
+
+function recordThumbFailure(wsId, reason) {
+  const failedAt = Date.now();
+  THUMB_FAIL_CACHE.set(wsId, { failedAt, reason });
+  _thumbLastFailure = { workshopId: wsId, reason, at: failedAt };
+}
+
+function clearThumbFailure(wsId) {
+  THUMB_FAIL_CACHE.delete(wsId);
+}
+
+// Live (non-expired) failure entry for wsId, or null. Prunes the entry as a
+// side effect once it has expired, so no separate cleanup timer is needed.
+function liveThumbFailure(wsId) {
+  const entry = THUMB_FAIL_CACHE.get(wsId);
+  if (!entry) return null;
+  if (Date.now() - entry.failedAt >= THUMB_FAIL_TTL_MS) {
+    THUMB_FAIL_CACHE.delete(wsId);
+    return null;
+  }
+  return entry;
+}
+
+// For Debug diagnostics / the support bundle: how many tracked mods are
+// currently in a failed-resolution state, and what the most recent failure
+// was (which can outlive any individual entry's TTL).
+export async function getThumbnailResolutionStatus() {
+  const now = Date.now();
+  let failing = 0;
+  for (const [wsId, entry] of [...THUMB_FAIL_CACHE]) {
+    if (now - entry.failedAt < THUMB_FAIL_TTL_MS) {
+      failing++;
+    } else {
+      THUMB_FAIL_CACHE.delete(wsId);
+    }
+  }
+  const tracked = await getTrackedMods();
+  return { failing, total: tracked.length, lastError: _thumbLastFailure };
+}
 
 function sendEmptyThumbnail(res) {
   res.setHeader("Content-Type", "image/gif");
@@ -8344,6 +8399,12 @@ router.get("/thumbnail/:workshopId", async (req, res) => {
     /* not cached yet */
   }
 
+  // A recent failure for this mod is remembered — skip straight to the
+  // placeholder with zero network calls instead of retrying every request.
+  if (liveThumbFailure(wsId)) {
+    return sendEmptyThumbnail(res);
+  }
+
   // Coalesce concurrent requests for the same mod.
   let pending = THUMB_INFLIGHT.get(wsId);
   if (!pending) {
@@ -8364,13 +8425,20 @@ router.get("/thumbnail/:workshopId", async (req, res) => {
           }
         }
       }
-      if (!previewUrl) return null;
+      if (!previewUrl) {
+        recordThumbFailure(wsId, "no Steam preview URL available");
+        return null;
+      }
       const buf = await downloadThumbnail(previewUrl);
-      if (!buf) return null;
+      if (!buf) {
+        recordThumbFailure(wsId, "preview image download failed");
+        return null;
+      }
       await fsp.mkdir(cacheDir, { recursive: true });
       const tmp = `${cacheFile}.tmp-${process.pid}-${Date.now()}`;
       await fsp.writeFile(tmp, buf);
       await fsp.rename(tmp, cacheFile);
+      clearThumbFailure(wsId);
       return buf;
     })().finally(() => {
       THUMB_INFLIGHT.delete(wsId);
@@ -8386,6 +8454,7 @@ router.get("/thumbnail/:workshopId", async (req, res) => {
     return res.end(buf);
   } catch (err) {
     log.debug(`Thumbnail fetch failed for ${wsId}: ${err.message}`);
+    recordThumbFailure(wsId, err.message);
     return sendEmptyThumbnail(res);
   }
 });
