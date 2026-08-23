@@ -282,7 +282,7 @@ async function fetchWithRetry(
       }
 
       try {
-        const response = await fetch(url, {
+        let response = await fetch(url, {
           ...withAuth(options),
           signal: controller.signal,
         });
@@ -306,13 +306,26 @@ async function fetchWithRetry(
               ...withAuth(options),
               signal: retryController.signal,
             }).finally(() => clearTimeout(retryTimeoutId));
-            if (retryResponse.status !== 401) {
-              return retryResponse;
+            if (retryResponse.status === 401) {
+              // Refreshed token still 401s — nothing left to retry, force
+              // reload to show login.
+              window.location.reload();
+              return response;
             }
+            // The refresh-retry consumed this attempt's fetch, but a
+            // transient failure (5xx/429) on the RETRIED request still
+            // deserves the same backoff-retry resilience as every other
+            // response. Replace `response` and fall through to the shared
+            // retryable check below instead of returning unconditionally --
+            // returning here unconditionally used to skip fetchWithRetry's
+            // own retry loop entirely for exactly the unluckiest requests:
+            // an expired token AND a transient blip on the very next call.
+            response = retryResponse;
+          } else {
+            // Refresh failed — force reload to show login.
+            window.location.reload();
+            return response;
           }
-          // Refresh failed or still 401 — force reload to show login
-          window.location.reload();
-          return response;
         }
 
         // If response is not retryable error, return it
