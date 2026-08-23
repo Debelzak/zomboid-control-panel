@@ -14,14 +14,30 @@ export async function requireStoppedForLocalConfigMutation(req, res, next) {
     if (activeServer?.isRemote) return next();
 
     const serverManager = req.app?.get?.("serverManager");
-    if (typeof serverManager?.checkServerRunning !== "function") {
+    // getServerProcessDetails(), not checkServerRunning() -- the latter
+    // discards the scan's own scanFailed flag and returns a plain boolean,
+    // so a scan that completed but couldn't determine the server's state
+    // (timeout, PowerShell/exec error) came back indistinguishable from
+    // "confirmed stopped" and let this wholesale overwrite proceed, exactly
+    // the case this guard exists to refuse. Same fail-open class already
+    // fixed at /wipe, backup restore, and chunks.js's delete-chunks/
+    // delete-region.
+    if (typeof serverManager?.getServerProcessDetails !== "function") {
       return res.status(503).json({
         code: "SERVER_STATE_UNKNOWN",
         error: "Cannot verify whether the server is stopped. Try again shortly.",
       });
     }
 
-    if (await serverManager.checkServerRunning()) {
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        code: "SERVER_STATE_UNKNOWN",
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+      });
+    }
+
+    if (processDetails.running) {
       return res.status(409).json({
         code: "SERVER_RUNNING",
         error: "Stop the server before editing configuration.",

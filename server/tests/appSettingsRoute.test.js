@@ -155,7 +155,7 @@ describe("PUT /api/config", () => {
           get: (key) =>
             key === "serverManager"
               ? {
-                  checkServerRunning: vi.fn(async () => true),
+                  getServerProcessDetails: vi.fn(async () => ({ running: true, scanFailed: false })),
                   saveServerConfig,
                 }
               : null,

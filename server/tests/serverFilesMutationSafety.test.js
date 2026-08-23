@@ -38,7 +38,10 @@ function createRequest(method, path, running = false) {
     method,
     path,
     app: {
-      get: () => ({ checkServerRunning: vi.fn(async () => running) }),
+      get: () => ({
+        checkServerRunning: vi.fn(async () => running),
+        getServerProcessDetails: vi.fn(async () => ({ running, scanFailed: false })),
+      }),
     },
   };
 }
@@ -113,6 +116,47 @@ describe("local config mutation safety", () => {
         code: "SERVER_RUNNING",
         error: "Stop the server before editing configuration.",
       });
+      expect(next, `${method} ${path}`).not.toHaveBeenCalled();
+    }
+  });
+
+  // Regression: this guard used serverManager.checkServerRunning(), which
+  // internally discards getServerProcessDetails()'s scanFailed flag and
+  // returns a bare boolean -- a FAILED detection scan (running: false,
+  // scanFailed: true) came back indistinguishable from a confirmed stop, so
+  // this guard fell through to next() and let a wholesale file overwrite
+  // (restore, template-apply) proceed against a server it simply failed to
+  // see was running. Same bug class already fixed at /wipe, backup restore,
+  // and chunks.js -- this guard was the one sibling still fail-OPEN instead
+  // of fail-closed on scanFailed.
+  it("fails closed on a failed detection scan, not just a missing serverManager (restore/template-apply path)", async () => {
+    for (const [method, path] of [
+      ["POST", "/restore/world.bak"],
+      ["POST", "/templates/demo/apply"],
+    ]) {
+      const response = createResponse();
+      const next = vi.fn();
+      const request = {
+        method,
+        path,
+        app: {
+          get: () => ({
+            // checkServerRunning() would collapse this failed scan into a
+            // bare `false`, same as a confirmed stop -- present here so a
+            // fix that still calls it accidentally passes for the wrong
+            // reason instead of genuinely fixing the scanFailed blindness.
+            checkServerRunning: vi.fn(async () => false),
+            getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: true })),
+          }),
+        },
+      };
+
+      await requireStoppedForLocalConfigMutation(request, response, next);
+
+      expect(response.status, `${method} ${path}`).toHaveBeenCalledWith(503);
+      expect(response.json, `${method} ${path}`).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
+      );
       expect(next, `${method} ${path}`).not.toHaveBeenCalled();
     }
   });
