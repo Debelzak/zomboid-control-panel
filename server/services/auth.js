@@ -1265,6 +1265,11 @@ class AuthService {
 
         // Allow mod thumbnail proxy (also loaded via <img> tags). Only proxies
         // Steam Workshop preview URLs already stored in our DB — no arbitrary SSRF.
+        // req.user is never set for this path — routes/mods.js carves this
+        // exact path out of its router-level requirePermission("mods.manage")
+        // gate to match (see the comment above that router.use() there); if
+        // that carve-out is ever removed, this route 401s for everyone again
+        // (9c6ce2e / v1.2.0, conv-mods-thumbnails).
         if (req.path.startsWith("/api/mods/thumbnail/")) {
           return next();
         }

@@ -64,7 +64,23 @@ const router = express.Router();
 // instead of silently inheriting the central-login-gate-only exposure this
 // whole file had before (any logged-in role — including moderator — could
 // previously edit sandbox vars, mod lists, or workshop collections).
-router.use(requirePermission("mods.manage"));
+//
+// EXCEPT /thumbnail/:workshopId, carved out below: authService.middleware()
+// (services/auth.js) deliberately never sets req.user for
+// "/api/mods/thumbnail/" — it's loaded via <img> tags, which cannot carry
+// an Authorization header, the same reason /api/map/*tiles/ are exempted
+// there too. Gating this router at the request level with no carve-out
+// re-imposes the very check middleware() intentionally skipped, so
+// req.user is always absent and requirePermission() 401s every thumbnail
+// request, for every user, always — this is exactly the bug that shipped
+// in 9c6ce2e / v1.2.0 (conv-mods-thumbnails). The exemption has to be
+// explicit and live here rather than via route registration order: order
+// is invisible, and the next reorder of this file breaks it again silently.
+const requireModsManage = requirePermission("mods.manage");
+router.use((req, res, next) => {
+  if (req.path.startsWith("/thumbnail/")) return next();
+  return requireModsManage(req, res, next);
+});
 
 // ─── INI write mutex ────────────────────────────────────────────────────────
 // Serialises write operations to the same INI file so concurrent requests
