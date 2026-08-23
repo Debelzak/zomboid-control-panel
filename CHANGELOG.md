@@ -141,6 +141,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   situation the panel says so and points you at the two paths that still work: creating
   data/reset-token.txt on the host yourself, or using a recovery code.
 
+- **"Cannot verify whether the server is stopped" - the panel could never confirm a stopped server on
+  Windows.** Reported by a user who could not wipe his server after updating, on a server the panel
+  itself displayed as stopped, no matter how many times he stopped and started it. The panel checks for
+  a running server by asking Windows to list matching processes. When the server is genuinely stopped
+  that list comes back empty - and an empty list was being read as "the check itself failed" rather
+  than "nothing is running". Anything that refuses to act unless it is certain the server is down -
+  wiping, deleting chunks, restoring a backup, running a SteamCMD update - therefore refused forever.
+  Three related faults were found and fixed alongside it. The dashboard's server badge read a cached
+  flag that was being overwritten with a confident "stopped" every time a check failed, which is why
+  the dashboard and the wipe dialog disagreed with each other. A config-editing guard was failing
+  *open* in the same situation, allowing an edit it should have refused. And both failure paths were
+  completely silent, so nothing was ever written down about why a check had failed; they now record the
+  real error.
+  Worth being straight about: this was not introduced by the last release. The old code quietly treated
+  "the check failed" as "the server is stopped", so this has likely been happening on Windows for a long
+  time without ever showing a symptom - which also means a wipe or an update could have run against a
+  server that was actually live. The 1.2.0 safety checks did not cause the problem; they are what made
+  it visible.
+
+- **Thirteen faults in the in-game bridge, most of them reporting success for something that did not
+  happen.** The bridge mod is the only part of the panel that talks directly to the running game, and
+  until now nothing tested it automatically. It does now, and the first audit of all 96 of its commands
+  found a consistent pattern: code that reports success without checking whether the thing it claimed to
+  do actually happened.
+  The ones most likely to have affected you: player traits never loaded at all on Build 42, so every
+  player looked like they had none. Every successful vehicle hotwire was reported as a crash. Horde
+  spawning claimed to have spawned the number you asked for even when using methods the game may
+  silently ignore. Healing a player whose health could not be read reported success while healing
+  nobody. Teleporting reported "Player teleported" even when the player had not moved. God mode,
+  invisibility and noclip all claimed success without checking. Sandbox settings, character
+  import/export and the power/water controls each had a version of the same fault.
+  Commands now say which of three things happened: it worked and we confirmed it, it did not work, or
+  it was done but the game gives us no way to confirm it. That third answer is deliberate - "we cannot
+  check this" and "we checked and it is fine" are different things and should not look the same.
+
+- **A Diagnostics check silently stopped answering on large saves.** The stale-lock check walks your
+  save folder, and on a big one it always ran out of time - at which point the Diagnostics page simply
+  showed nothing for it. No error, no warning, no "timed out": the question just quietly went
+  unanswered, and the abandoned scan kept running in the background afterwards. It now stops itself
+  cleanly and says so when it could not finish. The manual "clear stale locks" action had the same
+  problem, plus no time limit at all, so a disconnected network drive could hang it indefinitely.
+
+- **Map Cleanup opens roughly twice as fast.** Following the earlier fix to the same page: the initial
+  save listing was walking every chunk file on disk before the page had even offered you a save to pick,
+  and then the next step walked the same files again. On a 147,000-chunk save the whole sequence went
+  from about 13.7 seconds to between 6 and 8. The shared scan is deliberately short-lived and is thrown
+  away whenever chunks are deleted, so the counts you see before a destructive action are never stale.
+
 ### Added
 
 - **The panel is now available in Haitian Creole.** Kreyol ayisyen joins English, French, German,
