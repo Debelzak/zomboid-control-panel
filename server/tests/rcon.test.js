@@ -301,6 +301,26 @@ describe('RconService', () => {
     });
   });
 
+  describe('kickPlayer reason', () => {
+    it('sends -r "<reason>" -- KickUserCommand.class carries the same -r AltCommandArgs flag as BanUserCommand in the real B42 jar', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.kickPlayer('Bob', 'Comportement toxique répété');
+
+      expect(executeSpy).toHaveBeenCalledWith('kickuser "Bob" -r "Comportement toxique repete"');
+    });
+
+    it('omits -r entirely when no reason is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.kickPlayer('Bob');
+
+      expect(executeSpy).toHaveBeenCalledWith('kickuser "Bob"');
+    });
+  });
+
   describe('quoted argument safety', () => {
     it('rejects player names that could break out of quoted RCON args', async () => {
       const liveRcon = new RconService();
