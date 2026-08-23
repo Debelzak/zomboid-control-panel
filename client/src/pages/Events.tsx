@@ -251,7 +251,7 @@ function getVehiclePresets(t: TFunction) {
 // PanelBridge operation catalog. `args` are literal JSON payload examples with
 // placeholder values (e.g. "PlayerName") — API templates, not prose, so they
 // stay in English. `label`/`description` are real UI text and get translated.
-function getBridgeOperationTemplates(t: TFunction): Record<string, { label: string; description: string; args: string }> {
+export function getBridgeOperationTemplates(t: TFunction): Record<string, { label: string; description: string; args: string }> {
   return {
     getSafehouses: { label: t('operations.getSafehouses.label'), description: t('operations.getSafehouses.description'), args: '{}' },
     safehouseAddPlayer: { label: t('operations.safehouseAddPlayer.label'), description: t('operations.safehouseAddPlayer.description'), args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName"\n}' },
@@ -259,11 +259,9 @@ function getBridgeOperationTemplates(t: TFunction): Record<string, { label: stri
     safehouseSetOwner: { label: t('operations.safehouseSetOwner.label'), description: t('operations.safehouseSetOwner.description'), args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "owner": "PlayerName"\n}' },
     safehouseSetRespawn: { label: t('operations.safehouseSetRespawn.label'), description: t('operations.safehouseSetRespawn.description'), args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName",\n  "enabled": true\n}' },
     getFactions: { label: t('operations.getFactions.label'), description: t('operations.getFactions.description'), args: '{}' },
-    createFaction: { label: t('operations.createFaction.label'), description: t('operations.createFaction.description'), args: '{\n  "name": "FactionName",\n  "owner": "PlayerName"\n}' },
     factionAddPlayer: { label: t('operations.factionAddPlayer.label'), description: t('operations.factionAddPlayer.description'), args: '{\n  "factionName": "FactionName",\n  "username": "PlayerName"\n}' },
     factionRemovePlayer: { label: t('operations.factionRemovePlayer.label'), description: t('operations.factionRemovePlayer.description'), args: '{\n  "factionName": "FactionName",\n  "username": "PlayerName"\n}' },
     factionSetTag: { label: t('operations.factionSetTag.label'), description: t('operations.factionSetTag.description'), args: '{\n  "factionName": "FactionName",\n  "tag": "TAG"\n}' },
-    removeFaction: { label: t('operations.removeFaction.label'), description: t('operations.removeFaction.description'), args: '{\n  "factionName": "FactionName"\n}' },
     getVehiclesDetailed: { label: t('operations.getVehiclesDetailed.label'), description: t('operations.getVehiclesDetailed.description'), args: '{}' },
     triggerSwarmEvent: { label: t('operations.triggerSwarmEvent.label'), description: t('operations.triggerSwarmEvent.description'), args: '{\n  "count": 25,\n  "x1": 10500,\n  "y1": 9800,\n  "x2": 10600,\n  "y2": 9900\n}' },
     runEventSequence: { label: t('operations.runEventSequence.label'), description: t('operations.runEventSequence.description'), args: '{\n  "steps": [\n    { "kind": "chat", "message": "Event incoming", "channel": "general" },\n    { "kind": "weather", "weatherType": "storm", "duration": 2 }\n  ]\n}' },
@@ -309,7 +307,7 @@ interface BridgeResultData {
   timestamp: string
 }
 
-function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationForm> {
+export function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationForm> {
   const f = t as (key: string) => string
   return {
     getSafehouses: { fields: [] },
@@ -339,12 +337,6 @@ function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationFo
       ],
     },
     getFactions: { fields: [] },
-    createFaction: {
-      fields: [
-        { key: 'name', label: f('operationForms.factionName'), type: 'text', required: true, placeholder: 'FactionName', maxLength: 64 },
-        { key: 'owner', label: f('operationForms.ownerUsername'), type: 'combo', required: true, placeholder: f('operationForms.selectPlayer') },
-      ],
-    },
     factionAddPlayer: {
       fields: [
         { key: 'factionName', label: f('operationForms.factionName'), type: 'combo', required: true, placeholder: f('operationForms.selectFaction') },
@@ -370,11 +362,6 @@ function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationFo
           pattern: /^[A-Za-z0-9_-]{1,12}$/,
           patternHint: f('operationForms.tagPatternHint'),
         },
-      ],
-    },
-    removeFaction: {
-      fields: [
-        { key: 'factionName', label: f('operationForms.factionName'), type: 'combo', required: true, placeholder: f('operationForms.selectFaction') },
       ],
     },
     getVehiclesDetailed: { fields: [] },
@@ -496,6 +483,40 @@ function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationFo
       ],
     },
   }
+}
+
+export function getBridgeOperationGroups(t: TFunction) {
+  return [
+    {
+      id: 'territory',
+      label: t('operationGroups.territory.label'),
+      description: t('operationGroups.territory.description'),
+      // createFaction and removeFaction are deliberately absent: Faction.createFaction
+      // and faction:removeFaction do not exist anywhere in the real B42 jar (confirmed
+      // by a full 23,740-class scan) -- offering them was a control that always failed
+      // with no path to ever working, dressed up as a normal quick-pick button. The
+      // remaining faction operations below call real methods and work.
+      operations: ['getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn', 'getFactions', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag'],
+    },
+    {
+      id: 'vehicles',
+      label: t('operationGroups.vehicles.label'),
+      description: t('operationGroups.vehicles.description'),
+      operations: ['getVehiclesDetailed'],
+    },
+    {
+      id: 'events',
+      label: t('operationGroups.events.label'),
+      description: t('operationGroups.events.description'),
+      operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot'],
+    },
+    {
+      id: 'moderation',
+      label: t('operationGroups.moderation.label'),
+      description: t('operationGroups.moderation.description'),
+      operations: ['moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID'],
+    },
+  ] as const
 }
 
 const formatPanelTimestamp = (date: Date): string => {
@@ -836,32 +857,7 @@ export default function Events() {
   const vehicles = useMemo(() => getVehiclePresets(t), [t])
   const bridgeOperationTemplates = useMemo(() => getBridgeOperationTemplates(t), [t])
   const bridgeOperationForms = useMemo(() => getBridgeOperationForms(t), [t])
-  const bridgeOperationGroups = useMemo(() => ([
-    {
-      id: 'territory',
-      label: t('operationGroups.territory.label'),
-      description: t('operationGroups.territory.description'),
-      operations: ['getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn', 'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction'],
-    },
-    {
-      id: 'vehicles',
-      label: t('operationGroups.vehicles.label'),
-      description: t('operationGroups.vehicles.description'),
-      operations: ['getVehiclesDetailed'],
-    },
-    {
-      id: 'events',
-      label: t('operationGroups.events.label'),
-      description: t('operationGroups.events.description'),
-      operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot'],
-    },
-    {
-      id: 'moderation',
-      label: t('operationGroups.moderation.label'),
-      description: t('operationGroups.moderation.description'),
-      operations: ['moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID'],
-    },
-  ] as const), [t])
+  const bridgeOperationGroups = useMemo(() => getBridgeOperationGroups(t), [t])
   const EVENT_SECTION_GROUPS = useMemo(() => ([
     {
       group: t('groups.weather'),
