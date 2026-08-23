@@ -301,6 +301,44 @@ describe('RconService', () => {
     });
   });
 
+  describe('setGodMode / setInvisible player targeting', () => {
+    it('setGodMode sends godmodplayer (not the self-only godmod) when a username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setGodMode('Bob', true);
+
+      expect(executeSpy).toHaveBeenCalledWith('godmodplayer "Bob" -true');
+    });
+
+    it('setGodMode still sends the self-only godmod when no username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setGodMode(null, false);
+
+      expect(executeSpy).toHaveBeenCalledWith('godmod -false');
+    });
+
+    it('setInvisible sends invisibleplayer (not the self-only invisible) when a username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setInvisible('Bob', true);
+
+      expect(executeSpy).toHaveBeenCalledWith('invisibleplayer "Bob" -true');
+    });
+
+    it('setInvisible still sends the self-only invisible when no username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setInvisible(null, false);
+
+      expect(executeSpy).toHaveBeenCalledWith('invisible -false');
+    });
+  });
+
   describe('releaseSafehouse', () => {
     it('refuses honestly instead of sending a command the real server always rejects over RCON', async () => {
       const liveRcon = new RconService();

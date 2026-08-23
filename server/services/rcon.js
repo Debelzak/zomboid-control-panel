@@ -1399,12 +1399,19 @@ export class RconService extends EventEmitter {
     return this.execute(`createhorde ${n}`);
   }
 
-  // Admin modes
+  // Admin modes. B42 splits each of these into a self-only command (bare
+  // godmod/invisible, ToggleGodModHimself/ToggleInvisibleHimself capability,
+  // no username argument) and a separate other-player command
+  // (godmodplayer/invisibleplayer, ToggleGodModEveryone/ToggleInvisibleEveryone
+  // capability, required username) -- confirmed from the real B42 dedicated
+  // server jar's GodModeCommand/GodModePlayerCommand/InvisibleCommand/
+  // InvisiblePlayerCommand classes. Sending a username to the self-only
+  // command doesn't target that player -- there is no "self" over RCON.
   async setGodMode(username, enabled) {
     const value = enabled ? "-true" : "-false";
     if (username) {
       return this.execute(
-        `godmod "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
+        `godmodplayer "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
       );
     }
     return this.execute(`godmod ${value}`);
@@ -1414,7 +1421,7 @@ export class RconService extends EventEmitter {
     const value = enabled ? "-true" : "-false";
     if (username) {
       return this.execute(
-        `invisible "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
+        `invisibleplayer "${this.sanitizeQuotedArg(username, "Username", 64)}" ${value}`,
       );
     }
     return this.execute(`invisible ${value}`);
