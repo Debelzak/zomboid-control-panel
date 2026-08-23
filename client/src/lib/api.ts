@@ -2859,8 +2859,12 @@ export const serversDetectApi = {
     maxDepth?: number;
   }): Promise<Record<string, unknown>> =>
     apiPost("/servers/auto-scan", params) as Promise<Record<string, unknown>>,
+  // confirm: true is hardcoded here, not threaded through as a parameter --
+  // same shape as serverApi.wipe below: every caller of this function is
+  // already behind its own confirmation dialog before it's ever invoked, so
+  // there's no real call site where the confirmation isn't already implied.
   deleteFiles: (path: string): Promise<unknown> =>
-    apiPost("/server/delete-files", { path }),
+    apiPost("/server/delete-files", { path, confirm: true }),
 };
 
 // Update Checker API

@@ -3308,7 +3308,38 @@ router.get("/steamcmd/check", requirePermission("server.install"), async (req, r
 // Delete server files (used when removing a server from panel with file deletion)
 router.post("/delete-files", requirePermission("server.wipe"), async (req, res) => {
   try {
-    const { path: deletePath } = req.body;
+    // Same rails POST /wipe already has: refuse without confirm, refuse
+    // while the server is running, and fail CLOSED (not open) when
+    // detection itself can't tell -- getServerProcessDetails() exposes that
+    // as scanFailed; checkServerRunning() would collapse it into a bare
+    // `false` (see d85fd42). Mirrors /wipe's exact order: state check, then
+    // confirm, then this route's own path/PZ-install validation below.
+    const serverManager = req.app.get("serverManager");
+    await serverManager.loadConfig();
+
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
+    }
+    if (processDetails.running) {
+      return res.status(400).json({
+        error: "Server must be stopped before deleting its files. Stop the server first.",
+        // Shared with /wipe -- see errorCodes.js for why.
+        code: ErrorCode.WIPE_SERVER_RUNNING,
+      });
+    }
+
+    const { path: deletePath, confirm } = req.body;
+    if (confirm !== true) {
+      return res.status(400).json({
+        error: "Deleting these files requires confirm: true",
+        // Shared with /wipe -- see errorCodes.js for why.
+        code: ErrorCode.WIPE_CONFIRM_REQUIRED,
+      });
+    }
 
     if (!deletePath || !isValidPath(deletePath)) {
       return res.status(400).json({ error: "Invalid path", code: ErrorCode.INVALID_PATH });

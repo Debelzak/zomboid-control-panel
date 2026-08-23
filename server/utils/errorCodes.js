@@ -617,11 +617,16 @@ export const ErrorCode = Object.freeze({
   /** server/routes/server.js -- POST /api/server/wipe, another wipe is
    * already running (module-level guard). */
   WIPE_IN_PROGRESS: "WIPE_IN_PROGRESS",
-  /** server/routes/server.js -- POST /api/server/wipe, the server process is
-   * currently running (wipe requires it stopped). */
+  /** server/routes/server.js (2 sites: /wipe, /delete-files) -- the server
+   * process is currently running (both routes require it stopped first).
+   * Shared rather than a DELETE_FILES_-prefixed twin: two endpoints doing
+   * the same dangerous thing to files the game may hold open refuse in the
+   * same code, even though delete-files writes its own delete-flavored
+   * `error` text at the call site rather than reusing wipe's wording. */
   WIPE_SERVER_RUNNING: "WIPE_SERVER_RUNNING",
-  /** server/routes/server.js -- POST /api/server/wipe, caller didn't pass
-   * `confirm: true`. */
+  /** server/routes/server.js (2 sites: /wipe, /delete-files) -- caller
+   * didn't pass `confirm: true`. See WIPE_SERVER_RUNNING above for why this
+   * is shared rather than split per route. */
   WIPE_CONFIRM_REQUIRED: "WIPE_CONFIRM_REQUIRED",
 
   /** server/routes/chunks.js -- POST /save-path, no `path` string in the body. */
