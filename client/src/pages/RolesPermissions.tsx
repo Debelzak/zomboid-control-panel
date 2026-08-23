@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldCheck, ShieldAlert, Plus, Pencil, Trash2, Loader2, Lock, ChevronDown } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
@@ -93,6 +93,17 @@ export default function RolesPermissions() {
   const [savingCells, setSavingCells] = useState<Set<string>>(new Set())
   const [savingUserRows, setSavingUserRows] = useState<Set<string>>(new Set())
 
+  // Latest capability set per role, including ones still in flight. A plain
+  // ref rather than state -- it has to be readable synchronously by a second
+  // toggle fired before the first one's response has re-rendered `roles`.
+  // Without this, two toggles on the same role computed nextCapabilities
+  // from the same stale `role.capabilities` snapshot; the server's
+  // updateRole() is a hard replace (not a merge), so whichever request
+  // landed second silently reverted the first -- fail-open on a revocation
+  // (uncheck A, then uncheck B before A's response lands: request 2 still
+  // has A in it, and if it resolves after request 1, A comes back).
+  const pendingCapabilitiesRef = useRef<Map<string, string[]>>(new Map())
+
   const [createOpen, setCreateOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<RoleInfo | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<RoleInfo | null>(null)
@@ -164,17 +175,25 @@ export default function RolesPermissions() {
     role: RoleInfo,
     nextCapabilities: string[],
     confirmSelfCapabilityLoss: boolean,
+    existingCapabilities: string[],
   ): Promise<boolean> {
     try {
       const { role: updated } = await permissionsApi.updateRole(role.id, {
         capabilities: nextCapabilities,
         confirmSelfCapabilityLoss,
       })
-      setRoles((prev) => prev.map((r) => (r.id === role.id ? { ...r, ...updated } : r)))
+      // Only commit this response if no newer toggle on this role has been
+      // issued while it was in flight -- an older response landing after a
+      // newer one already committed the right state must not clobber it
+      // back (the mirror image of the request-construction race above: two
+      // in-flight requests can resolve in either order over the network).
+      if (pendingCapabilitiesRef.current.get(role.id) === nextCapabilities) {
+        setRoles((prev) => prev.map((r) => (r.id === role.id ? { ...r, ...updated } : r)))
+      }
       return true
     } catch (error) {
       if (error instanceof ApiError && error.code === 'ROLE_SELF_CAPABILITY_LOSS_CONFIRM') {
-        const actionKey = recoveryActionKey(role.capabilities, nextCapabilities)
+        const actionKey = recoveryActionKey(existingCapabilities, nextCapabilities)
         const action = actionKey ? t(actionKey) : ''
         const ok = await confirm({
           title: t('confirmSelfCapabilityLoss.title'),
@@ -182,11 +201,11 @@ export default function RolesPermissions() {
           confirmLabel: t('confirmSelfCapabilityLoss.confirm'),
           cancelLabel: t('confirmSelfCapabilityLoss.cancel'),
         })
-        if (ok) return applyRoleCapabilities(role, nextCapabilities, true)
+        if (ok) return applyRoleCapabilities(role, nextCapabilities, true, existingCapabilities)
         return false
       }
       if (error instanceof ApiError && error.code === 'ROLE_LOCKOUT_LAST_MANAGER') {
-        const actionKey = recoveryActionKey(role.capabilities, nextCapabilities)
+        const actionKey = recoveryActionKey(existingCapabilities, nextCapabilities)
         const action = actionKey ? t(actionKey) : ''
         toast({
           title: t('toasts.actionFailedTitle'),
@@ -208,10 +227,25 @@ export default function RolesPermissions() {
     const cellKey = `${role.id}:${cap.key}`
     if (savingCells.has(cellKey)) return
     setSavingCells((prev) => new Set(prev).add(cellKey))
+
+    // Base off the latest known set for this role (including any still
+    // in-flight change), not the `role` object closed over at render time --
+    // see pendingCapabilitiesRef's comment above.
+    const baseCapabilities = pendingCapabilitiesRef.current.get(role.id) ?? role.capabilities
     const nextCapabilities = checked
-      ? [...role.capabilities, cap.key]
-      : role.capabilities.filter((c) => c !== cap.key)
-    const ok = await applyRoleCapabilities(role, nextCapabilities, false)
+      ? [...baseCapabilities, cap.key]
+      : baseCapabilities.filter((c) => c !== cap.key)
+    pendingCapabilitiesRef.current.set(role.id, nextCapabilities)
+
+    const ok = await applyRoleCapabilities(role, nextCapabilities, false, baseCapabilities)
+
+    // Only clear the pending marker if nothing newer has queued behind this
+    // call while it was in flight -- otherwise a later toggle's own pending
+    // value gets discarded here.
+    if (pendingCapabilitiesRef.current.get(role.id) === nextCapabilities) {
+      pendingCapabilitiesRef.current.delete(role.id)
+    }
+
     if (ok) {
       toast({
         description: t(checked ? 'toasts.capabilityGranted' : 'toasts.capabilityRevoked', {
