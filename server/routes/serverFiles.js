@@ -2108,14 +2108,16 @@ router.post("/templates/:id/apply", async (req, res) => {
     if (applyIni && template.iniRaw) {
       const iniPath = path.join(configPath, `${serverName}.ini`);
 
-      // Create backup first
-      const iniBackupWarning = backupWarningFor(
-        await createBackup(`${serverName}.ini`),
-      );
-      if (iniBackupWarning) backupWarnings.push(iniBackupWarning);
+      await withFileLock(iniPath, async () => {
+        // Create backup first
+        const iniBackupWarning = backupWarningFor(
+          await createBackup(`${serverName}.ini`),
+        );
+        if (iniBackupWarning) backupWarnings.push(iniBackupWarning);
 
-      // Write the template INI
-      fs.writeFileSync(iniPath, template.iniRaw);
+        // Write the template INI
+        writeFileAtomic(iniPath, template.iniRaw);
+      });
       applied.push("INI");
       log.info(`Applied INI from template: ${template.name}`);
     }
@@ -2127,14 +2129,16 @@ router.post("/templates/:id/apply", async (req, res) => {
         `${serverName}_SandboxVars.lua`,
       );
 
-      // Create backup first
-      const sandboxBackupWarning = backupWarningFor(
-        await createBackup(`${serverName}_SandboxVars.lua`),
-      );
-      if (sandboxBackupWarning) backupWarnings.push(sandboxBackupWarning);
+      await withFileLock(sandboxPath, async () => {
+        // Create backup first
+        const sandboxBackupWarning = backupWarningFor(
+          await createBackup(`${serverName}_SandboxVars.lua`),
+        );
+        if (sandboxBackupWarning) backupWarnings.push(sandboxBackupWarning);
 
-      // Write the template sandbox
-      fs.writeFileSync(sandboxPath, template.sandboxRaw);
+        // Write the template sandbox
+        writeFileAtomic(sandboxPath, template.sandboxRaw);
+      });
       applied.push("Sandbox");
       log.info(`Applied Sandbox from template: ${template.name}`);
     }
