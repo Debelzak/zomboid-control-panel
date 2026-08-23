@@ -308,6 +308,14 @@ reliability, then interface and translation.
   something that does not happen, on the one setting that could never be saved any other way. Mod
   settings now apply to the running game and survive a restart.
 
+- **Turning mods on could silently leave some of them switched off.** When the panel writes your mod
+  selection into the server configuration, a mod whose internal ID cannot be worked out is left out
+  of the active list while still being subscribed - so the game downloads it and never loads it,
+  and the panel used to report plain success. Saving now warns you when that happens and names the
+  mods affected, so "I subscribed it and it never loads" has a visible cause instead of being a
+  mystery. The underlying limitation is unchanged: a mod whose ID cannot be resolved still cannot
+  be enabled automatically.
+
 - **A panel with no server configured yet could mistake somebody else's Project Zomboid server for
   its own.** Before you point the panel at a server it had no name to work with, so it assumed
   `servertest` - which is Project Zomboid's own default server name. If the machine was already
