@@ -6616,7 +6616,21 @@ handlers.vehicleSetAlarm = function(args)
     end)
     if not ok then return false, nil, "Failed to update vehicle alarm: " .. tostring(err) end
 
-    return true, { message = "Vehicle alarm updated", vehicleId = tonumber(args.vehicleId), enabled = enabled }
+    -- isAlarmed is already read elsewhere in this file (getVehiclesDetailed)
+    -- -- reuse it here to confirm the write actually took effect.
+    local okGet, actualAlarmed = PanelBridge.invoke(vehicle, "isAlarmed")
+    local verified
+    if not okGet then
+        verified = nil
+    else
+        verified = ((actualAlarmed == true) == enabled)
+    end
+
+    if verified == false then
+        return false, nil, "Alarm call succeeded but did not take effect (still " .. tostring(actualAlarmed) .. ")"
+    end
+
+    return true, { message = "Vehicle alarm updated", vehicleId = tonumber(args.vehicleId), enabled = enabled, verified = verified }
 end
 
 handlers.vehicleSetSiren = function(args)
@@ -6633,7 +6647,21 @@ handlers.vehicleSetSiren = function(args)
     end)
     if not ok then return false, nil, "Failed to set vehicle siren mode: " .. tostring(err) end
 
-    return true, { message = "Vehicle siren mode updated", vehicleId = tonumber(args.vehicleId), mode = mode }
+    -- getLightbarSirenMode is already read elsewhere in this file
+    -- (getVehiclesDetailed) -- reuse it here to confirm the write stuck.
+    local okGet, actualMode = PanelBridge.invoke(vehicle, "getLightbarSirenMode")
+    local verified
+    if not okGet then
+        verified = nil
+    else
+        verified = (tonumber(actualMode) == mode)
+    end
+
+    if verified == false then
+        return false, nil, "Siren mode call succeeded but did not take effect (still " .. tostring(actualMode) .. ")"
+    end
+
+    return true, { message = "Vehicle siren mode updated", vehicleId = tonumber(args.vehicleId), mode = mode, verified = verified }
 end
 
 handlers.vehicleSetTrunkLocked = function(args)
@@ -6648,7 +6676,21 @@ handlers.vehicleSetTrunkLocked = function(args)
     end)
     if not ok then return false, nil, "Failed to set trunk lock state: " .. tostring(err) end
 
-    return true, { message = "Vehicle trunk lock updated", vehicleId = tonumber(args.vehicleId), locked = locked }
+    -- isTrunkLocked is already read elsewhere in this file (getVehiclesDetailed)
+    -- -- reuse it here to confirm the write actually took effect.
+    local okGet, actualLocked = PanelBridge.invoke(vehicle, "isTrunkLocked")
+    local verified
+    if not okGet then
+        verified = nil
+    else
+        verified = ((actualLocked == true) == locked)
+    end
+
+    if verified == false then
+        return false, nil, "Trunk lock call succeeded but did not take effect (still " .. tostring(actualLocked) .. ")"
+    end
+
+    return true, { message = "Vehicle trunk lock updated", vehicleId = tonumber(args.vehicleId), locked = locked, verified = verified }
 end
 
 handlers.vehicleSetFuel = function(args)
@@ -6678,7 +6720,24 @@ handlers.vehicleSetFuel = function(args)
     end)
     if not ok then return false, nil, "Failed to set fuel: " .. tostring(err) end
 
-    return true, { message = "Vehicle fuel set to " .. pct .. "%", vehicleId = tonumber(args.vehicleId), percent = pct }
+    -- getRemainingFuelPercentage is already read elsewhere in this file
+    -- (getVehiclesDetailed) -- reuse it to confirm the write took effect.
+    -- 1.0 percentage-point tolerance is float/rounding slack on a 0-100
+    -- scale, not a guess about game mechanics.
+    local FUEL_TOLERANCE = 1.0
+    local okGet, actualPct = PanelBridge.invoke(vehicle, "getRemainingFuelPercentage")
+    local verified
+    if not okGet or tonumber(actualPct) == nil then
+        verified = nil
+    else
+        verified = (math.abs(tonumber(actualPct) - pct) <= FUEL_TOLERANCE)
+    end
+
+    if verified == false then
+        return false, nil, "Fuel call succeeded but did not take effect (still " .. tostring(actualPct) .. "%)"
+    end
+
+    return true, { message = "Vehicle fuel set to " .. pct .. "%", vehicleId = tonumber(args.vehicleId), percent = pct, verified = verified }
 end
 
 handlers.vehicleSetBattery = function(args)
@@ -6704,7 +6763,25 @@ handlers.vehicleSetBattery = function(args)
     end)
     if not ok then return false, nil, "Failed to set battery: " .. tostring(err) end
 
-    return true, { message = "Vehicle battery set to " .. charge, vehicleId = tonumber(args.vehicleId), charge = charge }
+    -- getBatteryCharge is already read elsewhere in this file
+    -- (getVehiclesDetailed) -- reuse it to confirm the write took effect.
+    -- 1.0 percentage-point tolerance is float/rounding slack on a 0-100
+    -- scale (the B42 path applies a computed DELTA via VehicleUtils, so
+    -- exact-equality would be brittle), not a guess about game mechanics.
+    local BATTERY_TOLERANCE = 1.0
+    local okGet, actualCharge = PanelBridge.invoke(vehicle, "getBatteryCharge")
+    local verified
+    if not okGet or tonumber(actualCharge) == nil then
+        verified = nil
+    else
+        verified = (math.abs(tonumber(actualCharge) - charge) <= BATTERY_TOLERANCE)
+    end
+
+    if verified == false then
+        return false, nil, "Battery call succeeded but did not take effect (still " .. tostring(actualCharge) .. ")"
+    end
+
+    return true, { message = "Vehicle battery set to " .. charge, vehicleId = tonumber(args.vehicleId), charge = charge, verified = verified }
 end
 
 handlers.removeVehicle = function(args)
