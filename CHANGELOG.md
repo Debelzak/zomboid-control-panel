@@ -249,6 +249,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not something the panel can fix from its side - so the point of this change is that you will
   find out, instead of finding out from a wrong map.
 
+- **Stopping the server usually worked but often said it had failed.** When Project Zomboid shuts
+  down it closes the panel's command connection as it goes - which is what a successful shutdown
+  looks like. The panel treated that closed connection as a failed command, so pressing Stop could
+  report an error while the server was, in fact, stopping perfectly normally. The panel also skipped
+  marking the server as stopped in its own records when that happened, so its state could disagree
+  with reality until the next status check. Scheduled restarts logged the same false failure.
+  A shutdown that ends with the server closing the connection is now recognised as what it is: a
+  successful stop. The two cases that genuinely mean the command never arrived - the server already
+  being stopped, or still starting up - are still reported as failures.
+
 - **The player activity log could record actions that never happened.** Kicks, access-level
   changes, god mode, invisibility, noclip, and granting items, XP or vehicles were all written into
   the activity history as soon as the panel sent them - without checking whether the game server
