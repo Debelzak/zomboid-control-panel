@@ -59,6 +59,12 @@ const TECHNICIAN_ROLE = {
   capabilities: ["server.control"],
   isSeeded: true,
 };
+const MODERATOR_ROLE = {
+  id: "role-moderator",
+  name: "moderator",
+  capabilities: ["players.moderate"],
+  isSeeded: true,
+};
 
 function resetWith({ roles, users }) {
   settings.clear();
@@ -93,7 +99,7 @@ async function runRoute(routePath, method, req, res) {
 describe("PATCH /api/auth/users/:id/role — capability gate", () => {
   beforeEach(() => {
     resetWith({
-      roles: [ADMIN_ROLE, TECHNICIAN_ROLE],
+      roles: [ADMIN_ROLE, TECHNICIAN_ROLE, MODERATOR_ROLE],
       users: [
         { id: "u-admin", username: "owner", role: "admin", roleId: "role-admin" },
         { id: "u-tech", username: "tech", role: "technician", roleId: "role-technician" },

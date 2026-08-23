@@ -194,10 +194,26 @@ describe("authService.changeUserRoleById", () => {
   });
 });
 
-describe("authService.changeUserRole (legacy string path) — untouched by the roleId addition", () => {
+describe("authService.changeUserRole (legacy string path) — now delegates to changeUserRoleById, resolved by name", () => {
+  // Previously this path carried its own admin-count-only lockout check and
+  // needed no roles collection at all. That was the actual bug (see
+  // services/auth.js's comment on changeUserRole): it couldn't see a custom
+  // role's recovery capabilities, only the literal string "admin". It now
+  // resolves the target role by name through the real roles collection and
+  // delegates entirely to changeUserRoleById, so it needs the same seeded
+  // rows every real install has post-migration (see database/init.js's
+  // schema v2) — a bare admin/technician role list is no longer realistic
+  // fixture data for this function.
+  const MODERATOR_ROLE = {
+    id: "role-moderator",
+    name: "moderator",
+    capabilities: ["players.moderate"],
+    isSeeded: true,
+  };
+
   beforeEach(() => {
     resetWith({
-      roles: [],
+      roles: [ADMIN_ROLE, TECHNICIAN_ROLE, MODERATOR_ROLE],
       users: [
         { id: "u1", username: "owner", role: "admin" },
         { id: "u2", username: "tech", role: "technician" },
@@ -205,14 +221,25 @@ describe("authService.changeUserRole (legacy string path) — untouched by the r
     });
   });
 
-  it("still works exactly as before — no roles collection needed at all", async () => {
+  it("still changes a user's role by name, and now dual-writes roleId too", async () => {
     const result = await authService.changeUserRole("u2", "moderator");
     expect(result.role).toBe("moderator");
+    expect(result.roleId).toBe("role-moderator");
   });
 
-  it("still refuses to demote the only remaining admin", async () => {
+  it("still refuses to demote the only remaining admin — now via the capability-aware lockout, same code as changeUserRoleById", async () => {
     await expect(
       authService.changeUserRole("u1", "technician"),
-    ).rejects.toThrow(/only remaining admin/);
+    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER" });
+  });
+
+  it("rejects a target name with no matching role row on this install, instead of silently proceeding with no capabilities", async () => {
+    resetWith({
+      roles: [TECHNICIAN_ROLE, MODERATOR_ROLE], // no "admin" row this time
+      users: [{ id: "u1", username: "owner", role: "technician" }],
+    });
+    await expect(authService.changeUserRole("u1", "admin")).rejects.toThrow(
+      /not configured on this panel/,
+    );
   });
 });

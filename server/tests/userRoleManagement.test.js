@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { TEST_ROLES } from "./helpers/mockPermissionsDb.js";
 
 // Same in-memory stand-in pattern as recoveryCodes.test.js — the real
 // service logic (bcrypt, role rules) runs, without touching the panel's
-// actual database.
+// actual database. changeUserRole() now resolves its target through the
+// real roles collection (see its own comment in services/auth.js for why),
+// so this needs the same seeded admin/technician/moderator rows every
+// other roles-aware test file uses — TEST_ROLES from mockPermissionsDb.js,
+// not a fourth copy of the same three arrays.
 const settings = new Map();
-const db = { data: { users: [] } };
+const db = { data: { users: [], roles: Object.values(TEST_ROLES).map((r) => ({ ...r })) } };
 
 vi.mock("../database/init.js", () => ({
   getSetting: async (key) => settings.get(key) ?? null,
@@ -13,6 +18,9 @@ vi.mock("../database/init.js", () => ({
   },
   getDb: async () => db,
   commitNow: async () => {},
+  getRoles: async () => db.data.roles,
+  getRoleById: async (id) => db.data.roles.find((r) => String(r.id) === String(id)) || null,
+  getRoleByName: async (name) => db.data.roles.find((r) => r.name === name) || null,
 }));
 
 const { default: authService, USER_ROLES } = await import(
@@ -76,6 +84,7 @@ describe("createUser — role activation", () => {
 describe("changeUserRole", () => {
   beforeEach(() => {
     settings.clear();
+    db.data.roles = Object.values(TEST_ROLES).map((r) => ({ ...r }));
     db.data.users = [
       { id: "admin-1", username: "owner", role: "admin", password: "x" },
       { id: "tech-1", username: "tech", role: "technician", password: "x" },
@@ -90,11 +99,32 @@ describe("changeUserRole", () => {
     );
   });
 
-  it("refuses to demote the only remaining admin", async () => {
+  it("refuses to demote the only remaining admin -- now via the same capability-aware lockout rule changeUserRoleById uses, not a fixed admin-name count", async () => {
     await expect(
       authService.changeUserRole("admin-1", "technician"),
-    ).rejects.toThrow(/only remaining admin/);
+    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER" });
     expect(db.data.users.find((u) => u.id === "admin-1").role).toBe("admin");
+  });
+
+  it("refuses to demote the last user holding roles.manage/users.manage even when they aren't literally role 'admin' -- the gap this fix closed", async () => {
+    // A custom role, not the seeded "admin", holding the same two recovery
+    // capabilities. Before the fix, changeUserRole()'s own lockout check
+    // only ever looked at the literal string "admin", so moving this user
+    // off their custom role sailed through with no check at all.
+    db.data.roles.push({
+      id: "role-root-ops",
+      name: "Root Ops",
+      capabilities: ["roles.manage", "users.manage", "server.control"],
+      isSeeded: false,
+    });
+    db.data.users = [
+      { id: "alice", username: "alice", role: "Root Ops", roleId: "role-root-ops", password: "x" },
+    ];
+
+    await expect(
+      authService.changeUserRole("alice", "moderator"),
+    ).rejects.toMatchObject({ code: "ROLE_LOCKOUT_LAST_MANAGER" });
+    expect(db.data.users[0].role).toBe("Root Ops");
   });
 
   it("allows demoting an admin when a second admin exists", async () => {

@@ -444,46 +444,44 @@ class AuthService {
   }
 
   /**
-   * Change an existing user's role by the legacy fixed-name string.
-   * Unchanged from before the roles/capabilities system existed — kept
-   * exactly as-is (including its own admin-count lockout check) for
-   * whatever still calls it this way. See changeUserRoleById() below for
-   * the roleId-aware path a custom role needs.
+   * Change an existing user's role by the legacy fixed-name string
+   * (admin/technician/moderator) — the shape PATCH /users/:id/role falls
+   * back to whenever the caller sends `role` instead of `roleId`.
+   *
+   * Used to carry its OWN lockout check here, independent of
+   * changeUserRoleById()'s: "refuse if the target user is literally
+   * role === 'admin' and no OTHER user is literally role === 'admin'
+   * either." That was a real gap, not a redundant second copy of the same
+   * rule: it only ever looked at the fixed name "admin", never at whether
+   * the user's role — seeded or a custom one built through the matrix —
+   * actually GRANTS roles.manage/users.manage right now. A user placed on
+   * a custom role that holds those capabilities is exactly as load-bearing
+   * for recovery as a literal admin, but moving THEM to "moderator" via
+   * this path sailed straight through with no check at all, because
+   * `user.role === "admin"` was false. That could zero out the last holder
+   * of roles.manage/users.manage while this function's own guard stayed
+   * silent — the same class of bug as updateRole()'s rename gap above,
+   * just reached through the sibling role-CHANGE path instead of a
+   * role-RENAME. Now resolves the target's real, live capabilities (same
+   * as changeUserRoleById) and delegates to it entirely, so the two paths
+   * share one lockout rule and can't independently drift again. Not
+   * wrapped in this._withMutex itself — changeUserRoleById already
+   * acquires it, and this method's own async work above that call is
+   * read-only lookups, not a write that needs serializing.
    */
   async changeUserRole(userId, newRole) {
-    return this._withMutex(async () => {
-      if (!USER_ROLES.includes(newRole)) {
-        throw new Error(`role must be one of: ${USER_ROLES.join(", ")}`);
-      }
+    if (!USER_ROLES.includes(newRole)) {
+      throw new Error(`role must be one of: ${USER_ROLES.join(", ")}`);
+    }
 
-      const db = await getDb();
-      const users = db.data.users || [];
-      const user = users.find((u) => u.id === userId);
-      if (!user) {
-        throw new Error("User not found");
-      }
+    const targetRole = await getRoleByName(newRole);
+    if (!targetRole) {
+      throw new Error(
+        `Role "${newRole}" is not configured on this panel. Contact an administrator.`,
+      );
+    }
 
-      if (user.role === "admin" && newRole !== "admin") {
-        const remainingAdmins = users.filter(
-          (u) => u.role === "admin" && u.id !== userId,
-        ).length;
-        if (remainingAdmins === 0) {
-          throw new Error(
-            "Cannot change this user's role — they are the only remaining admin. Promote another user to admin first.",
-          );
-        }
-      }
-
-      user.role = newRole;
-      await commitNow();
-
-      // authenticateAccessToken() re-reads role from the live user record on
-      // every request (see below) rather than trusting the role embedded in
-      // the JWT at login time, so this takes effect on the user's very next
-      // request — no forced logout / tokenGen bump needed.
-      log.info(`Role changed for user ${user.username}: ${user.role}`);
-      return { id: user.id, username: user.username, role: user.role };
-    });
+    return this.changeUserRoleById(userId, targetRole.id);
   }
 
   /**
