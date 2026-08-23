@@ -998,6 +998,10 @@
               "label": "Détection automatique du build B42 opérationnelle",
               "message": "Le build {{build}} a été résolu dynamiquement depuis build_list.json."
             },
+            "info": {
+              "label": "Détection automatique du build B42 résolue via le navigateur",
+              "message": "Le build {{build}} a été résolu par votre navigateur et transmis au panneau -- le serveur du panneau lui-même n'a pas pu accéder directement au service de carte."
+            },
             "warn": {
               "label": "Échec de la détection automatique du build B42",
               "message": "Utilisation du build codé en dur {{build}} car la détection a échoué : {{reason}}. Le prochain build de carte de PZ ne sera pas pris en compte tant que la détection ne fonctionnera pas à nouveau.",

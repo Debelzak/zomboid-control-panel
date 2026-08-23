@@ -4147,27 +4147,49 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
       // discovery itself is dead and will silently pin the panel to an old
       // build the moment PZ ships a new one. Report on discovery itself,
       // separately from whether tiles for whatever build we landed on load.
+      // Three states, not two: getB42ResolutionStatus().source is 'dynamic'
+      // (the panel resolved it from upstream itself), 'client' (the panel
+      // couldn't, but the operator's browser did and supplied it -- working,
+      // but means the panel host itself cannot reach the map service), or
+      // 'fallback' (nobody resolved it; the hardcoded build is in use, and
+      // this is the state that goes stale silently -- see the warn branch).
+      // 'client' collapsing into the same "ok" bucket as 'dynamic' would
+      // hide exactly the fact this check exists to surface, the same way
+      // the old two-state version hid 'fallback' behind a build number that
+      // happens to match today's live build.
       const resolution = getB42ResolutionStatus();
-      if (resolution.usingFallback) {
-        checks.push(
-          diagWarn(
-            "worldmap.tiles.buildDetect",
-            "B42 build auto-detect failed",
-            `Using hardcoded build ${resolution.directory} because discovery failed: ${resolution.reason || "unknown reason"}. This will not track the next PZ map build until discovery starts working again.`,
-            {
-              category: "worldmap",
-              hint: "Discovery reads build_list.json and each candidate's layer0.dzi from tiles.pzmap.org. If upstream is blocking the panel's requests specifically (e.g. bot protection keyed on the HTTP client), this may not be fixable from the panel side — watch for this warning after the next PZ map release, since that's when a stale build actually shows up as wrong map geometry.",
-              params: { build: resolution.directory, reason: resolution.reason || "unknown reason" },
-            },
-          ),
-        );
-      } else {
+      if (resolution.source === "dynamic") {
         checks.push(
           diagOk(
             "worldmap.tiles.buildDetect",
             "B42 build auto-detect healthy",
-            `Build ${resolution.directory} was resolved dynamically from build_list.json.`,
-            { category: "worldmap", params: { build: resolution.directory } },
+            `Build ${resolution.build} was resolved dynamically from build_list.json.`,
+            { category: "worldmap", params: { build: resolution.build } },
+          ),
+        );
+      } else if (resolution.source === "client") {
+        checks.push(
+          diagInfo(
+            "worldmap.tiles.buildDetect",
+            "B42 build auto-detect resolved via the browser",
+            `Build ${resolution.build} was resolved by your browser and supplied to the panel -- the panel host itself could not reach the map service directly.`,
+            { category: "worldmap", params: { build: resolution.build } },
+          ),
+        );
+      } else {
+        // 'fallback', or any value not yet in the contract -- treat as the
+        // failure state rather than as healthy. This is the branch that
+        // used to be `resolution.usingFallback` before the third state.
+        checks.push(
+          diagWarn(
+            "worldmap.tiles.buildDetect",
+            "B42 build auto-detect failed",
+            `Using hardcoded build ${resolution.build} because discovery failed: ${resolution.reason || "unknown reason"}. This will not track the next PZ map build until discovery starts working again.`,
+            {
+              category: "worldmap",
+              hint: "Discovery reads build_list.json and each candidate's layer0.dzi from tiles.pzmap.org. If upstream is blocking the panel's requests specifically (e.g. bot protection keyed on the HTTP client), this may not be fixable from the panel side — watch for this warning after the next PZ map release, since that's when a stale build actually shows up as wrong map geometry.",
+              params: { build: resolution.build, reason: resolution.reason || "unknown reason" },
+            },
           ),
         );
       }

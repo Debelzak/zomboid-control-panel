@@ -998,6 +998,10 @@
               "label": "B42 build auto-detect healthy",
               "message": "Build {{build}} was resolved dynamically from build_list.json."
             },
+            "info": {
+              "label": "B42 build auto-detect resolved via the browser",
+              "message": "Build {{build}} was resolved by your browser and supplied to the panel -- the panel host itself could not reach the map service directly."
+            },
             "warn": {
               "label": "B42 build auto-detect failed",
               "message": "Using hardcoded build {{build}} because discovery failed: {{reason}}. This will not track the next PZ map build until discovery starts working again.",
