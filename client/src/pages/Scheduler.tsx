@@ -1158,7 +1158,7 @@ export default function Scheduler() {
       {/* Execution History */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <History className="w-5 h-5" />
