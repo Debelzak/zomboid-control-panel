@@ -452,6 +452,11 @@
             "label": "Fichiers de verrou périmés dans le dossier de sauvegarde",
             "message": "{{count}} fichier(s) .lock de plus d'une heure dans {{dir}}. PZ refusera de charger la sauvegarde tant qu'ils ne sont pas supprimés.",
             "hint": "Arrêtez le serveur, supprimez tous les fichiers *.lock du dossier de sauvegarde, puis redémarrez."
+          },
+          "warn": {
+            "label": "Impossible de vérifier entièrement les fichiers de verrou périmés",
+            "message": "{{dir}} est trop volumineux pour être entièrement analysé à la recherche de fichiers de verrou périmés dans le budget de temps du diagnostic. Des fichiers de verrou périmés peuvent être présents sans avoir été détectés.",
+            "hint": "Exécutez « Supprimer les fichiers de verrou périmés » pour analyser et nettoyer en une seule fois — cette action dispose d'un budget de temps bien plus large que cette vérification automatique — ou vérifiez le dossier de sauvegarde manuellement si le serveur ne démarre pas."
           }
         },
         "jreWorks": {

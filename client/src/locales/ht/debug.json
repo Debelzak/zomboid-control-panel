@@ -452,6 +452,11 @@
             "label": "Ansyen fichye lock nan dosye sovgad",
             "message": "{{count}} fichye .lock ki gen plis pase 1 èdtan nan {{dir}}. PZ ap refize chaje sovgad la jiskaske yo retire.",
             "hint": "Sispann sèvè a, efase chak fichye *.lock anba dosye sovgad la, epi redemare."
+          },
+          "warn": {
+            "label": "Pa t kapab verifye fichye lock ansyen yo nèt",
+            "message": "{{dir}} twò gwo pou eskane nèt pou fichye lock ansyen nan limit tan dyagnostik la. Fichye lock ansyen ka prezan san yo pa detekte.",
+            "hint": "Egzekite \"Efase ansyen fichye lock\" pou eskane epi netwaye yon sèl kou — li gen yon limit tan pi laj pase verifikasyon otomatik sa a — oswa verifye dosye sovgad la manyèlman si sèvè a pa demare."
           }
         },
         "jreWorks": {
