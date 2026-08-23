@@ -1285,9 +1285,22 @@ export default function WorldMap() {
       ctx.fillStyle = C.landmarkDiamond
       ctx.fill()
 
-      // Label
-      ctx.fillStyle = C.landmarkLabel
-      ctx.fillText(lm.name, p.x, p.y - markerSize - 4)
+      // Label — the marker-position cull above is generous enough (±100px)
+      // that a centered label can still land mostly or entirely off-canvas,
+      // leaving only a stray fragment of the name visible (e.g. "gh" of
+      // "Muldraugh") on a narrow viewport. Only draw it if it's fully on
+      // screen; the marker alone still shows an accurate position.
+      const labelWidth = ctx.measureText(lm.name).width
+      const labelY = p.y - markerSize - 4
+      const labelFits =
+        p.x - labelWidth / 2 >= 0 &&
+        p.x + labelWidth / 2 <= W &&
+        labelY - fontSize >= 0 &&
+        labelY <= H
+      if (labelFits) {
+        ctx.fillStyle = C.landmarkLabel
+        ctx.fillText(lm.name, p.x, labelY)
+      }
     }
 
     // ── Safehouse rectangles ──

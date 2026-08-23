@@ -1099,12 +1099,24 @@ export default function ChunkCleaner() {
           ctx.lineWidth = 1;
           ctx.stroke();
 
-          // Label with shadow
+          // Label with shadow — only if it fully fits on screen. The
+          // marker-only cull above is generous enough (±100px) that a
+          // left-aligned label starting near the left edge can have its
+          // front clipped off, leaving only a stray fragment of the name
+          // visible (e.g. "gh" of "Muldraugh") on a narrow viewport.
           const labelX = sx + half + 4;
-          ctx.fillStyle = hsl(bgVar || "0 0% 0%", 0.6);
-          ctx.fillText(lm.name, labelX + 1, sy + 1);
-          ctx.fillStyle = hsl(foregroundVar, 0.95);
-          ctx.fillText(lm.name, labelX, sy);
+          const labelWidth = ctx.measureText(lm.name).width;
+          const labelFits =
+            labelX >= 0 &&
+            labelX + labelWidth <= W &&
+            sy - fontSize / 2 >= 0 &&
+            sy + fontSize / 2 <= H;
+          if (labelFits) {
+            ctx.fillStyle = hsl(bgVar || "0 0% 0%", 0.6);
+            ctx.fillText(lm.name, labelX + 1, sy + 1);
+            ctx.fillStyle = hsl(foregroundVar, 0.95);
+            ctx.fillText(lm.name, labelX, sy);
+          }
         }
       }
 
