@@ -146,7 +146,8 @@ if you are about to coin one of these differently, do not.
 | tile | die Kachel | world-map tile |
 | disk | die Festplatte **in prose** · **Disk** in a terse stat label | *von der Festplatte löschen*; **not** *Datenträger* — see below |
 | Mod Checker | der Mod-Checker | the feature's German name; **never** *Mod-Prüfung* |
-| item (a JSON array entry) | das Element | |
+| item (an in-game object you can spawn or drop) | **das Item**, pl. die Items | stays literal — a Project Zomboid entity, like *mod* and *chunk*; compounds hyphenate: *Item-Typ*, *Item-Liste* |
+| item (a JSON array entry in a payload) | das Element | a different sense — this one is not a game object |
 | itemType (the Project Zomboid item id) | itemType | a payload field name — stays literal |
 | capability label | see below | |
 
@@ -263,6 +264,7 @@ Two consequences worth stating separately:
 | --- | --- | --- |
 | Bot (the Discord bot) | der Bot | |
 | Guild (Server) ID | Guild-ID (Server) | keep the Guild wording — Discord's own Developer Portal term |
-| bridge (generic, lowercase) | die Brücke | **PanelBridge** the product name stays literal |
+| bridge (generic, lowercase) | die Brücke | linking form **Brücken-**: *Brückenpfad*, *Brückenordner*, *Brückendienst*. Never bare *Bridge* |
+| PanelBridge (the product) | PanelBridge | **one word**, always — not *Panel Bridge* |
 | channel | der Kanal | |
 | webhook | der Webhook | |
