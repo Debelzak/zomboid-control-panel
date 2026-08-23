@@ -272,7 +272,9 @@ describe("mod update auto-restart dedupe", () => {
     const checker = new ModChecker();
     checker.scheduler = { rconService: { connected: false } };
     checker.serverManager = {
-      checkServerRunning: vi.fn().mockResolvedValue(false),
+      getServerProcessDetails: vi
+        .fn()
+        .mockResolvedValue({ running: false, scanFailed: false }),
     };
 
     const result = await checker.triggerModRestart([
@@ -292,11 +294,39 @@ describe("mod update auto-restart dedupe", () => {
     const checker = new ModChecker();
     checker.scheduler = { rconService: { connected: false } };
     checker.serverManager = {
-      checkServerRunning: vi.fn().mockResolvedValue(true),
+      getServerProcessDetails: vi
+        .fn()
+        .mockResolvedValue({ running: true, scanFailed: false }),
     };
 
     const result = await checker.triggerModRestart([
       { workshopId: "3437629766", name: "CleanUI [B42.12]" },
+    ]);
+
+    expect(result).toMatchObject({
+      success: false,
+      retry: true,
+      reason: "rcon_disconnected",
+    });
+    expect(checker.pendingRestart).toBe(false);
+  });
+
+  it("retries instead of marking processed when detection can't confirm the server is offline", async () => {
+    // Regression: getServerProcessDetails() resolving scanFailed:true used
+    // to come through checkServerRunning() as a plain `false` -- identical
+    // to a confirmed-stopped server -- so a scan failure while the server
+    // was actually running would mark the mod update "processed" and it
+    // would never be retried.
+    const checker = new ModChecker();
+    checker.scheduler = { rconService: { connected: false } };
+    checker.serverManager = {
+      getServerProcessDetails: vi
+        .fn()
+        .mockResolvedValue({ running: false, scanFailed: true }),
+    };
+
+    const result = await checker.triggerModRestart([
+      { workshopId: "1111111111", name: "Some Mod" },
     ]);
 
     expect(result).toMatchObject({

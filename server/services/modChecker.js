@@ -900,13 +900,20 @@ export class ModChecker extends EventEmitter {
     // RCON readiness gate — verify RCON is connected before attempting restart
     const rconService = this.scheduler?.rconService;
     if (!rconService || !rconService.connected) {
-      let serverRunning = true;
+      // Default to "running" (the safe assumption: don't silently drop a
+      // pending restart) unless detection positively confirms the server is
+      // stopped. checkServerRunning() used to collapse a failed detection
+      // scan into `false` -- indistinguishable from a confirmed-stopped
+      // server -- which meant a scan failure while the server was actually
+      // running would mark this mod update "processed" and never retry it.
+      let confirmedOffline = false;
       if (
         this.serverManager &&
-        typeof this.serverManager.checkServerRunning === "function"
+        typeof this.serverManager.getServerProcessDetails === "function"
       ) {
         try {
-          serverRunning = await this.serverManager.checkServerRunning();
+          const details = await this.serverManager.getServerProcessDetails();
+          confirmedOffline = !details.running && !details.scanFailed;
         } catch (error) {
           log.debug(
             `Could not verify server process before mod restart retry decision: ${error.message}`,
@@ -914,7 +921,7 @@ export class ModChecker extends EventEmitter {
         }
       }
 
-      if (serverRunning === false) {
+      if (confirmedOffline) {
         log.info(
           "Mod updates detected while the PZ server is offline — no restart needed until the server is running.",
         );

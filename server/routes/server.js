@@ -2686,11 +2686,24 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       return res.status(400).json({ error: "Invalid install path", code: ErrorCode.INSTALL_PATH_INVALID });
     }
 
-    // Check if server is running - cannot update while running
+    // Check if server is running - cannot update while running. Fail closed:
+    // this used to swallow a failed detection scan and continue as if the
+    // server were stopped ("user may be updating a different server"), but
+    // checkServerRunning() throwing (or resolving scanFailed) means we
+    // genuinely don't know the process state — and running SteamCMD
+    // `validate` against a live install's files is exactly what this check
+    // exists to prevent. Same doctrine as configMutationGuard.js's
+    // SERVER_STATE_UNKNOWN response.
     const serverManager = req.app.get("serverManager");
     try {
-      const isRunning = await serverManager.checkServerRunning();
-      if (isRunning) {
+      const processDetails = await serverManager.getServerProcessDetails();
+      if (processDetails.scanFailed) {
+        return res.status(503).json({
+          error: "Cannot verify whether the server is stopped. Try again shortly.",
+          code: ErrorCode.SERVER_STATE_UNKNOWN,
+        });
+      }
+      if (processDetails.running) {
         return res.status(400).json({
           error:
             "Server is currently running. Please stop the server before updating.",
@@ -2699,7 +2712,10 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       }
     } catch (e) {
       log.warn(`Could not verify server status before update: ${e.message}`);
-      // Continue anyway - user may be updating a different server
+      return res.status(503).json({
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
     }
 
     // Prevent concurrent operations on the same install path
@@ -4271,9 +4287,20 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
 
-    // Safety: server must be stopped
-    const isRunning = await serverManager.checkServerRunning();
-    if (isRunning) {
+    // Safety: server must be stopped, and we must be SURE of that.
+    // checkServerRunning() collapses a failed detection scan into `false`
+    // (same as a confirmed-stopped server), which would let this destructive
+    // wipe proceed against a server we simply failed to see was running.
+    // getServerProcessDetails() exposes that distinction via scanFailed, so
+    // use it directly here and fail closed when detection itself failed.
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
+    }
+    if (processDetails.running) {
       return res.status(400).json({
         error: "Server must be stopped before wiping. Stop the server first.",
         code: ErrorCode.WIPE_SERVER_RUNNING,
