@@ -956,19 +956,19 @@
             },
             "fail": {
               "label": "CDN de tuiles B42 inaccessible",
-              "message": "Impossible de contacter pzmap.org pour les tuiles B42 ({{detail}}). La carte de base B42 ne se chargera pas.",
+              "message": "Impossible de contacter tiles.pzmap.org pour les tuiles B42 ({{detail}}). La carte de base B42 ne se chargera pas.",
               "hint": "Vérifiez l'accès HTTPS sortant de l'hôte du panneau. Le proxy /api/map/tiles récupère les tuiles côté serveur."
             }
           },
           "b41": {
             "ok": {
               "label": "CDN de tuiles B41 accessible",
-              "message": "pzmap.org a répondu en {{latencyMs}} ms (HTTP {{statusCode}})."
+              "message": "tiles.pzmap.org a répondu en {{latencyMs}} ms (HTTP {{statusCode}})."
             },
             "warn": {
               "label": "CDN de tuiles B41 inaccessible",
-              "message": "Impossible de contacter pzmap.org ({{detail}}). Les tuiles de secours B41 ne se chargeront pas.",
-              "hint": "Pertinent uniquement si vous exécutez un serveur B41. Un accès HTTPS sortant vers pzmap.org est requis."
+              "message": "Impossible de contacter tiles.pzmap.org ({{detail}}). Les tuiles de secours B41 ne se chargeront pas.",
+              "hint": "Pertinent uniquement si vous exécutez un serveur B41. Un accès HTTPS sortant vers tiles.pzmap.org est requis."
             }
           },
           "b42Top": {

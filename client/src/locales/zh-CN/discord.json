@@ -201,7 +201,9 @@
       "start": "启动机器人",
       "starting": "启动中…",
       "sendTest": "发送测试",
-      "sendingTest": "发送中…"
+      "sendingTest": "发送中…",
+      "configured": "已配置",
+      "notSignedIn": "未登录"
     },
     "commandPermissions": {
       "title": "命令权限",

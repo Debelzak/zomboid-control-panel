@@ -201,7 +201,9 @@
       "start": "Bot starten",
       "starting": "Wird gestartet …",
       "sendTest": "Test senden",
-      "sendingTest": "Wird gesendet …"
+      "sendingTest": "Wird gesendet …",
+      "configured": "Konfiguriert",
+      "notSignedIn": "Nicht angemeldet"
     },
     "commandPermissions": {
       "title": "Befehlsberechtigungen",

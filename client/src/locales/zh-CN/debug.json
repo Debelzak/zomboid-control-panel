@@ -956,19 +956,19 @@
             },
             "fail": {
               "label": "B42 图块 CDN 无法访问",
-              "message": "无法访问 pzmap.org 获取 B42 图块（{{detail}}）。B42 基础地图将无法加载。",
+              "message": "无法访问 tiles.pzmap.org 获取 B42 图块（{{detail}}）。B42 基础地图将无法加载。",
               "hint": "请检查面板宿主机的出站 HTTPS 访问。/api/map/tiles 代理会在服务器端获取图块。"
             }
           },
           "b41": {
             "ok": {
               "label": "B41 图块 CDN 可访问",
-              "message": "pzmap.org 在 {{latencyMs}} 毫秒内响应（HTTP {{statusCode}}）。"
+              "message": "tiles.pzmap.org 在 {{latencyMs}} 毫秒内响应（HTTP {{statusCode}}）。"
             },
             "warn": {
               "label": "B41 图块 CDN 无法访问",
-              "message": "无法访问 pzmap.org（{{detail}}）。B41 备用图块将无法加载。",
-              "hint": "仅在运行 B41 服务器时相关。需要能够出站访问 pzmap.org 的 HTTPS。"
+              "message": "无法访问 tiles.pzmap.org（{{detail}}）。B41 备用图块将无法加载。",
+              "hint": "仅在运行 B41 服务器时相关。需要能够出站访问 tiles.pzmap.org 的 HTTPS。"
             }
           },
           "b42Top": {

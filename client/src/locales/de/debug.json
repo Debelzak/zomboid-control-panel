@@ -956,19 +956,19 @@
             },
             "fail": {
               "label": "B42-Kachel-CDN nicht erreichbar",
-              "message": "pzmap.org war für B42-Kacheln nicht erreichbar ({{detail}}). Die B42-Basiskarte wird nicht geladen.",
+              "message": "tiles.pzmap.org war für B42-Kacheln nicht erreichbar ({{detail}}). Die B42-Basiskarte wird nicht geladen.",
               "hint": "Prüfe den ausgehenden HTTPS-Zugriff des Panel-Hosts. Der Proxy /api/map/tiles ruft Kacheln serverseitig ab."
             }
           },
           "b41": {
             "ok": {
               "label": "B41-Kachel-CDN erreichbar",
-              "message": "pzmap.org hat in {{latencyMs}} ms geantwortet (HTTP {{statusCode}})."
+              "message": "tiles.pzmap.org hat in {{latencyMs}} ms geantwortet (HTTP {{statusCode}})."
             },
             "warn": {
               "label": "B41-Kachel-CDN nicht erreichbar",
-              "message": "pzmap.org war nicht erreichbar ({{detail}}). B41-Fallback-Kacheln werden nicht geladen.",
-              "hint": "Nur relevant beim Betrieb eines B41-Servers. Ausgehendes HTTPS zu pzmap.org ist erforderlich."
+              "message": "tiles.pzmap.org war nicht erreichbar ({{detail}}). B41-Fallback-Kacheln werden nicht geladen.",
+              "hint": "Nur relevant beim Betrieb eines B41-Servers. Ausgehendes HTTPS zu tiles.pzmap.org ist erforderlich."
             }
           },
           "b42Top": {

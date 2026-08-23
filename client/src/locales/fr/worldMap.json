@@ -36,9 +36,9 @@
     "signalLost": "signal.perdu",
     "tilesOffline": "tuiles hors ligne",
     "coverageTitle": "Aucune tuile de carte à ce niveau de zoom",
-    "coverageDesc": "<1>pzmap.org</1> est joignable mais n'a pas encore rendu cette zone à ce niveau de détail. Dézoomez, ou réessayez plus tard avec Actualiser.",
+    "coverageDesc": "<1>tiles.pzmap.org</1> est joignable mais n'a pas encore rendu cette zone à ce niveau de détail. Dézoomez, ou réessayez plus tard avec Actualiser.",
     "networkTitle": "Les tuiles de carte ne se chargent pas",
-    "networkDesc": "Le panneau ne peut pas joindre <1>pzmap.org</1>. Vérifiez l'accès HTTPS sortant et réessayez avec Actualiser."
+    "networkDesc": "Le panneau ne peut pas joindre <1>tiles.pzmap.org</1>. Vérifiez l'accès HTTPS sortant et réessayez avec Actualiser."
   },
   "roster": {
     "label": "effectif",

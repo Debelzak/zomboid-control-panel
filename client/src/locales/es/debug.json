@@ -956,19 +956,19 @@
             },
             "fail": {
               "label": "CDN de mosaicos de B42 inaccesible",
-              "message": "No se pudo contactar con pzmap.org para los mosaicos de B42 ({{detail}}). El mapa base de B42 no se cargará.",
+              "message": "No se pudo contactar con tiles.pzmap.org para los mosaicos de B42 ({{detail}}). El mapa base de B42 no se cargará.",
               "hint": "Comprobar el acceso HTTPS saliente del host del panel. El proxy /api/map/tiles obtiene los mosaicos del lado del servidor."
             }
           },
           "b41": {
             "ok": {
               "label": "CDN de mosaicos de B41 accesible",
-              "message": "pzmap.org respondió en {{latencyMs}} ms (HTTP {{statusCode}})."
+              "message": "tiles.pzmap.org respondió en {{latencyMs}} ms (HTTP {{statusCode}})."
             },
             "warn": {
               "label": "CDN de mosaicos de B41 inaccesible",
-              "message": "No se pudo contactar con pzmap.org ({{detail}}). Los mosaicos de reserva de B41 no se cargarán.",
-              "hint": "Solo aplica si se ejecuta un servidor B41. Se requiere acceso HTTPS saliente a pzmap.org."
+              "message": "No se pudo contactar con tiles.pzmap.org ({{detail}}). Los mosaicos de reserva de B41 no se cargarán.",
+              "hint": "Solo aplica si se ejecuta un servidor B41. Se requiere acceso HTTPS saliente a tiles.pzmap.org."
             }
           },
           "b42Top": {

@@ -201,7 +201,9 @@
       "start": "Démarrer le bot",
       "starting": "Démarrage...",
       "sendTest": "Envoyer un test",
-      "sendingTest": "Envoi..."
+      "sendingTest": "Envoi...",
+      "configured": "Configuré",
+      "notSignedIn": "Non connecté"
     },
     "commandPermissions": {
       "title": "Permissions des commandes",
