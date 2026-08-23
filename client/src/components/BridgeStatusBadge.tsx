@@ -47,11 +47,19 @@ export function BridgeStatusBadge({ connected, running, loading, bridgePath, sum
     summary || c.hint,
     bridgePath ? t('path', { path: bridgePath }) : null,
   ].filter(Boolean).join('\n')
+  // role="status" does not derive an accessible name from its own visible
+  // text (only interactive/content-naming roles do) -- without this, a
+  // screen reader announces nothing at all when there's no hint/path (e.g.
+  // connected/loading), and when there IS a title it becomes the entire
+  // name via the last-resort title fallback, silently dropping the leading
+  // state word. Building the name explicitly covers every state the same way.
+  const accessibleName = [c.label, tooltip].filter(Boolean).join('\n')
 
   return (
     <div
       role="status"
       aria-live="polite"
+      aria-label={accessibleName}
       title={tooltip || undefined}
       className={cn('flex items-center gap-2 rounded-lg border px-3 py-1.5 cursor-default', c.surface, className)}
     >
