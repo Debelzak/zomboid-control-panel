@@ -925,14 +925,39 @@ router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
     const isUUID = /[a-f-]/i.test(id);
     const serverId = isUUID ? id : parseInt(id, 10);
 
+    // Captured BEFORE deleting: deleteServer() silently promotes another
+    // server to active when the one being deleted was active, but the live
+    // serverManager/rconService need an explicit reload to match -- see
+    // reloadServicesForNewActiveServer's comment above /:id/activate.
+    const targetServer = await getServer(serverId);
+    const deletingActiveServer = !!targetServer?.isActive;
+
     const success = await deleteServer(serverId);
     if (!success) {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    // Notify all clients so sidebar refreshes
     const io = req.app.get("io");
-    if (io) {
+
+    if (deletingActiveServer) {
+      const newActiveServer = await getActiveServer();
+      if (newActiveServer) {
+        try {
+          await reloadServicesForNewActiveServer(req, newActiveServer);
+        } catch (reloadErr) {
+          log.warn(
+            `Failed to reload services after deleting the active server: ${reloadErr.message}`,
+          );
+        }
+        if (io) {
+          io.emit("activeServerChanged", { server: sanitizeServerResponse(newActiveServer) });
+        }
+      } else if (io) {
+        // No servers left at all.
+        io.emit("activeServerChanged", { deleted: serverId });
+      }
+    } else if (io) {
+      // Sidebar/list still needs a refresh even though nothing was reloaded.
       io.emit("activeServerChanged", { deleted: serverId });
     }
 
@@ -943,6 +968,43 @@ router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
+
+// Reload the live in-memory services (serverManager, RCON, PanelBridge) to
+// match `server` becoming the active one. Shared by POST /:id/activate and
+// DELETE /:id below -- deleteServer() silently promotes another server to
+// active in the database when the deleted one was active, and without this
+// call the live services stayed pointed at the just-deleted server's stale
+// config (old paths, old RCON credentials) until something else happened to
+// reload them, unlike this route's own explicit activation sequence.
+async function reloadServicesForNewActiveServer(req, server) {
+  const rconService = req.app.get("rconService");
+  const serverManager = req.app.get("serverManager");
+
+  if (serverManager && serverManager.reloadConfig) {
+    await serverManager.reloadConfig();
+    log.info(`ServerManager reloaded config for server: ${server.name}`);
+  }
+
+  await refreshWorkshopCheckerIfAvailable(req);
+
+  if (rconService && rconService.isConnected()) {
+    await rconService.disconnect();
+  }
+
+  if (rconService && server.rconPassword) {
+    try {
+      await rconService.reloadConfig();
+      await rconService.connect();
+      log.info(`RCON reconnected for server: ${server.name}`);
+    } catch (rconErr) {
+      log.warn(`Failed to connect RCON for new server: ${rconErr.message}`);
+    }
+  }
+
+  // Best-effort: keep PanelBridge.lua current on servers the panel can
+  // reach directly on disk. Never let an install failure block activation.
+  autoInstallBridgeIfNeeded(server);
+}
 
 // Set active server
 router.post("/:id/activate", requirePermission("servers.manage"), async (req, res) => {
@@ -960,38 +1022,8 @@ router.post("/:id/activate", requirePermission("servers.manage"), async (req, re
       return res.status(404).json({ error: "Server not found" });
     }
 
-    // Notify services about the active server change
-    const rconService = req.app.get("rconService");
-    const serverManager = req.app.get("serverManager");
     const io = req.app.get("io");
-
-    // Reload ServerManager config for new active server
-    if (serverManager && serverManager.reloadConfig) {
-      await serverManager.reloadConfig();
-      log.info(`ServerManager reloaded config for server: ${server.name}`);
-    }
-
-    await refreshWorkshopCheckerIfAvailable(req);
-
-    // Disconnect current RCON if connected
-    if (rconService && rconService.isConnected()) {
-      await rconService.disconnect();
-    }
-
-    // Reload RCON config and reconnect with new server's settings
-    if (rconService && server.rconPassword) {
-      try {
-        await rconService.reloadConfig();
-        await rconService.connect();
-        log.info(`RCON reconnected for server: ${server.name}`);
-      } catch (rconErr) {
-        log.warn(`Failed to connect RCON for new server: ${rconErr.message}`);
-      }
-    }
-
-    // Best-effort: keep PanelBridge.lua current on servers the panel can
-    // reach directly on disk. Never let an install failure block activation.
-    autoInstallBridgeIfNeeded(server);
+    await reloadServicesForNewActiveServer(req, server);
 
     // Emit to clients that active server changed
     if (io) {
