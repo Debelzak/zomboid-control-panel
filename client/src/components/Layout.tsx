@@ -85,6 +85,13 @@ interface NavSection {
   icon: typeof LayoutDashboard
   color: string
   items: NavItem[]
+  // Every item in this section is about operating a game server that
+  // already exists (live status, config, scheduled maintenance, ...), so
+  // with zero servers configured there is nothing there to show. Sections
+  // that help you GET a server (Servers) or that are panel-level facts
+  // independent of any server (Access Control, Settings & Tools) do not
+  // set this and stay reachable at zero servers.
+  requiresServer?: boolean
 }
 
 // Navigation sections with collapsible groups
@@ -95,6 +102,7 @@ const navSections: NavSection[] = [
     labelKey: 'nav.sections.live',
     icon: Terminal,
     color: 'emerald',
+    requiresServer: true,
     items: [
       { to: '/console', icon: Terminal, label: 'Server Console', labelKey: 'nav.items.serverConsole' },
       { to: '/players', icon: Users, label: 'Online Players', labelKey: 'nav.items.onlinePlayers' },
@@ -107,6 +115,7 @@ const navSections: NavSection[] = [
     labelKey: 'nav.sections.world',
     icon: Zap,
     color: 'amber',
+    requiresServer: true,
     items: [
       { to: '/events', icon: Zap, label: 'Events & Weather', labelKey: 'nav.items.eventsWeather' },
       { to: '/world-map', icon: Map, label: 'World Map', labelKey: 'nav.items.worldMap' },
@@ -118,6 +127,7 @@ const navSections: NavSection[] = [
     labelKey: 'nav.sections.config',
     icon: FileCog,
     color: 'blue',
+    requiresServer: true,
     items: [
       { to: '/server-config', icon: FileCog, label: 'Server Configuration', labelKey: 'nav.items.serverConfiguration', requiresLocal: true, allowRemoteConfigMirror: true },
       { to: '/mods', icon: Package, label: 'Mod Manager', labelKey: 'nav.items.modManager', requiresLocal: true },
@@ -130,6 +140,7 @@ const navSections: NavSection[] = [
     labelKey: 'nav.sections.maintain',
     icon: Clock,
     color: 'purple',
+    requiresServer: true,
     items: [
       { to: '/scheduler', icon: Clock, label: 'Scheduled Tasks', labelKey: 'nav.items.scheduledTasks' },
       { to: '/backups', icon: Archive, label: 'World Backups', labelKey: 'nav.items.worldBackups', requiresLocal: true },
@@ -313,6 +324,8 @@ export default function Layout({ children }: LayoutProps) {
     !!activeServer?.isRemote &&
     !(item.allowRemoteConfigMirror && activeServer.remoteConfigConfigured)
   const [servers, setServers] = useState<ServerInstance[]>([])
+  const hasServer = servers.length > 0
+  const isBlockedByNoServer = (section: NavSection) => !!section.requiresServer && !hasServer
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === 'true')
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
@@ -768,7 +781,30 @@ export default function Layout({ children }: LayoutProps) {
                 <div key={section.id} className={cn('space-y-0.5', sectionIdx === 0 ? 'mt-2 pt-2 border-t border-border/40' : 'mt-2 pt-2 border-t border-border/40')}>
                   {section.items.map((item) => {
                     const isDisabledByRemote = isBlockedByRemote(item)
-                    if (isDisabledByRemote || item.disabled) return null
+                    const isDisabledByNoServer = isBlockedByNoServer(section)
+                    const disabledReason = isDisabledByNoServer
+                      ? t('nav.requiresServer')
+                      : isDisabledByRemote
+                        ? t('nav.notAvailableRemote')
+                        : null
+
+                    if (disabledReason || item.disabled) {
+                      return (
+                        <Tooltip key={item.to}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="flex min-h-9 items-center justify-center rounded-md px-2 py-2 opacity-45 cursor-not-allowed"
+                              aria-disabled="true"
+                              aria-label={disabledReason ? `${t(item.labelKey)} — ${disabledReason}` : t(item.labelKey)}
+                            >
+                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">{disabledReason ?? t(item.labelKey)}</TooltipContent>
+                        </Tooltip>
+                      )
+                    }
+
                     const isActive = location.pathname === item.to
                     return (
                       <Tooltip key={item.to}>
@@ -824,35 +860,61 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="space-y-0.5">
                   {section.items.map((item) => {
                     const isDisabledByRemote = isBlockedByRemote(item)
+                    const isDisabledByNoServer = isBlockedByNoServer(section)
+
+                    if (isDisabledByNoServer) {
+                      return (
+                        <Tooltip key={item.to}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
+                              aria-label={`${t(item.labelKey)} — ${t('nav.requiresServer')}`}
+                              aria-disabled="true"
+                            >
+                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                              <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">{t('nav.requiresServer')}</TooltipContent>
+                        </Tooltip>
+                      )
+                    }
 
                     if (item.disabled) {
                       return (
-                        <div
-                          key={item.to}
-                          className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
-                          title={t(item.labelKey)}
-                          aria-disabled="true"
-                        >
-                          <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
-                          <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
-                        </div>
+                        <Tooltip key={item.to}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
+                              aria-disabled="true"
+                            >
+                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                              <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">{t(item.labelKey)}</TooltipContent>
+                        </Tooltip>
                       )
                     }
 
                     if (isDisabledByRemote) {
                       return (
-                        <div
-                          key={item.to}
-                          className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-55"
-                          title={t('nav.notAvailableRemote')}
-                          aria-disabled="true"
-                        >
-                          <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
-                          <span className="truncate text-muted-foreground/70 line-through decoration-muted-foreground/30">{t(item.labelKey)}</span>
-                          <Badge variant="outline" className="ml-auto px-1 py-0 text-[9px] uppercase tracking-wider">
-                            {t('nav.localBadge')}
-                          </Badge>
-                        </div>
+                        <Tooltip key={item.to}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-55"
+                              aria-label={`${t(item.labelKey)} — ${t('nav.notAvailableRemote')}`}
+                              aria-disabled="true"
+                            >
+                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                              <span className="truncate text-muted-foreground/70 line-through decoration-muted-foreground/30">{t(item.labelKey)}</span>
+                              <Badge variant="outline" className="ml-auto px-1 py-0 text-[9px] uppercase tracking-wider">
+                                {t('nav.localBadge')}
+                              </Badge>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">{t('nav.notAvailableRemote')}</TooltipContent>
+                        </Tooltip>
                       )
                     }
 

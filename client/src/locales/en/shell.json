@@ -42,7 +42,8 @@
       "debugLogs": "Debug Logs"
     },
     "notAvailableRemote": "Not available for remote (RCON-only) servers",
-    "localBadge": "Local"
+    "localBadge": "Local",
+    "requiresServer": "Add a server first — this page needs one to work with"
   },
   "mobileMenu": {
     "open": "Open menu",
