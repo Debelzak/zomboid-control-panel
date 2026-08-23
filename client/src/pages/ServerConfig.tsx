@@ -97,7 +97,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
-import { serverApi, serverFilesApi, panelBridgeApi, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
+import { serverApi, serverFilesApi, panelBridgeApi, ApiError, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
 import { EmptyState } from '@/components/EmptyState'
@@ -1159,9 +1159,21 @@ export default function ServerConfig() {
             })
           }
         } catch (error) {
+          // getUserErrorMessage resolves the server's own SERVER_RUNNING code
+          // to "Stop the server before editing configuration" before it ever
+          // looks at our fallback -- correct advice for a normal file save,
+          // but actively wrong here: the live edit above only ever succeeds
+          // while the server IS running, so this persistence attempt is
+          // guaranteed to hit that guard on every single edit, and stopping
+          // the server in response only locks the operator out of this tab.
+          // Show the fallback this catch block was written for instead of
+          // letting the generic code lookup bury it.
+          const isServerRunningRefusal = error instanceof ApiError && error.code === 'SERVER_RUNNING'
           toast({
             title: t('toasts.appliedNotSavedTitle'),
-            description: getUserErrorMessage(error, t('toasts.willResetFallback', { option: optName })),
+            description: isServerRunningRefusal
+              ? t('toasts.willResetFallback', { option: optName })
+              : getUserErrorMessage(error, t('toasts.willResetFallback', { option: optName })),
             variant: 'destructive',
           })
         }
