@@ -43,6 +43,10 @@ Also never translated: file paths, folder names, environment variable names, err
 | settings | 设置 | |
 | conflict | 冲突 | |
 | dependency | 依赖 | |
+| My Servers (nav item) | 我的服务器 | |
+| Panel Settings (nav item) | 面板设置 | |
+| safehouse | 安全屋 | Project Zomboid player-base concept |
+| utilities (water/power) | 水电 | Project Zomboid world-decay system |
 
 ## Access control
 
