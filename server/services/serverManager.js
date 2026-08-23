@@ -231,7 +231,7 @@ export class ServerManager {
     this.serverPath = process.env.PZ_SERVER_PATH || "";
     this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
     this.savePath = process.env.PZ_SAVE_PATH || "";
-    this.serverName = "servertest";
+    this.serverName = null;
     this.startCommand = "";
     this.rconHost = null;
     this.rconPort = null;
@@ -259,7 +259,7 @@ export class ServerManager {
     this.serverPath = process.env.PZ_SERVER_PATH || "";
     this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
     this.savePath = process.env.PZ_SAVE_PATH || "";
-    this.serverName = "servertest";
+    this.serverName = null;
     this.startCommand = "";
     this.rconHost = null;
     this.rconPort = null;
