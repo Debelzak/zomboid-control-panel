@@ -116,11 +116,40 @@ const ALLOWED_PLACEHOLDER_OMISSIONS = new Set<string>([
   'fr/chunkCleaner.json:deleteDialog.title_one',
 ])
 
+const ALLOWLIST_ENTRY_RE = /^([^/]+)\/([^:]+)\.json:(.+)$/
+
 describe(`locale parity (${SOURCE_LANGUAGE} is the source of truth)`, () => {
   it('every registered language has a locale folder with at least one namespace file', () => {
     for (const code of [SOURCE_LANGUAGE, ...targetLanguages]) {
       expect(byLanguageThenNamespace[code], `no locale files found for registered language "${code}"`).toBeDefined()
     }
+  })
+
+  // The other half people forget (same shape as debug.json's
+  // diagnosticsCheckRegistry.test.js KNOWN_TRANSLATED_IDS): an allowlist
+  // entry that outlives its reason is a permanent blind spot with a
+  // comment on it, not a documented exception. If fr/backups.json's
+  // mainCard.allSelectedLabel_one is ever edited to include {{count}}
+  // again, this entry must stop existing — otherwise it silently excuses
+  // a genuine future omission on that exact key forever. This makes the
+  // allowlist self-cleaning: the moment an exemption stops being needed,
+  // the test names it and fails instead of staying quiet.
+  it('ALLOWED_PLACEHOLDER_OMISSIONS has no stale entries (the key must still omit a placeholder its English source supplies)', () => {
+    const stale = [...ALLOWED_PLACEHOLDER_OMISSIONS].filter((entry) => {
+      const match = entry.match(ALLOWLIST_ENTRY_RE)
+      if (!match) return true // malformed entry, can't verify it — treat as stale
+      const [, lang, ns, key] = match
+      const sourceObj = byLanguageThenNamespace[SOURCE_LANGUAGE]?.[ns] ?? {}
+      const targetObj = byLanguageThenNamespace[lang]?.[ns] ?? {}
+      const sourceNames = placeholderNames(getAtPath(sourceObj, key))
+      const targetNames = placeholderNames(getAtPath(targetObj, key))
+      const stillOmitsSomething = [...sourceNames].some((name) => !targetNames.has(name))
+      return !stillOmitsSomething
+    })
+    expect(
+      stale,
+      'ALLOWED_PLACEHOLDER_OMISSIONS has entries that no longer omit anything their English source supplies — delete them, the exemption is no longer needed',
+    ).toEqual([])
   })
 
   for (const lang of targetLanguages) {
