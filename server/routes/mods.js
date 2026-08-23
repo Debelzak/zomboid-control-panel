@@ -52,6 +52,7 @@ import {
 } from "../utils/browserCookies.js";
 import { requirePermission } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
+import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 
 const router = express.Router();
 
@@ -68,20 +69,35 @@ router.use(requirePermission("mods.manage"));
 // ─── INI write mutex ────────────────────────────────────────────────────────
 // Serialises write operations to the same INI file so concurrent requests
 // cannot interleave their writes (prevents lost-update race conditions).
-const iniLocks = new Map(); // iniPath → Promise chain
+//
+// Delegates the actual serialization to the shared per-path lock in
+// utils/fileWriteQueue.js — the same one routes/serverFiles.js's PUT /ini and
+// PUT /raw/:type use for the identical file. Before this, mods.js kept its
+// own separate Map here: two independent mutexes guarding one physical INI
+// file, neither aware of the other. A ServerConfig save (PUT /ini) and a
+// Mods-page toggle (POST /toggle-mod-id, /write-to-ini, ...) landing at the
+// same moment could each acquire "their" lock, both read the same starting
+// content, and the second write would silently clobber the first's change —
+// exactly the lost-update race both call sites' comments claimed to prevent,
+// but only within their own file.
+//
+// activeIniLocks below is bookkeeping only (backs getIniLockCount, which an
+// existing test asserts drains to 0) — it never gates a write itself.
+const activeIniLocks = new Map(); // iniPath -> in-flight call count
 export function withIniLock(iniPath, fn) {
-  const prev = iniLocks.get(iniPath) || Promise.resolve();
-  const next = prev.then(fn, fn); // run fn regardless of previous result
-  iniLocks.set(iniPath, next);
+  activeIniLocks.set(iniPath, (activeIniLocks.get(iniPath) || 0) + 1);
   const cleanup = () => {
-    if (iniLocks.get(iniPath) === next) iniLocks.delete(iniPath);
+    const remaining = (activeIniLocks.get(iniPath) || 1) - 1;
+    if (remaining <= 0) activeIniLocks.delete(iniPath);
+    else activeIniLocks.set(iniPath, remaining);
   };
-  next.then(cleanup, cleanup);
-  return next;
+  const run = withFileLock(iniPath, fn);
+  run.then(cleanup, cleanup);
+  return run;
 }
 
 export function getIniLockCount() {
-  return iniLocks.size;
+  return activeIniLocks.size;
 }
 
 export function filterOwnedClientModIds(clientModIds, ownedModIds) {
@@ -1999,7 +2015,7 @@ router.post("/write-to-ini", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     log.info(
@@ -2194,7 +2210,7 @@ router.post("/toggle-mod-id", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { totalMods: currentModIds.length };
     });
     log.info(
@@ -2321,7 +2337,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { totalMods: currentModIds.length };
     });
     log.info(`Batch toggled ${changes.length} mod IDs in ${iniPath}`);
@@ -2499,7 +2515,7 @@ router.post("/add-to-ini", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return {
         alreadyExists: false,
         totalWorkshopItems: currentWorkshopIds.length,
@@ -3251,7 +3267,7 @@ router.post("/remove-from-ini", async (req, res) => {
         );
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return {
         removedModIds,
         removedMapFolders,
@@ -3414,7 +3430,7 @@ router.post("/batch-remove", async (req, res) => {
               );
             }
 
-            fs.writeFileSync(iniPath, content, "utf-8");
+            writeFileAtomic(iniPath, content, "utf-8");
 
             const wsRemoved = origWsCount - iniWorkshopIds.length;
             const modRemoved = origModCount - iniModIds.length;
@@ -3577,7 +3593,7 @@ router.post("/repair-map-entries", async (req, res) => {
         if (content.includes("Map=")) {
           content = content.replace(/^Map=.*/m, `Map=${newMapLine}`);
         }
-        fs.writeFileSync(iniPath, content, "utf-8");
+        writeFileAtomic(iniPath, content, "utf-8");
         log.info(
           `Repaired Map= entries: removed ${removedEntries.length} invalid, added ${addedEntries.length} missing`,
         );
@@ -3676,7 +3692,7 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
         /^Mods=.*/m,
         `Mods=${sanitizeModIdList(deduped)}`,
       );
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { noChanges: false, removed, deduped };
     });
 
@@ -3831,7 +3847,7 @@ router.post("/add-missing-dep", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { wsAdded, modIdAdded };
     });
 
@@ -3982,7 +3998,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
         else content += `\nMap=${mapLine}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { wsAdded, modIdsAdded, allMapFolders };
     });
 
@@ -4560,7 +4576,7 @@ router.post("/sync-mod-ids", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return { syncedMods, missingMods, totalModIds: finalModIds.length };
     });
 
@@ -4933,7 +4949,7 @@ router.post("/presets/:id/apply", async (req, res) => {
         content += `\n${modsLine}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     log.info(
@@ -5004,7 +5020,7 @@ router.post("/save-order", async (req, res) => {
         content += `\n${modsLine}`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     log.info(`Saved mod load order: ${modIds.length} mods`);
@@ -5327,7 +5343,7 @@ router.post("/add-mod-advanced", async (req, res) => {
         }
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
       return {
         addedModIds,
         totalModIdsInConfig: currentModIds.length,
@@ -7630,7 +7646,7 @@ router.post("/enable-disk-mod", async (req, res) => {
         ? content.replace(/^Mods=.*/m, modsLine)
         : content.trimEnd() + `\n${modsLine}\n`;
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     // Lift any prior ignore-list entry so auto-track picks it up.
@@ -7721,7 +7737,7 @@ async function deleteModFromDiskAndIni(wsId) {
       if (mapList.length === 0) mapList = ["Muldraugh, KY"];
       content = content.replace(/^Map=.*/m, `Map=${sanitizeIniList(mapList)}`);
     }
-    fs.writeFileSync(iniPath, content, "utf-8");
+    writeFileAtomic(iniPath, content, "utf-8");
   });
 
   const possiblePaths = getWorkshopPaths(wsId, serverPath || "");
@@ -7974,7 +7990,7 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
           `Mods=${sanitizeModIdList(modsList)}`,
         );
       }
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     // Delete folders.
@@ -8168,7 +8184,7 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
           : content.trimEnd() + `\n${newLine}\n`;
       }
 
-      fs.writeFileSync(iniPath, content, "utf-8");
+      writeFileAtomic(iniPath, content, "utf-8");
     });
 
     const counts = {
