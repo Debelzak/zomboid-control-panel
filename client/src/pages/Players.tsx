@@ -793,15 +793,6 @@ export default function Players() {
     })
   }
 
-  const handleVoiceBan = () => {
-    if (!voiceBanUsername) return
-    handleAction(voiceBanEnabled ? t('actions.voiceBan') : t('actions.voiceUnban'),
-      () => playersApi.voiceBan(voiceBanUsername, voiceBanEnabled), () => {
-        setVoiceBanDialogOpen(false)
-        setVoiceBanUsername('')
-      })
-  }
-
   const handleAddUser = () => {
     if (!addUserUsername.trim()) {
       toast({
@@ -1983,8 +1974,14 @@ export default function Players() {
                       <DialogFooter>
                         <Button
                           onClick={() => {
-                            if (!voiceBanUsername) setVoiceBanUsername(selectedPlayer)
-                            handleVoiceBan()
+                            const target = voiceBanUsername || selectedPlayer
+                            if (!target) return
+                            setVoiceBanUsername(target)
+                            handleAction(voiceBanEnabled ? t('actions.voiceBan') : t('actions.voiceUnban'),
+                              () => playersApi.voiceBan(target, voiceBanEnabled), () => {
+                                setVoiceBanDialogOpen(false)
+                                setVoiceBanUsername('')
+                              })
                           }}
                           disabled={loading || (!voiceBanUsername && !selectedPlayer)}
                         >
