@@ -100,11 +100,30 @@ const CANNOT_VERIFY_OR_EQUIVALENT = {
   saveWorld: 'Already gates ok directly on the real pcall result of world:saveWorld() -- this IS the original b376b2c fix, no separate flag needed.',
 
   // Genuinely no read-back exists -- confirmed against the real B42 jar,
-  // not assumed.
-  moderationKickUser: 'BanSystem.KickUser is declared void in the real B42 jar (confirmed 2026-08-23) -- no return value exists to verify, ever.',
-  createFaction: 'Faction.createFaction does not exist ANYWHERE in the real B42 jar (confirmed: zero hits scanning all 23,740 class files) -- the existing guard/pcall already fail safely and honestly; nothing to verify.',
-  removeFaction: 'faction:removeFaction does not exist ANYWHERE in the real B42 jar -- same finding as createFaction.',
+  // not assumed. This is an API LIMIT: the method is real, it just returns
+  // nothing.
+  moderationKickUser: 'BanSystem.KickUser is declared void in the real B42 jar (confirmed 2026-08-23) -- no return value exists to verify, ever. This is a limit of the API, not a bug -- contrast with createFaction/removeFaction below.',
+
+  // *** THIS IS A BUG, NOT A VERIFICATION LIMIT -- KEEP IT LOUD AND SEPARATE
+  // FROM THE CATEGORY ABOVE. *** Faction.createFaction and
+  // faction:removeFaction do not exist ANYWHERE in the real B42 jar (zero
+  // hits scanning all 23,740 class files, confirmed 2026-08-23) -- there is
+  // no read-back to add because there is no METHOD, not because the method
+  // is void. Events.tsx advertises both operations to the operator (labels,
+  // descriptions, an args template, listed in the bridge operations group),
+  // so the panel offers two actions that cannot work on B42. The existing
+  // guard/pcall already fail safely and honestly (ok=false, not a false
+  // success) rather than crashing -- which is also exactly why nobody
+  // noticed from the logs. Carded to Pam (owns Events.tsx) with this
+  // evidence attached.
+  createFaction: 'BUG, not a verification limit: Faction.createFaction does not exist ANYWHERE in the real B42 jar (zero hits across all 23,740 class files). Events.tsx advertises this operation to the operator; it cannot work on B42. Carded to Pam.',
+  removeFaction: 'BUG, not a verification limit: faction:removeFaction does not exist ANYWHERE in the real B42 jar -- same finding, same Events.tsx exposure, same card as createFaction.',
+
+  // Explicitly NOT gated by design -- gating would hide real partial data.
   importPlayerData: 'Partial success is a legitimate outcome, not a boolean gate (explicit ruling, 2026-08-23) -- see restored.perks/restored.items counts instead of a verified flag.',
+
+  // Honest stubs: never claim success at all (ok is never true), so there
+  // is nothing for a verified field to describe.
   spawnVehicleAt: 'Always returns false (RCON handles vehicle spawning on B42) -- never claims success, nothing to verify.',
   setTimeSpeed: 'Always returns false (RCON handles the dedicated server clock multiplier) -- never claims success, nothing to verify.',
 
