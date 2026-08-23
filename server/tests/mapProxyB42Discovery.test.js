@@ -186,3 +186,27 @@ describe("getB42Map() discovery: forcing failure", () => {
     expect(getB42ResolutionStatus().source).toBe("fallback");
   });
 });
+
+// This contract has broken twice in one night, in opposite directions --
+// once with the producer (here) emitting `build` while the consumer
+// (debug.js) read `directory`, once the other way around while the
+// contract itself was being corrected mid-flight. Both were invisible to
+// worldMapBuildDetectStates.test.js because that file mocks
+// getB42ResolutionStatus() entirely -- it asserts on whatever shape the
+// mock is TOLD to return, so it can never notice the real producer
+// drifting from what debug.js actually reads (resolution.source,
+// .directory, .reason -- see server/routes/debug.js's worldmap.tiles.buildDetect
+// check). This test calls the REAL function, on the producer side, so a
+// future rename here fails immediately instead of silently reintroducing
+// "Build undefined".
+describe("getB42ResolutionStatus() contract shape", () => {
+  it("returns exactly {source, directory, reason} -- no more, no less, no renamed keys", async () => {
+    const { getB42ResolutionStatus } = await freshModule();
+    // Before any resolution attempt, source/reason are legitimately null --
+    // this test is about the KEY SHAPE debug.js reads, not resolution
+    // state, so it doesn't trigger getB42Map() at all.
+    const status = getB42ResolutionStatus();
+    expect(Object.keys(status).sort()).toEqual(["directory", "reason", "source"]);
+    expect(typeof status.directory).toBe("string"); // always B42_DIR_FALLBACK or a resolved build, never null
+  });
+});
