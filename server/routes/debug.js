@@ -3,6 +3,7 @@ import os from "os";
 import v8 from "v8";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { execFile } from "child_process";
 import { fileURLToPath } from "url";
 import archiver from "archiver";
@@ -24,10 +25,18 @@ import {
   getScheduledTasks,
   getTrackedMods,
   getAllSettings,
+  getCircuitBreakerStatus,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
 import { checkSandboxBraceBalance } from "./serverFiles.js";
 import panelBridgeService from "../services/panelBridge.js";
+import authService from "../services/auth.js";
+import { listBackupRecords } from "../services/backupRecords.js";
+import {
+  getOidcSettings,
+  getOidcEnvOverrides,
+  isOidcConfigured,
+} from "../services/oidc.js";
 import {
   PZ_TILES_ROOT,
   getB42Dir,
@@ -38,7 +47,7 @@ import {
   getCandidateZomboidPaths,
   inspectZomboidPath,
 } from "../utils/zomboidPaths.js";
-import { requirePermission } from "../services/permissions.js";
+import { requirePermission, listRolesWithMemberCounts } from "../services/permissions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -353,11 +362,34 @@ async function safeStatfs(target) {
   }
 }
 
-async function buildSystemInfo(activeServer) {
+async function buildSystemInfo(activeServer, serverManager) {
   const version = await readPanelVersion();
   const isPkg = typeof process.pkg !== "undefined";
   const paths = getDataPaths();
   const cpus = os.cpus();
+
+  // Whether the dedicated server process was running at the moment this
+  // bundle was generated -- nothing else in the bundle answered this before.
+  // Distinguishes a confirmed-stopped server from "detection itself failed"
+  // (scanFailed) the same way getServerProcessDetails()'s other callers do,
+  // rather than collapsing an unknown state into a false "not running".
+  // There is no PERSISTED "a config edit is pending a restart" flag anywhere
+  // in the panel to report instead (config-guard's warning is computed fresh
+  // per-request and never stored) -- this live snapshot is the closest
+  // available substitute for "what state was the server actually in".
+  let serverProcess = { checked: false };
+  if (typeof serverManager?.getServerProcessDetails === "function") {
+    try {
+      const details = await serverManager.getServerProcessDetails();
+      serverProcess = {
+        checked: true,
+        running: Boolean(details.running),
+        scanFailed: Boolean(details.scanFailed),
+      };
+    } catch (e) {
+      serverProcess = { checked: true, error: e.message };
+    }
+  }
 
   return {
     panel: {
@@ -399,6 +431,7 @@ async function buildSystemInfo(activeServer) {
       zomboidDataDir: await safeStatfs(activeServer?.zomboidDataPath || null),
       installDir: await safeStatfs(activeServer?.installPath || null),
     },
+    serverProcess,
   };
 }
 
@@ -522,15 +555,25 @@ async function buildServerConfigSummary(activeServer) {
         values[key],
       ]),
     );
+    const mods = splitList(values.Mods);
+    const workshopItems = splitList(values.WorkshopItems);
     result.available = true;
     result.ini = {
       ...result.ini,
       exists: true,
       sha256: crypto.createHash("sha256").update(iniContent).digest("hex"),
       settings: safeSettings,
-      mods: splitList(values.Mods),
-      workshopItems: splitList(values.WorkshopItems),
+      mods,
+      workshopItems,
       map: splitList(values.Map),
+      // Mods= and WorkshopItems= are meant to be parallel lists (same index
+      // = same mod). A length mismatch is a cheap, real signal something
+      // didn't resolve cleanly the last time mods were applied -- the actual
+      // per-ID resolution result (unresolvedModIds) is computed only inside
+      // POST /mods/apply-config's response and is never persisted anywhere,
+      // so it can't be reconstructed after the fact; this is the closest
+      // available substitute without re-running that resolution logic here.
+      modsWorkshopCountMismatch: mods.length !== workshopItems.length,
     };
   } catch (error) {
     result.ini.error = error.message;
@@ -827,6 +870,153 @@ async function buildNetworkInterfaces() {
   }
 }
 
+// Config values only, sanitized -- never a live discovery/test-connection
+// call. Every other collector in this file is a local read (DB, settings,
+// filesystem); making this one reach out to a third-party IdP would be the
+// only network dependency in the whole bundle, adding unpredictable latency
+// (or a timeout) to what is otherwise a fast, fully local diagnostic
+// collection. There is also no PERSISTED "last test authentication
+// succeeded" fact anywhere to report even if it did -- testOidcDiscovery()
+// is stateless and returns its result only to the caller of Settings' own
+// "Test connection" button; it is never written to the DB. clientSecret
+// itself is never read out of the UI secret file here at all -- only
+// whether OIDC is configured (which already requires it to be present) is
+// reported, matching how every other secret in this bundle is presence-only.
+async function buildOidcStatus() {
+  try {
+    const settings = await getOidcSettings();
+    return {
+      configured: isOidcConfigured(settings),
+      issuerUrl: settings.issuerUrl || null,
+      clientId: settings.clientId || null,
+      clientSecretSet: Boolean(settings.clientSecret),
+      redirectUri: settings.redirectUri || null,
+      scope: settings.scope || null,
+      providerName: settings.providerName || null,
+      allowInsecureHttp: settings.allowInsecureHttp,
+      // Which of the above are pinned by an environment variable (Docker/
+      // systemd/compose) rather than editable through Settings -- an
+      // operator asking "why won't my Settings edit stick" is a config-guard-
+      // shaped support question this answers directly.
+      envOverrides: getOidcEnvOverrides(),
+    };
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+// Which roles exist, what each grants, how many users hold each, and the
+// username -> role mapping -- "why can this person not see X" was
+// previously unanswerable from a bundle at all. Local usernames are not
+// secret-shaped (no password/token/hash), so they pass sanitizeForBundle
+// unchanged like every other non-credential field in this bundle; still
+// worth a support reader knowing this bundle names local accounts, so the
+// README says so explicitly.
+async function buildRolesAndPermissions() {
+  try {
+    const [roles, users] = await Promise.all([
+      listRolesWithMemberCounts(),
+      authService.getUsers(),
+    ]);
+    return sanitizeForBundle({
+      roles: roles.map((r) => ({
+        id: r.id,
+        name: r.name,
+        isSeeded: Boolean(r.isSeeded),
+        capabilities: r.capabilities || [],
+        memberCount: r.memberCount,
+      })),
+      users: users.map((u) => ({ username: u.username, role: u.role, roleId: u.roleId })),
+    });
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+// curl is a RUNTIME dependency the World Map build-resolution path shipped
+// on this now (see mapProxy.js's fetchViaCurl) -- a host missing it is
+// probably this release's single most likely new support ticket, and until
+// now a bundle had no way to tell us. `curl --version` is a cheap, local,
+// no-network subprocess call (distinct from the discovery/tile fetches
+// fetchViaCurl itself makes), so this stays consistent with every other
+// collector being local-only.
+function checkCurlAvailable() {
+  return new Promise((resolve) => {
+    execFile("curl", ["--version"], { timeout: 3000 }, (err, stdout) => {
+      if (err) {
+        resolve({
+          available: false,
+          reason: err.code === "ENOENT" ? "curl is not on PATH" : err.message,
+        });
+        return;
+      }
+      resolve({ available: true, version: stdout.split("\n")[0]?.trim() || null });
+    });
+  });
+}
+
+async function buildWorldMapDiagnostics() {
+  try {
+    const [curl, resolution] = await Promise.all([
+      checkCurlAvailable(),
+      Promise.resolve(getB42ResolutionStatus()),
+    ]);
+    return { curl, b42Resolution: resolution };
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+// db.json's own write path (server/database/init.js) already tracks retry
+// count / circuit-breaker state for exactly this "silent write failure"
+// question -- getCircuitBreakerStatus() surfaces it read-only, no new
+// tracking added here. writeFileAtomic (server/utils/fileWriteQueue.js,
+// used for the INI/Lua config files, not db.json) has NO equivalent
+// counters to report -- its retry path has nothing that persists across
+// calls to read. Extending it to track that would mean editing a second
+// file outside this task's boundary; noted in the report rather than done
+// unasked.
+function buildDbWriteHealth() {
+  try {
+    return getCircuitBreakerStatus();
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+// Schedule/retention are already visible inside panel-config.json's
+// settings (backupSchedule, backupMaxCount) -- this collector's actual job
+// is the piece that ISN'T anywhere else yet: the recent run history.
+// Failed runs are not structurally recorded (only a successful backup ever
+// gets a record — see backupRecords.js's addBackupRecord), so a failure
+// still only shows up in the raw admin-panel logs already in this bundle;
+// documented as a known gap in the README rather than silently implied to
+// be covered here.
+async function buildBackupsSummary(req) {
+  try {
+    const backupService = req?.app?.get?.("backupService");
+    const [settings, recent] = await Promise.all([
+      backupService?.getSettings?.() ?? null,
+      listBackupRecords({ limit: 20 }),
+    ]);
+    return sanitizeForBundle({ settings, recentRuns: recent });
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
+async function buildDiscordBotStatus(req) {
+  try {
+    const discordBot = req?.app?.get?.("discordBot");
+    if (!discordBot?.getStatus) return { available: false };
+    // getStatus() already excludes the token itself (only a `configured`
+    // boolean) -- sanitizeForBundle is defense in depth, not the only guard.
+    return sanitizeForBundle(discordBot.getStatus());
+  } catch (e) {
+    return { _error: e.message };
+  }
+}
+
 function buildBundleReadme() {
   return [
     "# Project Zomboid Control Panel — Support Bundle",
@@ -834,19 +1024,25 @@ function buildBundleReadme() {
     "## Where to look first",
     "",
     "1. `support-bundle-info.txt` — high-level summary, paths used.",
-    "2. `system-info.json` — panel version, OS, RAM, disk free.",
-    "3. `panel-config.json` — sanitized settings + servers list (passwords/tokens masked).",
+    "2. `system-info.json` — panel version, OS, RAM, disk free, and whether the dedicated server process was running when this bundle was generated.",
+    "3. `panel-config.json` — sanitized settings + servers list (passwords/tokens masked). Also where backup schedule/retention and scheduled-task configuration live (`settings.backupSchedule`, `settings.backupMaxCount`, `scheduledTasks`).",
     "4. `zomboid-paths.json` — what the panel thinks the data/install paths are, all probed candidates, and dir listings of `Saves/`, `Saves/Multiplayer/`, `Server/`, `Logs/`, etc.",
     "5. `bridge-status.json` — PanelBridge connection, IPC file ages, and active transport.",
     "6. `sftp-diagnostics.json` — sanitized remote SFTP configuration and the last SFTP attempt, including failures after local fallback.",
-    "7. `recent-events.json` — last server starts/stops, RCON commands, player join/leave, scheduled task runs.",
+    "7. `recent-events.json` — last server starts/stops, RCON commands, player join/leave, scheduled task runs (`scheduleHistory` is the last-result history for scheduler entries).",
     "8. `db-stats.json` — record counts per collection.",
     "9. `performance-history.json` — recent CPU/RAM samples.",
     "10. `environment.txt` — relevant env vars (secrets show as `<set>`/`<unset>` only).",
     "11. `network-interfaces.json` — local IPs (no MACs).",
     "12. `process.json` — process flags, versions, active handle counts.",
-    "13. `server-config-summary.json` — sanitized effective server settings, mod/map lists, and sandbox integrity.",
+    "13. `server-config-summary.json` — sanitized effective server settings, mod/map lists, sandbox integrity, and whether the Mods/WorkshopItems lists are the same length (a mismatch is a cheap signal of an unresolved mod).",
     "14. `pz-build-info.json` — installed Project Zomboid branch and Steam build ID.",
+    "15. `oidc-status.json` — whether SSO is configured, issuer/client/redirect/scope, which fields are pinned by an env var, and whether a client secret is set (never its value). No live IdP check — see the file's own notes.",
+    "16. `roles-and-permissions.json` — every role, what it grants, how many/which local users hold it. Start here for \"why can't this person see X\".",
+    "17. `world-map-diagnostics.json` — whether `curl` is present on this host (a missing one is the most likely new World Map support ticket this release) and the resolved B42 tile-build source/directory/reason.",
+    "18. `db-write-health.json` — db.json's write circuit-breaker state and retry count. Does NOT cover config-file (INI/Lua) writes — see the file's own notes for why.",
+    "19. `backups-summary.json` — the last 20 backup runs. Only successful runs are recorded; a failed scheduled backup shows up in `admin-panel/error.log` instead, not here.",
+    "20. `discord-bot-status.json` — connected or not, which guild/channel/mod-role it's wired to, and the last start failure if any (token presence only, never the value).",
     "",
     "## Then the raw logs",
     "",
@@ -859,17 +1055,22 @@ function buildBundleReadme() {
     "",
     "## What is NOT in this bundle",
     "",
-    "- Plaintext RCON / Discord / Steam credentials (masked).",
+    "- Plaintext RCON / Discord / Steam / OIDC client secret credentials (masked or presence-only).",
     "- Full environment variable values (only allow-listed keys show values).",
     "- MAC addresses (network interfaces list IPs only).",
     "- The LowDB file itself (`db.json`) — only sanitized excerpts.",
+    "- Which UI language the reporting user had selected. That's stored only in that browser's `localStorage`, never sent to or known by the server — ask the user directly if a rendering bug looks language-specific.",
+    "- Whether a config edit is still waiting on a restart to take effect. The panel computes that live per-request and never stores it — `system-info.json`'s `serverProcess` (was the server running right now) is the closest fact actually available.",
+    "- A record of the OIDC \"Test connection\" button's last result, or a live check against the identity provider run while building this bundle — `oidc-status.json` reports configuration only.",
+    "- Failed backup attempts as structured data (only successful runs are recorded) — check `admin-panel/error.log` for those.",
+    "- Retry/failure counters for config-file (INI/Lua) writes specifically — only db.json's own write health is tracked today.",
     "",
     "Generated by ZomboidControlPanel — see https://github.com/fpsacha/zomboid-control-panel",
     "",
   ].join("\n");
 }
 
-async function buildBundleDiagnostics(activeServer) {
+async function buildBundleDiagnostics(activeServer, req) {
   // Run all collectors in parallel — each one is wrapped so a single failure
   // doesn't kill the whole bundle.
   const wrap = async (name, fn) => {
@@ -880,8 +1081,10 @@ async function buildBundleDiagnostics(activeServer) {
     }
   };
 
+  const serverManager = req?.app?.get?.("serverManager") || null;
+
   const results = await Promise.all([
-    wrap("system-info.json", () => buildSystemInfo(activeServer)),
+    wrap("system-info.json", () => buildSystemInfo(activeServer, serverManager)),
     wrap("panel-config.json", () => buildPanelConfig(activeServer)),
     wrap("zomboid-paths.json", () => buildZomboidPaths(activeServer)),
     wrap("recent-events.json", () => buildRecentEvents()),
@@ -893,6 +1096,12 @@ async function buildBundleDiagnostics(activeServer) {
     wrap("network-interfaces.json", () => buildNetworkInterfaces()),
     wrap("server-config-summary.json", () => buildServerConfigSummary(activeServer)),
     wrap("pz-build-info.json", () => buildPzBuildInfo(activeServer)),
+    wrap("oidc-status.json", () => buildOidcStatus()),
+    wrap("roles-and-permissions.json", () => buildRolesAndPermissions()),
+    wrap("world-map-diagnostics.json", () => buildWorldMapDiagnostics()),
+    wrap("db-write-health.json", async () => buildDbWriteHealth()),
+    wrap("backups-summary.json", () => buildBackupsSummary(req)),
+    wrap("discord-bot-status.json", () => buildDiscordBotStatus(req)),
     wrap("in-memory-log-buffer.json", async () => ({
       total: logBuffer.length,
       entries: logBuffer.slice(-MAX_BUFFER_SIZE),
@@ -1112,7 +1321,7 @@ router.get("/logs/download-zip", requirePermission("diagnostics.manage"), async 
 
     // ── Diagnostic JSON files (best-effort; collectors never throw) ──
     try {
-      const diagnostics = await buildBundleDiagnostics(activeServer);
+      const diagnostics = await buildBundleDiagnostics(activeServer, req);
       for (const f of diagnostics) {
         archive.append(f.content, { name: f.name });
       }
@@ -5107,3 +5316,19 @@ router.get("/activity", requirePermission("diagnostics.manage"), async (req, res
 
 export default router;
 export { logBuffer, getDiskFree };
+// Exported for direct unit testing of the support-bundle collectors --
+// see server/tests/supportBundleCollectors.test.js. Not used by any other
+// route in this file, which continues to call them as plain module-local
+// functions.
+export {
+  buildBundleDiagnostics,
+  buildSystemInfo,
+  buildServerConfigSummary,
+  buildOidcStatus,
+  buildRolesAndPermissions,
+  checkCurlAvailable,
+  buildWorldMapDiagnostics,
+  buildDbWriteHealth,
+  buildBackupsSummary,
+  buildDiscordBotStatus,
+};
