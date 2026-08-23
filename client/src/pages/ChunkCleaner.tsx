@@ -896,6 +896,17 @@ export default function ChunkCleaner() {
   // ─── Canvas draw (extracted to callable function for rAF use) ───
   const drawCanvasRef = useRef<() => void>(() => {});
 
+  // Schedule a canvas redraw via requestAnimationFrame (used by mouse handlers
+  // and by the effect below, so a burst of state changes within one frame --
+  // e.g. every mousemove during a pan or select-drag -- paints at most once).
+  const scheduleDraw = useCallback(() => {
+    if (drawRequestRef.current) return;
+    drawRequestRef.current = requestAnimationFrame(() => {
+      drawRequestRef.current = 0;
+      drawCanvasRef.current();
+    });
+  }, []);
+
   useEffect(() => {
     drawCanvasRef.current = () => {
       const canvas = canvasRef.current;
@@ -1477,8 +1488,17 @@ export default function ChunkCleaner() {
       }
     };
 
-    // Initial draw
-    drawCanvasRef.current();
+    // Draw via the same rAF-coalescing path the passive-hover case already
+    // uses (scheduleDraw, above) instead of calling drawCanvasRef directly.
+    // offset/selectionStart/selectionEnd update on every raw
+    // mousemove during a pan or select-drag, so this effect can rerun and
+    // rebuild the closure many times within one frame; without this, each
+    // of those reruns painted synchronously too. Rebuilding the closure
+    // stays synchronous and cheap -- only the actual draw call is deferred
+    // and deduplicated to at most once per animation frame. This does not
+    // touch the render itself: the state updates driving this effect still
+    // fire on every event, same as before.
+    scheduleDraw();
   }, [
     chunks,
     chunkMap,
@@ -1498,21 +1518,25 @@ export default function ChunkCleaner() {
     chunkVehicles,
     chunkSafehouses,
     t,
+    scheduleDraw,
   ]);
 
-  // Schedule a canvas redraw via requestAnimationFrame (used by mouse handlers)
-  const scheduleDraw = useCallback(() => {
-    if (drawRequestRef.current) return;
-    drawRequestRef.current = requestAnimationFrame(() => {
-      drawRequestRef.current = 0;
-      drawCanvasRef.current();
-    });
-  }, []);
-
-  // Cleanup rAF on unmount
+  // Cleanup rAF on unmount. Must also reset the ref, not just cancel the
+  // frame -- scheduleDraw's guard treats any non-zero value as "already
+  // scheduled" and no-ops. Only the rAF callback itself normally resets it
+  // to 0; a cancelled callback never runs, so without this the ref stays
+  // stuck non-zero and every future scheduleDraw() call silently does
+  // nothing for the rest of the component's lifetime. Found via StrictMode's
+  // dev-only mount/cleanup/remount cycle, which calls this cleanup once
+  // immediately after first mount while a scheduleDraw() from that same
+  // first mount is still in flight -- but the same stuck-guard risk exists
+  // for any other caller of this cleanup too, not just StrictMode.
   useEffect(() => {
     return () => {
-      if (drawRequestRef.current) cancelAnimationFrame(drawRequestRef.current);
+      if (drawRequestRef.current) {
+        cancelAnimationFrame(drawRequestRef.current);
+        drawRequestRef.current = 0;
+      }
     };
   }, []);
 
