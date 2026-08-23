@@ -5,7 +5,7 @@
   },
   "refresh": "Aktualisieren",
   "errorTitle": "Fehler",
-  "safehouseFallback": "Schutzhaus",
+  "safehouseFallback": "Safehouse",
   "vehicleFallback": "Fahrzeug",
   "controlRail": {
     "ctrlLabel": "Steuerung",
@@ -22,10 +22,10 @@
     "vehiclesShowAria": "Fahrzeuge anzeigen ({{count}} geladen)",
     "vehiclesHideTitle": "Fahrzeuge ausblenden ({{count}}) — nur Fahrzeuge in der Nähe von Spielern sind sichtbar",
     "vehiclesShowTitle": "Fahrzeuge anzeigen ({{count}}) — nur Fahrzeuge in der Nähe von Spielern sind sichtbar",
-    "safehousesHideAria": "Schutzhäuser ausblenden ({{count}} geladen)",
-    "safehousesShowAria": "Schutzhäuser anzeigen ({{count}} geladen)",
-    "safehousesHideTitle": "Schutzhäuser ausblenden ({{count}})",
-    "safehousesShowTitle": "Schutzhäuser anzeigen ({{count}})"
+    "safehousesHideAria": "Safehouses ausblenden ({{count}} geladen)",
+    "safehousesShowAria": "Safehouses anzeigen ({{count}} geladen)",
+    "safehousesHideTitle": "Safehouses ausblenden ({{count}})",
+    "safehousesShowTitle": "Safehouses anzeigen ({{count}})"
   },
   "floor": {
     "ground": "Erdgeschoss",
