@@ -4,7 +4,7 @@
   "retry": "Reintentar",
   "pageHeader": {
     "title": "Configuración del servidor",
-    "description": "Editar en tiempo real los ajustes de INI, sandbox, aparición y mods de este servidor.",
+    "description": "Edita en tiempo real los ajustes de INI, sandbox, aparición y mods de este servidor.",
     "eyebrow": "config",
     "unsavedChanges": "Cambios sin guardar",
     "templates": "Plantillas",
@@ -33,11 +33,11 @@
   },
   "stopServerAlert": {
     "title": "Detener el servidor antes de guardar",
-    "description": "Project Zomboid puede sobrescribir estos archivos mientras se está ejecutando. Es posible preparar los cambios aquí y luego detener el servidor para guardarlos."
+    "description": "Project Zomboid puede sobrescribir estos archivos mientras se está ejecutando. Puedes preparar los cambios aquí y luego detener el servidor para guardarlos."
   },
   "invalidValuesAlert": {
     "title": "Corregir valores no válidos antes de guardar",
-    "description": "{{settings}}: introducir números válidos dentro del rango indicado."
+    "description": "{{settings}}: introduce números válidos dentro del rango indicado."
   },
   "editorToolbar": {
     "form": "Formulario",
@@ -91,7 +91,7 @@
     "heading": "Claves sin categorizar / desconocidas",
     "keyCount_one": "{{count}} clave",
     "keyCount_other": "{{count}} claves",
-    "description": "Claves presentes en el INI pero no reconocidas por el esquema. Probablemente ajustes nuevos del juego base o añadidos por mods. Los valores se conservan al guardar; editar con cuidado.",
+    "description": "Claves presentes en el INI pero no reconocidas por el esquema. Probablemente ajustes nuevos del juego base o añadidos por mods. Los valores se conservan al guardar; edita con cuidado.",
     "undoTitle": "Deshacer cambio"
   },
   "uncategorizedSandbox": {
@@ -99,7 +99,7 @@
     "heading": "Ajustes adicionales de Sandbox",
     "keyCount_one": "{{count}} clave",
     "keyCount_other": "{{count}} claves",
-    "description": "Ajustes para los que el editor no tiene esquema, agrupados por la sección a la que pertenecen. Mayormente claves añadidas por mods. Editar con cuidado.",
+    "description": "Ajustes para los que el editor no tiene esquema, agrupados por la sección a la que pertenecen. Mayormente claves añadidas por mods. Edita con cuidado.",
     "mainSection": "Sección principal",
     "undoTitle": "Deshacer cambio"
   },
@@ -114,7 +114,7 @@
     "sectionLabel": "Ajustes del servidor",
     "sectionSublabel": "INI · comportamiento, red, jugadores",
     "luaChecksumTitle": "Lua Checksum está activado",
-    "luaChecksumBody": "PanelBridge modifica archivos Lua del lado del servidor. Con Lua Checksum activado, los clientes no superarán la verificación y no podrán conectarse. Desactivar <1>DoLuaChecksum</1> en la categoría Mods para permitir que los jugadores se unan.",
+    "luaChecksumBody": "PanelBridge modifica archivos Lua del lado del servidor. Con Lua Checksum activado, los clientes no superarán la verificación y no podrán conectarse. Desactiva <1>DoLuaChecksum</1> en la categoría Mods para permitir que los jugadores se unan.",
     "disableNow": "desactivar ahora"
   },
   "sandboxTab": {
@@ -128,7 +128,7 @@
     "sectionSublabel": "gestionado por mods · ubicaciones iniciales de jugadores",
     "infoTab": "info",
     "modManagedTitle": "Los puntos de aparición son gestionados por mods",
-    "modManagedBody": "Las ubicaciones de aparición normalmente las gestionan mods como «Spawn Select». Cambiar a <1>texto plano</1> para inspeccionar o editar el archivo directamente.",
+    "modManagedBody": "Las ubicaciones de aparición normalmente las gestionan mods como «Spawn Select». Cambia a <1>texto plano</1> para inspeccionar o editar el archivo directamente.",
     "openRawFile": "abrir archivo en texto plano"
   },
   "spawnRegionsTab": {
@@ -136,7 +136,7 @@
     "sectionSublabel_one": "{{count}} región · ciudades y pueblos",
     "sectionSublabel_other": "{{count}} regiones · ciudades y pueblos",
     "noRegionsTitle": "No se encontraron regiones de aparición",
-    "noRegionsDesc": "Cambiar al modo Texto plano para ver el contenido del archivo",
+    "noRegionsDesc": "Cambia al modo Texto plano para ver el contenido del archivo",
     "columnDisplayName": "Nombre visible",
     "columnMapFilePath": "Ruta del archivo de mapa",
     "displayNamePlaceholder": "p. ej., Muldraugh, KY",
@@ -166,11 +166,11 @@
     "collapseAll": "Contraer todo",
     "expandAll": "expandir todo",
     "notLoadedTitle": "Ajustes de mods no cargados",
-    "notLoadedDesc": "Pulsar «cargar» para obtener las opciones de sandbox de todos los mods instalados mediante PanelBridge. El servidor de PZ debe estar en ejecución con PanelBridge activo.",
+    "notLoadedDesc": "Pulsa «cargar» para obtener las opciones de sandbox de todos los mods instalados mediante PanelBridge. El servidor de PZ debe estar en ejecución con PanelBridge activo.",
     "refreshFailedTitle": "Error al actualizar; se muestran los datos anteriores",
     "loadFailedTitle": "No se pudieron cargar los ajustes de mods",
     "loadFailedNotConnected": "No se pudieron cargar los ajustes de mods. ¿Está PanelBridge conectado?",
-    "loadFailedCheckConnection": "No se pudieron cargar los ajustes de mods. Comprobar la conexión de PanelBridge.",
+    "loadFailedCheckConnection": "No se pudieron cargar los ajustes de mods. Comprueba la conexión de PanelBridge.",
     "retry": "Reintentar",
     "loadingOptions": "Cargando opciones de sandbox desde el servidor…",
     "noOptionsTitle": "No se encontraron opciones de sandbox",
@@ -205,7 +205,7 @@
   },
   "backupsDialog": {
     "title": "Copias de seguridad de configuración",
-    "description": "Restaurar una versión anterior de los archivos de configuración. Las copias de seguridad se crean automáticamente al guardar.",
+    "description": "Restaura una versión anterior de los archivos de configuración. Las copias de seguridad se crean automáticamente al guardar.",
     "filterLabel": "Filtro:",
     "filterAll": "Todos los archivos",
     "emptyTitle": "Aún no hay copias de seguridad disponibles",
@@ -226,12 +226,12 @@
   },
   "templatesDialog": {
     "title": "Plantillas de configuración",
-    "description": "Guardar la configuración actual como plantilla o cargar una plantilla guardada.",
+    "description": "Guarda la configuración actual como plantilla o carga una plantilla guardada.",
     "savedCount_one": "{{count}} plantilla guardada",
     "savedCount_other": "{{count}} plantillas guardadas",
     "saveCurrentAsTemplate": "Guardar actual como plantilla",
     "emptyTitle": "Aún no hay plantillas guardadas",
-    "emptyDesc": "Pulsar «Guardar actual como plantilla» para crear la primera plantilla",
+    "emptyDesc": "Pulsa «Guardar actual como plantilla» para crear la primera plantilla",
     "typeBoth": "INI + Sandbox",
     "createdLabel": "Creada: {{date}}",
     "apply": "Aplicar",
@@ -242,7 +242,7 @@
   },
   "saveTemplateDialog": {
     "title": "Guardar como plantilla",
-    "description": "Guardar los ajustes actuales de INI o Sandbox como plantilla reutilizable.",
+    "description": "Guarda los ajustes actuales de INI o Sandbox como plantilla reutilizable.",
     "nameLabel": "Nombre de la plantilla *",
     "namePlaceholder": "p. ej., PvE Casual, Supervivencia Hardcore…",
     "nameCharCount": "{{count}}/60 caracteres",
@@ -266,7 +266,7 @@
   },
   "fileBrowserDialog": {
     "title": "Seleccionar archivo de imagen",
-    "description": "Buscar un archivo de imagen PNG para el servidor.",
+    "description": "Busca un archivo de imagen PNG para el servidor.",
     "loadingPath": "Cargando…",
     "browseAria": "Buscar archivo",
     "browseTooltip": "Buscar archivo",
@@ -274,7 +274,7 @@
     "clearImageTooltip": "Quitar imagen",
     "noImageSelected": "Ninguna imagen seleccionada",
     "emptyNoParent": "No se encontraron archivos de imagen en este directorio",
-    "emptyWithParent": "No hay archivos de imagen aquí; probar otra carpeta",
+    "emptyWithParent": "No hay archivos de imagen aquí; prueba otra carpeta",
     "cancel": "Cancelar",
     "selectFile": "Seleccionar archivo"
   },
@@ -303,7 +303,7 @@
     "savedIniReloadedDesc": "Ajustes del servidor guardados y recargados.",
     "savedSandboxReloadedDesc": "Ajustes de Sandbox guardados y recargados.",
     "savedTitle": "Guardado",
-    "savedRestartToApply": "Ajustes guardados. Reiniciar el servidor para aplicar los cambios.",
+    "savedRestartToApply": "Ajustes guardados. Reinicia el servidor para aplicar los cambios.",
     "saveSettingsFailed": "No se pudieron guardar los ajustes.",
     "spawnPointsSavedDesc": "Puntos de aparición guardados",
     "saveSpawnPointsFailed": "No se pudieron guardar los puntos de aparición.",

@@ -22,8 +22,8 @@
       "cta": "Registrar servidor"
     },
     "tips": {
-      "title": "¿No está claro cuál elegir?",
-      "description": "Si nunca se ha configurado un servidor de Project Zomboid, se recomienda elegir <1>Instalación nueva</1>: descargará todo lo necesario automáticamente."
+      "title": "¿No sabes cuál elegir?",
+      "description": "Si nunca has configurado un servidor de Project Zomboid, elige <1>Instalación nueva</1>: descargará todo lo necesario automáticamente."
     }
   },
   "stepIndicator": {
@@ -116,7 +116,7 @@
       "pathPlaceholder": "Seleccionar o escribir la ruta de la carpeta de SteamCMD",
       "installingButton": "Instalando SteamCMD…",
       "installButton": "Instalar SteamCMD automáticamente",
-      "manualTrigger": "¿SteamCMD ya está instalado? Configurar la carpeta manualmente",
+      "manualTrigger": "¿Ya tienes SteamCMD? Configura la carpeta manualmente",
       "manualTitle": "Configuración manual",
       "manualStep1": "Descargar SteamCMD desde Valve",
       "manualStep2": "Extraer en una carpeta (por ejemplo, <1>C:\\SteamCMD</1> o <2>~/steamcmd</2>)",
@@ -129,13 +129,13 @@
     },
     "step2": {
       "title": "Detalles del servidor",
-      "description": "Elegir dónde se instalan los archivos y definir la identidad del servidor.",
+      "description": "Elige dónde se instalan los archivos y define la identidad del servidor.",
       "installFolderLabel": "Carpeta de instalación",
       "useLinuxPath": "Usar ruta del servicio de Linux",
       "installFolderPlaceholder": "Carpeta donde se instalarán los archivos del servidor",
       "installFolderHelp": "SteamCMD descarga aproximadamente 3 GB aquí. El servicio del panel debe tener permiso de escritura en esta carpeta.",
       "linuxNoteTitle": "Instalaciones del servicio en Linux",
-      "linuxNoteBody1": "Si el panel se ejecuta mediante el servicio systemd incluido, usar <1>{{path}}</1>. Otras carpetas requieren un cambio de permisos en systemd.",
+      "linuxNoteBody1": "Si el panel se ejecuta mediante el servicio systemd incluido, usa <1>{{path}}</1>. Otras carpetas requieren un cambio de permisos en systemd.",
       "linuxNoteBody2": "La carpeta de datos del servidor se crea junto a la carpeta de instalación: <1>{{path}}</1>. Ambas carpetas deben tener permiso de escritura.",
       "dataFolderPlaceholder": "carpeta-de-instalación_Data",
       "serverNameHelp": "Solo caracteres alfanuméricos y guion bajo. Se usa para los archivos de configuración.",
@@ -146,31 +146,31 @@
       "buildLabel": "Build: {{buildId}}",
       "customDataLocation": "Ubicación de configuración personalizada",
       "setBadge": "Configurado",
-      "customDataHelp": "Dejar en blanco para crear una carpeta de datos junto a la carpeta de instalación. En Docker, elegir una carpeta montada (bind mount) al anularla."
+      "customDataHelp": "Déjalo en blanco para crear una carpeta de datos junto a la carpeta de instalación. En Docker, elige una carpeta montada (bind mount) al anularla."
     },
     "step3": {
       "title": "Ajustes del servidor",
-      "description": "Configurar el acceso de control remoto y las opciones de ejecución.",
+      "description": "Configura el acceso de control remoto y las opciones de ejecución.",
       "rconTitle": "Control remoto (RCON)",
       "rconDesc": "Este panel usa RCON para ejecutar comandos en el servidor.",
       "ramDetectedBadge": "{{total}} GB de RAM detectados"
     },
     "step4": {
       "title": "Revisar e instalar",
-      "description": "Confirmar los ajustes y comenzar la descarga del servidor.",
+      "description": "Confirma los ajustes y comienza la descarga del servidor.",
       "summaryInstallPath": "Ruta de instalación",
       "summaryGameVersion": "Versión del juego",
       "portInfoTitle": "Firewall / Redirección de puertos",
-      "portInfoIntro": "Es necesario que el firewall o router permitan lo siguiente:",
+      "portInfoIntro": "Asegúrate de que el firewall o router permitan lo siguiente:",
       "portInfoGame": "UDP: tráfico del juego",
       "portInfoDirect": "UDP: conexión directa",
-      "installingButton": "Instalando servidor… el registro aparece a continuación",
+      "installingButton": "Instalando servidor… consulta el registro a continuación",
       "installButton": "Instalar servidor de Project Zomboid",
-      "missingAdminPassword": "Es necesario añadir una contraseña de administrador en Opciones avanzadas antes de instalar.",
+      "missingAdminPassword": "Añade una contraseña de administrador en Opciones avanzadas antes de instalar.",
       "logTitle": "Registro de instalación",
       "completeTitle": "Instalación completa",
       "firstStartTitle": "Se requiere el primer inicio",
-      "firstStartDesc": "Iniciar el servidor una vez para generar los archivos de configuración y los datos del mundo. El primer inicio puede tardar hasta un minuto."
+      "firstStartDesc": "Inicia el servidor una vez para generar los archivos de configuración y los datos del mundo. El primer inicio puede tardar hasta un minuto."
     }
   },
   "quick": {
@@ -178,7 +178,7 @@
     "pageDescription": "Crear y registrar un servidor usando archivos de servidor dedicado existentes.",
     "step1": {
       "title": "Seleccionar archivos del servidor",
-      "description": "Elegir la carpeta existente del servidor dedicado de Project Zomboid.",
+      "description": "Elige la carpeta existente del servidor dedicado de Project Zomboid.",
       "usingExistingTitle": "Uso de archivos existentes",
       "usingExistingDesc": "La carpeta debe contener <1>StartServer64.bat</1> (Windows) o <2>start-server.sh</2> (Linux), además de la carpeta <3>java</3>.",
       "locationLabel": "Ubicación de los archivos del servidor",
@@ -187,7 +187,7 @@
     },
     "step2": {
       "title": "Configurar servidor",
-      "description": "Definir el nombre del servidor, el acceso RCON y los límites de memoria.",
+      "description": "Define el nombre del servidor, el acceso RCON y los límites de memoria.",
       "serverNameHelp": "Cada servidor necesita un nombre único. Se crean archivos de configuración independientes.",
       "rconTitle": "Control remoto (RCON)",
       "rconPortDefaultHint": "Puerto predeterminado: 27015",
@@ -195,29 +195,29 @@
     },
     "step3": {
       "title": "Revisar y crear",
-      "description": "Confirmar estos ajustes y crear la entrada del servidor.",
+      "description": "Confirma estos ajustes y crea la entrada del servidor.",
       "summaryServerFiles": "Archivos del servidor",
       "creatingButton": "Creando servidor…",
       "createButton": "Crear servidor",
-      "missingAdminPassword": "Es necesario añadir una contraseña de administrador en Opciones avanzadas antes de crear el servidor.",
+      "missingAdminPassword": "Añade una contraseña de administrador en Opciones avanzadas antes de crear el servidor.",
       "logTitle": "Registro de configuración",
       "completeTitle": "¡Servidor creado!"
     }
   },
   "requirement": {
-    "quickStep1": "Es necesario seleccionar la carpeta del servidor dedicado para continuar.",
-    "quickStep2Both": "Es necesario indicar un nombre de servidor y una contraseña de RCON (mínimo 6 caracteres).",
-    "quickStep2Name": "Es necesario indicar un nombre de servidor para continuar.",
+    "quickStep1": "Selecciona la carpeta del servidor dedicado para continuar.",
+    "quickStep2Both": "Indica un nombre de servidor y una contraseña de RCON (mínimo 6 caracteres).",
+    "quickStep2Name": "Indica un nombre de servidor para continuar.",
     "quickStep2Rcon": "La contraseña de RCON debe tener al menos 6 caracteres.",
-    "fullStep1Path": "Es necesario definir una ruta de carpeta de SteamCMD para continuar.",
-    "fullStep1Confirm": "Es necesario instalar o confirmar SteamCMD para continuar.",
-    "fullStep2Both": "Es necesario definir una carpeta de instalación y un nombre de servidor para continuar.",
-    "fullStep2Path": "Es necesario definir una carpeta de instalación para continuar.",
-    "fullStep2Name": "Es necesario indicar un nombre de servidor para continuar.",
+    "fullStep1Path": "Define una ruta de carpeta de SteamCMD para continuar.",
+    "fullStep1Confirm": "Instala o confirma SteamCMD para continuar.",
+    "fullStep2Both": "Define una carpeta de instalación y un nombre de servidor para continuar.",
+    "fullStep2Path": "Define una carpeta de instalación para continuar.",
+    "fullStep2Name": "Indica un nombre de servidor para continuar.",
     "fullStep3Rcon": "La contraseña de RCON debe tener al menos 6 caracteres."
   },
   "toasts": {
-    "installationErrorGuidance": "{{message}} En Linux, usar {{path}}, o añadir tanto la carpeta de instalación como su carpeta _Data a ReadWritePaths en zomboid-panel.service, y luego reiniciar el servicio.",
+    "installationErrorGuidance": "{{message}} En Linux, usa {{path}}, o añade tanto la carpeta de instalación como su carpeta _Data a ReadWritePaths en zomboid-panel.service, y luego reinicia el servicio.",
     "serverInstalledTitle": "Servidor instalado",
     "serverInstalledDesc": "Los archivos del servidor de Project Zomboid se instalaron correctamente.",
     "installationFailedTitle": "Error de instalación",
@@ -235,8 +235,8 @@
     "passwordGeneratedTitle": "Contraseña generada",
     "passwordGeneratedDesc": "Se ha generado una nueva contraseña de RCON.",
     "adminPasswordRequiredTitle": "Se requiere contraseña de administrador",
-    "adminPasswordRequiredInstallDesc": "Es necesario indicar una contraseña de administrador antes de iniciar la instalación.",
-    "adminPasswordRequiredCreateDesc": "Es necesario indicar una contraseña de administrador antes de crear este servidor.",
+    "adminPasswordRequiredInstallDesc": "Indica una contraseña de administrador antes de iniciar la instalación.",
+    "adminPasswordRequiredCreateDesc": "Indica una contraseña de administrador antes de crear este servidor.",
     "startingInstallLog": "Iniciando instalación…",
     "creatingConfigLog": "Creando configuración del servidor…",
     "configCreatedLog": "¡Configuración del servidor creada correctamente!",
