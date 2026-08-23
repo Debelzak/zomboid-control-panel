@@ -101,8 +101,8 @@
     },
     "bridgeOps": {
       "label": "Brücken-Tools",
-      "hint": "Sichere Häuser, Fraktionen, Fahrzeuge und Moderationsvorgänge.",
-      "keywords": "sicheres haus fraktion moderation kick bann vorgänge erweitert brücke"
+      "hint": "Safehouses, Fraktionen, Fahrzeuge und Moderationsvorgänge.",
+      "keywords": "safehouse fraktion moderation kick bann vorgänge erweitert brücke"
     }
   },
   "rain": {
@@ -351,17 +351,17 @@
     "requiredSuffix": " *"
   },
   "operationGroups": {
-    "territory": { "label": "Territorium", "description": "Verwaltung von sicheren Häusern und Fraktionen." },
+    "territory": { "label": "Territorium", "description": "Verwaltung von Safehouses und Fraktionen." },
     "vehicles": { "label": "Fahrzeuge", "description": "Reparatur, Alarme, Sirenen und Kofferraumschlösser." },
     "events": { "label": "Events", "description": "Schwärme, Infrastruktur und skriptgesteuerte Abläufe." },
     "moderation": { "label": "Moderation", "description": "Kick- und Bann-Aktionen über BanSystem." }
   },
   "operations": {
-    "getSafehouses": { "label": "Sichere Häuser auflisten", "description": "Alle sicheren Häuser und Metadaten abrufen." },
-    "safehouseAddPlayer": { "label": "Sicheres Haus: Spieler hinzufügen", "description": "Spieler zu einem sicheren Haus hinzufügen." },
-    "safehouseRemovePlayer": { "label": "Sicheres Haus: Spieler entfernen", "description": "Spieler aus einem sicheren Haus entfernen." },
-    "safehouseSetOwner": { "label": "Sicheres Haus: Besitzer festlegen", "description": "Besitz eines sicheren Hauses übertragen." },
-    "safehouseSetRespawn": { "label": "Sicheres Haus: Respawn umschalten", "description": "Respawn im sicheren Haus für Spieler aktivieren/deaktivieren." },
+    "getSafehouses": { "label": "Safehouses auflisten", "description": "Alle Safehouses und Metadaten abrufen." },
+    "safehouseAddPlayer": { "label": "Safehouse: Spieler hinzufügen", "description": "Spieler zu einem Safehouse hinzufügen." },
+    "safehouseRemovePlayer": { "label": "Safehouse: Spieler entfernen", "description": "Spieler aus einem Safehouse entfernen." },
+    "safehouseSetOwner": { "label": "Safehouse: Besitzer festlegen", "description": "Besitz eines Safehouses übertragen." },
+    "safehouseSetRespawn": { "label": "Safehouse: Respawn umschalten", "description": "Respawn im Safehouse für Spieler aktivieren/deaktivieren." },
     "getFactions": { "label": "Fraktionen auflisten", "description": "Alle Fraktionen und Mitglieder abrufen." },
     "createFaction": { "label": "Fraktion erstellen", "description": "Neue Fraktion erstellen." },
     "factionAddPlayer": { "label": "Fraktion: Spieler hinzufügen", "description": "Spieler zu Fraktion hinzufügen." },
@@ -378,8 +378,8 @@
     "moderationBanSteamID": { "label": "SteamID bannen", "description": "SteamID bannen oder entbannen." }
   },
   "operationForms": {
-    "safehouseRef": "Sicheres Haus",
-    "selectSafehouse": "Sicheres Haus auswählen",
+    "safehouseRef": "Safehouse",
+    "selectSafehouse": "Safehouse auswählen",
     "playerUsername": "Spieler-Benutzername",
     "selectPlayer": "Spieler auswählen",
     "newOwner": "Neuer Besitzer",
@@ -444,11 +444,11 @@
     "alarmDisabledLabel": "Alarm deaktiviert auf #{{id}}",
     "trunkUnlockedLabel": "Kofferraum entriegelt auf #{{id}}",
     "trunkLockedLabel": "Kofferraum verriegelt auf #{{id}}",
-    "noSafehousesTitle": "Keine sicheren Häuser gefunden",
-    "noSafehousesDesc": "Auf diesem Server sind keine sicheren Häuser beansprucht.",
-    "safehousesCount_one": "{{count}} sicheres Haus",
-    "safehousesCount_other": "{{count}} sichere Häuser",
-    "safehouseFallback": "Sicheres Haus {{n}}",
+    "noSafehousesTitle": "Keine Safehouses gefunden",
+    "noSafehousesDesc": "Auf diesem Server sind keine Safehouses beansprucht.",
+    "safehousesCount_one": "{{count}} Safehouse",
+    "safehousesCount_other": "{{count}} Safehouses",
+    "safehouseFallback": "Safehouse {{n}}",
     "ownerPrefix": "Besitzer: {{owner}}",
     "membersCount_one": "{{count}} Mitglied",
     "membersCount_other": "{{count}} Mitglieder",
@@ -531,7 +531,7 @@
     "couldNotRefreshAllLists": "Brücken-Listen konnten nicht aktualisiert werden. Bestehende Optionen bleiben erhalten.",
     "couldNotRefreshSomeLists": "Einige Brücken-Listen konnten nicht aktualisiert werden ({{sources}}).",
     "unableToReadBridgeStatus": "Brücken-Status konnte nicht von der Panel-API gelesen werden.",
-    "sourceSafehouses": "Sichere Häuser",
+    "sourceSafehouses": "Safehouses",
     "sourceFactions": "Fraktionen",
     "sourceVehicles": "Fahrzeuge"
   }
