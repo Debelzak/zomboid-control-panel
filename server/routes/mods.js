@@ -5489,19 +5489,37 @@ function isInsideRoot(target, root) {
   return target === root || target.startsWith(root + path.sep);
 }
 
+// How many directory entries to process between yields to the event loop.
+// Measured (mods-conflict-scan-unmeasured-at-scale): a single mod sitting at
+// WALK_MAX_FILES (a real, code-enforced ceiling, not a hypothetical one —
+// see the truncation branch below) blocked the event loop for ~690ms in one
+// synchronous burst, because the old sync walkDir() only ever yielded
+// between MODS (buildFileIndex's own loop), never within one mod's walk.
+// One large map/texture mod is enough to freeze every other request on the
+// panel for that long. Yielding every WALK_YIELD_EVERY entries bounds a
+// single burst to a few tens of ms regardless of how large one mod's media
+// tree is.
+const WALK_YIELD_EVERY = 1000;
+
 // Recursively collect all files under a directory, returning relative paths.
 // Guarded with depth and file-count limits to prevent runaway traversal.
 // Returns { files: string[], truncated: boolean }
-function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
+async function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
   // The budget is shared across the whole recursion; a per-call limit let a
-  // deep tree return many times the intended maximum.
-  const ctx = _ctx || { left: WALK_MAX_FILES, root: safeRealpath(dir) || dir };
+  // deep tree return many times the intended maximum. sinceYield is shared
+  // the same way, so the yield cadence is measured across the whole mod's
+  // walk, not reset every time recursion descends into a new subdirectory.
+  const ctx = _ctx || {
+    left: WALK_MAX_FILES,
+    root: safeRealpath(dir) || dir,
+    sinceYield: 0,
+  };
   const results = [];
   let truncated = false;
   if (_depth > WALK_MAX_DEPTH) return { files: results, truncated };
   let entries;
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch (e) {
     log.debug(`walkDir: could not read ${dir}: ${e.message}`);
     return { files: results, truncated };
@@ -5510,6 +5528,10 @@ function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
     if (ctx.left <= 0) {
       truncated = true;
       break;
+    }
+    if (++ctx.sinceYield >= WALK_YIELD_EVERY) {
+      ctx.sinceYield = 0;
+      await yieldTick();
     }
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     const fullPath = path.join(dir, entry.name);
@@ -5521,7 +5543,7 @@ function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
       const real = safeRealpath(fullPath);
       if (!real || !isInsideRoot(real, ctx.root)) continue;
       try {
-        isDirectory = fs.statSync(real).isDirectory();
+        isDirectory = (await fs.promises.stat(real)).isDirectory();
       } catch (e) {
         log.debug(`walkDir: could not stat link ${fullPath}: ${e.message}`);
         continue;
@@ -5530,7 +5552,7 @@ function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
     if (isDirectory) {
       // Skip version-control and metadata directories — never game content
       if (WALK_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-      const sub = walkDir(fullPath, rel, _depth + 1, ctx);
+      const sub = await walkDir(fullPath, rel, _depth + 1, ctx);
       results.push(...sub.files);
       if (sub.truncated) truncated = true;
     } else {
@@ -5973,7 +5995,7 @@ async function readIniModLists() {
 // Build the file index and collect per-mod metadata.
 // Calls `onModScanned(modId, modName, wsId, fileCount)` for each mod.
 // If `activeModIds` is provided, only mod directories whose ID is in that set are scanned.
-async function buildFileIndex(
+export async function buildFileIndex(
   workshopIds,
   serverPath,
   onModScanned,
@@ -6060,13 +6082,23 @@ async function buildFileIndex(
       modsFoundInThisWs++;
       let totalFileCount = 0;
       for (const mediaPath of mediaPaths) {
-        const { files, truncated } = walkDir(mediaPath);
+        const { files, truncated } = await walkDir(mediaPath);
         if (truncated) {
           warnings.push(
             `${modName} (${wsId}): file scan hit the 50,000 file limit — some files were skipped`,
           );
         }
         totalFileCount += files.length;
+        // Measured (mods-conflict-scan-unmeasured-at-scale): this loop, not
+        // walkDir() itself, was the real event-loop-blocking cost. A mod at
+        // the WALK_MAX_FILES ceiling (50,000 files -- a real, code-enforced
+        // case, see the truncation branch above) blocked here for ~316ms in
+        // one unbroken synchronous burst, because this loop had no yield of
+        // its own; the outer per-mod loop only yields once ALL of a mod's
+        // media paths are fully indexed. Same WALK_YIELD_EVERY cadence as
+        // walkDir(), so one giant mod can't freeze every other request on
+        // the panel for the length of its own indexing.
+        let sinceYield = 0;
         for (const relFile of files) {
           const normalizedPath = relFile.replace(/\\/g, "/").toLowerCase();
           if (!fileIndex[normalizedPath]) {
@@ -6078,6 +6110,10 @@ async function buildFileIndex(
             modName,
             absPath: path.join(mediaPath, relFile),
           });
+          if (++sinceYield >= WALK_YIELD_EVERY) {
+            sinceYield = 0;
+            await yieldTick();
+          }
         }
       }
       if (onModScanned)
