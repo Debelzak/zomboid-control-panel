@@ -13,6 +13,13 @@ import { loadPanelBridge } from './helpers/panelBridgeLua.js';
 // crossing the Lua/JSON boundary can legitimately come back as a different
 // Lua type than what was sent (a boolean's own engine-side string
 // representation, "8" vs 8) without the write having actually failed.
+//
+// This field was originally called `matched` -- renamed to `verified` per
+// the 2026-08-23 ruling that unified every handler on one field name and one
+// value shape: a string, always present when ok=true ("confirmed" or
+// "unverifiable"), never a boolean and never omitted (an omitted key means
+// exactly one thing -- a bridge mod older than this contract). Nothing had
+// shipped carrying either field name at the time of the rename.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LUA_PATH = path.join(
@@ -72,13 +79,13 @@ function FakeSandbox:getOptionByIndex(i) if i == 0 then return FakeOption end re
 getSandboxOptions = function() return setmetatable({}, FakeSandbox) end
 `;
 
-describe('PanelBridge.lua handlers.setSandboxOption -- gate ok on matched, comparing meaning not identity', () => {
-  it('reports success when the integer write actually sticks', () => {
+describe('PanelBridge.lua handlers.setSandboxOption -- gate ok on verified, comparing meaning not identity', () => {
+  it('reports success and verified="confirmed" when the integer write actually sticks', () => {
     const bridge = loadPanelBridge(LUA_PATH, integerOptionStub(true));
     const result = bridge.callHandler('setSandboxOption', { name: 'ZombieCount', value: '8' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.matched).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
     expect(result.data.value).toBe(8);
   });
 
@@ -100,6 +107,6 @@ describe('PanelBridge.lua handlers.setSandboxOption -- gate ok on matched, compa
     // mismatch (different Lua types are never ==) even though the write
     // genuinely worked. Comparing on meaning must treat this as a match.
     expect(result.ok).toBe(true);
-    expect(result.data.matched).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 });

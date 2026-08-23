@@ -54,17 +54,17 @@ VirtualZombieManager = { instance = FakeVZM }
 `;
 
 describe('PanelBridge.lua handlers.spawnHordeNearPlayer/BehindPlayer -- fallback branches must not fabricate a spawned count', () => {
-  it('spawnHordeNearPlayer reports a real per-zombie count when VirtualZombieManager is available (verified=true)', () => {
+  it('spawnHordeNearPlayer reports a real per-zombie count when VirtualZombieManager is available (verified="confirmed")', () => {
     const bridge = loadPanelBridge(LUA_PATH, VZM_STUBS);
     const result = bridge.callHandler('spawnHordeNearPlayer', { username: 'Test', count: 5 });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
     expect(result.data.spawned).toBe(5);
     expect(result.data.method).toBe('VirtualZombieManager.createRealZombieAlways');
   });
 
-  it('spawnHordeNearPlayer must NOT claim a spawned count from the createHordeInAreaTo fallback (verified=false, spawned unset)', () => {
+  it('spawnHordeNearPlayer must NOT claim a spawned count from the createHordeInAreaTo fallback (verified="unverifiable", spawned unset)', () => {
     const bridge = loadPanelBridge(LUA_PATH, FALLBACK_ONLY_STUBS);
     const result = bridge.callHandler('spawnHordeNearPlayer', { username: 'Test', count: 50 });
 
@@ -72,17 +72,17 @@ describe('PanelBridge.lua handlers.spawnHordeNearPlayer/BehindPlayer -- fallback
     expect(result.data.method).toBe('createHordeInAreaTo');
     // Before the fix, spawned was hardcoded to the requested count (50) here
     // with zero evidence any zombie actually appeared.
-    expect(result.data.verified).toBe(false);
+    expect(result.data.verified).toBe('unverifiable');
     expect(result.data.spawned == null).toBe(true);
   });
 
-  it('spawnHordeBehindPlayer must NOT claim a spawned count from the createHordeInAreaTo fallback (verified=false, spawned unset)', () => {
+  it('spawnHordeBehindPlayer must NOT claim a spawned count from the createHordeInAreaTo fallback (verified="unverifiable", spawned unset)', () => {
     const bridge = loadPanelBridge(LUA_PATH, FALLBACK_ONLY_STUBS);
     const result = bridge.callHandler('spawnHordeBehindPlayer', { username: 'Test', count: 50 });
 
     expect(result.ok).toBe(true);
     expect(result.data.method).toBe('createHordeInAreaTo');
-    expect(result.data.verified).toBe(false);
+    expect(result.data.verified).toBe('unverifiable');
     expect(result.data.spawned == null).toBe(true);
   });
 });

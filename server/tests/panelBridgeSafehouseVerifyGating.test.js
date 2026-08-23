@@ -83,7 +83,7 @@ describe('PanelBridge.lua handlers.safehouseAddPlayer/RemovePlayer/SetOwner/SetR
     const result = bridge.callHandler('safehouseAddPlayer', { safehouseRef: 'sh1', username: 'Alice' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('safehouseAddPlayer must NOT report success when addPlayer silently does not stick', () => {
@@ -98,7 +98,7 @@ describe('PanelBridge.lua handlers.safehouseAddPlayer/RemovePlayer/SetOwner/SetR
     const result = bridge.callHandler('safehouseRemovePlayer', { safehouseRef: 'sh1', username: 'Alice' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('safehouseRemovePlayer must NOT report success when removePlayer silently does not stick', () => {
@@ -113,7 +113,7 @@ describe('PanelBridge.lua handlers.safehouseAddPlayer/RemovePlayer/SetOwner/SetR
     const result = bridge.callHandler('safehouseSetOwner', { safehouseRef: 'sh1', owner: 'Bob' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('safehouseSetOwner must NOT report success when setOwner silently does not stick', () => {
@@ -128,7 +128,7 @@ describe('PanelBridge.lua handlers.safehouseAddPlayer/RemovePlayer/SetOwner/SetR
     const result = bridge.callHandler('safehouseSetRespawn', { safehouseRef: 'sh1', username: 'Alice', enabled: true });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('safehouseSetRespawn must NOT report success when setRespawnInSafehouse silently does not stick', () => {

@@ -60,7 +60,7 @@ describe('PanelBridge.lua handlers.teleportPlayer -- gate ok on distance actuall
     const result = bridge.callHandler('teleportPlayer', { username: 'Test', x: 5000, y: 6000, z: 0 });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
     expect(result.data.verifyPosition).toEqual({ x: 5000, y: 6000, z: 0 });
   });
 
@@ -81,7 +81,7 @@ describe('PanelBridge.lua handlers.teleportPlayer -- gate ok on distance actuall
     const result = bridge.callHandler('teleportPlayer', { username: 'Test', x: 100.1, y: 100, z: 0 });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified == null).toBe(true);
+    expect(result.data.verified).toBe('unverifiable');
   });
 
   it('a genuine single-floor (z-only) teleport still registers as a real, verified move', () => {
@@ -89,7 +89,7 @@ describe('PanelBridge.lua handlers.teleportPlayer -- gate ok on distance actuall
     const result = bridge.callHandler('teleportPlayer', { username: 'Test', x: 100, y: 100, z: 1 });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
     expect(result.data.verifyPosition).toEqual({ x: 100, y: 100, z: 1 });
   });
 });

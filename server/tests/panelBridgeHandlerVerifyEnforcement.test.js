@@ -75,12 +75,15 @@ const GETTERS = new Set([
 ]);
 
 // name -> why this handler doesn't need to say "verified" literally.
+// NOTE: setSandboxOption and the three moderationBan* handlers used to be
+// listed here (matched-instead-of-verified, and gate-directly-on-a-string-
+// with-no-stored-flag, respectively) -- as of the 2026-08-23 string-contract
+// migration all four now emit a literal `verified` field, so they no longer
+// need an exemption. Left this note rather than silently deleting the
+// history, since "why isn't X allowlisted anymore" is as worth answering as
+// "why is X allowlisted".
 const CANNOT_VERIFY_OR_EQUIVALENT = {
   // Verifies via a differently-named but equivalent mechanism.
-  setSandboxOption: 'Uses `matched` (compare-by-meaning tri-state) instead of `verified` -- same convention, deliberately different name to signal a MEANING-based comparison across the Lua/JSON boundary (see the handler\'s own comment).',
-  moderationBanUser: 'Gates directly on BanSystem.BanUser\'s real rejection-message return value (jar-verified 2026-08-23) -- the read-back IS the gate, no separate flag needed.',
-  moderationBanIP: 'Same mechanism as moderationBanUser.',
-  moderationBanSteamID: 'Same mechanism as moderationBanUser.',
   restoreUtilities: 'hydroPowerOn IS the real read-back (world:isHydroPowerOn()), substituted directly for the field it describes -- no separate flag needed for a single-field outcome.',
   shutOffUtilities: 'Same mechanism as restoreUtilities.',
   healPlayer: 'The one truly unverifiable path (nil bodyDamage) is gated directly to ok=false; RestoreToFullHealth has no cheap read-back the game exposes.',

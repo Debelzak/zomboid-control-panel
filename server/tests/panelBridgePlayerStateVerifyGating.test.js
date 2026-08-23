@@ -75,7 +75,7 @@ describe('PanelBridge.lua handlers.setGodMode/setInvisible/setNoclip -- gate ok 
     const result = bridge.callHandler('setGodMode', { username: 'Test', enabled: true });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('setGodMode must NOT report success when the read-back confirms it did not change (this is the and/or-idiom bug)', () => {
@@ -93,7 +93,7 @@ describe('PanelBridge.lua handlers.setGodMode/setInvisible/setNoclip -- gate ok 
     const result = bridge.callHandler('setInvisible', { username: 'Test', enabled: true });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('setInvisible must NOT report success when the read-back confirms it did not change', () => {
@@ -109,7 +109,7 @@ describe('PanelBridge.lua handlers.setGodMode/setInvisible/setNoclip -- gate ok 
     const result = bridge.callHandler('setNoclip', { username: 'Test', enabled: true });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('setNoclip must NOT report success when the read-back confirms it did not change', () => {

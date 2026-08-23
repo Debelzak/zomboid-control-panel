@@ -70,7 +70,7 @@ describe('PanelBridge.lua vehicle setters -- gate on getVehiclesDetailed\'s own 
     const bridge = loadPanelBridge(LUA_PATH, vehicleStub({ sticks: true }));
     const result = bridge.callHandler('vehicleSetAlarm', { vehicleId: 1, enabled: true });
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('vehicleSetAlarm must NOT report success when the write silently does not stick', () => {
@@ -83,7 +83,7 @@ describe('PanelBridge.lua vehicle setters -- gate on getVehiclesDetailed\'s own 
     const bridge = loadPanelBridge(LUA_PATH, vehicleStub({ sticks: true }));
     const result = bridge.callHandler('vehicleSetSiren', { vehicleId: 1, mode: 2 });
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('vehicleSetSiren must NOT report success when the write silently does not stick', () => {
@@ -96,7 +96,7 @@ describe('PanelBridge.lua vehicle setters -- gate on getVehiclesDetailed\'s own 
     const bridge = loadPanelBridge(LUA_PATH, vehicleStub({ sticks: true }));
     const result = bridge.callHandler('vehicleSetTrunkLocked', { vehicleId: 1, locked: true });
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('vehicleSetTrunkLocked must NOT report success when the write silently does not stick', () => {
@@ -109,7 +109,7 @@ describe('PanelBridge.lua vehicle setters -- gate on getVehiclesDetailed\'s own 
     const bridge = loadPanelBridge(LUA_PATH, vehicleStub({ sticks: true }));
     const result = bridge.callHandler('vehicleSetFuel', { vehicleId: 1, percent: 80 });
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('vehicleSetFuel must NOT report success when the write silently does not stick', () => {
@@ -122,7 +122,7 @@ describe('PanelBridge.lua vehicle setters -- gate on getVehiclesDetailed\'s own 
     const bridge = loadPanelBridge(LUA_PATH, vehicleStub({ sticks: true }));
     const result = bridge.callHandler('vehicleSetBattery', { vehicleId: 1, charge: 90 });
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('vehicleSetBattery must NOT report success when the write silently does not stick', () => {

@@ -62,7 +62,7 @@ describe('PanelBridge.lua handlers.factionAddPlayer/RemovePlayer/SetTag -- gate 
     const result = bridge.callHandler('factionAddPlayer', { factionName: 'Test', username: 'Alice' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('factionAddPlayer must NOT report success when addPlayer silently does not stick', () => {
@@ -77,7 +77,7 @@ describe('PanelBridge.lua handlers.factionAddPlayer/RemovePlayer/SetTag -- gate 
     const result = bridge.callHandler('factionRemovePlayer', { factionName: 'Test', username: 'Alice' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('factionRemovePlayer must NOT report success when removePlayer silently does not stick', () => {
@@ -92,7 +92,7 @@ describe('PanelBridge.lua handlers.factionAddPlayer/RemovePlayer/SetTag -- gate 
     const result = bridge.callHandler('factionSetTag', { factionName: 'Test', tag: 'NEW' });
 
     expect(result.ok).toBe(true);
-    expect(result.data.verified).toBe(true);
+    expect(result.data.verified).toBe('confirmed');
   });
 
   it('factionSetTag must NOT report success when setTag silently does not stick', () => {

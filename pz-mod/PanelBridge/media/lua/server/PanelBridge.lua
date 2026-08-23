@@ -648,29 +648,53 @@ end
 -- against what it just tried to do. This is the house convention as of the
 -- 2026-08-23 handler-verification audit -- it does not decide HOW to
 -- compare (that's inherently handler-specific: exact match, a numeric
--- tolerance, membership in a list, etc.), only what to DO with the answer:
---   verified == true  -> the write is confirmed to have taken effect.
+-- tolerance, membership in a list, etc.), only what to DO with the answer.
+--
+-- The `verified` FIELD IN THE RESPONSE IS A STRING, ALWAYS PRESENT WHEN
+-- ok=true -- never a boolean, never omitted. This is a deliberate ruling,
+-- not a style choice: the bridge mod lives on the user's Project Zomboid
+-- server and can be OLDER than the panel (an operator updates the panel and
+-- forgets the mod, or runs a panel against a server someone else
+-- administers). With an omitted-key-means-unverified convention, an OLD
+-- bridge that never heard of this contract and a NEW bridge honestly saying
+-- "I can't confirm this" would both arrive at the client as a missing key,
+-- and the UI could not tell "unconfirmable operation" from "this bridge
+-- predates the contract" -- two situations that deserve different words to
+-- the operator. With the key always present, a MISSING key means exactly
+-- one thing: an old bridge. See also: an absent value carrying two
+-- different meanings is the exact shape of a separate, real bug this floor
+-- hit the same night (empty stdout meaning both "scan failed" and "nothing
+-- running", indistinguishable, that cost an operator a working button) --
+-- this rule exists so `verified` does not become a second instance of it.
+--
+--   verified (the ARGUMENT to this function) == true  -> the write is
+--       confirmed to have taken effect. Response gets verified="confirmed".
 --   verified == false -> a real read-back disagrees with what was
---                        requested. This handler must NOT report ok=true --
---                        a false success is silent and nobody ever learns
---                        otherwise; a false failure here is loud and
---                        self-correcting (the operator just retries).
---   verified == nil   -> no read-back was possible (the underlying game API
---                        is void, or the requested change was too small to
---                        distinguish from a no-op). This is NOT a failure --
---                        it means "the call was made, the result cannot be
---                        confirmed" -- and must not be conflated with
---                        verified == false (see the a-and-b-or-c idiom bug
---                        this file used to have: collapsing "confirmed
---                        wrong" and "can't tell" into one value is exactly
---                        the bug that made an earlier fix's gate unreachable).
+--       requested. This handler must NOT report ok=true -- a false success
+--       is silent and nobody ever learns otherwise; a false failure here is
+--       loud and self-correcting (the operator just retries). Returns
+--       ok=false with failMessage; there is no "succeeded but verified is
+--       false" state for a client to special-case.
+--   verified == nil -> no read-back was possible (the underlying game API
+--       is void, or the requested change was too small to distinguish from
+--       a no-op). This is NOT a failure -- the call was made, the result
+--       cannot be confirmed. Response gets verified="unverifiable". Must
+--       not be conflated with verified == false (see the a-and-b-or-c idiom
+--       bug this file used to have: collapsing "confirmed wrong" and
+--       "can't tell" into one value is exactly the bug that made an earlier
+--       fix's gate unreachable).
+--
 -- `data` is the handler's own response table; this only adds/overwrites its
 -- `verified` field. `failMessage` is used only when verified == false.
 function PanelBridge.verifiedResult(verified, data, failMessage)
-    data = data or {}
-    data.verified = verified
     if verified == false then
         return false, nil, failMessage or "Operation succeeded but did not take effect"
+    end
+    data = data or {}
+    if verified == true then
+        data.verified = "confirmed"
+    else
+        data.verified = "unverifiable"
     end
     return true, data
 end
@@ -3703,12 +3727,19 @@ handlers.teleportPlayer = function(args)
         }, "Teleport call succeeded but the player did not move (still at origin)"
     end
 
+    -- verified is a STRING, always present -- never a boolean, never
+    -- omitted. See PanelBridge.verifiedResult's own comment for why an
+    -- absent key is a distinct, meaningful signal (an out-of-date bridge
+    -- mod) that must not be confused with "unverifiable".
+    local verifiedStr = "unverifiable"
+    if verified == true then verifiedStr = "confirmed" end
+
     return true, {
         message = "Player teleported",
         oldPosition = { x = oldX, y = oldY, z = oldZ },
         newPosition = { x = x, y = y, z = z },
         verifyPosition = { x = verifyX, y = verifyY, z = verifyZ },
-        verified = verified,
+        verified = verifiedStr,
         debug = debugStr
     }
 end
@@ -4135,35 +4166,38 @@ handlers.setSandboxOption = function(args)
 
     -- Compare on MEANING, not identity: a value crossing the Lua/JSON
     -- boundary can legitimately come back as a different Lua type than what
-    -- was sent (8 vs "8") without the write having failed. `matched` is nil
-    -- (not false) whenever the comparison itself isn't trustworthy -- an
+    -- was sent (8 vs "8") without the write having failed. `verified` is
+    -- nil (not false) whenever the comparison itself isn't trustworthy -- an
     -- unknown optType or a nil confirmed read -- rather than treating
     -- "can't tell" as "it worked". Written with explicit if/then, not the
     -- `a and b or c` idiom: that idiom silently turns a confirmed mismatch
     -- (b == false) into nil (see setGodMode's comment for the full story).
-    local matched
+    -- (This field used to be called `matched` -- renamed to `verified` per
+    -- the 2026-08-23 ruling that unified every handler on one field name;
+    -- nothing had shipped carrying either name, so the rename was free.)
+    local verified
     if appliedValue == nil or confirmed == nil then
-        matched = nil
+        verified = nil
     elseif optType == "boolean" then
         if type(confirmed) == "boolean" then
-            matched = (confirmed == appliedValue)
+            verified = (confirmed == appliedValue)
         else
-            matched = (tostring(confirmed):lower() == tostring(appliedValue):lower())
+            verified = (tostring(confirmed):lower() == tostring(appliedValue):lower())
         end
     elseif optType == "enum" or optType == "integer" or optType == "double" then
         local confirmedNum = tonumber(confirmed)
         if confirmedNum == nil then
-            matched = nil
+            verified = nil
         else
-            matched = (confirmedNum == appliedValue)
+            verified = (confirmedNum == appliedValue)
         end
     elseif optType == "string" then
-        matched = (tostring(confirmed) == tostring(appliedValue))
+        verified = (tostring(confirmed) == tostring(appliedValue))
     end
 
-    PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed), matched = matched })
+    PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed), verified = verified })
 
-    if matched == false then
+    if verified == false then
         return false, nil, "Value set but did not take effect (requested " .. tostring(appliedValue) .. ", confirmed " .. tostring(confirmed) .. ")"
     end
 
@@ -4193,11 +4227,14 @@ handlers.setSandboxOption = function(args)
         PanelBridge.error("Sandbox option set but world save failed", { name = optName, error = saveErr })
     end
 
+    local verifiedStr = "unverifiable"
+    if verified == true then verifiedStr = "confirmed" end
+
     return true, {
         name = optName,
         value = confirmed,
         type = optType,
-        matched = matched,
+        verified = verifiedStr,
         persisted = persisted,
         saveError = saveErr
     }
@@ -5322,15 +5359,10 @@ handlers.setGodMode = function(args)
 
     PanelBridge.info("Set godmode", { username = username, enabled = enabled, method = method, verified = verified })
 
-    if verified == false then
-        return false, nil, "Godmode call succeeded but did not take effect (state is still " .. tostring(godModeState) .. ")"
-    end
-
-    return true, {
+    return PanelBridge.verifiedResult(verified, {
         message = "Godmode " .. (enabled and "enabled" or "disabled"),
-        username = username,
-        verified = verified
-    }
+        username = username
+    }, "Godmode call succeeded but did not take effect (state is still " .. tostring(godModeState) .. ")")
 end
 
 -- Set player's invisibility
@@ -5373,15 +5405,10 @@ handlers.setInvisible = function(args)
 
     PanelBridge.info("Set invisible", { username = username, enabled = enabled, verified = verified })
 
-    if verified == false then
-        return false, nil, "Invisibility call succeeded but did not take effect (state is still " .. tostring(invisibleState) .. ")"
-    end
-
-    return true, {
+    return PanelBridge.verifiedResult(verified, {
         message = "Invisibility " .. (enabled and "enabled" or "disabled"),
-        username = username,
-        verified = verified
-    }
+        username = username
+    }, "Invisibility call succeeded but did not take effect (state is still " .. tostring(invisibleState) .. ")")
 end
 
 -- Set player's noclip
@@ -5424,11 +5451,9 @@ handlers.setNoclip = function(args)
 
     PanelBridge.info("Set noclip", { username = username, enabled = enabled, verified = verified })
 
-    if verified == false then
-        return false, nil, "Noclip call succeeded but did not take effect (state is still " .. tostring(noclipState) .. ")"
-    end
-
-    return true, { message = "Noclip " .. (enabled and "enabled" or "disabled"), username = username, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Noclip " .. (enabled and "enabled" or "disabled"), username = username },
+        "Noclip call succeeded but did not take effect (state is still " .. tostring(noclipState) .. ")")
 end
 
 -- Give item to player
@@ -5899,13 +5924,17 @@ handlers.spawnHordeNearPlayer = function(args)
     end
 
     PanelBridge.warn("Spawned horde near player", { username = username, count = count, spawned = spawned, verified = verified, cx = cx, cy = cy, method = method })
+
+    local verifiedStr = "unverifiable"
+    if verified == true then verifiedStr = "confirmed" end
+
     return true, {
         message = verified
             and ("Spawned " .. spawned .. "/" .. count .. " zombies near " .. username)
             or ("Requested " .. count .. " zombies near " .. username .. " via " .. method .. " (spawn count not verifiable for this method)"),
         count = count,
         spawned = spawned,
-        verified = verified,
+        verified = verifiedStr,
         center = { x = cx, y = cy },
         distance = dist,
         method = method
@@ -6005,13 +6034,17 @@ handlers.spawnHordeBehindPlayer = function(args)
     end
 
     PanelBridge.warn("Spawned horde behind player", { username = username, count = count, spawned = spawned, verified = verified, direction = dirName, cx = cx, cy = cy, method = method })
+
+    local verifiedStr = "unverifiable"
+    if verified == true then verifiedStr = "confirmed" end
+
     return true, {
         message = verified
             and ("Spawned " .. spawned .. "/" .. count .. " zombies behind " .. username)
             or ("Requested " .. count .. " zombies behind " .. username .. " via " .. method .. " (spawn count not verifiable for this method)"),
         count = count,
         spawned = spawned,
-        verified = verified,
+        verified = verifiedStr,
         center = { x = cx, y = cy },
         playerDirection = dirName,
         distance = dist,
@@ -6123,11 +6156,9 @@ handlers.safehouseAddPlayer = function(args)
         if ok3 then verified = found end
     end
 
-    if verified == false then
-        return false, nil, "Add player call succeeded but " .. username .. " is not in the safehouse player list"
-    end
-
-    return true, { message = "Player added to safehouse", safehouseRef = args.safehouseRef, username = username, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Player added to safehouse", safehouseRef = args.safehouseRef, username = username },
+        "Add player call succeeded but " .. username .. " is not in the safehouse player list")
 end
 
 handlers.safehouseRemovePlayer = function(args)
@@ -6161,11 +6192,9 @@ handlers.safehouseRemovePlayer = function(args)
         if ok3 then verified = not found end
     end
 
-    if verified == false then
-        return false, nil, "Remove player call succeeded but " .. username .. " is still in the safehouse player list"
-    end
-
-    return true, { message = "Player removed from safehouse", safehouseRef = args.safehouseRef, username = username, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Player removed from safehouse", safehouseRef = args.safehouseRef, username = username },
+        "Remove player call succeeded but " .. username .. " is still in the safehouse player list")
 end
 
 handlers.safehouseSetOwner = function(args)
@@ -6194,11 +6223,9 @@ handlers.safehouseSetOwner = function(args)
         verified = false
     end
 
-    if verified == false then
-        return false, nil, "Set owner call succeeded but safehouse owner is still " .. tostring(actualOwner)
-    end
-
-    return true, { message = "Safehouse owner updated", safehouseRef = args.safehouseRef, owner = owner, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Safehouse owner updated", safehouseRef = args.safehouseRef, owner = owner },
+        "Set owner call succeeded but safehouse owner is still " .. tostring(actualOwner))
 end
 
 handlers.safehouseSetRespawn = function(args)
@@ -6229,17 +6256,12 @@ handlers.safehouseSetRespawn = function(args)
         verified = false
     end
 
-    if verified == false then
-        return false, nil, "Set respawn call succeeded but did not take effect (still " .. tostring(actualRespawn) .. ")"
-    end
-
-    return true, {
+    return PanelBridge.verifiedResult(verified, {
         message = "Safehouse respawn updated",
         safehouseRef = args.safehouseRef,
         username = username,
-        enabled = enabled,
-        verified = verified
-    }
+        enabled = enabled
+    }, "Set respawn call succeeded but did not take effect (still " .. tostring(actualRespawn) .. ")")
 end
 
 -- ============================================
@@ -6370,11 +6392,9 @@ handlers.factionAddPlayer = function(args)
         verified = (isMemberNow == true)
     end
 
-    if verified == false then
-        return false, nil, "Add player call succeeded but " .. username .. " is not a faction member"
-    end
-
-    return true, { message = "Player added to faction", factionName = factionName, username = username, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Player added to faction", factionName = factionName, username = username },
+        "Add player call succeeded but " .. username .. " is not a faction member")
 end
 
 handlers.factionRemovePlayer = function(args)
@@ -6407,11 +6427,9 @@ handlers.factionRemovePlayer = function(args)
         verified = (isMemberNow == false)
     end
 
-    if verified == false then
-        return false, nil, "Remove player call succeeded but " .. username .. " is still a faction member"
-    end
-
-    return true, { message = "Player removed from faction", factionName = factionName, username = username, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Player removed from faction", factionName = factionName, username = username },
+        "Remove player call succeeded but " .. username .. " is still a faction member")
 end
 
 handlers.factionSetTag = function(args)
@@ -6447,11 +6465,9 @@ handlers.factionSetTag = function(args)
         verified = false
     end
 
-    if verified == false then
-        return false, nil, "Set tag call succeeded but faction tag is still " .. tostring(actualTag)
-    end
-
-    return true, { message = "Faction tag updated", factionName = factionName, tag = tag, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Faction tag updated", factionName = factionName, tag = tag },
+        "Set tag call succeeded but faction tag is still " .. tostring(actualTag))
 end
 
 handlers.removeFaction = function(args)
@@ -6658,11 +6674,9 @@ handlers.vehicleSetAlarm = function(args)
         verified = ((actualAlarmed == true) == enabled)
     end
 
-    if verified == false then
-        return false, nil, "Alarm call succeeded but did not take effect (still " .. tostring(actualAlarmed) .. ")"
-    end
-
-    return true, { message = "Vehicle alarm updated", vehicleId = tonumber(args.vehicleId), enabled = enabled, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Vehicle alarm updated", vehicleId = tonumber(args.vehicleId), enabled = enabled },
+        "Alarm call succeeded but did not take effect (still " .. tostring(actualAlarmed) .. ")")
 end
 
 handlers.vehicleSetSiren = function(args)
@@ -6689,11 +6703,9 @@ handlers.vehicleSetSiren = function(args)
         verified = (tonumber(actualMode) == mode)
     end
 
-    if verified == false then
-        return false, nil, "Siren mode call succeeded but did not take effect (still " .. tostring(actualMode) .. ")"
-    end
-
-    return true, { message = "Vehicle siren mode updated", vehicleId = tonumber(args.vehicleId), mode = mode, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Vehicle siren mode updated", vehicleId = tonumber(args.vehicleId), mode = mode },
+        "Siren mode call succeeded but did not take effect (still " .. tostring(actualMode) .. ")")
 end
 
 handlers.vehicleSetTrunkLocked = function(args)
@@ -6718,11 +6730,9 @@ handlers.vehicleSetTrunkLocked = function(args)
         verified = ((actualLocked == true) == locked)
     end
 
-    if verified == false then
-        return false, nil, "Trunk lock call succeeded but did not take effect (still " .. tostring(actualLocked) .. ")"
-    end
-
-    return true, { message = "Vehicle trunk lock updated", vehicleId = tonumber(args.vehicleId), locked = locked, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Vehicle trunk lock updated", vehicleId = tonumber(args.vehicleId), locked = locked },
+        "Trunk lock call succeeded but did not take effect (still " .. tostring(actualLocked) .. ")")
 end
 
 handlers.vehicleSetFuel = function(args)
@@ -6765,11 +6775,9 @@ handlers.vehicleSetFuel = function(args)
         verified = (math.abs(tonumber(actualPct) - pct) <= FUEL_TOLERANCE)
     end
 
-    if verified == false then
-        return false, nil, "Fuel call succeeded but did not take effect (still " .. tostring(actualPct) .. "%)"
-    end
-
-    return true, { message = "Vehicle fuel set to " .. pct .. "%", vehicleId = tonumber(args.vehicleId), percent = pct, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Vehicle fuel set to " .. pct .. "%", vehicleId = tonumber(args.vehicleId), percent = pct },
+        "Fuel call succeeded but did not take effect (still " .. tostring(actualPct) .. "%)")
 end
 
 handlers.vehicleSetBattery = function(args)
@@ -6809,11 +6817,9 @@ handlers.vehicleSetBattery = function(args)
         verified = (math.abs(tonumber(actualCharge) - charge) <= BATTERY_TOLERANCE)
     end
 
-    if verified == false then
-        return false, nil, "Battery call succeeded but did not take effect (still " .. tostring(actualCharge) .. ")"
-    end
-
-    return true, { message = "Vehicle battery set to " .. charge, vehicleId = tonumber(args.vehicleId), charge = charge, verified = verified }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Vehicle battery set to " .. charge, vehicleId = tonumber(args.vehicleId), charge = charge },
+        "Battery call succeeded but did not take effect (still " .. tostring(actualCharge) .. ")")
 end
 
 handlers.removeVehicle = function(args)
@@ -7191,10 +7197,15 @@ handlers.moderationBanUser = function(args)
         return false, nil, "Ban user rejected: " .. tostring(resultOrErr)
     end
 
+    -- Reaching here means BanSystem's own rejection check passed (empty
+    -- string) -- that IS the confirmation this API can give, per the
+    -- 2026-08-23 ruling that every handler emits `verified` as a string,
+    -- always, when ok=true.
     return true, {
         message = ban and "User banned" or "User unbanned",
         username = username,
-        details = resultOrErr
+        details = resultOrErr,
+        verified = "confirmed"
     }
 end
 
@@ -7219,10 +7230,12 @@ handlers.moderationBanIP = function(args)
         return false, nil, "Ban IP rejected: " .. tostring(resultOrErr)
     end
 
+    -- See moderationBanUser's comment: reaching here IS the confirmation.
     return true, {
         message = ban and "IP banned" or "IP unbanned",
         ip = ip,
-        details = resultOrErr
+        details = resultOrErr,
+        verified = "confirmed"
     }
 end
 
@@ -7247,10 +7260,12 @@ handlers.moderationBanSteamID = function(args)
         return false, nil, "Ban SteamID rejected: " .. tostring(resultOrErr)
     end
 
+    -- See moderationBanUser's comment: reaching here IS the confirmation.
     return true, {
         message = ban and "SteamID banned" or "SteamID unbanned",
         steamId = steamId,
-        details = resultOrErr
+        details = resultOrErr,
+        verified = "confirmed"
     }
 end
 
