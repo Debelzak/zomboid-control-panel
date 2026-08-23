@@ -7279,4 +7279,12 @@ Events.OnServerStarted.Add(PanelBridge.onServerStarted)
 -- Use OnTickEvenPaused so the bridge works even when no players are connected
 Events.OnTickEvenPaused.Add(PanelBridge.onTick)
 
+-- Exposes the handler table for the JS test harness (fengari) to call
+-- directly. Additive only: nothing in this file or on the panel side does
+-- pairs(PanelBridge)/ipairs(PanelBridge) or otherwise enumerates this table
+-- (verified by grep before landing) -- the only enumeration in this file is
+-- pairs(handlers) inside handlers.getAvailableHandlers, which walks the
+-- separate `handlers` local and is unaffected by this field.
+PanelBridge.handlers = handlers
+
 return PanelBridge
