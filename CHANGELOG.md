@@ -216,6 +216,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client/src/locales/README.md`.
 
 ### Fixed
+- **Map Cleanup took far too long to open, and the wait got dramatically worse the bigger your
+  save was.** Two separate causes, both fixed. The scan read your save's chunk directories strictly
+  one at a time, so the wait tracked the *number of directories* rather than the amount of data -
+  measured on a test save, splitting the same 9,000 files across more directories took four times
+  longer with no extra data to read. On a NAS or a spinning disk, where each read costs far more
+  than on an SSD, that difference is much larger. Separately, the page asks for the file list and
+  the storage totals at the same time, and the totals were walking parts of the save up to three
+  times over, competing with the file list for the same disk. The totals are now gathered in a
+  single pass, and both walks read a bounded number of directories at once instead of either
+  one-at-a-time or all-at-once. On the same test save the file list went from 1.5s to 0.4s and the
+  totals from 1.25s to 0.65s - but the number that matters is the two together, which is what
+  actually happens when you open the page: it was swinging between 1.7 and 12.4 seconds and is now
+  a steady 1 second. The unpredictability was most of what made it feel broken.
+
 - **The World Map was blank - every single tile was 404ing.** The upstream map host moved: tiles
   and the per-build descriptors are now served from `tiles.pzmap.org` and no longer sit under a
   `/maps` path segment. The panel was still asking for the old address, so nothing loaded at all.
