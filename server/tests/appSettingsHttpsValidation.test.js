@@ -150,3 +150,41 @@ describe("PUT /app-settings -- reconnectInterval validation (same missing-range-
     expect(res.getBody().success).toBe(true);
   });
 });
+
+// Regression coverage for the 2026-08-23 config.js numeric-field audit:
+// panelPort sat in the same allowed-keys list as httpsPort, two lines away,
+// with NO case at all in this loop -- an out-of-range value saved silently
+// (200, no error) and only surfaced at the next restart, after the Restart
+// Panel button had already sent the browser to a port nothing is listening
+// on. This is the lockout case the reconnectInterval comment above named but
+// never enumerated. Range matches auth.js's /setup panelPort check for the
+// same field (SETUP_PANEL_PORT_INVALID): 1024-65535.
+describe("PUT /app-settings -- panelPort validation (the lockout case, not the mild one)", () => {
+  it("rejects a non-integer value", async () => {
+    const res = await putAppSettings({ panelPort: "not-a-number" });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Panel port must be a whole number/);
+  });
+
+  it("rejects an out-of-range value instead of saving it silently", async () => {
+    const res = await putAppSettings({ panelPort: 80 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Panel port must be a whole number/);
+  });
+
+  it("rejects a value below 1024 (matches auth.js /setup's reserved-range floor for this field)", async () => {
+    const res = await putAppSettings({ panelPort: 1023 });
+    expect(res.getStatusCode()).toBe(400);
+  });
+
+  it("rejects a value above 65535", async () => {
+    const res = await putAppSettings({ panelPort: 65536 });
+    expect(res.getStatusCode()).toBe(400);
+  });
+
+  it("accepts a valid port", async () => {
+    const res = await putAppSettings({ panelPort: 3001 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+});

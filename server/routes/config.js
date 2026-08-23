@@ -18,6 +18,7 @@ import {
   minutesToCheckIntervalMs,
 } from "../services/modChecker.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
+import { requireIntInRange } from "./server.js";
 
 const router = express.Router();
 
@@ -356,6 +357,25 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           return res.status(400).json({
             error: `httpsPort cannot be the same as the panel's HTTP port (${panelPort})`,
           });
+        }
+      }
+
+      // Same missing-range-check shape httpsPort/reconnectInterval closed
+      // above, but this one IS the lockout case, not the mild one: panelPort
+      // sat in this same allowed-keys list, two lines from httpsPort, with
+      // no case at all here. An out-of-range value saved silently (200,
+      // no error), index.js only discovers it can't bind at the NEXT
+      // restart and falls back to 3001 -- but the Restart Panel button has
+      // already sent the browser to the port the operator typed, which
+      // nothing is listening on. Range matches auth.js's /setup check for
+      // the same field (ErrorCode.SETUP_PANEL_PORT_INVALID) -- reusing
+      // server.js's requireIntInRange rather than a third hand-rolled
+      // range check. See 2026-08-23 validateInt-coerces / config.js
+      // numeric-field audit.
+      if (key === "panelPort") {
+        const panelPortCheck = requireIntInRange(value, 1024, 65535, "Panel port");
+        if (!panelPortCheck.ok) {
+          return res.status(400).json({ error: panelPortCheck.message });
         }
       }
 

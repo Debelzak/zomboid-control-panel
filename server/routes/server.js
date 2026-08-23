@@ -575,7 +575,7 @@ function coerceIntInRange(value, min, max, defaultVal) {
 // something they didn't (a port they typed being silently swapped is the
 // motivating case: their firewall rule and port forward end up pointing at
 // a number nothing is listening on, with nothing telling them why).
-function requireIntInRange(value, min, max, fieldLabel) {
+export function requireIntInRange(value, min, max, fieldLabel) {
   const num = parseInt(value, 10);
   if (isNaN(num) || num < min || num > max) {
     return {
