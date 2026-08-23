@@ -292,7 +292,7 @@ export default function Users() {
                     <th className="px-4 py-2.5">{t('table.role')}</th>
                     <th className="px-4 py-2.5">{t('table.created')}</th>
                     <th className="px-4 py-2.5">{t('table.lastSignIn')}</th>
-                    <th className="px-4 py-2.5 text-right">
+                    <th className="relative px-4 py-2.5 text-right">
                       <span className="sr-only">{t('table.actions')}</span>
                     </th>
                   </tr>
