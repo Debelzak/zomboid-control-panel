@@ -3996,8 +3996,10 @@ handlers.setSandboxOption = function(args)
     end)
 
     local ok, err
+    local appliedValue
     if optType == "boolean" then
         local boolVal = (newValue == true or newValue == "true" or newValue == 1)
+        appliedValue = boolVal
         ok, err = pcall(function() targetOpt:setValue(boolVal) end)
     elseif optType == "enum" then
         local intVal = tonumber(newValue)
@@ -4007,6 +4009,7 @@ handlers.setSandboxOption = function(args)
         local numVals = tonumber(PanelBridge.tryGet(targetOpt, "getNumValues"))
         if numVals and intVal >= numVals then intVal = numVals - 1 end
         if intVal < 0 then intVal = 0 end
+        appliedValue = intVal
         ok, err = pcall(function() targetOpt:setValue(intVal) end)
     elseif optType == "integer" then
         local intVal = tonumber(newValue)
@@ -4017,6 +4020,7 @@ handlers.setSandboxOption = function(args)
         if type(intMin) == "number" and intVal < intMin then intVal = intMin end
         local intMax = PanelBridge.tryGet(targetOpt, "getMax")
         if type(intMax) == "number" and intVal > intMax then intVal = intMax end
+        appliedValue = intVal
         ok, err = pcall(function() targetOpt:setValue(intVal) end)
     elseif optType == "double" then
         local numVal = tonumber(newValue)
@@ -4026,11 +4030,17 @@ handlers.setSandboxOption = function(args)
         if type(numMin) == "number" and numVal < numMin then numVal = numMin end
         local numMax = PanelBridge.tryGet(targetOpt, "getMax")
         if type(numMax) == "number" and numVal > numMax then numVal = numMax end
+        appliedValue = numVal
         ok, err = pcall(function() targetOpt:setValue(numVal) end)
     elseif optType == "string" then
-        ok, err = pcall(function() targetOpt:setValue(tostring(newValue)) end)
+        local strVal = tostring(newValue)
+        appliedValue = strVal
+        ok, err = pcall(function() targetOpt:setValue(strVal) end)
     else
-        -- Unknown type — try generic setValue with the raw value
+        -- Unknown type — try generic setValue with the raw value. No
+        -- reliable comparison exists for an unknown Java type crossing the
+        -- Lua/JSON boundary, so appliedValue stays nil and this branch is
+        -- intentionally excluded from the verify-and-gate below.
         ok, err = pcall(function() targetOpt:setValue(newValue) end)
     end
 
@@ -4048,7 +4058,39 @@ handlers.setSandboxOption = function(args)
         end
     end
 
-    PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed) })
+    -- Compare on MEANING, not identity: a value crossing the Lua/JSON
+    -- boundary can legitimately come back as a different Lua type than what
+    -- was sent (8 vs "8") without the write having failed. `matched` is nil
+    -- (not false) whenever the comparison itself isn't trustworthy -- an
+    -- unknown optType or a nil confirmed read -- rather than treating
+    -- "can't tell" as "it worked". Written with explicit if/then, not the
+    -- `a and b or c` idiom: that idiom silently turns a confirmed mismatch
+    -- (b == false) into nil (see setGodMode's comment for the full story).
+    local matched
+    if appliedValue == nil or confirmed == nil then
+        matched = nil
+    elseif optType == "boolean" then
+        if type(confirmed) == "boolean" then
+            matched = (confirmed == appliedValue)
+        else
+            matched = (tostring(confirmed):lower() == tostring(appliedValue):lower())
+        end
+    elseif optType == "enum" or optType == "integer" or optType == "double" then
+        local confirmedNum = tonumber(confirmed)
+        if confirmedNum == nil then
+            matched = nil
+        else
+            matched = (confirmedNum == appliedValue)
+        end
+    elseif optType == "string" then
+        matched = (tostring(confirmed) == tostring(appliedValue))
+    end
+
+    PanelBridge.info("Sandbox option set", { name = optName, value = tostring(newValue), confirmed = tostring(confirmed), matched = matched })
+
+    if matched == false then
+        return false, nil, "Value set but did not take effect (requested " .. tostring(appliedValue) .. ", confirmed " .. tostring(confirmed) .. ")"
+    end
 
     -- setValue only touches the Java object. Mod code reads the global
     -- SandboxVars table, which stays stale until toLua() rebuilds it.
@@ -4080,6 +4122,7 @@ handlers.setSandboxOption = function(args)
         name = optName,
         value = confirmed,
         type = optType,
+        matched = matched,
         persisted = persisted,
         saveError = saveErr
     }
