@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The panel is now available in Simplified Chinese**: every screen, dialog, error message and
+  health check - 6,855 pieces of text across 54 files - has been translated, and 简体中文 now appears
+  in the language picker alongside English and French. The choice is remembered in your browser.
+
+  Project Zomboid's own vocabulary was kept where a Chinese-speaking player would expect it: mod IDs,
+  Workshop IDs, chat tags like `[ADMIN]`, `SERVER.INI` section names and SteamCMD's own output are
+  left exactly as the game and the tools print them, rather than translated into something you could
+  not match against a real log. A shared glossary keeps one word per concept across every screen -
+  the same term for "server", "backup" or "permission" wherever you see it.
+
+  A test enforces that Chinese has every key English does, with no gaps and no leftovers, so the
+  translation cannot quietly rot as the panel grows.
+
 - **A Sign-in (OIDC) settings screen**: single sign-on can now be set up from the panel itself,
   under Access Control > Sign-in. Enter your provider's address, client ID and secret, and press
   Test Connection to check the provider answers before you save. The redirect URI your provider
