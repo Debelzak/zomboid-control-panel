@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "why can this person not see X" is finally answerable), how the World Map worked out which map
   build to use - including whether `curl` is even installed on the host - the health of the panel's
   own database writes, your recent backup runs, the Discord bot's connection state, and whether the
-  game server was actually running at the moment the bundle was made. Passwords, tokens and client
+  game server was actually running at the moment the bundle was made. It also records which
+  language the panel was being used in - and says so plainly when it cannot tell, rather than
+  guessing English, because a wrong guess in a support file is worse than an honest gap. Passwords, tokens and client
   secrets are still masked, and the bundle's own "what is not in here" list has been kept accurate.
 
 - **Help where people actually get stuck.** A small "?" next to a setting now explains what it does,
