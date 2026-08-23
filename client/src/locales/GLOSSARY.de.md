@@ -144,7 +144,7 @@ if you are about to coin one of these differently, do not.
 | --- | --- | --- |
 | spawn point / spawn region | der Spawnpunkt / die Spawnregion | closed compound; *Spawn* is an adopted loanword |
 | tile | die Kachel | world-map tile |
-| disk | der Datenträger | *von Datenträger löschen* — chosen for consistency across debug, errors and mods |
+| disk | der Datenträger **in prose** · **Disk** in a terse stat label | see the exemption below |
 | Mod Checker | der Mod-Checker | the feature's German name; **never** *Mod-Prüfung* |
 | item (a JSON array entry) | das Element | |
 | itemType (the Project Zomboid item id) | itemType | a payload field name — stays literal |
@@ -164,6 +164,17 @@ Nach dieser Änderung hätte niemand mehr die Berechtigung: {{action}}
 
 That is why the German for those two errors uses a colon construction rather than
 *niemand könnte mehr {{action}}* — the placeholder carries a label, not an infinitive.
+
+**Terse stat labels follow ops-tooling convention, not this glossary.** `servers.json`'s
+resource row is a four-column grid — CPU / RAM / Netz / Disk — where each label has a
+fixed narrow column and the set has to read as a parallel series. *Datenträger* is three
+times the width of *Disk* and breaks the row. CPU and RAM are already untranslated there
+for the same reason, and German ops tooling says *Disk* in exactly this context.
+
+So the rule that wins depends on the surface: in a sentence it is *der Datenträger*; in a
+stat chip, a column header or a metric label it is *Disk*. Do not "fix" one into the other.
+This is the general shape of the collision between rule 5 (length) and cross-screen term
+consistency, and length wins wherever the label has no room to be a word.
 
 ## Style rules
 
