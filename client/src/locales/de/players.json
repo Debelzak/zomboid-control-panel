@@ -299,7 +299,7 @@
     "title": "Charakter importieren/exportieren",
     "description": "Exportiere oder stelle die XP, Perks und Skills eines Spielers über PanelBridge wieder her.",
     "bridgeOfflineTitle": "Brücke offline",
-    "bridgeOfflineDesc": "Der Export und Import von Charakteren erfordert eine Verbindung zu PanelBridge. <1>Bridge-Setup öffnen</1>",
+    "bridgeOfflineDesc": "Der Export und Import von Charakteren erfordert eine Verbindung zu PanelBridge. <1>Brücken-Einrichtung öffnen</1>",
     "exportTitle": "Charakter exportieren",
     "exportDesc": "XP, Perks, Skills und Inventar exportieren",
     "exportButton": "{{player}} exportieren",
