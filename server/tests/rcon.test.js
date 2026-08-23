@@ -301,6 +301,43 @@ describe('RconService', () => {
     });
   });
 
+  describe('classifyRconResponse (rejection shapes execute() recognizes as failure)', () => {
+    it('still classifies "Unknown command" as a failure', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('Unknown command "foo"');
+      expect(result).not.toBeNull();
+      expect(result.error).toContain('not available on this server build');
+    });
+
+    it('classifies "Wrong arguments!" as a failure -- seen verbatim in GodModePlayerCommand.class/InvisiblePlayerCommand.class', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('Wrong arguments!');
+      expect(result).not.toBeNull();
+      expect(result.error).toMatch(/syntax may have changed/i);
+    });
+
+    it('classifies "Not enough rights" as a failure -- seen verbatim in NoClipCommand.class', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('Not enough rights');
+      expect(result).not.toBeNull();
+      expect(result.error).toMatch(/does not have permission/i);
+    });
+
+    it('classifies "<command> can be executed only from the game" as a failure -- seen verbatim in ReleaseSafehouseCommand.class', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('releasesafehouse can be executed only from the game');
+      expect(result).not.toBeNull();
+      expect(result.error).toMatch(/only be run from in-game/i);
+    });
+
+    it('does not classify an ordinary informative response as a failure', () => {
+      const liveRcon = new RconService();
+      expect(liveRcon.classifyRconResponse('Players connected (2):\n-Alice\n-Bob')).toBeNull();
+      expect(liveRcon.classifyRconResponse('')).toBeNull();
+      expect(liveRcon.classifyRconResponse(undefined)).toBeNull();
+    });
+  });
+
   describe('setGodMode / setInvisible player targeting', () => {
     it('setGodMode sends godmodplayer (not the self-only godmod) when a username is given', async () => {
       const liveRcon = new RconService();

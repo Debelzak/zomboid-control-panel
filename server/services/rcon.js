@@ -94,6 +94,42 @@ export async function testRconConnection({ host, port, password, timeoutMs = 500
   }
 }
 
+// Response texts the real B42 dedicated server sends back for a command it
+// accepted but refused to run -- each confirmed verbatim against the actual
+// server jar (D:/Zomboid_dev_panel/ServerB42Files/java/projectzomboid.jar,
+// zombie/commands/serverCommands/*.class: GodModePlayerCommand.class /
+// InvisiblePlayerCommand.class for "Wrong arguments!", NoClipCommand.class
+// for "Not enough rights", ReleaseSafehouseCommand.class for "...can be
+// executed only from the game"), not guessed. A normal RCON reply carrying
+// one of these means the command did NOT do what it says, so without this
+// check it's indistinguishable from a real success.
+//
+// Deliberately a denylist of PROVEN rejection shapes, not a success
+// allowlist: a success allowlist would need every one of this file's ~40
+// commands' real success text enumerated with confidence, which static
+// bytecode reading can't give, and would fail closed on every command
+// whose success text isn't in it.
+const KNOWN_RCON_REJECTIONS = [
+  {
+    pattern: /^\s*Unknown command\b/i,
+    describe: (text) => `${text}. This command is not available on this server build.`,
+  },
+  {
+    pattern: /Wrong arguments!?/i,
+    describe: () =>
+      "Wrong arguments. This command's syntax may have changed on this server build.",
+  },
+  {
+    pattern: /Not enough rights/i,
+    describe: () =>
+      "Not enough rights. The RCON account's role does not have permission to run this command.",
+  },
+  {
+    pattern: /can be executed only from the game/i,
+    describe: (text) => `${text}. This command can only be run from in-game, not over RCON.`,
+  },
+];
+
 export class RconService extends EventEmitter {
   constructor() {
     super();
@@ -876,6 +912,21 @@ export class RconService extends EventEmitter {
     return false;
   }
 
+  // Checks a raw RCON response against KNOWN_RCON_REJECTIONS -- returns
+  // {error, response} if it matches a proven rejection shape, null
+  // otherwise (including for empty/non-string responses, which are the
+  // normal shape for most commands that don't echo anything back).
+  classifyRconResponse(response) {
+    if (typeof response !== "string" || !response) return null;
+    const trimmed = response.trim();
+    for (const { pattern, describe } of KNOWN_RCON_REJECTIONS) {
+      if (pattern.test(trimmed)) {
+        return { error: describe(trimmed), response: trimmed };
+      }
+    }
+    return null;
+  }
+
   // Execute a command with optional skipLog to avoid polluting command history with automatic commands
   async execute(command, { skipLog = false } = {}) {
     try {
@@ -911,24 +962,22 @@ export class RconService extends EventEmitter {
       this.lastSuccessfulCommand = Date.now();
       this.consecutiveHealthFailures = 0;
 
-      // Log to database (unless skipLog is set for automatic commands)
-      if (!skipLog) {
-        logCommand(command, response, true);
-      }
-
       log.debug(`response: ${response}`);
 
-      // The server answers an unrecognised command with a normal RCON reply, so
-      // without this check a command removed by a game update looks like it
-      // succeeded. Build 42 dropped several Build 41 commands this way.
-      if (typeof response === "string" && /^\s*Unknown command\b/i.test(response)) {
-        const unknown = response.trim();
-        log.warn(`Server rejected command as unknown: ${command}`);
-        return {
-          success: false,
-          error: `${unknown}. This command is not available on this server build.`,
-          response: unknown,
-        };
+      // The server answers a command it refuses to run with a normal RCON
+      // reply, so without this check -- and without checking it BEFORE the
+      // database log below -- the refusal looks like success both to the
+      // caller and in the panel's own persisted command history.
+      const rejection = this.classifyRconResponse(response);
+
+      // Log to database (unless skipLog is set for automatic commands)
+      if (!skipLog) {
+        logCommand(command, rejection ? rejection.error : response, !rejection);
+      }
+
+      if (rejection) {
+        log.warn(`Server rejected command: ${command} (${rejection.response})`);
+        return { success: false, error: rejection.error, response: rejection.response };
       }
 
       return {
@@ -998,8 +1047,17 @@ export class RconService extends EventEmitter {
             clearTimeout(retryTimeoutId);
 
             this.lastSuccessfulCommand = Date.now();
+
+            // Same rejection check as the primary attempt above -- a retry
+            // that reconnects successfully but gets a refusal back must not
+            // report success just because the connection came back up.
+            const rejection = this.classifyRconResponse(response);
             if (!skipLog) {
-              logCommand(command, response, true);
+              logCommand(command, rejection ? rejection.error : response, !rejection);
+            }
+            if (rejection) {
+              log.warn(`Server rejected command on retry: ${command} (${rejection.response})`);
+              return { success: false, error: rejection.error, response: rejection.response };
             }
             return {
               success: true,
