@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { rconApi, configApi, serverApi, serversApi, type ServerInstance } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
@@ -253,6 +254,7 @@ export default function Console() {
   const inputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const socket = useSocket()
+  const confirm = useConfirm()
   
   // Server Console Log state
   const [serverLogLines, setServerLogLines] = useState<string[]>([])
@@ -432,6 +434,13 @@ export default function Console() {
   }, [hasServerLogSource, t])
 
   const clearServerLog = async () => {
+    const confirmed = await confirm({
+      title: t('serverLog.clearConfirmTitle'),
+      description: t('serverLog.clearConfirmDesc'),
+      confirmLabel: t('serverLog.clearConfirmButton'),
+    })
+    if (!confirmed) return
+
     try {
       await serverApi.clearConsoleLog()
       setServerLogLines([])
