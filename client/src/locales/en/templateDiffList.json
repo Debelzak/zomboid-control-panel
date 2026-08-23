@@ -5,5 +5,8 @@
   "noIniChanges": "No server.ini changes.",
   "mods": "Mods",
   "noModsReferenced": "This template doesn't reference any mods.",
-  "modsNotInstalledAutomatically": "Referenced mods aren't installed automatically — add them from the Mod Manager."
+  "modsNotInstalledAutomatically": "Referenced mods aren't installed automatically — add them from the Mod Manager.",
+  "on": "On",
+  "off": "Off",
+  "notSet": "(not set)"
 }

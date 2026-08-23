@@ -210,7 +210,12 @@
     "actionFailedTitle": "Aktion fehlgeschlagen",
     "actionFailedFallback": "Aktion fehlgeschlagen",
     "errorTitle": "Fehler",
-    "notAvailable": "k. A."
+    "notAvailable": "k. A.",
+    "justNow": "gerade eben",
+    "secondsAgo": "vor {{count}}s",
+    "minutesAgo": "vor {{count}}m",
+    "hoursAgo": "vor {{count}}h",
+    "daysAgo": "vor {{count}}T"
   },
   "diagnostics": {
     "overallFail": "Probleme erfordern Aufmerksamkeit",
@@ -237,7 +242,8 @@
     "numericIdsRemovedDesc_one": "{{count}} Eintrag aus Mods= entfernt.{{restartHint}}",
     "numericIdsRemovedDesc_other": "{{count}} Einträge aus Mods= entfernt.{{restartHint}}",
     "workshopResolvedTitle": "Workshop-Objekte aufgelöst",
-    "workshopEnabled": "aktiviert: {{count}} (ID{{modIdsPlural}} hinzugefügt: {{modIds}})",
+    "workshopEnabled_one": "aktiviert: {{enabled}} (ID hinzugefügt: {{count}})",
+    "workshopEnabled_other": "aktiviert: {{enabled}} (IDs hinzugefügt: {{count}})",
     "workshopDroppedIgnored_one": "{{count}} ignoriert",
     "workshopDroppedIgnored_other": "{{count}} ignoriert",
     "workshopDroppedMissing": "{{count}} nicht lokal vorhanden",

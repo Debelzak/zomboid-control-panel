@@ -630,7 +630,7 @@ const DebugPerformanceCharts = lazy(
 );
 
 export default function Debug() {
-  const { t } = useTranslation("debug");
+  const { t, i18n } = useTranslation("debug");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
@@ -890,9 +890,8 @@ export default function Debug() {
           if (counts.enabled > 0)
             parts.push(
               t("diagnostics.workshopEnabled", {
-                count: counts.enabled,
-                modIds: modIdsAdded,
-                modIdsPlural: modIdsAdded === 1 ? "" : "s",
+                enabled: counts.enabled,
+                count: modIdsAdded,
               }),
             );
           if (droppedTotal > 0) {
@@ -922,11 +921,18 @@ export default function Debug() {
               }),
             );
           }
+          // Clause separator/terminator is a language property, not something
+          // every locale's untranslated fragment can be assumed to want a
+          // Latin "; "/"." for -- zh-CN's own fragments carry no punctuation
+          // and expect full-width equivalents instead.
+          const isZh = i18n.language === "zh-CN";
+          const clauseSep = isZh ? "；" : "; ";
+          const clauseEnd = isZh ? "。" : ".";
           toast({
             title: t("diagnostics.workshopResolvedTitle"),
             description:
               parts.length > 0
-                ? `${parts.join("; ")}.${counts.enabled > 0 ? restartHint : ""}`
+                ? `${parts.join(clauseSep)}${clauseEnd}${counts.enabled > 0 ? restartHint : ""}`
                 : t("diagnostics.workshopNothingToChange", {
                     count: result.total,
                   }),
@@ -1811,11 +1817,11 @@ export default function Debug() {
         case "relative": {
           const now = new Date();
           const diff = now.getTime() - date.getTime();
-          if (diff < 1000) return "just now";
-          if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
-          if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-          if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-          return `${Math.floor(diff / 86400000)}d ago`;
+          if (diff < 1000) return t("common.justNow");
+          if (diff < 60000) return t("common.secondsAgo", { count: Math.floor(diff / 1000) });
+          if (diff < 3600000) return t("common.minutesAgo", { count: Math.floor(diff / 60000) });
+          if (diff < 86400000) return t("common.hoursAgo", { count: Math.floor(diff / 3600000) });
+          return t("common.daysAgo", { count: Math.floor(diff / 86400000) });
         }
         case "time":
           return date.toLocaleTimeString();

@@ -5,5 +5,8 @@
   "noIniChanges": "没有 server.ini 更改。",
   "mods": "模组",
   "noModsReferenced": "此模板未引用任何模组。",
-  "modsNotInstalledAutomatically": "引用的模组不会自动安装——请从模组管理器中添加。"
+  "modsNotInstalledAutomatically": "引用的模组不会自动安装——请从模组管理器中添加。",
+  "on": "开",
+  "off": "关",
+  "notSet": "（未设置）"
 }

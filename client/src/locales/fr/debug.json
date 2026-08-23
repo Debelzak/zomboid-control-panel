@@ -210,7 +210,12 @@
     "actionFailedTitle": "Échec de l'action",
     "actionFailedFallback": "Échec de l'action",
     "errorTitle": "Erreur",
-    "notAvailable": "N/A"
+    "notAvailable": "N/A",
+    "justNow": "à l'instant",
+    "secondsAgo": "il y a {{count}}s",
+    "minutesAgo": "il y a {{count}}min",
+    "hoursAgo": "il y a {{count}}h",
+    "daysAgo": "il y a {{count}}j"
   },
   "diagnostics": {
     "overallFail": "Des problèmes nécessitent attention",
@@ -237,7 +242,8 @@
     "numericIdsRemovedDesc_one": "{{count}} entrée retirée de Mods=.{{restartHint}}",
     "numericIdsRemovedDesc_other": "{{count}} entrées retirées de Mods=.{{restartHint}}",
     "workshopResolvedTitle": "Éléments Workshop résolus",
-    "workshopEnabled": "{{count}} activé(s) ({{modIds}} ID de mod{{modIdsPlural}} ajouté(s))",
+    "workshopEnabled_one": "{{enabled}} activé(s) ({{count}} ID de mod ajouté)",
+    "workshopEnabled_other": "{{enabled}} activé(s) ({{count}} IDs de mod ajoutés)",
     "workshopDroppedIgnored_one": "{{count}} ignoré",
     "workshopDroppedIgnored_other": "{{count}} ignorés",
     "workshopDroppedMissing": "{{count}} absent(s) du disque",

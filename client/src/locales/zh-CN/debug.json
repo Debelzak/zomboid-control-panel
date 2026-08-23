@@ -210,7 +210,12 @@
     "actionFailedTitle": "操作失败",
     "actionFailedFallback": "操作失败",
     "errorTitle": "错误",
-    "notAvailable": "N/A"
+    "notAvailable": "N/A",
+    "justNow": "刚刚",
+    "secondsAgo": "{{count}} 秒前",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
   },
   "diagnostics": {
     "overallFail": "存在需要处理的问题",
@@ -237,7 +242,8 @@
     "numericIdsRemovedDesc_one": "已从 Mods= 中移除 {{count}} 个条目。{{restartHint}}",
     "numericIdsRemovedDesc_other": "已从 Mods= 中移除 {{count}} 个条目。{{restartHint}}",
     "workshopResolvedTitle": "Workshop 项已解析",
-    "workshopEnabled": "已启用 {{count}} 个（添加了 {{modIds}} 个模组 ID{{modIdsPlural}}）",
+    "workshopEnabled_one": "已启用 {{enabled}} 个（添加了 {{count}} 个模组 ID）",
+    "workshopEnabled_other": "已启用 {{enabled}} 个（添加了 {{count}} 个模组 ID）",
     "workshopDroppedIgnored_one": "{{count}} 个已忽略",
     "workshopDroppedIgnored_other": "{{count}} 个已忽略",
     "workshopDroppedMissing": "{{count}} 个不在磁盘上",

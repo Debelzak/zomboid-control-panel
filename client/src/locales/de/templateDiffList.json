@@ -5,5 +5,8 @@
   "noIniChanges": "Keine Änderungen an der server.ini.",
   "mods": "Mods",
   "noModsReferenced": "Diese Vorlage verweist auf keine Mods.",
-  "modsNotInstalledAutomatically": "Referenzierte Mods werden nicht automatisch installiert — füge sie im Mod-Manager hinzu."
+  "modsNotInstalledAutomatically": "Referenzierte Mods werden nicht automatisch installiert — füge sie im Mod-Manager hinzu.",
+  "on": "Ein",
+  "off": "Aus",
+  "notSet": "(nicht festgelegt)"
 }

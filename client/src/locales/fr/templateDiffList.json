@@ -5,5 +5,8 @@
   "noIniChanges": "Aucun changement du server.ini.",
   "mods": "Mods",
   "noModsReferenced": "Ce modèle ne référence aucun mod.",
-  "modsNotInstalledAutomatically": "Les mods référencés ne sont pas installés automatiquement — ajoutez-les depuis le Gestionnaire de mods."
+  "modsNotInstalledAutomatically": "Les mods référencés ne sont pas installés automatiquement — ajoutez-les depuis le Gestionnaire de mods.",
+  "on": "Activé",
+  "off": "Désactivé",
+  "notSet": "(non défini)"
 }

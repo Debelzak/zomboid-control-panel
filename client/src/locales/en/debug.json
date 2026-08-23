@@ -210,7 +210,12 @@
     "actionFailedTitle": "Action failed",
     "actionFailedFallback": "Action failed",
     "errorTitle": "Error",
-    "notAvailable": "N/A"
+    "notAvailable": "N/A",
+    "justNow": "just now",
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
   },
   "diagnostics": {
     "overallFail": "Issues need attention",
@@ -237,7 +242,8 @@
     "numericIdsRemovedDesc_one": "Stripped {{count}} entry from Mods=.{{restartHint}}",
     "numericIdsRemovedDesc_other": "Stripped {{count}} entries from Mods=.{{restartHint}}",
     "workshopResolvedTitle": "Workshop items resolved",
-    "workshopEnabled": "enabled {{count}} (added {{modIds}} mod ID{{modIdsPlural}})",
+    "workshopEnabled_one": "enabled {{enabled}} (added {{count}} mod ID)",
+    "workshopEnabled_other": "enabled {{enabled}} (added {{count}} mod IDs)",
     "workshopDroppedIgnored_one": "{{count}} ignored",
     "workshopDroppedIgnored_other": "{{count}} ignored",
     "workshopDroppedMissing": "{{count}} not on disk",

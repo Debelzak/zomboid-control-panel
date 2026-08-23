@@ -210,7 +210,12 @@
     "actionFailedTitle": "Error en la acción",
     "actionFailedFallback": "Error en la acción",
     "errorTitle": "Error",
-    "notAvailable": "N/D"
+    "notAvailable": "N/D",
+    "justNow": "ahora mismo",
+    "secondsAgo": "hace {{count}} s",
+    "minutesAgo": "hace {{count}} min",
+    "hoursAgo": "hace {{count}} h",
+    "daysAgo": "hace {{count}} d"
   },
   "diagnostics": {
     "overallFail": "Hay problemas que requieren atención",
@@ -237,7 +242,8 @@
     "numericIdsRemovedDesc_one": "Se eliminó {{count}} entrada de Mods=.{{restartHint}}",
     "numericIdsRemovedDesc_other": "Se eliminaron {{count}} entradas de Mods=.{{restartHint}}",
     "workshopResolvedTitle": "Elementos de Workshop resueltos",
-    "workshopEnabled": "activados: {{count}} (ID{{modIdsPlural}} de mod: {{modIds}})",
+    "workshopEnabled_one": "activados: {{enabled}} (ID de mod: {{count}})",
+    "workshopEnabled_other": "activados: {{enabled}} (ID de mod: {{count}})",
     "workshopDroppedIgnored_one": "{{count}} ignorado",
     "workshopDroppedIgnored_other": "{{count}} ignorados",
     "workshopDroppedMissing": "{{count}} sin encontrar en disco",
