@@ -450,7 +450,19 @@ export class ServerManager {
       );
     }
 
-    this.isRunning = resolved.length > 0;
+    // A failed scan always resolves to an empty `matched` list, so
+    // `resolved.length > 0` is unconditionally false here whenever
+    // scanFailed is true -- writing it into the cached this.isRunning would
+    // silently overwrite the last known-good state with a confident "not
+    // running" the moment detection starts failing, which is exactly the
+    // false confidence scanFailed exists to prevent elsewhere. Every reader
+    // of this cached field (server/routes/serverStatus.js, the dashboard's
+    // host signal) gets the SAME wrong "stopped" a failed detection scan
+    // gives it, instead of "we don't know." Leave it at its previous value
+    // when the scan couldn't tell.
+    if (!scan.scanFailed) {
+      this.isRunning = resolved.length > 0;
+    }
     return {
       running: resolved.length > 0,
       matched: resolved.slice(0, 3).map((entry) => ({
@@ -479,7 +491,7 @@ export class ServerManager {
 
       const timeout = setTimeout(() => {
         log.warn(
-          "getServerProcessDetails: process detection timed out, assuming server is not running",
+          "getServerProcessDetails: process detection timed out, cannot determine server state",
         );
         resolve({ running: false, matched: [], scanFailed: true });
       }, 10000);
@@ -490,7 +502,14 @@ export class ServerManager {
         exec(psCmd, { timeout: 8000 }, (psError, psStdout) => {
           clearTimeout(timeout);
           if (psError || !psStdout) {
-            this.isRunning = false;
+            // Previously silent -- this is the one piece of evidence that
+            // can tell "the shell-out itself is broken" (AV blocking
+            // PowerShell/WMI, missing powershell.exe) apart from "it ran
+            // fine and legitimately found nothing," which look identical
+            // without the actual error text.
+            log.warn(
+              `getServerProcessDetails: Windows process scan failed (${psError ? psError.message : "empty output"}), cannot determine server state`,
+            );
             resolve({ running: false, matched: [], scanFailed: true });
             return;
           }
@@ -559,7 +578,9 @@ export class ServerManager {
             exec("ps aux -ww", { timeout: 8000 }, (err, stdout) => {
               clearTimeout(timeout);
               if (err || !stdout) {
-                this.isRunning = false;
+                log.warn(
+                  `getServerProcessDetails: ps aux scan failed (${err ? err.message : "empty output"}), cannot determine server state`,
+                );
                 resolve({ running: false, matched: [], scanFailed: true });
                 return;
               }

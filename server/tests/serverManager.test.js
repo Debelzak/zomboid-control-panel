@@ -147,6 +147,30 @@ describe('ServerManager status state', () => {
     expect(status.uptime).toBe(0);
   });
 
+  it('does not corrupt the tracked running state when a scan fails to determine anything', async () => {
+    // Regression: getServerProcessDetails() unconditionally set
+    // `this.isRunning = resolved.length > 0` after every scan, including a
+    // failed one (scan.matched is always [] on failure, so resolved.length
+    // is always 0) -- silently latching a confident "not running" onto the
+    // one cached field other code paths (server/routes/serverStatus.js, the
+    // dashboard's host signal) trust directly, even though the scan itself
+    // could not tell. A server that WAS running a moment ago looked
+    // confidently stopped the instant detection started failing.
+    const manager = new ServerManager();
+    manager.configLoaded = true;
+    manager.isRunning = true; // last known state, from a scan that succeeded
+    manager._scanDedicatedServerProcesses = async () => ({
+      running: false,
+      matched: [],
+      scanFailed: true,
+    });
+
+    const details = await manager.getServerProcessDetails();
+
+    expect(details.scanFailed).toBe(true);
+    expect(manager.isRunning).toBe(true);
+  });
+
   it('surfaces scanFailed so callers can tell a failed scan from a confirmed stop', async () => {
     // Regression: getServerStatus() used to compute scanFailed internally
     // (to decide whether to clear run state) but never include it in the
