@@ -501,16 +501,27 @@ export class ServerManager {
           "powershell -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$' } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation\"";
         exec(psCmd, { timeout: 8000 }, (psError, psStdout) => {
           clearTimeout(timeout);
-          if (psError || !psStdout) {
-            // Previously silent -- this is the one piece of evidence that
-            // can tell "the shell-out itself is broken" (AV blocking
-            // PowerShell/WMI, missing powershell.exe) apart from "it ran
-            // fine and legitimately found nothing," which look identical
-            // without the actual error text.
+          if (psError) {
             log.warn(
-              `getServerProcessDetails: Windows process scan failed (${psError ? psError.message : "empty output"}), cannot determine server state`,
+              `getServerProcessDetails: Windows process scan failed (${psError.message}), cannot determine server state`,
             );
             resolve({ running: false, matched: [], scanFailed: true });
+            return;
+          }
+          // Empty stdout with NO error is a legitimate, successful result,
+          // not a failure: ConvertTo-Csv derives its header from the first
+          // object it receives, so an empty filtered Win32_Process pipeline
+          // (the normal, expected shape when no PZ server process exists)
+          // produces NO output at all -- not even a header row. Confirmed
+          // empirically on a real Windows host (2026-08-23): psError is
+          // null, exit code 0, psStdout is "". Treating that identically to
+          // a real exec failure meant a genuinely STOPPED Windows server
+          // could never be confirmed stopped -- deterministically, on every
+          // check -- which is exactly the state every fail-closed guard
+          // (/wipe included) exists to detect. This is what a real user hit.
+          if (!psStdout) {
+            this.isRunning = false;
+            resolve({ running: false, matched: [] });
             return;
           }
 
