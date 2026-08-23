@@ -1,0 +1,174 @@
+# German (de) translation glossary
+
+The one place German vocabulary and register are decided. Read it before writing a
+string; add to it when you decide something new, in the same commit as the strings
+that use it. A term that crosses namespaces crossing them inconsistently is the one
+defect the parity test cannot catch — every key present, every string wrong in a
+different way.
+
+German is not Spanish and it is not Chinese. Three things below have no analogue in
+either: closed compounds, capitalised nouns, and case-and-gender agreement around
+placeholders. The last of those is the trap; it has its own section at the bottom.
+
+## Do not translate
+
+Product and engine tokens, left exactly as they appear in English:
+
+- Project Zomboid, SteamCMD, Steam Workshop, Steam, RCON, PanelBridge, OIDC, Docker
+- **mod** (die Mod, plural die Mods), **chunk** (der Chunk), **sandbox** (die Sandbox),
+  **token** (das Token), **Backup** (das Backup, die Backups), **Dashboard**,
+  **Server**, **Whitelist**, **Single Sign-on**
+- INI keys and any value the game itself writes to disk; the SERVER.INI and SANDBOX
+  section labels
+- Project Zomboid's chat scopes (General, Say, Local, Shout, Q shouts) and the
+  [ADMIN] / [SAY] / [FACTION] / [SAFEHOUSE] chat tags
+- *iso* in "iso regions" — the engine's own Iso* prefix
+- GM, Admin — never expanded
+- Intents / Privileged Gateway Intents — literal Discord Developer Portal checkbox names
+
+Prefer **Backup** to *Sicherung* and **Dashboard** to *Übersicht* deliberately: both
+are universal in German ops vocabulary and both are shorter, which matters (see the
+length rule).
+
+## Core vocabulary
+
+| English | de | Note |
+| --- | --- | --- |
+| server | der Server | |
+| the panel | das Panel | this application, as distinct from the game server |
+| dashboard | das Dashboard | |
+| player | der Spieler | generic; **no** Gendersternchen or :Innen forms — they break around placeholders and are not house style |
+| save / savegame | der Spielstand | |
+| world | die Welt | |
+| world map | die Weltkarte | |
+| region | die Region | |
+| backup | das Backup | |
+| template | die Vorlage | |
+| scheduled task | geplante Aufgabe | |
+| console | die Konsole | |
+| log | das Protokoll | |
+| diagnostics | die Diagnose | one check is *eine Prüfung* |
+| settings | die Einstellungen | always plural |
+| conflict | der Konflikt | |
+| dependency | die Abhängigkeit | |
+| folder | der Ordner | |
+| path | der Pfad | |
+| file | die Datei | |
+
+## Access control
+
+| English | de | Note |
+| --- | --- | --- |
+| user | der Benutzer | **not** *Nutzer* — pick one, this is it |
+| role | die Rolle | |
+| permission | die Berechtigung | |
+| capability | das Recht | one tickable row in the rights matrix (die Rechtematrix) |
+| administrator | Administrator | |
+| moderator | Moderator | |
+| technician | Techniker | |
+| sign in / sign out | anmelden / abmelden | |
+| password | das Passwort | |
+| session | die Sitzung | |
+| Overseer / Observer | Aufseher / Beobachter | Project Zomboid access levels |
+
+## Actions — always the infinitive on a button
+
+| English | de |
+| --- | --- |
+| start / stop | starten / stoppen |
+| restart | neu starten (verb) · der Neustart (noun) |
+| install | installieren |
+| update | aktualisieren |
+| verify | überprüfen |
+| enable / disable | aktivieren / deaktivieren |
+| kick | kicken |
+| ban / unban | bannen / entbannen |
+| wipe | unwiderruflich löschen — destructive, **never** *zurücksetzen* |
+| delete | löschen |
+| save (verb) | speichern |
+| apply | anwenden |
+| retry | erneut versuchen |
+| cancel / close | abbrechen / schließen |
+
+## Status words
+
+| English | de |
+| --- | --- |
+| succeeded / completed | abgeschlossen |
+| failed | fehlgeschlagen |
+| error | Fehler |
+| warning | Warnung |
+| running | läuft |
+| stopped | gestoppt |
+| pending | ausstehend |
+| unavailable | nicht verfügbar |
+| not configured | nicht konfiguriert |
+| unknown | unbekannt |
+
+## Style rules
+
+1. **Register: du, lowercase.** This panel is run by game-server operators, and the
+   floor already ruled the informal form for Spanish. Same call here. Never *Sie*,
+   never a mix. Carve-out: a pure statement of state has no addressee and stays
+   impersonal — *Server läuft*, *Keine Backups vorhanden* — do not contort those into
+   second person.
+2. **Buttons and menu items take the infinitive**, not the imperative: *Speichern*,
+   *Löschen*, *Neu starten*. Never *Speichere*.
+3. **Every noun is capitalised.** This is the single most common defect in machine-
+   assisted German and it is invisible to every test here. Re-read your own output for
+   it before committing — including nouns inside a sentence and nouns formed from
+   verbs (*das Löschen*, *beim Starten*).
+4. **Compounds are written closed**, not spaced and not hyphenated: *Serverkonfiguration*,
+   *Startparameter*, *Weltkarte*, *Rechtematrix*. Hyphenate only where a compound
+   contains an English token or an abbreviation: *Mod-Ordner*, *Backup-Datei*,
+   *RCON-Passwort*, *Steam-Workshop-Sammlung*.
+5. **Length is a real constraint.** German runs roughly 30% longer than English. On
+   buttons, badges, table headers, tabs and chips, choose the shortest correct word
+   even where a richer one exists — the layout was built around English string widths
+   and nothing on this floor renders your text before it ships.
+6. **ß, German orthography** (not Swiss ss): *schließen*, *Größe*, *gelöscht*, but
+   *muss*, *dass* — ss after a short vowel.
+7. **Quotation marks in prose are „…“**. Straight quotes are fine inside code, paths
+   and INI values.
+8. Do not translate a string that is literally an INI key or a value the game writes
+   to disk. Translate our explanation of what that setting does. Judge it per string
+   and report anything genuinely ambiguous rather than guessing silently.
+
+## The trap specific to German: case and gender around placeholders
+
+English carries no agreement at all. German carries three genders and four cases, and
+a placeholder that substitutes a **noun** makes every article and adjective around it
+unresolvable. This is worse than the Spanish version of the same problem, because
+German inflects the article as well as the ending.
+
+```
+WRONG   Der {{item}} wurde gelöscht.        <- wrong the moment {{item}} is feminine or neuter
+WRONG   Möchtest du den {{item}} löschen?   <- and now the case is wrong too
+RIGHT   Gelöscht: {{item}}
+RIGHT   {{item}} wurde gelöscht.            <- participle after werden never inflects
+RIGHT   Löschen: {{item}}?
+```
+
+The rule: **rewrite so that nothing agrees with the substituted word.** Do not guess a
+gender. A colon construction, a leading participle, or putting the placeholder first
+all work, and none of them commit to a gender the server never sends.
+
+Two consequences worth stating separately:
+
+- **_one and _other must genuinely differ.** German inflects plurals. In zh-CN both
+  variants carry the same text because Chinese does not; carrying that habit into
+  German would be wrong in every plural in the file.
+- **A placeholder standing in for a word rather than a value is not a translation
+  problem.** If a string cannot be made agreement-safe without changing what it says,
+  report it. That is a server-side variant — two sentences — not something to solve in
+  the locale file.
+
+## Discord and PanelBridge
+
+| English | de | Note |
+| --- | --- | --- |
+| Bot (the Discord bot) | der Bot | |
+| Guild (Server) ID | Guild-ID (Server) | keep the Guild wording — Discord's own Developer Portal term |
+| bridge (generic, lowercase) | die Brücke | **PanelBridge** the product name stays literal |
+| channel | der Kanal | |
+| webhook | der Webhook | |
