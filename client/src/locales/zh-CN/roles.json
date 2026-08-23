@@ -25,7 +25,9 @@
     "deleteTooltip": "删除角色",
     "deleteSeededTooltip": "内置角色无法在此页面删除。",
     "recoveryCapabilityHint": "移除此权限项的最后一位持有者会导致管理员被锁定在外——面板将拒绝此更改并说明原因。",
-    "savingCell": "正在保存…"
+    "savingCell": "正在保存…",
+    "capabilityCount_one": "{{count}} 项权限",
+    "capabilityCount_other": "{{count}} 项权限"
   },
   "roleFormDialog": {
     "createTitle": "新建角色",

@@ -71,7 +71,8 @@
     "updateNow": "Actualizar ahora",
     "activating": "Activando…",
     "switchToThisServer": "Cambiar a este servidor",
-    "added": "Añadido el {{date}}"
+    "added": "Añadido el {{date}}",
+    "restartContainerAria": "Reiniciar {{name}}"
   },
   "tandem": {
     "sectionTitle": "Ejecutar un segundo servidor junto al primero",
@@ -164,7 +165,8 @@
     "rconPasswordRequired": "Obligatoria para controlar el servidor. También puedes definir <1>RCONPassword=tucontraseña</1> en tu archivo {{iniName}}.ini.",
     "passwordSet": "Contraseña establecida",
     "minMemoryLabel": "Memoria mín. (GB)",
-    "maxMemoryLabel": "Memoria máx. (GB)"
+    "maxMemoryLabel": "Memoria máx. (GB)",
+    "selectScannedConfigAria": "Usar el servidor detectado {{name}}"
   },
   "editDialog": {
     "title": "Editar servidor",

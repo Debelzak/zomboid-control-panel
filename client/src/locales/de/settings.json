@@ -142,7 +142,13 @@
     "blockedOriginsLabel": "Blockierte Ursprünge",
     "effectiveAllowlistLabel": "Wirksame Allowlist",
     "lastReloadLabel": "Letztes Neuladen",
-    "recentBlockedLabel": "Zuletzt blockierte Ursprünge"
+    "recentBlockedLabel": "Zuletzt blockierte Ursprünge",
+    "originsError": {
+      "invalidFormat": "Ungültiges Ursprungsformat: {{origin}}",
+      "protocolNotAllowed": "Nur http/https-Ursprünge sind erlaubt: {{origin}}",
+      "tooLong": "Ursprung zu lang ({{length}} Zeichen). Maximum: {{max}}.",
+      "tooMany": "Zu viele Ursprünge. Maximum: {{max}}."
+    }
   },
   "updates": {
     "autoUpdateTitle": "Automatisches Panel-Update",
@@ -494,7 +500,20 @@
     "tipsAdminTitle": "Admin-Befehle:",
     "tipsAdminDesc": "Sei vorsichtig mit Admin-Befehlen. Manche Aktionen wie das Bannen oder Kicken von Spielern lassen sich nicht ohne Weiteres rückgängig machen.",
     "tipsAuthTitle": "Authentifizierung:",
-    "tipsAuthDesc": "Authentifizierung ist nicht konfiguriert. Lege beim ersten Start über den Einrichtungsassistenten ein Konto an, um den Zugriff auf dieses Panel zu schützen."
+    "tipsAuthDesc": "Authentifizierung ist nicht konfiguriert. Lege beim ersten Start über den Einrichtungsassistenten ein Konto an, um den Zugriff auf dieses Panel zu schützen.",
+    "regenerateJwt": {
+      "cardTitle": "JWT-Secret neu erzeugen",
+      "button": "JWT-Secret neu erzeugen",
+      "cardDesc": "Meldet sofort alle Benutzer auf allen Geräten ab, dich eingeschlossen — Access- und Refresh-Tokens aller laufenden Sitzungen funktionieren auf einen Schlag nicht mehr. Nutze das nur, wenn ein Backup mit dem alten Signaturschlüssel durchgesickert sein könnte; es ist keine Routineaktion und es gibt keine automatische Rotation.",
+      "confirmTitle": "JWT-Secret neu erzeugen?",
+      "confirmDesc": "Das meldet sofort alle Benutzer auf allen Geräten ab, auch deine eigene Sitzung — du musst dich danach sofort neu anmelden. Dies kann nicht rückgängig gemacht werden.",
+      "confirm": "Ja, alle abmelden",
+      "cancel": "Abbrechen",
+      "failedTitle": "Neuerzeugung fehlgeschlagen",
+      "failedFallback": "Das Panel konnte das JWT-Secret nicht neu erzeugen.",
+      "resultTitle": "JWT-Secret neu erzeugt",
+      "resultDescription": "Alle Sitzungen wurden abgemeldet, auch diese. Weiterleitung zur Anmeldung…"
+    }
   },
   "about": {
     "elsewhereCardTitle": "Einstellungen auf anderen Seiten",

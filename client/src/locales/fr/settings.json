@@ -27,16 +27,56 @@
       "automation": "Automatisation",
       "system": "Système"
     },
-    "general": { "label": "Général", "tip": "Port du panneau, redémarrage et apparence", "description": "Port sur lequel cette interface d'administration écoute, ainsi que le thème." },
-    "updates": { "label": "Mises à jour", "tip": "Vérifier et appliquer les nouvelles versions du panneau", "description": "Vérifications des versions du panneau, téléchargements, et mode d'application des mises à jour." },
-    "https": { "label": "HTTPS", "tip": "Certificats TLS pour des connexions chiffrées", "description": "Terminaison TLS. Activez ceci lorsque vous exposez le panneau au-delà de votre réseau local." },
-    "access": { "label": "Accès distant", "tip": "Quels navigateurs et appareils peuvent se connecter (CORS)", "description": "Quelles origines peuvent atteindre ce panneau depuis une autre machine, et pourquoi des requêtes sont bloquées." },
-    "security": { "label": "Sécurité", "tip": "Mot de passe du compte et connexion", "description": "Mot de passe du compte du panneau et contrôles de connexion." },
-    "connection": { "label": "RCON", "tip": "Connexion à la console distante et comportement au démarrage", "description": "Connexion RCON utilisée pour les commandes, ainsi que le démarrage ou non du serveur de jeu avec le panneau." },
-    "bridge": { "label": "PanelBridge", "tip": "Lien avec le mod Lua, y compris les serveurs distants via SFTP", "description": "Lien avec le mod Lua PanelBridge pour la météo, la téléportation et le contrôle des objets. Prend en charge les serveurs distants via SFTP." },
-    "mods": { "label": "Mods et Workshop", "tip": "Vérifications de mise à jour, synchronisation de collection et clé Steam", "description": "Détection des mises à jour du Workshop, synchronisation de collection, et la clé Steam Web API dont elles dépendent." },
-    "backups": { "label": "Sauvegardes", "tip": "Planification des sauvegardes du monde et exports de personnages", "description": "Sauvegardes automatiques du monde et copies d'export par personnage." },
-    "about": { "label": "À propos", "tip": "Version, informations d'exécution et paramètres situés ailleurs", "description": "Version du panneau et informations d'exécution, ainsi que l'emplacement des autres paramètres." }
+    "general": {
+      "label": "Général",
+      "tip": "Port du panneau, redémarrage et apparence",
+      "description": "Port sur lequel cette interface d'administration écoute, ainsi que le thème."
+    },
+    "updates": {
+      "label": "Mises à jour",
+      "tip": "Vérifier et appliquer les nouvelles versions du panneau",
+      "description": "Vérifications des versions du panneau, téléchargements, et mode d'application des mises à jour."
+    },
+    "https": {
+      "label": "HTTPS",
+      "tip": "Certificats TLS pour des connexions chiffrées",
+      "description": "Terminaison TLS. Activez ceci lorsque vous exposez le panneau au-delà de votre réseau local."
+    },
+    "access": {
+      "label": "Accès distant",
+      "tip": "Quels navigateurs et appareils peuvent se connecter (CORS)",
+      "description": "Quelles origines peuvent atteindre ce panneau depuis une autre machine, et pourquoi des requêtes sont bloquées."
+    },
+    "security": {
+      "label": "Sécurité",
+      "tip": "Mot de passe du compte et connexion",
+      "description": "Mot de passe du compte du panneau et contrôles de connexion."
+    },
+    "connection": {
+      "label": "RCON",
+      "tip": "Connexion à la console distante et comportement au démarrage",
+      "description": "Connexion RCON utilisée pour les commandes, ainsi que le démarrage ou non du serveur de jeu avec le panneau."
+    },
+    "bridge": {
+      "label": "PanelBridge",
+      "tip": "Lien avec le mod Lua, y compris les serveurs distants via SFTP",
+      "description": "Lien avec le mod Lua PanelBridge pour la météo, la téléportation et le contrôle des objets. Prend en charge les serveurs distants via SFTP."
+    },
+    "mods": {
+      "label": "Mods et Workshop",
+      "tip": "Vérifications de mise à jour, synchronisation de collection et clé Steam",
+      "description": "Détection des mises à jour du Workshop, synchronisation de collection, et la clé Steam Web API dont elles dépendent."
+    },
+    "backups": {
+      "label": "Sauvegardes",
+      "tip": "Planification des sauvegardes du monde et exports de personnages",
+      "description": "Sauvegardes automatiques du monde et copies d'export par personnage."
+    },
+    "about": {
+      "label": "À propos",
+      "tip": "Version, informations d'exécution et paramètres situés ailleurs",
+      "description": "Version du panneau et informations d'exécution, ainsi que l'emplacement des autres paramètres."
+    }
   },
   "ariaLabel": "Sections des paramètres",
   "pageHeader": {
@@ -54,8 +94,10 @@
     "save": "Enregistrer les paramètres",
     "noChanges": "Aucune modification à enregistrer"
   },
-  "themeSelect": { "survival": "Survival (Sombre)", "light": "Clair" },
-
+  "themeSelect": {
+    "survival": "Survival (Sombre)",
+    "light": "Clair"
+  },
   "general": {
     "cardTitle": "Paramètres du panneau",
     "cardDescription": "Port sur lequel ce panneau écoute, et son apparence.",
@@ -72,7 +114,6 @@
     "themeLabel": "Thème",
     "themeDesc": "Choisissez entre le look survival sombre ou un thème clair et épuré."
   },
-
   "access": {
     "cardTitle": "Accès distant (CORS)",
     "cardDesc": "Contrôle quels appareils et navigateurs peuvent se connecter à ce panneau. Si vous n'accédez au panneau que depuis cette machine, ces valeurs par défaut conviennent.",
@@ -101,9 +142,14 @@
     "blockedOriginsLabel": "Origines bloquées",
     "effectiveAllowlistLabel": "Liste blanche effective",
     "lastReloadLabel": "Dernier rechargement",
-    "recentBlockedLabel": "Origines bloquées récemment"
+    "recentBlockedLabel": "Origines bloquées récemment",
+    "originsError": {
+      "invalidFormat": "Format d'origine invalide : {{origin}}",
+      "protocolNotAllowed": "Seules les origines http/https sont autorisées : {{origin}}",
+      "tooLong": "Origine trop longue ({{length}} caractères). Maximum : {{max}}.",
+      "tooMany": "Trop d'origines. Maximum : {{max}}."
+    }
   },
-
   "updates": {
     "autoUpdateTitle": "Mise à jour automatique du panneau",
     "autoUpdateDesc": "Vérifier une nouvelle version, la télécharger, puis l'appliquer au redémarrage.",
@@ -146,7 +192,10 @@
     "noHelperLogDesc": "Le script d'aide a peut-être été bloqué par la stratégie d'exécution ou l'antivirus. Vérifiez l'historique de protection de Windows Defender.",
     "showHelperLog": "Afficher le journal d'aide",
     "refreshLog": "Actualiser le journal",
-    "couldNotReadLog": { "title": "Impossible de lire le journal", "fallback": "Échec de la lecture du journal d'aide." },
+    "couldNotReadLog": {
+      "title": "Impossible de lire le journal",
+      "fallback": "Échec de la lecture du journal d'aide."
+    },
     "updateBlockedTitle": "Mise à jour bloquée",
     "beforeYouRestartTitle": "Avant de redémarrer",
     "checkForUpdates": "Vérifier les mises à jour",
@@ -176,7 +225,6 @@
     "footerDockerHandled": "Les mises à jour Docker sont gérées par le contrôleur hôte configuré.",
     "footerAutoUpdateDevMode": "La mise à jour automatique fonctionne uniquement pour les versions packagées. En mode développement, mettez à jour depuis git."
   },
-
   "https": {
     "cardTitle": "HTTPS",
     "cardDesc": "Chiffrer le trafic du panneau avec un certificat TLS.",
@@ -204,7 +252,6 @@
     "restartRequiredTitle": "Redémarrage requis",
     "restartRequiredDesc": "Les changements HTTPS nécessitent un redémarrage. Enregistrez d'abord, puis redémarrez depuis les Paramètres du panneau."
   },
-
   "connection": {
     "cardTitle": "Connexion RCON",
     "cardDesc": "Testez la connexion et définissez le comportement de reconnexion. L'hôte, le port et le mot de passe sont configurés par serveur sur la page Serveurs.",
@@ -220,7 +267,6 @@
     "autoStartLabel": "Démarrer le serveur de jeu au démarrage du panneau",
     "autoStartDesc": "Ignoré automatiquement lorsque le port RCON est déjà utilisé, pour qu'un serveur déjà en cours d'exécution ne soit jamais dupliqué. Nécessite un chemin d'installation local ; les serveurs hébergés par un fournisseur sont démarrés par le fournisseur."
   },
-
   "bridge": {
     "cardTitle": "Panel Bridge",
     "cardDesc": "Connecte ce panneau au jeu en direct pour la météo, les utilitaires, un chat enrichi et d'autres actions in-jeu",
@@ -339,7 +385,6 @@
     "remoteInstallWarning": "Serveur distant : copiez PanelBridge.lua dans le dossier Lua distant via SFTP ou le gestionnaire de fichiers du fournisseur. L'installation locale automatique n'est pas disponible.",
     "destinationLabel": "Destination :"
   },
-
   "mods": {
     "cardTitle": "Paramètres de mise à jour des mods",
     "cardDesc": "À quelle fréquence vérifier les mises à jour du Workshop et si le serveur doit redémarrer automatiquement à leur arrivée.",
@@ -374,7 +419,6 @@
     "howToGetKeyStep3": "Entrez un nom de domaine (peut être « localhost » pour un usage personnel)",
     "howToGetKeyStep4": "Copiez la clé et collez-la ici"
   },
-
   "backups": {
     "cardTitle": "Sauvegardes du monde",
     "cardDesc": "Sauvegardez et restaurez le monde, la carte et les données des joueurs de votre serveur.",
@@ -417,7 +461,6 @@
     "copiesKeptLabel": "Copies conservées par joueur",
     "copiesKeptHelp": "Les exports les plus anciens sont supprimés une fois ce nombre dépassé par un joueur. Restaurez-les depuis la page Joueurs."
   },
-
   "security": {
     "cardTitle": "Sécurité et authentification",
     "cardDesc": "Modifiez votre mot de passe et consultez les détails d'accès.",
@@ -457,17 +500,44 @@
     "tipsAdminTitle": "Commandes d'administration :",
     "tipsAdminDesc": "Soyez prudent avec les commandes d'administration. Certaines actions comme bannir ou expulser des joueurs ne peuvent pas être facilement annulées.",
     "tipsAuthTitle": "Authentification :",
-    "tipsAuthDesc": "L'authentification n'est pas configurée. Créez un compte via l'assistant de configuration au premier lancement pour protéger l'accès à ce panneau."
+    "tipsAuthDesc": "L'authentification n'est pas configurée. Créez un compte via l'assistant de configuration au premier lancement pour protéger l'accès à ce panneau.",
+    "regenerateJwt": {
+      "cardTitle": "Régénérer le secret JWT",
+      "button": "Régénérer le secret JWT",
+      "cardDesc": "Déconnecte immédiatement tous les utilisateurs sur tous les appareils, vous compris — les jetons d'accès et de rafraîchissement de toutes les sessions en cours cessent de fonctionner d'un coup. À n'utiliser que si une sauvegarde contenant l'ancienne clé de signature a pu fuiter ; ce n'est pas une action de routine et il n'y a pas de rotation automatique.",
+      "confirmTitle": "Régénérer le secret JWT ?",
+      "confirmDesc": "Cela déconnecte immédiatement tous les utilisateurs sur tous les appareils, y compris votre propre session — vous devrez vous reconnecter juste après. Cette action est irréversible.",
+      "confirm": "Oui, déconnecter tout le monde",
+      "cancel": "Annuler",
+      "failedTitle": "Échec de la régénération",
+      "failedFallback": "Le panneau n'a pas pu régénérer le secret JWT.",
+      "resultTitle": "Secret JWT régénéré",
+      "resultDescription": "Toutes les sessions ont été déconnectées, y compris celle-ci. Redirection vers la connexion…"
+    }
   },
-
   "about": {
     "elsewhereCardTitle": "Paramètres situés sur d'autres pages",
     "elsewhereCardDesc": "Ces fonctionnalités possèdent leur propre configuration, qui vit donc avec la fonctionnalité plutôt qu'ici.",
-    "elsewhereServers": { "label": "Profils de serveur", "detail": "Chemins d'installation, hôte et mot de passe RCON, mémoire, et SteamCMD." },
-    "elsewhereDiscord": { "label": "Bot Discord", "detail": "Jeton du bot, canaux, notifications d'événements et pont de chat." },
-    "elsewhereScheduler": { "label": "Tâches planifiées", "detail": "Redémarrages, annonces et commandes récurrentes." },
-    "elsewhereServerConfig": { "label": "Configuration du serveur de jeu", "detail": "Options INI du serveur et règles sandbox." },
-    "elsewhereChat": { "label": "Messages rapides du chat", "detail": "Messages prédéfinis affichés au-dessus de la saisie du chat." },
+    "elsewhereServers": {
+      "label": "Profils de serveur",
+      "detail": "Chemins d'installation, hôte et mot de passe RCON, mémoire, et SteamCMD."
+    },
+    "elsewhereDiscord": {
+      "label": "Bot Discord",
+      "detail": "Jeton du bot, canaux, notifications d'événements et pont de chat."
+    },
+    "elsewhereScheduler": {
+      "label": "Tâches planifiées",
+      "detail": "Redémarrages, annonces et commandes récurrentes."
+    },
+    "elsewhereServerConfig": {
+      "label": "Configuration du serveur de jeu",
+      "detail": "Options INI du serveur et règles sandbox."
+    },
+    "elsewhereChat": {
+      "label": "Messages rapides du chat",
+      "detail": "Messages prédéfinis affichés au-dessus de la saisie du chat."
+    },
     "aboutCardTitle": "À propos",
     "aboutCardDesc": "Version du panneau, informations d'exécution et liens utiles.",
     "installedVersionLabel": "Version installée",
@@ -485,7 +555,6 @@
     "builtWith": "Construit avec React, Node.js et Socket.IO",
     "mitLicensed": "Sous licence MIT"
   },
-
   "corsLockoutDialog": {
     "title": "Vous verrouiller hors du panneau ?",
     "description": "Désactiver <b>Autoriser les origines privées/LAN</b> sans origine explicite listée et avec <b>Autoriser toutes les origines</b> désactivé bloquera chaque connexion navigateur — y compris celle que vous utilisez actuellement — après le prochain rechargement CORS.",
@@ -494,7 +563,6 @@
     "keepLanOn": "Garder l'accès LAN activé",
     "disableAnyway": "Désactiver quand même"
   },
-
   "workshopSync": {
     "cardTitle": "Synchronisation de collection Workshop",
     "cardDesc": "Met en miroir votre liste de mods suivis dans une collection Steam Workshop pour que l'ajout/retrait ne se fasse qu'à un seul endroit.",
@@ -600,23 +668,49 @@
     "cancelButton": "Annuler",
     "removeEverywhereButton": "Retirer partout",
     "toasts": {
-      "cookiesSaved": { "title": "Cookies enregistrés", "description": "Votre session Steam est prête pour la synchronisation de collection." },
+      "cookiesSaved": {
+        "title": "Cookies enregistrés",
+        "description": "Votre session Steam est prête pour la synchronisation de collection."
+      },
       "couldNotSaveCookies": "Impossible d'enregistrer les cookies. Réessayez.",
       "nothingToParse": "Rien à analyser",
       "noCookiesFound": "Aucun sessionid ou steamLoginSecure trouvé dans le texte collé",
       "nothingUsableFound": "Rien d'utilisable trouvé",
-      "partialExtraction": { "title": "Extraction partielle", "description": "Seul {{field}} trouvé — collez une requête qui inclut les deux, ou remplissez l'autre champ manuellement." },
+      "partialExtraction": {
+        "title": "Extraction partielle",
+        "description": "Seul {{field}} trouvé — collez une requête qui inclut les deux, ou remplissez l'autre champ manuellement."
+      },
       "clipboardNeedsHttps": "La lecture du presse-papiers nécessite HTTPS ou localhost. Utilisez le collage manuel ci-dessous.",
       "clipboardEmpty": "Le presse-papiers est vide",
       "clipboardNoMatch": "Impossible de trouver les deux cookies dans le presse-papiers. Collez une requête qui les inclut.",
       "clipboardReadFailed": "Impossible de lire le presse-papiers. Collez manuellement à la place.",
-      "extractedFrom": { "title": "Cookies extraits depuis {{browser}}" },
-      "extractFailed": { "title": "Échec de l'extraction depuis {{browser}}", "unknownError": "Échec inconnu", "requestFailed": "Échec de la requête" },
-      "connectionOk": { "title": "Connexion OK" },
-      "testFailed": { "title": "Échec du test", "fallback": "Impossible de joindre la collection" },
-      "addedToServer": { "title": "Ajouté au serveur", "description": "Project Zomboid téléchargera et chargera ce mod au prochain redémarrage du serveur." },
-      "removedFromServer": { "title": "Retiré du serveur", "descAutoSync": "Il sera aussi retiré de la collection Steam.", "descNoAutoSync": "La collection Steam n'a pas été modifiée car la synchronisation automatique est désactivée." },
-      "removedEverywhere": { "title": "{{name}} retiré partout" },
+      "extractedFrom": {
+        "title": "Cookies extraits depuis {{browser}}"
+      },
+      "extractFailed": {
+        "title": "Échec de l'extraction depuis {{browser}}",
+        "unknownError": "Échec inconnu",
+        "requestFailed": "Échec de la requête"
+      },
+      "connectionOk": {
+        "title": "Connexion OK"
+      },
+      "testFailed": {
+        "title": "Échec du test",
+        "fallback": "Impossible de joindre la collection"
+      },
+      "addedToServer": {
+        "title": "Ajouté au serveur",
+        "description": "Project Zomboid téléchargera et chargera ce mod au prochain redémarrage du serveur."
+      },
+      "removedFromServer": {
+        "title": "Retiré du serveur",
+        "descAutoSync": "Il sera aussi retiré de la collection Steam.",
+        "descNoAutoSync": "La collection Steam n'a pas été modifiée car la synchronisation automatique est désactivée."
+      },
+      "removedEverywhere": {
+        "title": "{{name}} retiré partout"
+      },
       "purgeCollectionRemoved": "retiré de la collection",
       "purgeCollectionNotUpdated": "collection non mise à jour ({{reason}})",
       "purgeCollectionRejected": "Steam a rejeté le changement",
@@ -624,76 +718,252 @@
       "purgeDiskDeleted": "supprimé du disque",
       "purgeDiskNoFiles": "aucun fichier sur le disque",
       "purgeUntracked": "non suivi et ignoré",
-      "actionFailed": { "title": "Échec de l'action", "fallback": "Steam a rejeté le changement" },
+      "actionFailed": {
+        "title": "Échec de l'action",
+        "fallback": "Steam a rejeté le changement"
+      },
       "cookiesFirstError": "Ajoutez d'abord les cookies Steam pour écrire dans la collection.",
       "failedToReadCollection": "Échec de la lecture de la collection"
     }
   },
-
   "toasts": {
-    "recoveryCodesGenerated": { "title": "Codes de récupération générés", "description": "Enregistrez-les maintenant — ils ne peuvent plus être affichés ensuite." },
-    "recoveryCodesFailed": { "title": "Impossible de générer les codes de récupération", "fallback": "Réessayez." },
-    "invalidCorsOrigins": { "title": "Origines CORS invalides" },
-    "settingsSaved": { "title": "Paramètres enregistrés", "description": "Vos paramètres du panneau ont été enregistrés." },
-    "settingsSaveFailed": { "title": "Impossible d'enregistrer les paramètres", "fallback": "Le panneau n'a pas pu enregistrer vos paramètres. Réessayez." },
-    "corsReloaded": { "title": "Règles CORS rechargées", "description": "Le backend a rechargé les paramètres CORS depuis la base de données." },
-    "corsReloadFailed": { "title": "Impossible de recharger les règles CORS", "fallback": "Échec du rechargement des règles CORS." },
-    "corsLogCleared": { "title": "Journal des origines bloquées effacé", "description": "Les origines CORS bloquées récentes ont été retirées des diagnostics." },
-    "corsLogClearFailed": { "title": "Impossible d'effacer le journal", "fallback": "Échec de l'effacement des origines CORS bloquées." },
-    "restartingPanel": { "title": "Redémarrage du panneau" },
-    "updateInProgress": { "title": "Une mise à jour est déjà en cours", "fallback": "Une application de mise à jour est déjà en cours. Attendez que le panneau se reconnecte." },
-    "restartFailed": { "title": "Échec du redémarrage", "description": "Impossible de redémarrer le panneau. Vous devrez peut-être le redémarrer manuellement." },
-    "updateAvailable": { "title": "Mise à jour disponible", "description": "Une nouvelle version du panneau est disponible : v{{latest}} (installée : v{{current}})." },
-    "upToDate": { "title": "À jour", "description": "Vous utilisez la dernière version du panneau (v{{current}})." },
-    "updateCheckFailed": { "title": "Échec de la vérification de mise à jour", "fallback": "Le panneau n'a pas pu joindre GitHub. Vérifiez votre connexion et réessayez." },
-    "noUpdateAvailable": { "title": "Aucune mise à jour disponible", "description": "Aucune nouvelle version trouvée. Lancez Vérifier les mises à jour pour actualiser l'état." },
-    "dockerUpdateStarted": { "title": "Mise à jour Docker démarrée" },
-    "updateDownloaded": { "title": "Mise à jour téléchargée" },
+    "recoveryCodesGenerated": {
+      "title": "Codes de récupération générés",
+      "description": "Enregistrez-les maintenant — ils ne peuvent plus être affichés ensuite."
+    },
+    "recoveryCodesFailed": {
+      "title": "Impossible de générer les codes de récupération",
+      "fallback": "Réessayez."
+    },
+    "invalidCorsOrigins": {
+      "title": "Origines CORS invalides"
+    },
+    "settingsSaved": {
+      "title": "Paramètres enregistrés",
+      "description": "Vos paramètres du panneau ont été enregistrés."
+    },
+    "settingsSaveFailed": {
+      "title": "Impossible d'enregistrer les paramètres",
+      "fallback": "Le panneau n'a pas pu enregistrer vos paramètres. Réessayez."
+    },
+    "corsReloaded": {
+      "title": "Règles CORS rechargées",
+      "description": "Le backend a rechargé les paramètres CORS depuis la base de données."
+    },
+    "corsReloadFailed": {
+      "title": "Impossible de recharger les règles CORS",
+      "fallback": "Échec du rechargement des règles CORS."
+    },
+    "corsLogCleared": {
+      "title": "Journal des origines bloquées effacé",
+      "description": "Les origines CORS bloquées récentes ont été retirées des diagnostics."
+    },
+    "corsLogClearFailed": {
+      "title": "Impossible d'effacer le journal",
+      "fallback": "Échec de l'effacement des origines CORS bloquées."
+    },
+    "restartingPanel": {
+      "title": "Redémarrage du panneau"
+    },
+    "updateInProgress": {
+      "title": "Une mise à jour est déjà en cours",
+      "fallback": "Une application de mise à jour est déjà en cours. Attendez que le panneau se reconnecte."
+    },
+    "restartFailed": {
+      "title": "Échec du redémarrage",
+      "description": "Impossible de redémarrer le panneau. Vous devrez peut-être le redémarrer manuellement."
+    },
+    "updateAvailable": {
+      "title": "Mise à jour disponible",
+      "description": "Une nouvelle version du panneau est disponible : v{{latest}} (installée : v{{current}})."
+    },
+    "upToDate": {
+      "title": "À jour",
+      "description": "Vous utilisez la dernière version du panneau (v{{current}})."
+    },
+    "updateCheckFailed": {
+      "title": "Échec de la vérification de mise à jour",
+      "fallback": "Le panneau n'a pas pu joindre GitHub. Vérifiez votre connexion et réessayez."
+    },
+    "noUpdateAvailable": {
+      "title": "Aucune mise à jour disponible",
+      "description": "Aucune nouvelle version trouvée. Lancez Vérifier les mises à jour pour actualiser l'état."
+    },
+    "dockerUpdateStarted": {
+      "title": "Mise à jour Docker démarrée"
+    },
+    "updateDownloaded": {
+      "title": "Mise à jour téléchargée"
+    },
     "updateDownloadedDescDocker": "Le conteneur du panneau est en cours de reconstruction et se reconnectera une fois le contrôle de santé réussi.",
     "updateDownloadedDescBinary": "Les fichiers de mise à jour sont prêts. Redémarrez le panneau pour appliquer cette version.",
-    "downloadFailed": { "title": "Échec du téléchargement", "fallback": "Le panneau n'a pas pu télécharger la mise à jour. Vérifiez l'accès réseau, l'espace disque et les permissions." },
-    "updateReady": { "title": "Mise à jour prête", "withVersion": "Le panneau v{{version}} est téléchargé. Redémarrez le panneau pour passer à la nouvelle version.", "noVersion": "La mise à jour est téléchargée. Redémarrez le panneau pour passer à la nouvelle version." },
-    "updateApplied": { "title": "Mise à jour appliquée", "withVersion": "Le panneau a été mis à jour avec succès vers la v{{version}}.", "noVersion": "La mise à jour du panneau a été appliquée avec succès." },
-    "updateApplyFailed": { "title": "Échec de l'application de la mise à jour", "withVersion": "Le panneau exécute toujours la version précédente. La mise à jour v{{version}} ne s'est pas installée.", "noVersion": "La mise à jour téléchargée ne s'est pas installée. Consultez le journal d'aide pour plus de détails." },
-    "rconConnected": { "title": "RCON connecté", "description": "Le panneau s'est connecté à votre serveur via RCON." },
-    "rconFailed": { "title": "Échec de la connexion RCON", "fallback": "Le panneau n'a pas pu se connecter au RCON. Vérifiez l'hôte, le port, le mot de passe et les règles de pare-feu." },
-    "selectServer": { "title": "Sélectionnez un serveur", "description": "Choisissez le serveur sur lequel vous voulez installer PanelBridge.lua." },
-    "manualInstallRequired": { "title": "Installation manuelle requise", "description": "Les serveurs distants ne peuvent pas être modifiés depuis cet ordinateur. Copiez PanelBridge.lua dans le dossier Lua du serveur via SFTP ou le gestionnaire de fichiers de l'hébergeur." },
-    "bridgeInstalled": { "title": "PanelBridge installé", "description": "PanelBridge.lua a été copié vers {{server}}.", "fallbackServer": "le serveur sélectionné" },
-    "installFailed": { "title": "Échec de l'installation", "fallback": "Le panneau n'a pas pu copier PanelBridge.lua. Vérifiez le chemin du serveur et les permissions, puis réessayez." },
-    "backupCreated": { "title": "Sauvegarde créée", "description": "{{name}} créée en {{seconds}}s" },
-    "backupFailed": { "title": "Échec de la sauvegarde", "fallback": "Échec de la création de la sauvegarde" },
-    "backupDeleted": { "title": "Sauvegarde supprimée", "description": "{{name}} supprimée" },
-    "deleteFailed": { "title": "Échec de la suppression", "fallback": "Échec de la suppression de la sauvegarde" },
-    "backupRestored": { "title": "Sauvegarde restaurée", "description": "{{name}} restaurée en {{seconds}}s" },
-    "restoreFailed": { "title": "Échec de la restauration", "fallback": "Échec de la restauration de la sauvegarde" },
-    "invalidSchedule": { "title": "Planification invalide", "description": "Veuillez saisir une expression cron valide (par ex., 0 */6 * * *)" },
-    "backupSettingsSaved": { "title": "Paramètres de sauvegarde enregistrés", "description": "La planification et la rétention des sauvegardes ont été mises à jour." },
-    "backupSettingsSaveFailed": { "title": "Impossible d'enregistrer les paramètres de sauvegarde", "fallback": "Le panneau n'a pas pu enregistrer les paramètres de planification des sauvegardes. Réessayez." },
-    "scheduledBackupsEnabled": { "title": "Sauvegardes planifiées activées", "description": "Le panneau créera des sauvegardes selon la planification configurée." },
-    "scheduledBackupsDisabled": { "title": "Sauvegardes planifiées désactivées", "description": "Les sauvegardes automatiques sont désactivées. Les sauvegardes manuelles restent disponibles." },
-    "backupsUpdateFailed": { "title": "Impossible de mettre à jour les sauvegardes", "fallback": "Le panneau n'a pas pu mettre à jour l'état des sauvegardes planifiées. Réessayez." },
-    "bridgeAutoConfigured": { "title": "Bridge configuré automatiquement", "description": "Connecté au serveur : {{server}}" },
-    "bridgeStopped": { "title": "Bridge arrêté", "description": "Panel Bridge a été arrêté" },
-    "bridgeStopFailed": { "title": "Échec de l'arrêt", "fallback": "Le panneau n'a pas pu arrêter Panel Bridge. Réessayez." },
-    "bridgeConfigured": { "title": "Bridge configuré", "description": "Surveillance : {{path}}" },
-    "sftpBridgeReady": { "title": "Bridge SFTP prêt" },
-    "sftpFoldersReady": { "title": "Dossiers SFTP prêts" },
-    "sftpTestFailed": { "title": "Échec du test SFTP", "fallback": "Impossible de se connecter au SFTP." },
-    "sftpBridgeStarted": { "title": "Bridge SFTP démarré", "description": "PanelBridge se synchronise via le cache local." },
-    "modConnected": { "title": "Mod connecté !", "description": "Connecté à {{server}}", "fallbackServer": "serveur" },
-    "modNoResponse": { "title": "Le mod n'a pas répondu", "fallback": "Aucune réponse de PanelBridge.lua. Assurez-vous que le serveur de jeu est en cours d'exécution et que le mod est activé.", "openBridge": "Ouvrir Bridge", "openBridgeAlt": "Ouvrir les paramètres PanelBridge" },
-    "passwordsDontMatch": { "title": "Les mots de passe ne correspondent pas" },
-    "passwordTooShort": { "title": "Le mot de passe doit comporter au moins 6 caractères" },
-    "passwordChanged": { "title": "Mot de passe modifié", "description": "Votre mot de passe a été mis à jour." },
-    "passwordChangeFailed": { "title": "Échec du changement de mot de passe", "fallback": "Le panneau n'a pas pu changer votre mot de passe. Vérifiez votre mot de passe actuel et réessayez." },
-    "recoveryReady": { "title": "Récupération prête", "fallback": "Jeton de récupération créé dans data/reset-token.txt. Collez-le ci-dessous pour continuer." },
-    "recoveryUnavailable": { "title": "Récupération indisponible", "fallback": "Le panneau n'a pas pu préparer la récupération du mot de passe sur ce serveur." },
-    "recoveryTokenMissing": { "title": "Jeton de récupération manquant" },
-    "passwordReset": { "title": "Mot de passe réinitialisé", "description": "Votre mot de passe a été réinitialisé. Reconnectez-vous avec le nouveau mot de passe." },
-    "passwordResetFailed": { "title": "Échec de la réinitialisation du mot de passe", "fallback": "Le panneau n'a pas pu réinitialiser votre mot de passe depuis ce serveur." }
+    "downloadFailed": {
+      "title": "Échec du téléchargement",
+      "fallback": "Le panneau n'a pas pu télécharger la mise à jour. Vérifiez l'accès réseau, l'espace disque et les permissions."
+    },
+    "updateReady": {
+      "title": "Mise à jour prête",
+      "withVersion": "Le panneau v{{version}} est téléchargé. Redémarrez le panneau pour passer à la nouvelle version.",
+      "noVersion": "La mise à jour est téléchargée. Redémarrez le panneau pour passer à la nouvelle version."
+    },
+    "updateApplied": {
+      "title": "Mise à jour appliquée",
+      "withVersion": "Le panneau a été mis à jour avec succès vers la v{{version}}.",
+      "noVersion": "La mise à jour du panneau a été appliquée avec succès."
+    },
+    "updateApplyFailed": {
+      "title": "Échec de l'application de la mise à jour",
+      "withVersion": "Le panneau exécute toujours la version précédente. La mise à jour v{{version}} ne s'est pas installée.",
+      "noVersion": "La mise à jour téléchargée ne s'est pas installée. Consultez le journal d'aide pour plus de détails."
+    },
+    "rconConnected": {
+      "title": "RCON connecté",
+      "description": "Le panneau s'est connecté à votre serveur via RCON."
+    },
+    "rconFailed": {
+      "title": "Échec de la connexion RCON",
+      "fallback": "Le panneau n'a pas pu se connecter au RCON. Vérifiez l'hôte, le port, le mot de passe et les règles de pare-feu."
+    },
+    "selectServer": {
+      "title": "Sélectionnez un serveur",
+      "description": "Choisissez le serveur sur lequel vous voulez installer PanelBridge.lua."
+    },
+    "manualInstallRequired": {
+      "title": "Installation manuelle requise",
+      "description": "Les serveurs distants ne peuvent pas être modifiés depuis cet ordinateur. Copiez PanelBridge.lua dans le dossier Lua du serveur via SFTP ou le gestionnaire de fichiers de l'hébergeur."
+    },
+    "bridgeInstalled": {
+      "title": "PanelBridge installé",
+      "description": "PanelBridge.lua a été copié vers {{server}}.",
+      "fallbackServer": "le serveur sélectionné"
+    },
+    "installFailed": {
+      "title": "Échec de l'installation",
+      "fallback": "Le panneau n'a pas pu copier PanelBridge.lua. Vérifiez le chemin du serveur et les permissions, puis réessayez."
+    },
+    "backupCreated": {
+      "title": "Sauvegarde créée",
+      "description": "{{name}} créée en {{seconds}}s"
+    },
+    "backupFailed": {
+      "title": "Échec de la sauvegarde",
+      "fallback": "Échec de la création de la sauvegarde"
+    },
+    "backupDeleted": {
+      "title": "Sauvegarde supprimée",
+      "description": "{{name}} supprimée"
+    },
+    "deleteFailed": {
+      "title": "Échec de la suppression",
+      "fallback": "Échec de la suppression de la sauvegarde"
+    },
+    "backupRestored": {
+      "title": "Sauvegarde restaurée",
+      "description": "{{name}} restaurée en {{seconds}}s"
+    },
+    "restoreFailed": {
+      "title": "Échec de la restauration",
+      "fallback": "Échec de la restauration de la sauvegarde"
+    },
+    "invalidSchedule": {
+      "title": "Planification invalide",
+      "description": "Veuillez saisir une expression cron valide (par ex., 0 */6 * * *)"
+    },
+    "backupSettingsSaved": {
+      "title": "Paramètres de sauvegarde enregistrés",
+      "description": "La planification et la rétention des sauvegardes ont été mises à jour."
+    },
+    "backupSettingsSaveFailed": {
+      "title": "Impossible d'enregistrer les paramètres de sauvegarde",
+      "fallback": "Le panneau n'a pas pu enregistrer les paramètres de planification des sauvegardes. Réessayez."
+    },
+    "scheduledBackupsEnabled": {
+      "title": "Sauvegardes planifiées activées",
+      "description": "Le panneau créera des sauvegardes selon la planification configurée."
+    },
+    "scheduledBackupsDisabled": {
+      "title": "Sauvegardes planifiées désactivées",
+      "description": "Les sauvegardes automatiques sont désactivées. Les sauvegardes manuelles restent disponibles."
+    },
+    "backupsUpdateFailed": {
+      "title": "Impossible de mettre à jour les sauvegardes",
+      "fallback": "Le panneau n'a pas pu mettre à jour l'état des sauvegardes planifiées. Réessayez."
+    },
+    "bridgeAutoConfigured": {
+      "title": "Bridge configuré automatiquement",
+      "description": "Connecté au serveur : {{server}}"
+    },
+    "bridgeStopped": {
+      "title": "Bridge arrêté",
+      "description": "Panel Bridge a été arrêté"
+    },
+    "bridgeStopFailed": {
+      "title": "Échec de l'arrêt",
+      "fallback": "Le panneau n'a pas pu arrêter Panel Bridge. Réessayez."
+    },
+    "bridgeConfigured": {
+      "title": "Bridge configuré",
+      "description": "Surveillance : {{path}}"
+    },
+    "sftpBridgeReady": {
+      "title": "Bridge SFTP prêt"
+    },
+    "sftpFoldersReady": {
+      "title": "Dossiers SFTP prêts"
+    },
+    "sftpTestFailed": {
+      "title": "Échec du test SFTP",
+      "fallback": "Impossible de se connecter au SFTP."
+    },
+    "sftpBridgeStarted": {
+      "title": "Bridge SFTP démarré",
+      "description": "PanelBridge se synchronise via le cache local."
+    },
+    "modConnected": {
+      "title": "Mod connecté !",
+      "description": "Connecté à {{server}}",
+      "fallbackServer": "serveur"
+    },
+    "modNoResponse": {
+      "title": "Le mod n'a pas répondu",
+      "fallback": "Aucune réponse de PanelBridge.lua. Assurez-vous que le serveur de jeu est en cours d'exécution et que le mod est activé.",
+      "openBridge": "Ouvrir Bridge",
+      "openBridgeAlt": "Ouvrir les paramètres PanelBridge"
+    },
+    "passwordsDontMatch": {
+      "title": "Les mots de passe ne correspondent pas"
+    },
+    "passwordTooShort": {
+      "title": "Le mot de passe doit comporter au moins 6 caractères"
+    },
+    "passwordChanged": {
+      "title": "Mot de passe modifié",
+      "description": "Votre mot de passe a été mis à jour."
+    },
+    "passwordChangeFailed": {
+      "title": "Échec du changement de mot de passe",
+      "fallback": "Le panneau n'a pas pu changer votre mot de passe. Vérifiez votre mot de passe actuel et réessayez."
+    },
+    "recoveryReady": {
+      "title": "Récupération prête",
+      "fallback": "Jeton de récupération créé dans data/reset-token.txt. Collez-le ci-dessous pour continuer."
+    },
+    "recoveryUnavailable": {
+      "title": "Récupération indisponible",
+      "fallback": "Le panneau n'a pas pu préparer la récupération du mot de passe sur ce serveur."
+    },
+    "recoveryTokenMissing": {
+      "title": "Jeton de récupération manquant"
+    },
+    "passwordReset": {
+      "title": "Mot de passe réinitialisé",
+      "description": "Votre mot de passe a été réinitialisé. Reconnectez-vous avec le nouveau mot de passe."
+    },
+    "passwordResetFailed": {
+      "title": "Échec de la réinitialisation du mot de passe",
+      "fallback": "Le panneau n'a pas pu réinitialiser votre mot de passe depuis ce serveur."
+    }
   },
-
   "errors": {
     "noRemoteLogFiles": "Aucun fichier .txt ou .log trouvé dans ce dossier.",
     "noRemoteConfigFiles": "Aucun fichier .ini ou .lua trouvé dans ce dossier. Vérifiez que le chemin pointe vers le dossier Server du serveur.",

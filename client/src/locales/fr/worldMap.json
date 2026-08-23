@@ -209,11 +209,35 @@
     "subtitle": "Les positions des joueurs apparaissent une fois PanelBridge connecté"
   },
   "airdropPresets": {
-    "military": { "label": "Militaire", "desc": "Fusils, munitions, armure, communications" },
-    "medical": { "label": "Médical", "desc": "Bandages, antibiotiques, premiers secours" },
-    "food": { "label": "Nourriture", "desc": "Conserves, eau, rations" },
-    "building": { "label": "Construction", "desc": "Planches, clous, outils, corde" },
-    "weapons": { "label": "Armes", "desc": "Fusils à pompe, armes de mêlée, étuis" },
-    "tools": { "label": "Outils", "desc": "Haches, clés, chalumeau, ruban adhésif" }
+    "military": {
+      "label": "Militaire",
+      "desc": "Fusils, munitions, armure, communications"
+    },
+    "medical": {
+      "label": "Médical",
+      "desc": "Bandages, antibiotiques, premiers secours"
+    },
+    "food": {
+      "label": "Nourriture",
+      "desc": "Conserves, eau, rations"
+    },
+    "building": {
+      "label": "Construction",
+      "desc": "Planches, clous, outils, corde"
+    },
+    "weapons": {
+      "label": "Armes",
+      "desc": "Fusils à pompe, armes de mêlée, étuis"
+    },
+    "tools": {
+      "label": "Outils",
+      "desc": "Haches, clés, chalumeau, ruban adhésif"
+    }
+  },
+  "removeVehicleDialog": {
+    "title": "Retirer le véhicule ?",
+    "description": "Le véhicule {{vehicle}} en {{x}}, {{y}} sera supprimé du monde. Cette action est irréversible.",
+    "confirm": "Retirer le véhicule",
+    "cancel": "Annuler"
   }
 }

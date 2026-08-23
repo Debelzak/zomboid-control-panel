@@ -25,7 +25,9 @@
     "deleteTooltip": "Eliminar rol",
     "deleteSeededTooltip": "Los roles predefinidos no se pueden eliminar desde esta pantalla.",
     "recoveryCapabilityHint": "Retirar esta capacidad a quien sea su último titular deja fuera a los administradores — el panel rechaza ese cambio y explica el motivo.",
-    "savingCell": "Guardando…"
+    "savingCell": "Guardando…",
+    "capabilityCount_one": "{{count}} capacidad",
+    "capabilityCount_other": "{{count}} capacidades"
   },
   "roleFormDialog": {
     "createTitle": "Nuevo rol",

@@ -83,7 +83,11 @@
     "pingMs": "{{ping}} ms",
     "pingButton": "Ping",
     "connect": "Conectar",
-    "connectTooltip": "Iniciar el juego y conectar con el servidor"
+    "connectTooltip": "Iniciar el juego y conectar con el servidor",
+    "copyAddress": "Copiar dirección",
+    "copyAddressAria": "Copiar la dirección del servidor {{address}}",
+    "addressCopiedTitle": "Dirección copiada",
+    "addressCopyFailedTitle": "No se pudo copiar la dirección"
   },
   "pagination": {
     "showing": "Mostrando del {{from}} al {{to}} de {{total}} servidores",

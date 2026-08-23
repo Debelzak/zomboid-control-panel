@@ -71,7 +71,8 @@
     "updateNow": "立即更新",
     "activating": "正在激活…",
     "switchToThisServer": "切换到此服务器",
-    "added": "添加于 {{date}}"
+    "added": "添加于 {{date}}",
+    "restartContainerAria": "重启 {{name}}"
   },
   "tandem": {
     "sectionTitle": "与第一台服务器同时运行第二台服务器",
@@ -164,7 +165,8 @@
     "rconPasswordRequired": "服务器控制功能需要此密码。你也可以在 {{iniName}}.ini 文件中设置 <1>RCONPassword=yourpassword</1>。",
     "passwordSet": "密码已设置",
     "minMemoryLabel": "最小内存（GB）",
-    "maxMemoryLabel": "最大内存（GB）"
+    "maxMemoryLabel": "最大内存（GB）",
+    "selectScannedConfigAria": "使用已检测到的服务器 {{name}}"
   },
   "editDialog": {
     "title": "编辑服务器",

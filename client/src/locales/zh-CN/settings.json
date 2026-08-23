@@ -142,7 +142,13 @@
     "blockedOriginsLabel": "被阻止的来源",
     "effectiveAllowlistLabel": "生效的允许列表",
     "lastReloadLabel": "上次重新加载",
-    "recentBlockedLabel": "近期被阻止的来源"
+    "recentBlockedLabel": "近期被阻止的来源",
+    "originsError": {
+      "invalidFormat": "来源格式无效：{{origin}}",
+      "protocolNotAllowed": "仅允许 http/https 来源：{{origin}}",
+      "tooLong": "来源过长（{{length}} 个字符）。最大为 {{max}}。",
+      "tooMany": "来源过多。最大为 {{max}}。"
+    }
   },
   "updates": {
     "autoUpdateTitle": "面板自动更新",
@@ -494,7 +500,20 @@
     "tipsAdminTitle": "管理员命令：",
     "tipsAdminDesc": "使用管理员命令时请务必谨慎。封禁或踢出玩家等操作难以轻易撤销。",
     "tipsAuthTitle": "身份验证：",
-    "tipsAuthDesc": "尚未配置身份验证。请在首次启动时通过设置向导创建账户，以保护此面板的访问安全。"
+    "tipsAuthDesc": "尚未配置身份验证。请在首次启动时通过设置向导创建账户，以保护此面板的访问安全。",
+    "regenerateJwt": {
+      "cardTitle": "重新生成 JWT 密钥",
+      "button": "重新生成 JWT 密钥",
+      "cardDesc": "会立即将所有设备上的所有用户登出，包括你自己——所有当前会话的访问令牌和刷新令牌将同时失效。仅在包含旧签名密钥的备份可能已泄露时使用；这不是常规操作，也没有自动轮换。",
+      "confirmTitle": "重新生成 JWT 密钥？",
+      "confirmDesc": "这会立即将所有设备上的所有用户登出，包括你自己的会话——随后你需要立即重新登录。此操作无法撤销。",
+      "confirm": "是，登出所有人",
+      "cancel": "取消",
+      "failedTitle": "重新生成失败",
+      "failedFallback": "面板无法重新生成 JWT 密钥。",
+      "resultTitle": "JWT 密钥已重新生成",
+      "resultDescription": "所有会话已登出，包括当前会话。正在跳转到登录页面…"
+    }
   },
   "about": {
     "elsewhereCardTitle": "保存在其他页面的设置",

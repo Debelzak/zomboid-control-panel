@@ -338,5 +338,10 @@
     "deletedTitle": "Eliminado",
     "templateDeletedDesc": "Plantilla «{{name}}» eliminada",
     "deleteTemplateFailed": "No se pudo eliminar la plantilla."
+  },
+  "restoreBackupConfirm": {
+    "title": "¿Restaurar esta copia de seguridad?",
+    "description": "¿Reemplazar el archivo actual por «{{filename}}»? Se perderán los cambios sin guardar de la configuración activa.",
+    "confirmLabel": "Restaurar"
   }
 }

@@ -43,7 +43,8 @@
     "scope": "Scope",
     "scopeHelp": "Erweitert. Unverändert lassen, außer dein Provider braucht etwas anderes.",
     "allowInsecureHttp": "Einfaches HTTP für diesen Provider zulassen",
-    "allowInsecureHttpHelp": "Nur für einen selbst gehosteten Identity-Provider, der ausschließlich über eine private, reine HTTP-Adresse erreichbar ist (z. B. hinter einem VPN). Niemals für einen aus dem Internet erreichbaren Provider aktivieren."
+    "allowInsecureHttpHelp": "Nur für einen selbst gehosteten Identity-Provider, der ausschließlich über eine private, reine HTTP-Adresse erreichbar ist (z. B. hinter einem VPN). Niemals für einen aus dem Internet erreichbaren Provider aktivieren.",
+    "clientSecretConfiguredHelp": "Es ist bereits ein Secret gespeichert — diese Punkte sind nicht der echte Wert. Lass sie unverändert, um es zu behalten, gib einen neuen Wert ein, um es zu ersetzen, oder leere das Feld und speichere, um die Anmeldung über diesen Anbieter zu entfernen."
   },
   "actions": {
     "save": "Speichern",

@@ -214,7 +214,9 @@
     "fullStep2Both": "Lege einen Installationsordner und einen Servernamen fest, um fortzufahren.",
     "fullStep2Path": "Lege einen Installationsordner fest, um fortzufahren.",
     "fullStep2Name": "Gib einen Servernamen ein, um fortzufahren.",
-    "fullStep3Rcon": "Das RCON-Passwort muss mindestens 6 Zeichen lang sein."
+    "fullStep3Rcon": "Das RCON-Passwort muss mindestens 6 Zeichen lang sein.",
+    "fullStep3Admin": "Lege ein Admin-Passwort fest, um fortzufahren.",
+    "quickStep2Admin": "Lege ein Admin-Passwort fest, um fortzufahren."
   },
   "toasts": {
     "installationErrorGuidance": "{{message}} Verwende unter Linux {{path}}, oder füge sowohl deinen Installationsordner als auch dessen _Data-Ordner in zomboid-panel.service zu ReadWritePaths hinzu und starte den Dienst anschließend neu.",

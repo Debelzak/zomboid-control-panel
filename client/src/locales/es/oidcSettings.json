@@ -43,7 +43,8 @@
     "scope": "Alcance",
     "scopeHelp": "Avanzado. Déjalo como está salvo que el proveedor necesite algo distinto.",
     "allowInsecureHttp": "Permitir HTTP sin cifrar para este proveedor",
-    "allowInsecureHttpHelp": "Solo para un proveedor de identidad autoalojado, accesible únicamente a través de una dirección privada y solo HTTP (por ejemplo, detrás de una VPN). No actives esto nunca para un proveedor accesible desde internet."
+    "allowInsecureHttpHelp": "Solo para un proveedor de identidad autoalojado, accesible únicamente a través de una dirección privada y solo HTTP (por ejemplo, detrás de una VPN). No actives esto nunca para un proveedor accesible desde internet.",
+    "clientSecretConfiguredHelp": "Ya hay un secreto guardado: estos puntos no son el valor real. Déjalos como están para conservarlo, escribe un valor nuevo para reemplazarlo, o vacía el campo y guarda para quitar el inicio de sesión con este proveedor."
   },
   "actions": {
     "save": "Guardar",

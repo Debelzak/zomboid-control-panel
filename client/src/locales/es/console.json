@@ -87,7 +87,8 @@
     "inputAria": "Entrada de comando RCON",
     "executeAria": "Ejecutar comando",
     "run": "ejecutar",
-    "keyboardHint": "// intro · ejecutar · ↑↓ historial"
+    "keyboardHint": "// intro · ejecutar · ↑↓ historial",
+    "noResponseFallback": "Sin respuesta"
   },
   "quickCommands": {
     "players": "Jugadores",
@@ -102,20 +103,53 @@
     "toggleLabel": "difusión",
     "toggleSubtitle": "enviar mensaje a todos los conectados",
     "templates": {
-      "restart15": { "label": "Reinicio en 15 min", "message": "REINICIO DEL SERVIDOR en 15 minutos - ¡Busca un lugar seguro!" },
-      "restart5": { "label": "Reinicio en 5 min", "message": "REINICIO DEL SERVIDOR en 5 minutos - ¡Guarda tu progreso!" },
-      "restart1": { "label": "Reinicio en 1 min", "message": "REINICIO DEL SERVIDOR en 1 minuto - ¡Desconexión inminente!" },
-      "maintenance": { "label": "Mantenimiento", "message": "El servidor entra en MODO DE MANTENIMIENTO - Por favor, desconéctate" },
-      "backOnline": { "label": "De vuelta en línea", "message": "Mantenimiento del servidor completado - ¡Bienvenido de nuevo!" },
-      "saveWarning": { "label": "Aviso de guardado", "message": "El servidor está guardando - Se espera una breve pausa" }
+      "restart15": {
+        "label": "Reinicio en 15 min",
+        "message": "REINICIO DEL SERVIDOR en 15 minutos - ¡Busca un lugar seguro!"
+      },
+      "restart5": {
+        "label": "Reinicio en 5 min",
+        "message": "REINICIO DEL SERVIDOR en 5 minutos - ¡Guarda tu progreso!"
+      },
+      "restart1": {
+        "label": "Reinicio en 1 min",
+        "message": "REINICIO DEL SERVIDOR en 1 minuto - ¡Desconexión inminente!"
+      },
+      "maintenance": {
+        "label": "Mantenimiento",
+        "message": "El servidor entra en MODO DE MANTENIMIENTO - Por favor, desconéctate"
+      },
+      "backOnline": {
+        "label": "De vuelta en línea",
+        "message": "Mantenimiento del servidor completado - ¡Bienvenido de nuevo!"
+      },
+      "saveWarning": {
+        "label": "Aviso de guardado",
+        "message": "El servidor está guardando - Se espera una breve pausa"
+      }
     },
     "channelTagAria": "Etiqueta de canal",
     "channels": {
-      "all": { "label": "Todos los jugadores", "description": "Sin etiqueta — difusión simple" },
-      "admin": { "label": "Etiqueta [ADMIN]", "description": "Marca el mensaje como de administración" },
-      "say": { "label": "Etiqueta [SAY]", "description": "Etiqueta cosmética de chat local" },
-      "faction": { "label": "Etiqueta [FACTION]", "description": "Etiqueta cosmética de facción" },
-      "safehouse": { "label": "Etiqueta [SAFEHOUSE]", "description": "Etiqueta cosmética de refugio" }
+      "all": {
+        "label": "Todos los jugadores",
+        "description": "Sin etiqueta — difusión simple"
+      },
+      "admin": {
+        "label": "Etiqueta [ADMIN]",
+        "description": "Marca el mensaje como de administración"
+      },
+      "say": {
+        "label": "Etiqueta [SAY]",
+        "description": "Etiqueta cosmética de chat local"
+      },
+      "faction": {
+        "label": "Etiqueta [FACTION]",
+        "description": "Etiqueta cosmética de facción"
+      },
+      "safehouse": {
+        "label": "Etiqueta [SAFEHOUSE]",
+        "description": "Etiqueta cosmética de refugio"
+      }
     },
     "messageAria": "Mensaje de difusión",
     "placeholderAll": "escribir el mensaje que verán los jugadores…",

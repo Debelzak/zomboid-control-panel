@@ -177,5 +177,9 @@
     "autoUpdateFailedFallback": "No se pudieron actualizar los ajustes de copia de seguridad",
     "loadStatusFailed": "No se pudo cargar el estado de las copias de seguridad.",
     "loadBackupsFailed": "No se pudieron cargar las copias de seguridad."
+  },
+  "restoreProgress": {
+    "title": "Restaurando {{name}}…",
+    "note": "Esto puede tardar unos minutos según el tamaño del mundo. No cierres el panel ni salgas de esta página."
   }
 }

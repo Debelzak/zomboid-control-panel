@@ -47,7 +47,8 @@
     "usernameRequired": "输入用户名。",
     "passwordRequired": "输入密码。",
     "passwordsDontMatch": "两次输入的密码不一致。",
-    "roleRequired": "选择角色。"
+    "roleRequired": "选择角色。",
+    "passwordHint": "至少使用 6 个字符。"
   },
   "toasts": {
     "userCreatedTitle": "账户已创建",

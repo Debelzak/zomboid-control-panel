@@ -71,7 +71,8 @@
     "updateNow": "Jetzt aktualisieren",
     "activating": "Wird aktiviert...",
     "switchToThisServer": "Zu diesem Server wechseln",
-    "added": "Hinzugefügt am {{date}}"
+    "added": "Hinzugefügt am {{date}}",
+    "restartContainerAria": "Neu starten: {{name}}"
   },
   "tandem": {
     "sectionTitle": "Einen zweiten Server parallel zum ersten betreiben",
@@ -164,7 +165,8 @@
     "rconPasswordRequired": "Erforderlich für die Serversteuerung. Du kannst auch <1>RCONPassword=yourpassword</1> in deiner {{iniName}}.ini-Datei festlegen.",
     "passwordSet": "Passwort festgelegt",
     "minMemoryLabel": "Min. Arbeitsspeicher (GB)",
-    "maxMemoryLabel": "Max. Arbeitsspeicher (GB)"
+    "maxMemoryLabel": "Max. Arbeitsspeicher (GB)",
+    "selectScannedConfigAria": "Erkannten Server verwenden: {{name}}"
   },
   "editDialog": {
     "title": "Server bearbeiten",

@@ -233,5 +233,11 @@
       "label": "Werkzeuge",
       "desc": "Äxte, Schraubenschlüssel, Lötlampe, Klebeband"
     }
+  },
+  "removeVehicleDialog": {
+    "title": "Fahrzeug entfernen?",
+    "description": "Fahrzeug {{vehicle}} bei {{x}}, {{y}} wird aus der Welt gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "confirm": "Fahrzeug entfernen",
+    "cancel": "Abbrechen"
   }
 }

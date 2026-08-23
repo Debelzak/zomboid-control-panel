@@ -87,7 +87,8 @@
     "inputAria": "RCON-Befehlseingabe",
     "executeAria": "Befehl ausführen",
     "run": "ausführen",
-    "keyboardHint": "// Enter · ausführen · ↑↓ Verlauf"
+    "keyboardHint": "// Enter · ausführen · ↑↓ Verlauf",
+    "noResponseFallback": "Keine Antwort"
   },
   "quickCommands": {
     "players": "Spieler",
@@ -102,20 +103,53 @@
     "toggleLabel": "Broadcast",
     "toggleSubtitle": "Nachricht an alle online",
     "templates": {
-      "restart15": { "label": "Neustart 15 Min", "message": "SERVERNEUSTART in 15 Minuten - Suche dir einen sicheren Ort!" },
-      "restart5": { "label": "Neustart 5 Min", "message": "SERVERNEUSTART in 5 Minuten - Speichere deinen Fortschritt!" },
-      "restart1": { "label": "Neustart 1 Min", "message": "SERVERNEUSTART in 1 Minute - Trennung erfolgt in Kürze!" },
-      "maintenance": { "label": "Wartung", "message": "Server wechselt in den WARTUNGSMODUS - Bitte trenne die Verbindung" },
-      "backOnline": { "label": "Wieder online", "message": "Serverwartung abgeschlossen - Willkommen zurück!" },
-      "saveWarning": { "label": "Speicherwarnung", "message": "Server speichert - Kurze Verzögerung möglich" }
+      "restart15": {
+        "label": "Neustart 15 Min",
+        "message": "SERVERNEUSTART in 15 Minuten - Suche dir einen sicheren Ort!"
+      },
+      "restart5": {
+        "label": "Neustart 5 Min",
+        "message": "SERVERNEUSTART in 5 Minuten - Speichere deinen Fortschritt!"
+      },
+      "restart1": {
+        "label": "Neustart 1 Min",
+        "message": "SERVERNEUSTART in 1 Minute - Trennung erfolgt in Kürze!"
+      },
+      "maintenance": {
+        "label": "Wartung",
+        "message": "Server wechselt in den WARTUNGSMODUS - Bitte trenne die Verbindung"
+      },
+      "backOnline": {
+        "label": "Wieder online",
+        "message": "Serverwartung abgeschlossen - Willkommen zurück!"
+      },
+      "saveWarning": {
+        "label": "Speicherwarnung",
+        "message": "Server speichert - Kurze Verzögerung möglich"
+      }
     },
     "channelTagAria": "Kanal-Tag",
     "channels": {
-      "all": { "label": "Alle Spieler", "description": "Kein Tag — reiner Broadcast" },
-      "admin": { "label": "[ADMIN]-Tag", "description": "Markiert die Nachricht als Admin" },
-      "say": { "label": "[SAY]-Tag", "description": "Kosmetische Markierung für den Local-Chat" },
-      "faction": { "label": "[FACTION]-Tag", "description": "Kosmetische Fraktionsmarkierung" },
-      "safehouse": { "label": "[SAFEHOUSE]-Tag", "description": "Kosmetische Safehouse-Markierung" }
+      "all": {
+        "label": "Alle Spieler",
+        "description": "Kein Tag — reiner Broadcast"
+      },
+      "admin": {
+        "label": "[ADMIN]-Tag",
+        "description": "Markiert die Nachricht als Admin"
+      },
+      "say": {
+        "label": "[SAY]-Tag",
+        "description": "Kosmetische Markierung für den Local-Chat"
+      },
+      "faction": {
+        "label": "[FACTION]-Tag",
+        "description": "Kosmetische Fraktionsmarkierung"
+      },
+      "safehouse": {
+        "label": "[SAFEHOUSE]-Tag",
+        "description": "Kosmetische Safehouse-Markierung"
+      }
     },
     "messageAria": "Broadcast-Nachricht",
     "placeholderAll": "Nachricht eingeben, die Spieler sehen sollen…",

@@ -47,7 +47,8 @@
     "usernameRequired": "Introduce un nombre de usuario.",
     "passwordRequired": "Introduce una contraseña.",
     "passwordsDontMatch": "Las contraseñas no coinciden.",
-    "roleRequired": "Elige un rol."
+    "roleRequired": "Elige un rol.",
+    "passwordHint": "Usa al menos 6 caracteres."
   },
   "toasts": {
     "userCreatedTitle": "Cuenta creada",

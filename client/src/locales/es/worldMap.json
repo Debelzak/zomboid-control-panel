@@ -209,11 +209,35 @@
     "subtitle": "Las posiciones de los jugadores aparecen cuando PanelBridge está conectado"
   },
   "airdropPresets": {
-    "military": { "label": "Militar", "desc": "Rifles, munición, armadura, comunicaciones" },
-    "medical": { "label": "Médico", "desc": "Vendas, antibióticos, primeros auxilios" },
-    "food": { "label": "Comida", "desc": "Comida enlatada, agua, raciones MRE" },
-    "building": { "label": "Construcción", "desc": "Tablones, clavos, herramientas, cuerda" },
-    "weapons": { "label": "Armas", "desc": "Escopetas, armas cuerpo a cuerpo, fundas" },
-    "tools": { "label": "Herramientas", "desc": "Hachas, llaves, soplete, cinta" }
+    "military": {
+      "label": "Militar",
+      "desc": "Rifles, munición, armadura, comunicaciones"
+    },
+    "medical": {
+      "label": "Médico",
+      "desc": "Vendas, antibióticos, primeros auxilios"
+    },
+    "food": {
+      "label": "Comida",
+      "desc": "Comida enlatada, agua, raciones MRE"
+    },
+    "building": {
+      "label": "Construcción",
+      "desc": "Tablones, clavos, herramientas, cuerda"
+    },
+    "weapons": {
+      "label": "Armas",
+      "desc": "Escopetas, armas cuerpo a cuerpo, fundas"
+    },
+    "tools": {
+      "label": "Herramientas",
+      "desc": "Hachas, llaves, soplete, cinta"
+    }
+  },
+  "removeVehicleDialog": {
+    "title": "¿Eliminar el vehículo?",
+    "description": "El vehículo {{vehicle}} en {{x}}, {{y}} se eliminará del mundo. Esta acción no se puede deshacer.",
+    "confirm": "Eliminar vehículo",
+    "cancel": "Cancelar"
   }
 }

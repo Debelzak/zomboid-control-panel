@@ -338,5 +338,10 @@
     "deletedTitle": "已删除",
     "templateDeletedDesc": "模板“{{name}}”已删除",
     "deleteTemplateFailed": "删除模板失败。"
+  },
+  "restoreBackupConfirm": {
+    "title": "恢复此备份？",
+    "description": "将当前文件替换为“{{filename}}”？实时配置中未保存的更改将丢失。",
+    "confirmLabel": "恢复"
   }
 }

@@ -293,7 +293,11 @@
     "tableDetails": "Details",
     "loadingRow": "Lädt...",
     "noLogsRow": "Keine Aktivitätsprotokolle",
-    "detailsFallback": "-"
+    "detailsFallback": "-",
+    "deleteConfirmTitle": "Diese Notiz löschen?",
+    "deleteConfirmDesc": "Die Admin-Notiz und die Tags für {{player}} werden endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "deleteConfirmConfirm": "Notiz löschen",
+    "deleteConfirmCancel": "Abbrechen"
   },
   "importExport": {
     "title": "Charakter importieren/exportieren",

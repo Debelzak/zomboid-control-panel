@@ -293,7 +293,11 @@
     "tableDetails": "Détails",
     "loadingRow": "Chargement...",
     "noLogsRow": "Aucun journal d'activité",
-    "detailsFallback": "-"
+    "detailsFallback": "-",
+    "deleteConfirmTitle": "Supprimer cette note ?",
+    "deleteConfirmDesc": "La note admin et les tags enregistrés pour {{player}} seront définitivement supprimés. Cette action est irréversible.",
+    "deleteConfirmConfirm": "Supprimer la note",
+    "deleteConfirmCancel": "Annuler"
   },
   "importExport": {
     "title": "Importer/Exporter le personnage",

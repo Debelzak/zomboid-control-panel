@@ -293,7 +293,11 @@
     "tableDetails": "Detalles",
     "loadingRow": "Cargando...",
     "noLogsRow": "Sin registros de actividad",
-    "detailsFallback": "-"
+    "detailsFallback": "-",
+    "deleteConfirmTitle": "¿Eliminar esta nota?",
+    "deleteConfirmDesc": "La nota de administrador y las etiquetas guardadas para {{player}} se eliminarán de forma permanente. Esta acción no se puede deshacer.",
+    "deleteConfirmConfirm": "Eliminar nota",
+    "deleteConfirmCancel": "Cancelar"
   },
   "importExport": {
     "title": "Importar/exportar personaje",

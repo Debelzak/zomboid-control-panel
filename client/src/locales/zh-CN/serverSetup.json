@@ -214,7 +214,9 @@
     "fullStep2Both": "请设置安装文件夹和服务器名称以继续。",
     "fullStep2Path": "请设置安装文件夹以继续。",
     "fullStep2Name": "请输入服务器名称以继续。",
-    "fullStep3Rcon": "RCON 密码至少需要 6 个字符。"
+    "fullStep3Rcon": "RCON 密码至少需要 6 个字符。",
+    "fullStep3Admin": "请设置管理员密码以继续。",
+    "quickStep2Admin": "请设置管理员密码以继续。"
   },
   "toasts": {
     "installationErrorGuidance": "{{message}} 在 Linux 上，请使用 {{path}}，或将安装文件夹及其 _Data 文件夹都添加到 zomboid-panel.service 的 ReadWritePaths 中，然后重启该服务。",

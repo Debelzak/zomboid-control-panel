@@ -87,7 +87,8 @@
     "inputAria": "RCON 命令输入框",
     "executeAria": "执行命令",
     "run": "运行",
-    "keyboardHint": "// enter · 运行 · ↑↓ 历史记录"
+    "keyboardHint": "// enter · 运行 · ↑↓ 历史记录",
+    "noResponseFallback": "无响应"
   },
   "quickCommands": {
     "players": "玩家",
@@ -102,20 +103,53 @@
     "toggleLabel": "广播",
     "toggleSubtitle": "向全体在线玩家发送消息",
     "templates": {
-      "restart15": { "label": "15 分钟重启", "message": "服务器将在 15 分钟后重启——请尽快前往安全地点！" },
-      "restart5": { "label": "5 分钟重启", "message": "服务器将在 5 分钟后重启——请保存进度！" },
-      "restart1": { "label": "1 分钟重启", "message": "服务器将在 1 分钟后重启——即将断开连接！" },
-      "maintenance": { "label": "维护", "message": "服务器即将进入维护模式——请断开连接" },
-      "backOnline": { "label": "恢复在线", "message": "服务器维护已完成——欢迎回来！" },
-      "saveWarning": { "label": "保存提醒", "message": "服务器正在保存——可能出现短暂卡顿" }
+      "restart15": {
+        "label": "15 分钟重启",
+        "message": "服务器将在 15 分钟后重启——请尽快前往安全地点！"
+      },
+      "restart5": {
+        "label": "5 分钟重启",
+        "message": "服务器将在 5 分钟后重启——请保存进度！"
+      },
+      "restart1": {
+        "label": "1 分钟重启",
+        "message": "服务器将在 1 分钟后重启——即将断开连接！"
+      },
+      "maintenance": {
+        "label": "维护",
+        "message": "服务器即将进入维护模式——请断开连接"
+      },
+      "backOnline": {
+        "label": "恢复在线",
+        "message": "服务器维护已完成——欢迎回来！"
+      },
+      "saveWarning": {
+        "label": "保存提醒",
+        "message": "服务器正在保存——可能出现短暂卡顿"
+      }
     },
     "channelTagAria": "频道标签",
     "channels": {
-      "all": { "label": "全体玩家", "description": "无标签——纯文本广播" },
-      "admin": { "label": "[ADMIN] 标签", "description": "将消息标记为管理员消息" },
-      "say": { "label": "[SAY] 标签", "description": "仅作外观展示的本地聊天标签" },
-      "faction": { "label": "[FACTION] 标签", "description": "仅作外观展示的阵营标签" },
-      "safehouse": { "label": "[SAFEHOUSE] 标签", "description": "仅作外观展示的安全屋标签" }
+      "all": {
+        "label": "全体玩家",
+        "description": "无标签——纯文本广播"
+      },
+      "admin": {
+        "label": "[ADMIN] 标签",
+        "description": "将消息标记为管理员消息"
+      },
+      "say": {
+        "label": "[SAY] 标签",
+        "description": "仅作外观展示的本地聊天标签"
+      },
+      "faction": {
+        "label": "[FACTION] 标签",
+        "description": "仅作外观展示的阵营标签"
+      },
+      "safehouse": {
+        "label": "[SAFEHOUSE] 标签",
+        "description": "仅作外观展示的安全屋标签"
+      }
     },
     "messageAria": "广播消息",
     "placeholderAll": "输入玩家将看到的消息…",

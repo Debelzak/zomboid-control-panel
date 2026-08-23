@@ -177,5 +177,9 @@
     "autoUpdateFailedFallback": "Backup-Einstellungen konnten nicht aktualisiert werden",
     "loadStatusFailed": "Backup-Status konnte nicht geladen werden.",
     "loadBackupsFailed": "Backups konnten nicht geladen werden."
+  },
+  "restoreProgress": {
+    "title": "{{name}} wird wiederhergestellt…",
+    "note": "Das kann je nach Weltgröße einige Minuten dauern. Schließe das Panel nicht und wechsle nicht die Seite."
   }
 }

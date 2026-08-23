@@ -83,7 +83,11 @@
     "pingMs": "{{ping}} 毫秒",
     "pingButton": "测速",
     "connect": "连接",
-    "connectTooltip": "启动游戏并连接到服务器"
+    "connectTooltip": "启动游戏并连接到服务器",
+    "copyAddress": "复制地址",
+    "copyAddressAria": "复制服务器地址 {{address}}",
+    "addressCopiedTitle": "地址已复制",
+    "addressCopyFailedTitle": "无法复制地址"
   },
   "pagination": {
     "showing": "显示第 {{from}} - {{to}} 条，共 {{total}} 台服务器",

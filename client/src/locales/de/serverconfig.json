@@ -338,5 +338,10 @@
     "deletedTitle": "Gelöscht",
     "templateDeletedDesc": "Vorlage „{{name}}“ gelöscht",
     "deleteTemplateFailed": "Löschen der Vorlage fehlgeschlagen."
+  },
+  "restoreBackupConfirm": {
+    "title": "Dieses Backup wiederherstellen?",
+    "description": "Die aktuelle Datei ersetzen durch: „{{filename}}“? Nicht gespeicherte Änderungen an der aktiven Konfiguration gehen verloren.",
+    "confirmLabel": "Wiederherstellen"
   }
 }

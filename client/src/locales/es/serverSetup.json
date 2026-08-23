@@ -214,7 +214,9 @@
     "fullStep2Both": "Define una carpeta de instalación y un nombre de servidor para continuar.",
     "fullStep2Path": "Define una carpeta de instalación para continuar.",
     "fullStep2Name": "Indica un nombre de servidor para continuar.",
-    "fullStep3Rcon": "La contraseña de RCON debe tener al menos 6 caracteres."
+    "fullStep3Rcon": "La contraseña de RCON debe tener al menos 6 caracteres.",
+    "fullStep3Admin": "Establece una contraseña de administrador para continuar.",
+    "quickStep2Admin": "Establece una contraseña de administrador para continuar."
   },
   "toasts": {
     "installationErrorGuidance": "{{message}} En Linux, usa {{path}}, o añade tanto la carpeta de instalación como su carpeta _Data a ReadWritePaths en zomboid-panel.service, y luego reinicia el servicio.",

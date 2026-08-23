@@ -87,7 +87,8 @@
     "inputAria": "Champ de commande RCON",
     "executeAria": "Exécuter la commande",
     "run": "exécuter",
-    "keyboardHint": "// entrée · exécuter · ↑↓ historique"
+    "keyboardHint": "// entrée · exécuter · ↑↓ historique",
+    "noResponseFallback": "Aucune réponse"
   },
   "quickCommands": {
     "players": "Joueurs",
@@ -102,20 +103,53 @@
     "toggleLabel": "diffusion",
     "toggleSubtitle": "message à tous les joueurs en ligne",
     "templates": {
-      "restart15": { "label": "Redémarrage 15min", "message": "REDÉMARRAGE DU SERVEUR dans 15 minutes - Trouvez un endroit sûr !" },
-      "restart5": { "label": "Redémarrage 5min", "message": "REDÉMARRAGE DU SERVEUR dans 5 minutes - Sauvegardez votre progression !" },
-      "restart1": { "label": "Redémarrage 1min", "message": "REDÉMARRAGE DU SERVEUR dans 1 minute - Déconnexion imminente !" },
-      "maintenance": { "label": "Maintenance", "message": "Le serveur entre en MODE MAINTENANCE - Merci de vous déconnecter" },
-      "backOnline": { "label": "De retour en ligne", "message": "Maintenance du serveur terminée - Bon retour parmi nous !" },
-      "saveWarning": { "label": "Avertissement de sauvegarde", "message": "Le serveur sauvegarde - Léger ralentissement à prévoir" }
+      "restart15": {
+        "label": "Redémarrage 15min",
+        "message": "REDÉMARRAGE DU SERVEUR dans 15 minutes - Trouvez un endroit sûr !"
+      },
+      "restart5": {
+        "label": "Redémarrage 5min",
+        "message": "REDÉMARRAGE DU SERVEUR dans 5 minutes - Sauvegardez votre progression !"
+      },
+      "restart1": {
+        "label": "Redémarrage 1min",
+        "message": "REDÉMARRAGE DU SERVEUR dans 1 minute - Déconnexion imminente !"
+      },
+      "maintenance": {
+        "label": "Maintenance",
+        "message": "Le serveur entre en MODE MAINTENANCE - Merci de vous déconnecter"
+      },
+      "backOnline": {
+        "label": "De retour en ligne",
+        "message": "Maintenance du serveur terminée - Bon retour parmi nous !"
+      },
+      "saveWarning": {
+        "label": "Avertissement de sauvegarde",
+        "message": "Le serveur sauvegarde - Léger ralentissement à prévoir"
+      }
     },
     "channelTagAria": "Étiquette de canal",
     "channels": {
-      "all": { "label": "Tous les joueurs", "description": "Aucune étiquette — diffusion simple" },
-      "admin": { "label": "Étiquette [ADMIN]", "description": "Marque le message comme provenant d'un admin" },
-      "say": { "label": "Étiquette [SAY]", "description": "Étiquette cosmétique de chat local" },
-      "faction": { "label": "Étiquette [FACTION]", "description": "Étiquette cosmétique de faction" },
-      "safehouse": { "label": "Étiquette [SAFEHOUSE]", "description": "Étiquette cosmétique de refuge" }
+      "all": {
+        "label": "Tous les joueurs",
+        "description": "Aucune étiquette — diffusion simple"
+      },
+      "admin": {
+        "label": "Étiquette [ADMIN]",
+        "description": "Marque le message comme provenant d'un admin"
+      },
+      "say": {
+        "label": "Étiquette [SAY]",
+        "description": "Étiquette cosmétique de chat local"
+      },
+      "faction": {
+        "label": "Étiquette [FACTION]",
+        "description": "Étiquette cosmétique de faction"
+      },
+      "safehouse": {
+        "label": "Étiquette [SAFEHOUSE]",
+        "description": "Étiquette cosmétique de refuge"
+      }
     },
     "messageAria": "Message de diffusion",
     "placeholderAll": "Écrivez le message que les joueurs devraient voir…",

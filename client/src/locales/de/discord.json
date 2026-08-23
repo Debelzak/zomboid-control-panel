@@ -175,7 +175,8 @@
       "chatBridgeDesc": "Hält Discord- und Ingame-Chat synchron, ohne bei laufender Admin-Arbeit das Werkzeug wechseln zu müssen.",
       "eventNotifTitle": "Ereignisbenachrichtigungen",
       "eventNotifDesc": "Sendet Beitritts-/Abgangs-, Start-/Stopp-, Neustart-, Tod- und Backup-Ereignisse direkt in den Kanal, den die Admins bereits beobachten."
-    }
+    },
+    "stepLocked": "Schließe zuerst den aktuellen Schritt ab"
   },
   "management": {
     "pageHeaderTitle": "Discord-Bot",
@@ -212,15 +213,33 @@
       "tierAdmin": "Admin",
       "tierAdminDesc": "— nur Admin-Rolle",
       "commands": {
-        "status": { "desc": "Serverstatus einsehen" },
-        "players": { "desc": "Online-Spieler auflisten" },
-        "save": { "desc": "Welt speichern" },
-        "broadcast": { "desc": "Servernachricht senden" },
-        "kick": { "desc": "Einen Spieler kicken" },
-        "start": { "desc": "Server starten" },
-        "stop": { "desc": "Server stoppen" },
-        "restart": { "desc": "Mit Vorwarnung neu starten" },
-        "rcon": { "desc": "RCON-Befehl ausführen" }
+        "status": {
+          "desc": "Serverstatus einsehen"
+        },
+        "players": {
+          "desc": "Online-Spieler auflisten"
+        },
+        "save": {
+          "desc": "Welt speichern"
+        },
+        "broadcast": {
+          "desc": "Servernachricht senden"
+        },
+        "kick": {
+          "desc": "Einen Spieler kicken"
+        },
+        "start": {
+          "desc": "Server starten"
+        },
+        "stop": {
+          "desc": "Server stoppen"
+        },
+        "restart": {
+          "desc": "Mit Vorwarnung neu starten"
+        },
+        "rcon": {
+          "desc": "RCON-Befehl ausführen"
+        }
       },
       "save": "Berechtigungen speichern",
       "saving": "Wird gespeichert …",

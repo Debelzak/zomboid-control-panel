@@ -175,7 +175,8 @@
       "chatBridgeDesc": "在实时管理工作中无需切换工具，让 Discord 和游戏内聊天保持同步。",
       "eventNotifTitle": "事件通知",
       "eventNotifDesc": "将加入/离开、启动/停止、重启、死亡和备份事件直接发送到管理员已在关注的频道。"
-    }
+    },
+    "stepLocked": "请先完成当前步骤"
   },
   "management": {
     "pageHeaderTitle": "Discord 机器人",
@@ -212,15 +213,33 @@
       "tierAdmin": "管理员",
       "tierAdminDesc": "——仅限管理员角色",
       "commands": {
-        "status": { "desc": "查看服务器状态" },
-        "players": { "desc": "列出在线玩家" },
-        "save": { "desc": "保存世界" },
-        "broadcast": { "desc": "发送服务器消息" },
-        "kick": { "desc": "踢出玩家" },
-        "start": { "desc": "启动服务器" },
-        "stop": { "desc": "停止服务器" },
-        "restart": { "desc": "带警告重启" },
-        "rcon": { "desc": "执行 RCON 命令" }
+        "status": {
+          "desc": "查看服务器状态"
+        },
+        "players": {
+          "desc": "列出在线玩家"
+        },
+        "save": {
+          "desc": "保存世界"
+        },
+        "broadcast": {
+          "desc": "发送服务器消息"
+        },
+        "kick": {
+          "desc": "踢出玩家"
+        },
+        "start": {
+          "desc": "启动服务器"
+        },
+        "stop": {
+          "desc": "停止服务器"
+        },
+        "restart": {
+          "desc": "带警告重启"
+        },
+        "rcon": {
+          "desc": "执行 RCON 命令"
+        }
       },
       "save": "保存权限",
       "saving": "保存中…",

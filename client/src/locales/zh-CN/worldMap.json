@@ -209,11 +209,35 @@
     "subtitle": "PanelBridge 连接后将显示玩家位置"
   },
   "airdropPresets": {
-    "military": { "label": "军事", "desc": "步枪、弹药、护甲、通讯设备" },
-    "medical": { "label": "医疗", "desc": "绷带、抗生素、急救用品" },
-    "food": { "label": "食物", "desc": "罐头食品、水、单兵口粮" },
-    "building": { "label": "建筑", "desc": "木板、钉子、工具、绳索" },
-    "weapons": { "label": "武器", "desc": "霰弹枪、近战武器、枪套" },
-    "tools": { "label": "工具", "desc": "斧头、扳手、喷灯、胶带" }
+    "military": {
+      "label": "军事",
+      "desc": "步枪、弹药、护甲、通讯设备"
+    },
+    "medical": {
+      "label": "医疗",
+      "desc": "绷带、抗生素、急救用品"
+    },
+    "food": {
+      "label": "食物",
+      "desc": "罐头食品、水、单兵口粮"
+    },
+    "building": {
+      "label": "建筑",
+      "desc": "木板、钉子、工具、绳索"
+    },
+    "weapons": {
+      "label": "武器",
+      "desc": "霰弹枪、近战武器、枪套"
+    },
+    "tools": {
+      "label": "工具",
+      "desc": "斧头、扳手、喷灯、胶带"
+    }
+  },
+  "removeVehicleDialog": {
+    "title": "移除载具？",
+    "description": "位于 {{x}}, {{y}} 的 {{vehicle}} 将从世界中删除。此操作无法撤销。",
+    "confirm": "移除载具",
+    "cancel": "取消"
   }
 }

@@ -214,7 +214,9 @@
     "fullStep2Both": "Définissez un dossier d'installation et un nom de serveur pour continuer.",
     "fullStep2Path": "Définissez un dossier d'installation pour continuer.",
     "fullStep2Name": "Saisissez un nom de serveur pour continuer.",
-    "fullStep3Rcon": "Le mot de passe RCON doit contenir au moins 6 caractères."
+    "fullStep3Rcon": "Le mot de passe RCON doit contenir au moins 6 caractères.",
+    "fullStep3Admin": "Définissez un mot de passe administrateur pour continuer.",
+    "quickStep2Admin": "Définissez un mot de passe administrateur pour continuer."
   },
   "toasts": {
     "installationErrorGuidance": "{{message}} Sous Linux, utilisez {{path}}, ou ajoutez votre dossier d'installation et son dossier _Data à ReadWritePaths dans zomboid-panel.service, puis redémarrez le service.",

@@ -175,7 +175,8 @@
       "chatBridgeDesc": "Gardez Discord et le chat en jeu dans la même boucle sans changer d'outil pendant une administration en direct.",
       "eventNotifTitle": "Notifications d'événements",
       "eventNotifDesc": "Envoyez les connexions/déconnexions, démarrages/arrêts, redémarrages, morts et sauvegardes directement dans le salon que vos admins surveillent déjà."
-    }
+    },
+    "stepLocked": "Terminez d'abord l'étape en cours"
   },
   "management": {
     "pageHeaderTitle": "Bot Discord",
@@ -212,15 +213,33 @@
       "tierAdmin": "Admin",
       "tierAdminDesc": "— rôle Admin uniquement",
       "commands": {
-        "status": { "desc": "Voir l'état du serveur" },
-        "players": { "desc": "Lister les joueurs en ligne" },
-        "save": { "desc": "Sauvegarder le monde" },
-        "broadcast": { "desc": "Envoyer un message serveur" },
-        "kick": { "desc": "Expulser un joueur" },
-        "start": { "desc": "Démarrer le serveur" },
-        "stop": { "desc": "Arrêter le serveur" },
-        "restart": { "desc": "Redémarrer avec avertissement" },
-        "rcon": { "desc": "Exécuter une commande RCON" }
+        "status": {
+          "desc": "Voir l'état du serveur"
+        },
+        "players": {
+          "desc": "Lister les joueurs en ligne"
+        },
+        "save": {
+          "desc": "Sauvegarder le monde"
+        },
+        "broadcast": {
+          "desc": "Envoyer un message serveur"
+        },
+        "kick": {
+          "desc": "Expulser un joueur"
+        },
+        "start": {
+          "desc": "Démarrer le serveur"
+        },
+        "stop": {
+          "desc": "Arrêter le serveur"
+        },
+        "restart": {
+          "desc": "Redémarrer avec avertissement"
+        },
+        "rcon": {
+          "desc": "Exécuter une commande RCON"
+        }
       },
       "save": "Enregistrer les permissions",
       "saving": "Enregistrement...",

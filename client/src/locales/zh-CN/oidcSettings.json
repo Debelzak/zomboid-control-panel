@@ -43,7 +43,8 @@
     "scope": "作用域",
     "scopeHelp": "高级选项。除非提供方另有要求，否则保持默认即可。",
     "allowInsecureHttp": "允许此提供方使用明文 HTTP",
-    "allowInsecureHttpHelp": "仅适用于只能通过私有的、仅限 HTTP 的地址访问的自建身份提供方（例如位于 VPN 之后）。切勿为可从互联网访问的提供方启用此选项。"
+    "allowInsecureHttpHelp": "仅适用于只能通过私有的、仅限 HTTP 的地址访问的自建身份提供方（例如位于 VPN 之后）。切勿为可从互联网访问的提供方启用此选项。",
+    "clientSecretConfiguredHelp": "已存储密钥——这些圆点不是真实值。保持原样即可保留，输入新值可替换，或清空该字段并保存以移除通过此提供商的登录。"
   },
   "actions": {
     "save": "保存",

@@ -338,5 +338,10 @@
     "deletedTitle": "Supprimé",
     "templateDeletedDesc": "Modèle « {{name}} » supprimé",
     "deleteTemplateFailed": "Échec de la suppression du modèle."
+  },
+  "restoreBackupConfirm": {
+    "title": "Restaurer cette sauvegarde ?",
+    "description": "Remplacer le fichier actuel par « {{filename}} » ? Les modifications non enregistrées de la config active seront perdues.",
+    "confirmLabel": "Restaurer"
   }
 }

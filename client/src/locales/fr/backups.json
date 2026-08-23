@@ -177,5 +177,9 @@
     "autoUpdateFailedFallback": "Échec de la mise à jour des paramètres de sauvegarde",
     "loadStatusFailed": "Échec du chargement de l'état des sauvegardes.",
     "loadBackupsFailed": "Échec du chargement des sauvegardes."
+  },
+  "restoreProgress": {
+    "title": "Restauration de {{name}}…",
+    "note": "Cela peut prendre quelques minutes selon la taille du monde. Ne fermez pas le panneau et ne quittez pas cette page."
   }
 }

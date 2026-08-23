@@ -175,7 +175,8 @@
       "chatBridgeDesc": "Mantener el chat de Discord y del juego sincronizados sin cambiar de herramienta durante la administración en vivo.",
       "eventNotifTitle": "Notificaciones de eventos",
       "eventNotifDesc": "Enviar eventos de entrada/salida, inicio/detención, reinicio, muerte y copias de seguridad directamente al canal que ya vigilan los administradores."
-    }
+    },
+    "stepLocked": "Primero completa el paso actual"
   },
   "management": {
     "pageHeaderTitle": "Bot de Discord",
@@ -212,15 +213,33 @@
       "tierAdmin": "Admin",
       "tierAdminDesc": "— solo rol de Admin",
       "commands": {
-        "status": { "desc": "Ver el estado del servidor" },
-        "players": { "desc": "Listar jugadores en línea" },
-        "save": { "desc": "Guardar el mundo" },
-        "broadcast": { "desc": "Enviar mensaje al servidor" },
-        "kick": { "desc": "Expulsar a un jugador" },
-        "start": { "desc": "Iniciar el servidor" },
-        "stop": { "desc": "Detener el servidor" },
-        "restart": { "desc": "Reiniciar con aviso" },
-        "rcon": { "desc": "Ejecutar comando RCON" }
+        "status": {
+          "desc": "Ver el estado del servidor"
+        },
+        "players": {
+          "desc": "Listar jugadores en línea"
+        },
+        "save": {
+          "desc": "Guardar el mundo"
+        },
+        "broadcast": {
+          "desc": "Enviar mensaje al servidor"
+        },
+        "kick": {
+          "desc": "Expulsar a un jugador"
+        },
+        "start": {
+          "desc": "Iniciar el servidor"
+        },
+        "stop": {
+          "desc": "Detener el servidor"
+        },
+        "restart": {
+          "desc": "Reiniciar con aviso"
+        },
+        "rcon": {
+          "desc": "Ejecutar comando RCON"
+        }
       },
       "save": "Guardar permisos",
       "saving": "Guardando...",

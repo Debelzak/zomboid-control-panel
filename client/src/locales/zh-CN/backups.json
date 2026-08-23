@@ -177,5 +177,9 @@
     "autoUpdateFailedFallback": "备份设置更新失败",
     "loadStatusFailed": "备份状态加载失败。",
     "loadBackupsFailed": "备份列表加载失败。"
+  },
+  "restoreProgress": {
+    "title": "正在恢复 {{name}}…",
+    "note": "根据世界大小，可能需要几分钟。请勿关闭面板或离开此页面。"
   }
 }

@@ -71,7 +71,8 @@
     "updateNow": "Mettre à jour maintenant",
     "activating": "Activation...",
     "switchToThisServer": "Basculer sur ce serveur",
-    "added": "Ajouté le {{date}}"
+    "added": "Ajouté le {{date}}",
+    "restartContainerAria": "Redémarrer {{name}}"
   },
   "tandem": {
     "sectionTitle": "Faire tourner un second serveur en parallèle du premier",
@@ -164,7 +165,8 @@
     "rconPasswordRequired": "Requis pour le contrôle du serveur. Vous pouvez aussi définir <1>RCONPassword=votremotdepasse</1> dans votre fichier {{iniName}}.ini.",
     "passwordSet": "Mot de passe défini",
     "minMemoryLabel": "Mémoire min. (Go)",
-    "maxMemoryLabel": "Mémoire max. (Go)"
+    "maxMemoryLabel": "Mémoire max. (Go)",
+    "selectScannedConfigAria": "Utiliser le serveur détecté {{name}}"
   },
   "editDialog": {
     "title": "Modifier le serveur",
