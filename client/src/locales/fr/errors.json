@@ -69,7 +69,7 @@
   "SETUP_REQUIRED": "Configuration initiale requise",
   "AUTH_REQUIRED": "Authentification requise",
   "TOKEN_EXPIRED": "Jeton invalide ou expiré",
-  "SERVER_STATE_UNKNOWN": "Impossible de vérifier si le serveur est arrêté. Réessayez sous peu.",
+  "SERVER_STATE_UNKNOWN": "Impossible de vérifier si le serveur est réellement arrêté — c'est l'analyse de détection des processus elle-même qui a échoué, pas le serveur. Consultez le journal du panneau pour voir l'erreur. Si cela persiste, quelque chose sur cet hôte (antivirus, disque plein, ou outil système manquant) bloque peut-être la détection.",
   "SERVER_RUNNING": "Arrêtez le serveur avant de modifier la configuration.",
   "PERMISSION_DENIED": "Permissions insuffisantes",
   "ROLE_NOT_FOUND": "Rôle introuvable",

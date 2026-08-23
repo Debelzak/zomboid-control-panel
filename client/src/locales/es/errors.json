@@ -69,7 +69,7 @@
   "SETUP_REQUIRED": "Se requiere la configuración inicial",
   "AUTH_REQUIRED": "Se requiere autenticación",
   "TOKEN_EXPIRED": "Token no válido o caducado",
-  "SERVER_STATE_UNKNOWN": "No se puede verificar si el servidor está detenido. Inténtalo de nuevo en un momento.",
+  "SERVER_STATE_UNKNOWN": "No se puede verificar si el servidor está realmente detenido — el propio escaneo de detección de procesos falló, no el servidor. Revisa el registro del panel para ver el error. Si esto sigue ocurriendo, algo en este host (antivirus, disco lleno o una herramienta del sistema faltante) podría estar bloqueando la detección.",
   "SERVER_RUNNING": "Detén el servidor antes de editar la configuración.",
   "PERMISSION_DENIED": "Permisos insuficientes",
   "ROLE_NOT_FOUND": "No se encontró el rol",

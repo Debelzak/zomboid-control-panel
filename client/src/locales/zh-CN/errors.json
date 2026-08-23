@@ -69,7 +69,7 @@
   "SETUP_REQUIRED": "需要完成首次运行设置",
   "AUTH_REQUIRED": "需要身份验证",
   "TOKEN_EXPIRED": "令牌无效或已过期",
-  "SERVER_STATE_UNKNOWN": "无法确认服务器是否已停止，请稍后重试。",
+  "SERVER_STATE_UNKNOWN": "无法确认服务器是否真的已停止——是进程检测扫描本身失败了，并非服务器出了问题。请查看面板日志以了解具体错误。如果这种情况持续发生，可能是此主机上的某些因素（杀毒软件、磁盘已满，或缺少系统工具）阻止了检测。",
   "SERVER_RUNNING": "编辑配置前请先停止服务器。",
   "PERMISSION_DENIED": "权限不足",
   "ROLE_NOT_FOUND": "未找到角色",

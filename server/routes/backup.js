@@ -235,7 +235,7 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
     if (processDetails.scanFailed) {
       return res.status(503).json({
         success: false,
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }

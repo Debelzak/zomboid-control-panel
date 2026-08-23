@@ -69,7 +69,7 @@
   "SETUP_REQUIRED": "Ersteinrichtung erforderlich",
   "AUTH_REQUIRED": "Authentifizierung erforderlich",
   "TOKEN_EXPIRED": "Ungültiges oder abgelaufenes Token",
-  "SERVER_STATE_UNKNOWN": "Kann nicht überprüfen, ob der Server gestoppt ist. Versuche es in Kürze erneut.",
+  "SERVER_STATE_UNKNOWN": "Kann nicht überprüfen, ob der Server tatsächlich gestoppt ist — die Prozesserkennung selbst ist fehlgeschlagen, nicht der Server. Prüfe das Panel-Protokoll auf den Fehler. Falls das weiterhin passiert, blockiert möglicherweise etwas auf diesem Host (Antivirus, eine volle Festplatte oder ein fehlendes Systemtool) die Erkennung.",
   "SERVER_RUNNING": "Stoppe den Server, bevor du die Konfiguration bearbeitest.",
   "PERMISSION_DENIED": "Unzureichende Berechtigungen",
   "ROLE_NOT_FOUND": "Rolle nicht gefunden",

@@ -25,7 +25,7 @@ export async function requireStoppedForLocalConfigMutation(req, res, next) {
     if (typeof serverManager?.getServerProcessDetails !== "function") {
       return res.status(503).json({
         code: "SERVER_STATE_UNKNOWN",
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
       });
     }
 
@@ -33,7 +33,7 @@ export async function requireStoppedForLocalConfigMutation(req, res, next) {
     if (processDetails.scanFailed) {
       return res.status(503).json({
         code: "SERVER_STATE_UNKNOWN",
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
       });
     }
 
@@ -51,7 +51,7 @@ export async function requireStoppedForLocalConfigMutation(req, res, next) {
     );
     return res.status(503).json({
       code: "SERVER_STATE_UNKNOWN",
-      error: "Cannot verify whether the server is stopped. Try again shortly.",
+      error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
     });
   }
 }

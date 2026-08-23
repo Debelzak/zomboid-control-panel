@@ -1103,13 +1103,13 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
             `Server-running check failed, refusing to proceed: ${e.message}`,
           );
           return res.status(503).json({
-            error: "Cannot verify whether the server is stopped. Try again shortly.",
+            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
             code: ErrorCode.SERVER_STATE_UNKNOWN,
           });
         }
         if (details.scanFailed) {
           return res.status(503).json({
-            error: "Cannot verify whether the server is stopped. Try again shortly.",
+            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
             code: ErrorCode.SERVER_STATE_UNKNOWN,
           });
         }
@@ -1523,13 +1523,13 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
             `Server-running check failed, refusing to proceed: ${e.message}`,
           );
           return res.status(503).json({
-            error: "Cannot verify whether the server is stopped. Try again shortly.",
+            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
             code: ErrorCode.SERVER_STATE_UNKNOWN,
           });
         }
         if (details.scanFailed) {
           return res.status(503).json({
-            error: "Cannot verify whether the server is stopped. Try again shortly.",
+            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
             code: ErrorCode.SERVER_STATE_UNKNOWN,
           });
         }

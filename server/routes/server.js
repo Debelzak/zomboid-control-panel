@@ -2705,7 +2705,7 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       const processDetails = await serverManager.getServerProcessDetails();
       if (processDetails.scanFailed) {
         return res.status(503).json({
-          error: "Cannot verify whether the server is stopped. Try again shortly.",
+          error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
           code: ErrorCode.SERVER_STATE_UNKNOWN,
         });
       }
@@ -2719,7 +2719,7 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
     } catch (e) {
       log.warn(`Could not verify server status before update: ${e.message}`);
       return res.status(503).json({
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }
@@ -3320,7 +3320,7 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
     const processDetails = await serverManager.getServerProcessDetails();
     if (processDetails.scanFailed) {
       return res.status(503).json({
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }
@@ -4333,7 +4333,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     const processDetails = await serverManager.getServerProcessDetails();
     if (processDetails.scanFailed) {
       return res.status(503).json({
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }
