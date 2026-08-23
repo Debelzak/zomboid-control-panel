@@ -219,6 +219,16 @@ reliability, then interface and translation.
 
 #### Data loss, dangerous actions, and things that never worked at all
 
+- **Deleting a server's files could be done while the server was still running, and without
+  confirming anything.** Removing a server with "delete its files too", and clearing a stuck
+  install folder, both go through an endpoint that recursively deletes an entire Project Zomboid
+  install directory - not just the saves. Wiping the world, which does comparable damage, refuses
+  unless the request explicitly confirms it and refuses while the server is running; deleting the
+  files checked neither. It only ever ran from a screen that asks you first, so nothing could have
+  gone wrong by accident - but the only thing standing between a mistake and a deleted install was
+  a screen remembering to ask. It now refuses both cases, and, like wiping, refuses outright when
+  it cannot tell whether the server is running rather than assuming it is stopped.
+
 - **The panel was quietly deleting backups you uploaded yourself**: automatic cleanup kept only the
   most recent backups and treated an archive you had uploaded by hand exactly like one the panel
   made on a schedule. On the default settings that meant a backup you deliberately saved was deleted
