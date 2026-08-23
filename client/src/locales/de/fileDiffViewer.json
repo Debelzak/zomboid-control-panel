@@ -2,7 +2,7 @@
   "overlapKindLabel": {
     "lua-symbols": "Funktions-/Ereignisnamen",
     "lua-shadow": "Symbole",
-    "script-defs": "Gegenstands-/Rezeptdefinitionen",
+    "script-defs": "Item-/Rezeptdefinitionen",
     "clothing-items": "Kleidungsstücke",
     "translation-keys": "Übersetzungsschlüssel"
   },
