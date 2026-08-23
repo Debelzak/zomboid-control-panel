@@ -617,7 +617,7 @@ export default function Mods() {
       const r = await modsApi.enableDiskMod(workshopId)
       toast({
         title: t('toasts.modEnabledTitle'),
-        description: t('toasts.modEnabledDesc', { count: r.modIdsAdded, plural: r.modIdsAdded === 1 ? '' : 's' }),
+        description: t('toasts.modEnabledDesc', { count: r.modIdsAdded }),
       })
       // Refresh both lists so the row moves from disabled → tracked.
       await Promise.allSettled([fetchData(), fetchDisabled()])
@@ -651,7 +651,7 @@ export default function Mods() {
       toast({
         title: t('toasts.modDeletedTitle'),
         description: r.deletedFromDisk
-          ? t('toasts.modDeletedFromDisk', { count: r.modIdsStripped, plural: r.modIdsStripped === 1 ? '' : 's' })
+          ? t('toasts.modDeletedFromDisk', { count: r.modIdsStripped })
           : t('toasts.modDeletedFolderMissing'),
       })
       await Promise.allSettled([fetchData(), fetchDisabled()])
@@ -671,7 +671,7 @@ export default function Mods() {
     if (deletingId || disabledMods.length === 0) return
     const ok = await confirm({
       title: t('toasts.deleteDisabledFromDiskTitle'),
-      description: t('toasts.deleteDisabledFromDiskDesc', { count: disabledMods.length, plural: disabledMods.length === 1 ? '' : 's' }),
+      description: t('toasts.deleteDisabledFromDiskDesc', { count: disabledMods.length }),
       items: disabledMods.map(m => m.name || m.workshop_id),
       confirmLabel: t('toasts.deleteAll'),
     })
@@ -684,7 +684,8 @@ export default function Mods() {
       const r = await modsApi.batchDeleteDiskMods(ids)
       toast({
         title: t('toasts.bulkDeleteCompleteTitle'),
-        description: t('toasts.bulkDeleteCompleteDesc', { deleted: r.deletedFromDisk, total: r.total, plural: r.total === 1 ? '' : 's', stripped: r.modIdsStripped, strippedPlural: r.modIdsStripped === 1 ? '' : 's' }),
+        description: t('toasts.bulkDeleteCompleteDesc', { count: r.total, deleted: r.deletedFromDisk, total: r.total })
+          + t('toasts.bulkDeleteCompleteStrippedSuffix', { count: r.modIdsStripped, stripped: r.modIdsStripped }),
       })
       await Promise.allSettled([fetchData(), fetchDisabled()])
     } catch (error) {
@@ -703,7 +704,7 @@ export default function Mods() {
     if (deletingId || ignoredMods.length === 0) return
     const ok = await confirm({
       title: t('toasts.deleteIgnoredFromDiskTitle'),
-      description: t('toasts.deleteIgnoredFromDiskDesc', { count: ignoredMods.length, plural: ignoredMods.length === 1 ? '' : 's' }),
+      description: t('toasts.deleteIgnoredFromDiskDesc', { count: ignoredMods.length }),
       items: ignoredMods.map(m => m.name || m.workshop_id),
       confirmLabel: t('toasts.deleteAll'),
     })
@@ -716,7 +717,8 @@ export default function Mods() {
       const r = await modsApi.batchDeleteDiskMods(ids)
       toast({
         title: t('toasts.bulkDeleteCompleteTitle'),
-        description: t('toasts.bulkDeleteCompleteDesc', { deleted: r.deletedFromDisk, total: r.total, plural: r.total === 1 ? '' : 's', stripped: r.modIdsStripped, strippedPlural: r.modIdsStripped === 1 ? '' : 's' }),
+        description: t('toasts.bulkDeleteCompleteDesc', { count: r.total, deleted: r.deletedFromDisk, total: r.total })
+          + t('toasts.bulkDeleteCompleteStrippedSuffix', { count: r.modIdsStripped, stripped: r.modIdsStripped }),
       })
       await Promise.allSettled([fetchData(), fetchDisabled()])
     } catch (error) {
@@ -1331,7 +1333,7 @@ export default function Mods() {
       }
       toast({
         title: failed === 0 ? t('toasts.modsReEnabledTitle') : t('toasts.partialReEnableTitle'),
-        description: t('toasts.reEnabledDesc', { ok, plural: ok === 1 ? '' : 's', failedSuffix: failed > 0 ? t('toasts.reEnableFailedSuffix', { count: failed }) : '' }),
+        description: t('toasts.reEnabledDesc', { count: ok, failedSuffix: failed > 0 ? t('toasts.reEnableFailedSuffix', { count: failed }) : '' }),
         variant: failed === 0 ? ('success' as const) : ('destructive' as const),
       })
       setSelectedMods(new Set())
@@ -1795,7 +1797,7 @@ export default function Mods() {
     setAutoSortPreview(null)
     toast({
       title: t('toasts.autoSortAppliedTitle'),
-      description: t('toasts.autoSortAppliedDesc', { count: movedCount, plural: movedCount === 1 ? '' : 's' }),
+      description: t('toasts.autoSortAppliedDesc', { count: movedCount }),
     })
   }
 
@@ -4203,7 +4205,7 @@ export default function Mods() {
                                             </span>
                                           )}
                                           {att.duplicate && (
-                                            <span className="shrink-0 rounded border border-warning/30 bg-warning/15 px-1.5 text-[10px] text-warning" title={t('activeMods.duplicateTooltip', { plural: (duplicateModIds.get(mod0.id) || []).length > 2 ? 's' : '', ids: (duplicateModIds.get(mod0.id) || []).filter(w => w !== g.wsId).join(', ') })}>
+                                            <span className="shrink-0 rounded border border-warning/30 bg-warning/15 px-1.5 text-[10px] text-warning" title={t('activeMods.duplicateTooltip', { count: (duplicateModIds.get(mod0.id) || []).filter(w => w !== g.wsId).length, ids: (duplicateModIds.get(mod0.id) || []).filter(w => w !== g.wsId).join(', ') })}>
                                               {t('activeMods.duplicate')}
                                             </span>
                                           )}
@@ -4397,7 +4399,7 @@ export default function Mods() {
                                                   <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
-                                                    title={t('activeMods.restoreDismissedTooltip', { count: dismissedHere.length, plural: dismissedHere.length !== 1 ? 's' : '' })}
+                                                    title={t('activeMods.restoreDismissedTooltip', { count: dismissedHere.length })}
                                                     className="ml-auto text-[10px] text-muted-foreground/60 underline-offset-2 hover:text-foreground hover:underline"
                                                   >
                                                     {t('activeMods.restoreDismissed', { count: dismissedHere.length })}
@@ -4409,7 +4411,7 @@ export default function Mods() {
                                           if (dismissedHere.length > 0) {
                                             return (
                                               <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/50">
-                                                <span className="min-w-0">{t('activeMods.dismissedCount', { count: dismissedHere.length, plural: dismissedHere.length !== 1 ? 's' : '' })}</span>
+                                                <span className="min-w-0">{t('activeMods.dismissedCount', { count: dismissedHere.length })}</span>
                                                 <button
                                                   type="button"
                                                   onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
