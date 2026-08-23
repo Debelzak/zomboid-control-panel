@@ -1,0 +1,63 @@
+{
+  "pageHeader": {
+    "eyebrow": "Identidad",
+    "title": "Inicio de sesión",
+    "description": "Permite iniciar sesión con una cuenta existente de un proveedor de identidad (Google Workspace, Okta, Authentik y similares), en lugar de — nunca en sustitución de — un nombre de usuario y contraseña. El inicio de sesión local siempre sigue funcionando."
+  },
+  "loading": "Cargando ajustes de inicio de sesión…",
+  "permissionDenied": {
+    "title": "No se pueden administrar los ajustes de inicio de sesión",
+    "description": "El rol de esta cuenta no incluye \"Administrar ajustes de todo el panel\". Un administrador debe concederlo si se necesita acceso a esta pantalla."
+  },
+  "loadError": {
+    "title": "No se pudieron cargar los ajustes de inicio de sesión",
+    "retry": "Reintentar"
+  },
+  "status": {
+    "configured": "El inicio de sesión único está configurado",
+    "notConfigured": "El inicio de sesión único aún no está configurado",
+    "notConfiguredHint": "Completa los datos del proveedor a continuación y guarda para activarlo."
+  },
+  "envPinnedNote": "Definido mediante una variable de entorno en esta instalación — edítala ahí, no aquí.",
+  "sections": {
+    "provider": "Proveedor",
+    "providerDescription": "Cómo se conecta este panel con el proveedor de identidad, y qué registrar allí.",
+    "advanced": "Avanzado",
+    "advancedDescription": "Opciones de alcance (scope) y transporte — déjalas como están salvo que el proveedor necesite algo distinto."
+  },
+  "fields": {
+    "issuerUrl": "URL del emisor",
+    "issuerUrlPlaceholder": "https://accounts.example.com",
+    "issuerUrlHelp": "La URL base proporcionada por el proveedor de identidad para OpenID Connect — el panel descubre todo lo demás a partir de ella.",
+    "clientId": "ID de cliente",
+    "clientSecret": "Secreto de cliente",
+    "clientSecretPlaceholderConfigured": "Déjalo sin cambios para mantener el secreto actual",
+    "clientSecretPlaceholderEmpty": "Introduce el secreto de cliente",
+    "providerName": "Nombre para mostrar",
+    "providerNamePlaceholder": "p. ej. Google, Okta, Authentik",
+    "providerNameHelp": "Se muestra en el botón de la pantalla de inicio de sesión — \"Continuar con {{name}}\".",
+    "redirectUri": "URI de redirección",
+    "redirectUriHelp": "Pega esta URL exacta en el registro de la aplicación de tu proveedor de identidad:",
+    "redirectUriConfirmNote": "Comprueba que esto coincide con la dirección web que realmente se usa para acceder a este panel — sobre todo http frente a https. Detrás de un proxy inverso, el panel no siempre puede saber cuál usó el navegador.",
+    "useAndCopy": "Usar y copiar",
+    "scope": "Alcance",
+    "scopeHelp": "Avanzado. Déjalo como está salvo que el proveedor necesite algo distinto.",
+    "allowInsecureHttp": "Permitir HTTP sin cifrar para este proveedor",
+    "allowInsecureHttpHelp": "Solo para un proveedor de identidad autoalojado, accesible únicamente a través de una dirección privada y solo HTTP (por ejemplo, detrás de una VPN). No actives esto nunca para un proveedor accesible desde internet."
+  },
+  "actions": {
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "testConnection": "Probar conexión",
+    "testing": "Probando…"
+  },
+  "toasts": {
+    "settingsSavedTitle": "Ajustes de inicio de sesión guardados",
+    "settingsSavedDescription": "El panel usará los nuevos ajustes en el próximo intento de inicio de sesión.",
+    "testSuccessTitle": "Conexión correcta",
+    "testSuccessDescription": "El panel pudo contactar con el proveedor de identidad y leer su configuración.",
+    "testFailedTitle": "Error de conexión",
+    "actionFailedTitle": "La acción falló",
+    "unknownError": "Error desconocido"
+  }
+}
