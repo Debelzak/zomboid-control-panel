@@ -152,11 +152,17 @@ export default function Scheduler() {
   const fetchData = useCallback(async () => {
     setFetchError(null)
     try {
+      // Only getTasks() is allowed to fail the whole load -- it's the one
+      // thing this page can't function without. The other three used to have
+      // no catch of their own, so an unrelated hiccup (e.g. the presets or
+      // history endpoint 500ing) rejected the entire Promise.all and threw
+      // away a perfectly good task list, replacing it with an empty-state
+      // "no tasks scheduled" even though real tasks existed and loaded fine.
       const [tasksData, presetsData, statusData, historyData, serversData] = await Promise.all([
         schedulerApi.getTasks(),
-        schedulerApi.getCronPresets(),
-        schedulerApi.getStatus(),
-        schedulerApi.getHistory(50),
+        schedulerApi.getCronPresets().catch(() => ({ presets: [] as CronPreset[] })),
+        schedulerApi.getStatus().catch(() => null),
+        schedulerApi.getHistory(50).catch(() => ({ history: [] as ScheduleHistoryEntry[] })),
         serversApi.getAll().catch(() => ({ servers: [] as ServerInstance[] })),
       ])
       setTasks(tasksData.tasks || [])
