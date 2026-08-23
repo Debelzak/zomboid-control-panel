@@ -2001,7 +2001,9 @@ export default function ChunkCleaner() {
                           ? t("save.placeholderLoading")
                           : t("save.placeholderChoose")
                       }
-                    />
+                    >
+                      {selectedSave || undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {saves.map((save) => {
