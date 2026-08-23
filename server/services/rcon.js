@@ -1114,30 +1114,33 @@ export class RconService extends EventEmitter {
   }
 
   async quit({ skipLog = false } = {}) {
-    // The quit command will shutdown the server and close the connection
-    // This may result in connection errors which are expected
-    try {
-      const result = await this.execute("quit", { skipLog });
-      // Mark as disconnected since server is shutting down
-      this.connected = false;
-      this._cleanupClient();
-      return result;
-    } catch (error) {
-      // Connection errors are expected when server shuts down
-      // The server may close the connection before we receive a response
-      if (
-        error.message.includes("ECONNRESET") ||
-        error.message.includes("EPIPE") ||
-        error.message.includes("ECONNREFUSED") ||
-        error.message.includes("socket") ||
-        error.message.includes("connection")
-      ) {
-        this.connected = false;
-        this._cleanupClient();
-        return { success: true, response: "Server shutting down" };
-      }
-      throw error;
+    // The quit command will shutdown the server and close the connection.
+    // This may result in connection errors, which are expected -- but
+    // execute() has its own try/catch spanning its whole body that never
+    // rethrows (every failure path, including every connection-error
+    // branch, resolves {success:false, ...} instead of rejecting), so a
+    // try/catch here around the await could never actually catch anything.
+    // A quit whose connection reset mid-shutdown -- the normal case --
+    // reported success:false, indistinguishable from a quit that never
+    // reached the server (e.g. scheduler.js's performRestart() used to
+    // treat every clean auto-restart quit as a failure and fall back to a
+    // forced stop). Inspect the RESULT instead of a thrown error. The two
+    // guard messages below mean execute() never actually sent "quit" at all
+    // (server already stopped / still starting) -- those stay real
+    // failures; anything else execute() can fail with for "quit"
+    // specifically is the server closing the connection as it exits.
+    const result = await this.execute("quit", { skipLog });
+    // Mark as disconnected since server is shutting down
+    this.connected = false;
+    this._cleanupClient();
+    if (
+      !result.success &&
+      result.error !== "Server is starting, please wait..." &&
+      result.error !== "Server is not running"
+    ) {
+      return { success: true, response: "Server shutting down" };
     }
+    return result;
   }
 
   async serverMessage(message, { skipLog = false } = {}) {
