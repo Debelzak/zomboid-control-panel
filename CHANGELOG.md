@@ -691,6 +691,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security and maintenance
 
+- **Changing two permissions quickly could silently put one of them back.** On the Roles &
+  Permissions grid, each tick sends the role's whole capability list. Ticking or unticking a second
+  box before the first had finished saving built that second request from the state as it was
+  *before* the first change - so whichever save landed last won, and the other change was quietly
+  undone. The dangerous direction is removal: an administrator taking two capabilities away from a
+  role in quick succession could end up giving one of them back, with the grid showing it as
+  removed. Responses arriving out of order could do the same thing on their own. Each change is now
+  based on the most recent state rather than the state on screen when the page last drew, and a
+  reply that has already been superseded is ignored instead of applied.
+
 - **A single-use recovery code could be used more than once.** Recovery codes are meant to work
   exactly once, and each redemption marks the code as spent. But two redemptions arriving at the
   same moment were each reading the stored codes before either had written its result, so both saw
