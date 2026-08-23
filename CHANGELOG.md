@@ -127,7 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk list and the storage summary at the same moment, and each of those walked every chunk file on
   disk independently. On a large save that is a lot of work done twice for one page load. Both answers
   now come from a single pass. Measured on a 147,000-chunk save, the two requests together went from
-  15.3 seconds to 5.6. The scan is shared only between requests that are genuinely in flight together
+  15.3 seconds to 5.6. That is not the whole page load - a separate listing step runs before either of
+  them and is being worked on next. The scan is shared only between requests that are genuinely in flight together
   and is never cached beyond that, so deleting chunks still shows an accurate count immediately
   afterwards.
 
