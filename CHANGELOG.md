@@ -520,6 +520,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live.** The same endpoint is ungated in 1.1.x. Upgrading closes it; until then, an administrator
   can regenerate their recovery codes to invalidate any set that was issued behind their back.
 
+- **The panel's own update check could fail open.** Before downloading a panel update, the panel
+  runs a preflight check to refuse early if applying it would fail. If that check could not reach
+  the server it returned nothing at all - and "we don't know" was being read as "everything is
+  fine", so the download went ahead exactly when the safety check had failed. It now refuses unless
+  the check actually passed.
+
+- **A backup could be left truncated and still appear in the list as a normal backup.** Archives
+  were written straight to their final filename, so a crash or a power cut partway through left a
+  half-written file sitting in your backup list with nothing to distinguish it from a good one -
+  which you would only discover when you tried to restore it. Backups are now written alongside and
+  moved into place only once the archive has closed cleanly.
+
+- **Server Setup could tell you it had finished when it had not.** Both the full and the quick
+  install wizards showed the success screen as soon as the game files were downloaded, even if
+  adding the server to the panel afterwards failed - so the files were on disk, the server was
+  missing from My Servers, and nothing said why. The wizards now only claim success when the server
+  really was added, and say plainly what happened when it was not. Re-running setup is safe.
+
 - **The RCON command history was readable without a permission check**, and it can contain
   whitelist passwords typed into the console.
 
