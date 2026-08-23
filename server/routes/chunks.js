@@ -35,6 +35,24 @@ const router = express.Router();
 // Fully sequential has the opposite problem: on the same slow storage, each
 // round trip's latency is paid one after another with nothing overlapped.
 // A small bounded batch overlaps latency without either extreme.
+//
+// The bound is PER CALL, not global. getDirSize/countFiles/getDirStats
+// below call this recursively — each nesting level gets its own fresh
+// `limit`-wide batch, so the true worst case across a walk N levels deep is
+// limit^N concurrent operations, not limit. For a save shaped like
+// savePath -> map -> {X} -> {Y}.bin (3 levels) at limit=8 that's a
+// theoretical 8^3=512 in-flight file handles, not 8. A shared semaphore
+// threaded through the recursion would cap it at a true global 8, but a
+// naive version of that deadlocks: a directory-level worker holds its slot
+// while awaiting its own children's walk, and children recursing into the
+// same shared pool can end up with every slot held by parents who are
+// themselves just waiting — confirmed this by hand before ruling it out,
+// not worth attempting again without a proper acquire-then-release-before-
+// recursing redesign. Left as a per-level bound: still a large, real
+// improvement over the fully-unbounded Promise.all this replaced (which
+// had no ceiling at all, i.e. an unbounded, not just larger, blast radius),
+// and 512 in a genuine worst case is well below typical OS handle limits
+// for the shapes these saves actually take in practice.
 async function runWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -2084,8 +2102,9 @@ router.get("/stats/:saveName", async (req, res) => {
 // getDirSize/countFiles/getDirStats all recurse with bounded concurrency
 // (via runWithConcurrency) rather than firing every entry at once — a
 // directory with hundreds of subdirectories previously opened hundreds of
-// simultaneous readdir/stat handles per recursion level, the same EMFILE /
-// thundering-herd risk called out on the B42 chunk scan above.
+// simultaneous readdir/stat handles per recursion level. That's a per-level
+// bound, not a global one — see the note on runWithConcurrency above for
+// why, and the real worst case for a walk this deep.
 const DIR_WALK_CONCURRENCY = 8;
 
 async function getDirSize(dirPath) {
