@@ -3726,8 +3726,17 @@ handlers.getAllSandboxOptions = function(args)
                         end
                     end
                 end)
-                -- Get selected index for enums
-                info.selectedIndex = PanelBridge.tryGet(opt, "getIntValue")
+                -- Get selected index for enums. getIntValue() does not exist
+                -- anywhere in the SandboxOption/ConfigOption hierarchy, so this
+                -- was always nil for every enum option -- verified 2026-08-23
+                -- against the real shipped projectzomboid.jar: EnumSandboxOption
+                -- extends EnumConfigOption extends IntegerConfigOption, and it is
+                -- IntegerConfigOption that actually declares getValue() -> int
+                -- (the enum's raw selected index; a plain int field under the
+                -- hood). getOptionValue() above already calls plain getValue()
+                -- first and works for enums today for exactly this reason --
+                -- this line just needed to call the same real method.
+                info.selectedIndex = PanelBridge.tryGet(opt, "getValue")
             elseif className:find("String") then
                 info.type = "string"
             else
