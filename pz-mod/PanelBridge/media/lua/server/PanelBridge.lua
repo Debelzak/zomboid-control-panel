@@ -3114,6 +3114,31 @@ local function getPlayerTraits(player)
     local traitList = nil
     local method = "none"
 
+    -- B42 real path, verified 2026-08-23 by reading the constant pool of the
+    -- shipped projectzomboid.jar directly (no javap/decompiler available, so
+    -- each class file's method table was parsed by hand):
+    --   zombie/characters/IsoGameCharacter.class declares
+    --     getCharacterTraits() -> Lzombie/characters/traits/CharacterTraits;
+    --   zombie/characters/traits/CharacterTraits.class declares
+    --     getKnownTraits() -> Ljava/util/List;  (also get/set/add/remove take
+    --     a single CharacterTrait, and getTraits() -> Map -- not list-shaped)
+    --   zombie/scripting/objects/CharacterTrait.class has getName()/toString()
+    --   but no getType() -- the existing per-item fallback below already
+    --   tries getType() then toString(), so toString() (which returns the
+    --   trait's script id) covers this without any change there.
+    -- The three attempts that used to run here (desc:getTraitList,
+    -- desc:getTraits, player:getTraits) were all confirmed absent from B42's
+    -- real class hierarchy by a separate full-jar audit against every
+    -- (receiver, method) pair this file calls (2026-08-23) -- kept below as
+    -- harmless fallbacks in case this ever runs against a B41 server, since
+    -- player:getTraits() was B41's real API, but they must never be tried
+    -- FIRST on B42 again.
+    local charTraits = PanelBridge.tryGet(player, "getCharacterTraits")
+    if charTraits then
+        traitList = PanelBridge.tryGet(charTraits, "getKnownTraits")
+        if traitList then method = "player:getCharacterTraits():getKnownTraits" end
+    end
+
     -- B42: Traits are accessed through SurvivorDesc
     local desc = PanelBridge.tryGet(player, "getDescriptor")
 
@@ -3136,7 +3161,7 @@ local function getPlayerTraits(player)
         if traitList then method = "player:getTraits" end
     end
 
-    if not traitList then return {}, "no trait method worked (tried: desc:getTraitList, desc:getTraits, player:getTraits)" end
+    if not traitList then return {}, "no trait method worked (tried: player:getCharacterTraits():getKnownTraits, desc:getTraitList, desc:getTraits, player:getTraits)" end
 
     -- Get size safely
     local sizeOk, listSize = pcall(function() return traitList:size() end)
