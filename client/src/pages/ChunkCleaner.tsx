@@ -1926,13 +1926,30 @@ export default function ChunkCleaner() {
       const vDel =
         (result as { vehiclesDeleted?: number }).vehiclesDeleted ?? 0;
       const deletedCount = result.deleted ?? 0;
-      toast({
-        title: t("toasts.chunksDeletedTitle"),
-        description:
-          t("toasts.chunksDeletedDesc", { count: deletedCount }) +
-          (vDel > 0 ? t("toasts.chunksDeletedVehicles", { count: vDel }) : "") +
-          (createBackup ? t("toasts.chunksDeletedBackupSuffix") : ""),
-      });
+      const failures = (result as { errors?: string[] }).errors ?? [];
+      if (failures.length > 0) {
+        // The backend reports success:true whenever at least the request
+        // itself was valid, even if individual chunk deletes failed (locked
+        // file, permission error) — the per-file failures ride along in
+        // `errors`. Surface them instead of letting the operator believe
+        // every selected chunk is gone.
+        toast({
+          title: t("toasts.chunksDeletedPartialTitle"),
+          description: t("toasts.chunksDeletedPartialDesc", {
+            deleted: deletedCount,
+            count: failures.length,
+          }),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: t("toasts.chunksDeletedTitle"),
+          description:
+            t("toasts.chunksDeletedDesc", { count: deletedCount }) +
+            (vDel > 0 ? t("toasts.chunksDeletedVehicles", { count: vDel }) : "") +
+            (createBackup ? t("toasts.chunksDeletedBackupSuffix") : ""),
+        });
+      }
 
       setDeleteDialogOpen(false);
       setSelectedChunks(new Set());
