@@ -83,6 +83,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   item) were always blank because the panel asked for a single value the game does not have -
   it now carries both of the real ones.
 
+- **Deleting the server you were currently using left the panel talking to the one you deleted.** The
+  panel picks another server to make active when you delete the active one, and the database was
+  updated correctly - but the parts of the panel that actually connect to a server were never told.
+  They carried on using the deleted server's file paths and RCON details until something else happened
+  to refresh them, so the panel looked like it had switched and had not. Activating a server from the
+  list always did this correctly; deleting one now uses the same code path, so the two cannot drift
+  apart again.
+
+- **Changing your password had no length limit, and very long passwords were being silently cut
+  short.** Every other password path in the panel caps at 128 characters; this one did not. That
+  mattered for a reason that is invisible from the outside: the password hashing the panel uses stops
+  reading after 72 bytes, so two very long passwords that begin the same way would both unlock the
+  same account, with nothing anywhere reporting a problem. Overlong passwords are now rejected with a
+  clear message instead of being quietly truncated.
+
+- **The Server Log's "Clear" button deleted the real log file, while its own tooltip promised it did
+  not.** The tooltip read "Clear the log display (does not delete the server log file)". It emptied
+  the actual server-console.txt on disk, permanently, with no confirmation of any kind - the only
+  destructive action in the panel without one. It now asks first, and the tooltip says what it really
+  does.
+
+- **The "server is running" notice claimed every setting needed a restart, which was untrue on three
+  of the four screens it appeared on.** It said changes "won't reach the running game until the server
+  restarts". Sandbox settings genuinely do need one. Server settings do not - saving them reloads the
+  running game live, and the panel's own confirmation says "Saved & Reloaded" one screen below the
+  notice telling you the opposite. Spawn points and regions decide per change. The notice now says
+  what is always true: some changes need a restart and the confirmation after saving tells you which.
+
+- **The map did the same lookup work over and over while it was loading.** On the first load of a map,
+  every tile the page asked for independently repeated the whole "which map format is this server
+  using" discovery instead of waiting for the answer already on its way. The panel now shares one
+  in-progress lookup between all of them.
+
+- **Part of the map could look permanently broken when the tiles simply do not exist yet.** The
+  upstream map service is missing a block of tiles in the top-left of the current Build 42 map - that
+  is their data, and nothing the panel can create. The real problem was on our side: a tile that will
+  never arrive and a tile that has not arrived yet looked identical, both leaving a dark empty square,
+  so a known gap in someone else's map was indistinguishable from a page that had frozen mid-load.
+  Tiles confirmed missing now render as a distinct, deliberate-looking area.
+
 ### Added
 
 - **Two more health checks on the Debug page.** One reports how many of your tracked mods currently
