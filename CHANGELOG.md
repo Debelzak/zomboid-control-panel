@@ -224,7 +224,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off by default and are separate from the token. A correct token and correct IDs fail every time
   until those are on, and nothing in the panel said so. Start failures now name the cause - missing
   intents, a bad token, no token at all, or Discord not answering - and the intents message says
-  plainly that it is not a credentials problem.
+  plainly that it is not a credentials problem. The reason also stays on screen: it is recorded
+  against the bot's status rather than shown once, so leaving the page and coming back still shows
+  why the last start failed, and it clears itself as soon as a start succeeds.
 
 - **Changing a mod setting told you to do something impossible.** Editing a mod setting reported
   "Stop the server before editing configuration" - but the Mod Settings page cannot load with the
