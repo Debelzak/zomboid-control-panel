@@ -1964,7 +1964,20 @@ router.post("/save-and-reload", async (req, res) => {
       });
     }
 
+    // Reflect what RCON actually reported, not a hardcoded success. execute()
+    // (which reloadOptions() wraps) already distinguishes success from
+    // failure ({success:false, error} on a timeout, disconnect, or rejected
+    // command) -- this used to discard that and always claim "Options
+    // reloaded", so a failed live reload was invisible: the file on disk was
+    // correct, but the running server silently kept its old settings.
     const result = await rconService.reloadOptions();
+    if (!result?.success) {
+      return res.json({
+        success: false,
+        error: result?.error || "Failed to reload options via RCON",
+        result,
+      });
+    }
     res.json({ success: true, message: "Options reloaded", result });
   } catch (error) {
     log.error("Failed to reload options:", error);
