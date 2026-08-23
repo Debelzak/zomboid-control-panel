@@ -301,6 +301,18 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           "panelBridgeAutoUpdate",
           "autoExportOnLogin",
           "enablePublicIpLookup",
+          // The other 8 boolean-shaped keys in VALID_SETTINGS_KEYS, added in
+          // the same pass as rconPort/serverPort/min+maxMemory/panelPort
+          // below -- accepted any truthy/falsy JS value with no gate at all
+          // until now. See 2026-08-23 config.js numeric-field audit.
+          "modAutoRestart",
+          "serverAutoUpdate",
+          "darkMode",
+          "autoReconnect",
+          "httpsEnabled",
+          "autoStartServer",
+          "workshopCollectionAutoSync",
+          "panelBridgeSftpEnabled",
         ].includes(key) &&
         typeof value !== "boolean"
       ) {
@@ -372,10 +384,73 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // server.js's requireIntInRange rather than a third hand-rolled
       // range check. See 2026-08-23 validateInt-coerces / config.js
       // numeric-field audit.
+      //
+      // The collision check below is bidirectional on purpose: httpsPort's
+      // check above only compared a new httpsPort against the STORED
+      // panelPort. Left one-directional, the exact collision that guard
+      // exists to prevent was still reachable by approaching from the other
+      // side -- setting panelPort to whatever httpsPort already is. A guard
+      // reachable by walking around it from the other direction isn't a
+      // guard, it's a speed bump on one approach.
       if (key === "panelPort") {
         const panelPortCheck = requireIntInRange(value, 1024, 65535, "Panel port");
         if (!panelPortCheck.ok) {
           return res.status(400).json({ error: panelPortCheck.message });
+        }
+        const httpsPort = await getSetting("httpsPort");
+        if (httpsPort && panelPortCheck.value === Number(httpsPort)) {
+          return res.status(400).json({
+            error: `panelPort cannot be the same as the panel's HTTPS port (${httpsPort})`,
+          });
+        }
+      }
+
+      // The exact four fields server.js's /install, /quick-setup,
+      // /configure-rcon and /configure-network now refuse out-of-range on
+      // (2026-08-23 validateInt-coerces audit, commit 39f836f) were also
+      // reachable through THIS route with zero validation -- a second door
+      // onto the same four values, invisible from inside server.js since it
+      // lives in a completely different file. Same ranges as server.js's
+      // checks so the two doors can't disagree with each other.
+      if (key === "rconPort") {
+        const rconPortCheck = requireIntInRange(value, 1024, 65535, "RCON port");
+        if (!rconPortCheck.ok) {
+          return res.status(400).json({ error: rconPortCheck.message });
+        }
+      }
+
+      if (key === "serverPort") {
+        const serverPortCheck = requireIntInRange(value, 1024, 65535, "Game port");
+        if (!serverPortCheck.ok) {
+          return res.status(400).json({ error: serverPortCheck.message });
+        }
+      }
+
+      if (key === "minMemory") {
+        const minMemoryCheck = requireIntInRange(value, 1, 64, "Minimum memory (GB)");
+        if (!minMemoryCheck.ok) {
+          return res.status(400).json({ error: minMemoryCheck.message });
+        }
+      }
+
+      if (key === "maxMemory") {
+        const maxMemoryCheck = requireIntInRange(value, 1, 128, "Maximum memory (GB)");
+        if (!maxMemoryCheck.ok) {
+          return res.status(400).json({ error: maxMemoryCheck.message });
+        }
+      }
+
+      // Lower priority than the fields above -- a garbage value here
+      // doesn't misdirect anything, it self-heals to 3 via `Number(...) ||
+      // 3` the next time it's read (see index.js's export-rotation code).
+      // But an unvalidated garbage value would still sit in the database
+      // forever, unreadable by that fallback's intent, as a trap for
+      // whoever next reads that column expecting a real number. Range
+      // matches Settings.tsx's own input (min=1 max=50).
+      if (key === "autoExportMaxPerPlayer") {
+        const autoExportMaxCheck = requireIntInRange(value, 1, 50, "Auto-export copies kept");
+        if (!autoExportMaxCheck.ok) {
+          return res.status(400).json({ error: autoExportMaxCheck.message });
         }
       }
 

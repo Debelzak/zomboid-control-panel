@@ -67,6 +67,7 @@ afterEach(() => {
   }
   tempDir = null;
   settingsStore.panelPort = 3001;
+  delete settingsStore.httpsPort;
 });
 
 describe("PUT /app-settings -- httpsCertPath / httpsKeyPath validation", () => {
@@ -187,4 +188,138 @@ describe("PUT /app-settings -- panelPort validation (the lockout case, not the m
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
+});
+
+// The collision guard httpsPort's block enforces used to be one-directional:
+// a new httpsPort was checked against the stored panelPort, but a new
+// panelPort was never checked against the stored httpsPort. The exact
+// collision the guard exists to prevent was reachable by simply approaching
+// from the other side. See 2026-08-23 config.js numeric-field audit part 2.
+describe("PUT /app-settings -- panelPort/httpsPort collision is bidirectional", () => {
+  it("rejects a panelPort equal to the stored httpsPort", async () => {
+    settingsStore.httpsPort = 8443;
+    const res = await putAppSettings({ panelPort: 8443 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/cannot be the same as the panel's HTTPS port/);
+  });
+
+  it("accepts a panelPort that doesn't collide with the stored httpsPort", async () => {
+    settingsStore.httpsPort = 8443;
+    const res = await putAppSettings({ panelPort: 3001 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("accepts a panelPort when no httpsPort is configured yet", async () => {
+    const res = await putAppSettings({ panelPort: 3001 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+});
+
+// The "second door" finding: rconPort, serverPort, minMemory and maxMemory
+// are the exact four fields server.js's /install, /quick-setup,
+// /configure-rcon and /configure-network now refuse out-of-range on
+// (2026-08-23 validateInt-coerces audit, commit 39f836f) -- but PUT
+// /app-settings could set every one of them directly with zero validation,
+// undoing that fix's shape through a route none of those checks live in.
+// Same ranges as server.js's checks so the two doors can't disagree.
+describe("PUT /app-settings -- the second door onto server.js's four hardened fields", () => {
+  it("rejects an out-of-range rconPort", async () => {
+    const res = await putAppSettings({ rconPort: 99 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/RCON port must be a whole number/);
+  });
+
+  it("accepts a valid rconPort", async () => {
+    const res = await putAppSettings({ rconPort: 27015 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("rejects an out-of-range serverPort", async () => {
+    const res = await putAppSettings({ serverPort: 80 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Game port must be a whole number/);
+  });
+
+  it("accepts a valid serverPort", async () => {
+    const res = await putAppSettings({ serverPort: 16261 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("rejects an over-cap minMemory", async () => {
+    const res = await putAppSettings({ minMemory: 256 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Minimum memory \(GB\) must be a whole number/);
+  });
+
+  it("accepts a valid minMemory", async () => {
+    const res = await putAppSettings({ minMemory: 4 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("rejects an over-cap maxMemory", async () => {
+    const res = await putAppSettings({ maxMemory: 9999 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Maximum memory \(GB\) must be a whole number/);
+  });
+
+  it("accepts a valid maxMemory", async () => {
+    const res = await putAppSettings({ maxMemory: 8 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+});
+
+// Lower priority: an out-of-range value here doesn't misdirect anything, it
+// self-heals to 3 via `Number(...) || 3` the next time index.js reads it for
+// export rotation -- but an unvalidated garbage value would still sit in the
+// database unreadable by that fallback's intent. Range matches Settings.tsx's
+// own input (min=1 max=50).
+describe("PUT /app-settings -- autoExportMaxPerPlayer validation (low priority, self-heals at use)", () => {
+  it("rejects an out-of-range value instead of storing garbage", async () => {
+    const res = await putAppSettings({ autoExportMaxPerPlayer: 500 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/Auto-export copies kept must be a whole number/);
+  });
+
+  it("accepts a valid value", async () => {
+    const res = await putAppSettings({ autoExportMaxPerPlayer: 3 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+});
+
+// The 8 boolean-shaped keys that accepted any truthy/falsy JS value with no
+// gate at all until this pass -- same treatment as the 6 already checked
+// (corsAllowAll etc.), added here instead of a third future enumeration
+// finding them again.
+describe("PUT /app-settings -- the other 8 boolean settings now reject a non-boolean value", () => {
+  const booleanKeys = [
+    "modAutoRestart",
+    "serverAutoUpdate",
+    "darkMode",
+    "autoReconnect",
+    "httpsEnabled",
+    "autoStartServer",
+    "workshopCollectionAutoSync",
+    "panelBridgeSftpEnabled",
+  ];
+
+  for (const key of booleanKeys) {
+    it(`rejects a non-boolean value for ${key}`, async () => {
+      const res = await putAppSettings({ [key]: "yes" });
+      expect(res.getStatusCode()).toBe(400);
+      expect(res.getBody().error).toBe(`${key} must be true or false`);
+    });
+
+    it(`accepts a real boolean for ${key}`, async () => {
+      const res = await putAppSettings({ [key]: true });
+      expect(res.getStatusCode()).toBe(200);
+      expect(res.getBody().success).toBe(true);
+    });
+  }
 });
