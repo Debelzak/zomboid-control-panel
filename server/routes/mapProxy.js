@@ -209,6 +209,13 @@ const COVERAGE_PROBE_FRACTIONS = [
 ];
 let _b42Map = null;
 let _b42DirFetchedAt = 0;
+// Tracks WHY the current _b42Map is what it is, for the worldmap diagnostic.
+// The fallback directory can coincidentally match the directory a real
+// dynamic resolve would have picked (it does today), so the directory string
+// alone cannot tell a healthy resolve apart from a permanently broken one —
+// this is what makes the fallback silent without an explicit source flag.
+let _b42Source = null; // "dynamic" | "fallback"
+let _b42FallbackReason = null; // why we're on fallback, or null when the last resolution attempt succeeded
 
 async function hasTileCoverage(directory, geometry) {
   const level = Math.max(0, geometry.maxLevel - 6);
@@ -365,6 +372,7 @@ async function getB42Map() {
   if (_b42Map && now - _b42DirFetchedAt < B42_DIR_TTL_MS) {
     return _b42Map;
   }
+  let failureReason = null;
   try {
     const list = await fetchBuildList();
     // Entries are ordered newest-first. Walk B42+ candidates until one
@@ -375,35 +383,49 @@ async function getB42Map() {
     const candidates = Array.isArray(list)
       ? list.filter((e) => /^4[2-9][\w.\-]*$/.test(e.directory || ""))
       : [];
+    if (candidates.length === 0) {
+      failureReason = "build_list.json listed no B42+ candidates";
+    }
     for (const entry of candidates) {
       if (!entry?.directory) continue;
       const geometry = await fetchMapGeometry(entry.directory);
       if (!geometry) {
+        failureReason = `could not read ${entry.directory}/base/layer0.dzi (discovery request to tiles.pzmap.org was refused)`;
         log.warn(
           `B42 map directory ${entry.directory} has no readable layer0.dzi — trying older build.`,
         );
         continue;
       }
       if (await hasTileCoverage(entry.directory, geometry)) {
-        if (_b42Map?.directory !== entry.directory) {
+        if (_b42Map?.directory !== entry.directory || _b42Source !== "dynamic") {
           log.info(
             `B42 map directory resolved: ${entry.directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel})`,
           );
         }
         _b42Map = { directory: entry.directory, ...geometry };
         _b42DirFetchedAt = now;
+        _b42Source = "dynamic";
+        _b42FallbackReason = null;
         return _b42Map;
       }
+      failureReason = `${entry.directory} listed but has no rendered tile coverage yet`;
       log.warn(
         `B42 map directory ${entry.directory} listed but has no rendered tile coverage yet — trying older build.`,
       );
     }
   } catch (err) {
+    failureReason = err.message;
+  }
+  // Every path that reaches here is a fallback — either the try block threw,
+  // or it ran to completion without a candidate returning early above.
+  if (_b42Source !== "fallback" || _b42FallbackReason !== failureReason) {
     log.warn(
-      `Failed to resolve B42 map directory from build_list.json: ${err.message}. Falling back to ${_b42Map?.directory || B42_DIR_FALLBACK}.`,
+      `B42 build auto-detect failed (${failureReason || "unknown reason"}) — serving hardcoded fallback ${_b42Map?.directory || B42_DIR_FALLBACK}. This will NOT track the next PZ map build until discovery starts working again.`,
     );
   }
   _b42Map = _b42Map || { directory: B42_DIR_FALLBACK, ...B42_GEOMETRY_FALLBACK };
+  _b42Source = "fallback";
+  _b42FallbackReason = failureReason || "unknown reason";
   // Stamp the fallback too, not just a successful resolve — otherwise a
   // backend that can never reach pzmap.org/tiles.pzmap.org (e.g. a blocked
   // cluster egress policy) eats the full fetch timeout on every single tile
@@ -415,6 +437,19 @@ async function getB42Map() {
 
 async function getB42Dir() {
   return (await getB42Map()).directory;
+}
+
+// For the worldmap diagnostic: reports whether the build currently in use was
+// actually discovered from build_list.json or is the hardcoded fallback, and
+// why. Never infer health from the directory string alone (see _b42Source's
+// comment above) — call this instead.
+function getB42ResolutionStatus() {
+  return {
+    source: _b42Source,
+    directory: _b42Map?.directory ?? B42_DIR_FALLBACK,
+    usingFallback: _b42Source === "fallback",
+    reason: _b42FallbackReason,
+  };
 }
 
 // Max time we'll wait for an upstream tile fetch. Without this a slow/dead
@@ -695,4 +730,4 @@ export default router;
 
 // Exposed so the diagnostics route can probe the exact URLs this proxy would
 // request, instead of a hardcoded build that may not be the one in use.
-export { PZ_MAP_ROOT, PZ_TILES_ROOT, getB42Dir, getB42TopFormat };
+export { PZ_MAP_ROOT, PZ_TILES_ROOT, getB42Dir, getB42TopFormat, getB42ResolutionStatus };

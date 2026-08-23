@@ -32,6 +32,7 @@ import {
   PZ_TILES_ROOT,
   getB42Dir,
   getB42TopFormat,
+  getB42ResolutionStatus,
 } from "./mapProxy.js";
 import {
   getCandidateZomboidPaths,
@@ -4139,6 +4140,38 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
     try {
       b42Dir = await getB42Dir().catch(() => null);
       b42TopFormat = b42Dir ? await getB42TopFormat(b42Dir).catch(() => null) : null;
+
+      // Build auto-detect can fail while tile serving still looks healthy: the
+      // hardcoded fallback directory happens to match the live build today, so
+      // a plain tile probe below would report "reachable" even though
+      // discovery itself is dead and will silently pin the panel to an old
+      // build the moment PZ ships a new one. Report on discovery itself,
+      // separately from whether tiles for whatever build we landed on load.
+      const resolution = getB42ResolutionStatus();
+      if (resolution.usingFallback) {
+        checks.push(
+          diagWarn(
+            "worldmap.tiles.buildDetect",
+            "B42 build auto-detect failed",
+            `Using hardcoded build ${resolution.directory} because discovery failed: ${resolution.reason || "unknown reason"}. This will not track the next PZ map build until discovery starts working again.`,
+            {
+              category: "worldmap",
+              hint: "Discovery reads build_list.json and each candidate's layer0.dzi from tiles.pzmap.org. If upstream is blocking the panel's requests specifically (e.g. bot protection keyed on the HTTP client), this may not be fixable from the panel side — watch for this warning after the next PZ map release, since that's when a stale build actually shows up as wrong map geometry.",
+              params: { build: resolution.directory, reason: resolution.reason || "unknown reason" },
+            },
+          ),
+        );
+      } else {
+        checks.push(
+          diagOk(
+            "worldmap.tiles.buildDetect",
+            "B42 build auto-detect healthy",
+            `Build ${resolution.directory} was resolved dynamically from build_list.json.`,
+            { category: "worldmap", params: { build: resolution.directory } },
+          ),
+        );
+      }
+
       [b42Probe, b41Probe, b42TopProbe] = await Promise.all([
         probeTile(
           `${PZ_TILES_ROOT}/${b42Dir || "42.19.0"}/base/layer0_files/0/0_0.jpg`,
