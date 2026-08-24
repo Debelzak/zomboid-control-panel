@@ -845,12 +845,21 @@ export default function WorldMap() {
 
   // ─── Map tile cache ─────────────────────────────────────
   // 'empty' marks a tile the upstream server confirmed doesn't exist (a
-  // real HTTP 404, not a network/proxy failure) — e.g. a sparse/edge tile
-  // near the map boundary. pzmap.org's own OpenSeadragon
-  // viewer just renders these blank; treating them as errors caused a
-  // false "tiles offline" banner and visible view jumps on zoom. See the
-  // status-aware fetch() below — an <img> tag alone can't distinguish a
-  // 404 from any other failure.
+  // real HTTP 404, not a network/proxy failure) — e.g. a sparse/edge tile,
+  // or any tile past the real (often much shallower than maxLevel) rendered
+  // coverage depth for this build (see mapProxy.js's discoverRenderedMaxLevel
+  // and GH#109 / conv-gh109-worldmap-black). Treating a 404 as a load error
+  // caused a false "tiles offline" banner and visible view jumps on zoom, so
+  // it's tracked as its own state rather than folded into a failure retry —
+  // see the status-aware fetch() below, since an <img> tag alone can't
+  // distinguish a 404 from any other failure.
+  // pzmap.org's own OpenSeadragon viewer renders an 'empty' tile blank too,
+  // but that is NOT evidence blank is the right answer here — it is a
+  // reference-conformance fact, not a UX one, and it does not survive a real
+  // user staring at a black map (GH#109, filed by Everyday44). The
+  // requirement this state actually carries is: drawMap must fall back to
+  // the nearest cached coarser tile for an 'empty' entry (see
+  // drawTileWithFallback / worldMapTileFallback.ts), never draw nothing.
   const tileCacheRef = useRef<Record<string, HTMLImageElement | null | 'empty'>>({})
 
   // Resolved once per session: lets the browser build direct-to-upstream
@@ -958,10 +967,10 @@ export default function WorldMap() {
     const proxyUrl = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${proxyFloorParam}`
 
     // Loads through this server's proxy — the "smart" path that can tell a
-    // real 404 (tile genuinely absent; the reference OpenSeadragon viewer
-    // on pzmap.org just renders these blank) apart from an
-    // actual connectivity failure, since an <img> tag alone can't see HTTP
-    // status codes. Used directly when we haven't resolved a direct
+    // real 404 (tile genuinely absent — see tileCacheRef's comment above for
+    // what 'empty' means and why it must fall back, not render blank) apart
+    // from an actual connectivity failure, since an <img> tag alone can't
+    // see HTTP status codes. Used directly when we haven't resolved a direct
     // upstream URL yet, and as the fallback when a direct browser load
     // fails for an ambiguous reason (which itself might just be a real
     // 404 — routing it through here resolves that ambiguity).
