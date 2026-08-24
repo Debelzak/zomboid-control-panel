@@ -6,6 +6,12 @@ Findings appended as found, each verified before being listed unless marked UNVE
 
 ---
 
+> **RECONCILED 2026-08-24 (jim):** FIXED at `0cacaa8` ("fix: three dead isAbsolute(resolve(x))
+> checks now check the raw input"). `servers.js:251-256` and `:367-372` now check
+> `path.isAbsolute(scanPath)` / `path.isAbsolute(dataPath)` on the RAW input, with an explicit
+> comment ("Must check isAbsolute() on the raw input: path.resolve() always...") before resolving.
+> Verified directly by reading current source.
+
 ## Finding 1 — dead "must be absolute path" check in servers.js /auto-scan and /detect
 
 **WHERE:** `server/routes/servers.js:251-256` (`/auto-scan`) and `server/routes/servers.js:367-370` (`/detect`)
@@ -26,6 +32,10 @@ if (!path.isAbsolute(resolvedPath)) {
 **SEVERITY: Low.** This is a validation-message-is-a-lie bug (pattern #1 flavor: an error condition that can never fire), not a privilege escalation — both routes are already gated by `servers.discover` (admin/technician-tier, and the routes intentionally scan arbitrary absolute filesystem paths by design per the comment at servers.js:236 "reads arbitrary local server .ini files and returns their RCON passwords in plaintext... admin-only, same sensitivity tier as chunks delete"). There is no confinement boundary being bypassed — an admin who can already point this at any absolute path can now also point it at a CWD-relative one, which is no more powerful. Fix is one line per site; worth doing for correctness, not urgent for security.
 
 ---
+
+> **RECONCILED 2026-08-24 (jim):** FIXED at `0cacaa8` (same commit as Finding 1 — three sites fixed
+> together). Was Cosmetic even before the fix (the real containment lived in the downstream suffix +
+> realpath check), now also correct at the surface.
 
 ## Finding 2 — same dead check in panelBridge.js /install-mod, but harmless due to a real check downstream
 
@@ -78,6 +88,14 @@ or we're given non-overlapping file lists.
 
 ---
 
+> **RECONCILED 2026-08-24 (jim):** FIXED at `bd1d331`. `backupService.js:611` now reads
+> `const prunable = backups.filter((b) => !b.name.startsWith("uploaded-"))`, with a comment
+> exempting uploads from the automatic prune "full stop -- never counted toward maxBackups and never
+> selected for deletion" because it's unattended, while `deleteBackupsOlderThan` deliberately does
+> the opposite since it's operator-initiated ("delete everything older than X days" means what it
+> says). Verified directly, not just from a claim — I initially escalated this as still-live before
+> checking, corrected within minutes. See the RESUMED section below for the full correction record.
+
 ## Finding 3 — cleanupOldBackups()/deleteBackupsOlderThan() delete uploaded backups despite a comment saying they won't
 
 **WHERE:** `server/services/backupService.js:557-581` (`cleanupOldBackups`), also
@@ -114,6 +132,12 @@ the operator doing the deleting, it's auto-prune silently doing it to the backup
 manually preserved, while a written comment tells them it can't happen.
 
 ---
+
+> **RECONCILED 2026-08-24 (jim):** FIXED at `4d29744` ("fix(security): GET
+> /api/backup/download/:name now requires its own capability"). `backup.js:171` now reads
+> `requirePermission("backups.download")`, its own dedicated capability rather than reusing
+> `backups.manage` — the better fix, since a capability should only be reused when its grant set
+> actually matches. A comment above the route documents the exposure path.
 
 ## Finding 4 — GET /api/backup/download/:name has no backups.manage permission gate
 
