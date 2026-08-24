@@ -71,6 +71,7 @@ import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
+import { resolveFallbackTile } from './worldMapTileFallback'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
 
@@ -178,6 +179,13 @@ interface MapConfig {
   fullWidth: number
   fullHeight: number
   maxLevel: number
+  // Deepest level actually worth requesting -- maxLevel is the depth a FULL
+  // Deep Zoom pyramid would need for these dimensions, not evidence the
+  // tile host rendered that deep. Defaults to maxLevel for configs that have
+  // no better source (MAP_B41 has no server-side discovery yet); B42 gets a
+  // real discovered value from /api/map/resolve. See GH#109 /
+  // conv-gh109-worldmap-black.
+  renderedMaxLevel: number
   isoX0: number
   isoY0: number
   isoHalfSqr: number
@@ -193,6 +201,7 @@ const MAP_B42: MapConfig = {
   fullWidth: 1157312,
   fullHeight: 509520,
   maxLevel: 21,
+  renderedMaxLevel: 21,
   isoX0: 518144,
   isoY0: -69648,
   isoHalfSqr: 32,
@@ -240,6 +249,7 @@ function b42ConfigFor(info: {
   width: number
   height: number
   maxLevel: number
+  renderedMaxLevel?: number
   b42Dir?: string
   x0?: number
   y0?: number
@@ -271,6 +281,9 @@ function b42ConfigFor(info: {
     fullWidth: info.width,
     fullHeight: info.height,
     maxLevel: info.maxLevel,
+    // Fall back to maxLevel itself only if the server response predates
+    // this field (rolling restart) -- same behaviour as before this fix.
+    renderedMaxLevel: info.renderedMaxLevel ?? info.maxLevel,
     isoX0,
     isoY0,
     isoHalfSqr,
@@ -292,6 +305,14 @@ const MAP_B41: MapConfig = {
   fullWidth: 2285184,
   fullHeight: 990400,
   maxLevel: 22, // ceil(log2(2285184)) = 22
+  // B41 has no server-side discovery like B42's discoverRenderedMaxLevel
+  // (mapProxy.js) -- it's a legacy/frozen build served from a hardcoded
+  // directory with no dynamic /resolve geometry today. Same maxLevel-6
+  // known-safe-floor heuristic hasTileCoverage uses for B42, hardcoded here
+  // rather than left at the full (near-certainly-too-deep) maxLevel. The
+  // coarser-tile fallback in drawTileWithFallback covers whatever this
+  // clamp gets wrong either way. See GH#109 / conv-gh109-worldmap-black.
+  renderedMaxLevel: 16,
   // Isometric projection from pzmap.org (multiply=2):
   // Origin derived from PxToTileOffset {x:-5577, y:10327}
   isoX0: 1017856,  // (5577 + 10327) * 64
@@ -307,6 +328,9 @@ const MIN_SCALE = 0.0003        // canvas px per DZI px (zoomed way out)
 const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
 const POLL_INTERVAL = 3000
 const MARKER_HIT_RADIUS = 14
+// How many coarser levels drawTileWithFallback will walk up looking for a
+// cached tile to degrade to. See GH#109 / conv-gh109-worldmap-black.
+const MAX_FALLBACK_LEVELS = 8
 
 // ─── Cached top-down vehicle icons ────────────────────────
 // Top-down car silhouette rendered to offscreen canvases. Much more legible
@@ -1024,6 +1048,35 @@ export default function WorldMap() {
     directImg.src = directUrl
   }, [buildDirectTileUrl])
 
+  // A requested level can be within maxLevel yet still have no tile rendered
+  // upstream for most of the map -- see GH#109 / conv-gh109-worldmap-black
+  // and worldMapTileFallback.ts's header comment. When the exact tile is
+  // missing or still loading, draw the matching sub-rectangle of the
+  // nearest cached COARSER tile instead of leaving the rect untouched.
+  const drawTileWithFallback = useCallback((
+    ctx: CanvasRenderingContext2D,
+    floor: number,
+    level: number,
+    col: number,
+    row: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ) => {
+    const fallback = resolveFallbackTile(
+      level,
+      col,
+      row,
+      (l, c, r) => tileCacheRef.current[`${floor}/${l}/${c}_${r}`],
+      (l, c, r) => loadDziTile(l, c, r),
+      MAX_FALLBACK_LEVELS,
+    )
+    if (!fallback) return false
+    ctx.drawImage(fallback.img, fallback.srcX, fallback.srcY, fallback.srcW, fallback.srcH, dx, dy, dw, dh)
+    return true
+  }, [loadDziTile])
+
   // ─── Coordinate transforms (DZI pixel ↔ canvas, game-tile ↔ DZI) ─
   const dziToCanvas = useCallback(
     (dziX: number, dziY: number, s?: number, off?: { x: number; y: number }) => {
@@ -1226,7 +1279,14 @@ export default function WorldMap() {
 
     // ── DZI map tiles ──
     const mc = mapCfgRef.current
-    const level = Math.max(0, Math.min(mc.maxLevel, Math.round(mc.maxLevel + Math.log2(s))))
+    // Clamp to renderedMaxLevel, not maxLevel -- maxLevel is the depth a
+    // FULL Deep Zoom pyramid would need for these dimensions, not evidence
+    // the tile host actually rendered that deep (see GH#109 /
+    // conv-gh109-worldmap-black). The DZI addressing math below (levelScale
+    // etc.) still keys off the real maxLevel, since tile level numbering is
+    // defined relative to the full theoretical pyramid regardless of how
+    // much of it actually exists upstream.
+    const level = Math.max(0, Math.min(mc.renderedMaxLevel, Math.round(mc.maxLevel + Math.log2(s))))
     const levelScale = Math.pow(2, mc.maxLevel - level)
     const levelW = Math.ceil(mc.fullWidth / levelScale)
     const levelH = Math.ceil(mc.fullHeight / levelScale)
@@ -1256,15 +1316,21 @@ export default function WorldMap() {
       for (let col = minCol; col <= maxCol; col++) {
         loadDziTile(level, col, row)
         const img = tileCacheRef.current[`${floorRef.current}/${level}/${col}_${row}`]
+        // Floor the origin and pad the size by 1px so adjacent tiles
+        // slightly overlap instead of leaving a sub-pixel seam (visible as
+        // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
+        const dx = Math.floor(col * tileSize * levelScale * s + off.x)
+        const dy = Math.floor(row * tileSize * levelScale * s + off.y)
         if (img && img !== 'empty') {
-          // Floor the origin and pad the size by 1px so adjacent tiles
-          // slightly overlap instead of leaving a sub-pixel seam (visible as
-          // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
-          const dx = Math.floor(col * tileSize * levelScale * s + off.x)
-          const dy = Math.floor(row * tileSize * levelScale * s + off.y)
           const dw = Math.ceil(img.naturalWidth * levelScale * s) + 1
           const dh = Math.ceil(img.naturalHeight * levelScale * s) + 1
           ctx.drawImage(img, dx, dy, dw, dh)
+        } else {
+          // Exact tile missing (confirmed absent) or still loading -- draw a
+          // coarser cached tile's matching sub-rectangle instead of nothing.
+          const dw = Math.ceil(tileSize * levelScale * s) + 1
+          const dh = Math.ceil(tileSize * levelScale * s) + 1
+          drawTileWithFallback(ctx, floorRef.current, level, col, row, dx, dy, dw, dh)
         }
       }
     }
@@ -1777,7 +1843,7 @@ export default function WorldMap() {
       ctx.stroke()
       ctx.setLineDash([])
     }
-  }, [canvasSize, loadDziTile, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle, t, presetLabel])
+  }, [canvasSize, loadDziTile, drawTileWithFallback, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle, t, presetLabel])
 
   // ─── Animation loop ─────────────────────────────────────
   useEffect(() => {

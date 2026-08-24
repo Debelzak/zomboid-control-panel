@@ -3027,6 +3027,10 @@ export const mapApi = {
     width: number;
     height: number;
     maxLevel: number;
+    // Deepest level actually worth requesting -- see mapProxy.js's
+    // discoverRenderedMaxLevel. maxLevel alone is the theoretical full DZI
+    // pyramid depth, not evidence the tile host rendered that deep.
+    renderedMaxLevel: number;
     // Isometric projection origin from the build's own map_info.json.
     // Absent if map.projectzomboid.com couldn't be reached.
     x0?: number;

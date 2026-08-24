@@ -208,6 +208,11 @@ const B42_GEOMETRY_FALLBACK = {
   width: 2318656,
   height: 1019040,
   maxLevel: 22,
+  // This path never gets to run discoverRenderedMaxLevel (no live directory
+  // to probe), so fall back to the same known-safe floor hasTileCoverage
+  // uses everywhere else rather than trusting maxLevel itself — see
+  // discoverRenderedMaxLevel's comment.
+  renderedMaxLevel: 16,
   x0: 1040384,
   y0: -139296,
   sqr: 128,
@@ -311,8 +316,7 @@ let _b42FallbackReason = null; // why we're not on "dynamic", or null when the l
 // the one discovery request that's fine on plain Node fetch (see the
 // perf-regression note on CURL_DISCOVERY_UA above): tile bytes aren't behind
 // the Cloudflare descriptor-path challenge for any client tested.
-async function hasTileCoverage(directory, geometry) {
-  const level = Math.max(0, geometry.maxLevel - 6);
+async function probeLevelHasCoverage(directory, geometry, level) {
   const levelScale = 2 ** (geometry.maxLevel - level);
   const levelW = Math.ceil(geometry.width / levelScale);
   const levelH = Math.ceil(geometry.height / levelScale);
@@ -337,6 +341,45 @@ async function hasTileCoverage(directory, geometry) {
     }
   }
   return false;
+}
+
+async function hasTileCoverage(directory, geometry) {
+  return probeLevelHasCoverage(
+    directory,
+    geometry,
+    Math.max(0, geometry.maxLevel - 6),
+  );
+}
+
+// geometry.maxLevel (fetchMapGeometry, above) is Math.ceil(log2(max(width,
+// height))) — the depth a FULL Deep Zoom pyramid would need for an image of
+// that size, computed from the DZI descriptor's own dimensions. It is not
+// evidence the tile host actually rendered that deep: level 21 at 1024px
+// tiles is roughly 563,000 tiles for one floor, so real coverage falls well
+// short and the client (WorldMap.tsx) was clamping to this inflated ceiling
+// and asking for tiles that 404 across most of the map — see GH#109 /
+// conv-gh109-worldmap-black. hasTileCoverage() above already establishes,
+// empirically, that maxLevel-6 is deep enough to find real tiles at these
+// probe points; that's what gates picking this directory at all, so it's a
+// known-good floor here, not a guess. Binary search the [maxLevel-6,
+// maxLevel] gap (at most a handful of HEAD requests, same probe points,
+// run once per directory resolve and cached alongside the rest of the
+// geometry — see B42_DIR_TTL_MS) for the deepest level any probe tile still
+// resolves at, and report that as the depth a client should actually be
+// allowed to zoom to.
+async function discoverRenderedMaxLevel(directory, geometry) {
+  const floor = Math.max(0, geometry.maxLevel - 6);
+  let lo = floor; // known covered — hasTileCoverage just confirmed it
+  let hi = geometry.maxLevel;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    if (await probeLevelHasCoverage(directory, geometry, mid)) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo;
 }
 
 // The top-down (base_top) view is rendered separately from the isometric base
@@ -461,12 +504,13 @@ async function resolveB42Map(now) {
       );
       return false;
     }
+    const renderedMaxLevel = await discoverRenderedMaxLevel(directory, geometry);
     if (_b42Map?.directory !== directory || _b42Source !== "dynamic") {
       log.info(
-        `B42 map directory resolved: ${directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel})`,
+        `B42 map directory resolved: ${directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel}, rendered max level ${renderedMaxLevel})`,
       );
     }
-    _b42Map = { directory, ...geometry };
+    _b42Map = { directory, ...geometry, renderedMaxLevel };
     _b42DirFetchedAt = now;
     _b42Source = "dynamic";
     _b42FallbackReason = null;
@@ -714,6 +758,12 @@ router.get("/resolve", async (req, res) => {
     width: map.width,
     height: map.height,
     maxLevel: map.maxLevel,
+    // The deepest level the client should actually request — see
+    // discoverRenderedMaxLevel's comment. Falls back to maxLevel itself only
+    // if this particular _b42Map somehow predates that field (shouldn't
+    // happen post-fix, but a client reading an old-shaped cached response
+    // during a rolling restart should still get a sane value, not undefined).
+    renderedMaxLevel: map.renderedMaxLevel ?? map.maxLevel,
     x0: map.x0,
     y0: map.y0,
     sqr: map.sqr,
