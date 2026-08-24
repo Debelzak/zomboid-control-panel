@@ -44,6 +44,12 @@ No findings.
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `4e2f0c5` ("fix(discord): PUT /config reports
+> whether the post-save reconnect worked"). `discord.js` now captures `discordBot.start()`'s
+> return value; on `false` it responds `{success:true, message:"...but the bot failed to
+> reconnect.", botStarted:false, botStartError:...}` instead of a flat `success:true` — exactly
+> the fix shape recommended below.
+
 ## Finding 1 — PUT /api/discord/config reports success even when the reconnect it just triggered failed
 
 **WHERE:** `server/routes/discord.js:139-185` (`PUT /config`), the exact contrast is `server/routes/discord.js:193-218` (`POST /start`) 30 lines below it.
@@ -78,6 +84,15 @@ res.json({ success: true, message: "Discord bot configuration updated" });
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `494de7a` ("fix(security): createBackup()
+> distinguishes 'nothing to back up' from 'the backup failed' -- no response may claim a backup
+> exists unless it does"). `createBackup()` now returns a structured `{backedUp, name, error}`
+> object instead of silently returning `null`. `POST /sandbox/repair` (the sharpest case cited
+> below) now checks `!backup.backedUp` and REFUSES to write and repair, returning
+> `SANDBOX_REPAIR_BACKUP_FAILED` with the underlying reason — stronger than the minimum fix
+> suggested (check-and-warn); it check-and-refuses. `backupWarningFor()` now wraps every other
+> call site too (grepped: `createBackup(` appears at 11 sites, all now routed through it).
+
 ## Finding 2 — DATA-DESTROYING: createBackup()'s return value is silently discarded at all 11 call sites in serverFiles.js; POST /sandbox/repair explicitly tells the operator a backup exists when it may not
 
 **WHERE:** `server/routes/serverFiles.js:308-358` (`createBackup()`), called at lines 1071, 1170, 1227, 1318, 1384, 1455, 1507, 1587, 1686, 1912, 1928 — every one of them `await createBackup(...)` with the return value discarded. Sharpest instance: `POST /sandbox/repair`, lines 1352-1413.
@@ -93,6 +108,11 @@ The sharpest case is `POST /sandbox/repair`: it repairs a corrupted `SandboxVars
 **SEVERITY: Data-destroying — reporting this one separately and immediately, per your instruction, rather than batching it.** Same shape and same real-world consequence as the backup-prune bug you already closed tonight: a written guarantee about data safety that the code doesn't actually enforce, on the exact file an operator is trying to recover.
 
 ---
+
+> **RECONCILED 2026-08-24 (fork):** FIXED at `9305865` ("fix(serverFiles): save-and-reload
+> reports what RCON actually returned"). The route now checks `result?.success` from
+> `reloadOptions()` and responds `{success:false, error, result}` on a real RCON failure instead
+> of a hardcoded `success:true`.
 
 ## Finding 3 — POST /save-and-reload hardcodes success:true regardless of whether RCON actually reloaded anything
 
@@ -110,6 +130,15 @@ res.json({ success: true, message: "Options reloaded", result });
 **SEVERITY: Low-medium**, same class as Finding 1 (discord.js) — not security, not data-destroying (the file on disk was already saved by a separate prior request; this route only relays the config into the running process). Batching with Finding 1 rather than sending separately.
 
 ---
+
+> **RECONCILED 2026-08-24 (fork):** FIXED at `913fc3a` ("fix(serverFiles): template apply
+> reports a partial write, not a flat failure") — a DIFFERENT fix shape than the
+> `writeFilesTransaction()`-style rollback suggested below, and a legitimate alternative: `applied`
+> is now declared outside the try block and pushed to as each write actually lands, so the catch
+> block can see and report `partiallyApplied: applied` alongside the 500 instead of a bare error
+> that reads as "nothing happened." No rollback was added — this is honest reporting of what
+> landed, not prevention of the partial state — but it fully closes the "total-failure-claimed-
+> on-partial-success" defect described below.
 
 ## Finding 4 — POST /templates/:id/apply: a real partial-apply (INI write succeeds, Sandbox write fails) is reported as a total failure, hiding that half the template already landed
 
@@ -139,6 +168,21 @@ Findings 2, 3, 4 above are everything found in this file. Everything else checke
 
 ---
 
+> **CORRECTION 2026-08-24 (fork), NOT a clean area — this "checked clean" verdict was wrong.**
+> The `DEFAULT_INI_EXCLUSIONS` claim below ("A template can structurally never contain a
+> credential... enforced at validateTemplate()") does not hold. Found and confirmed the same
+> night, by a separate hunt: `validateTemplate()` (utils/templateSchema.js:124-126) and the
+> apply-time write path `prepareIniChange()` (templateService.js:192) both read the exclusion
+> list FROM THE TEMPLATE ITSELF when supplied as an array, so a template shipping
+> `"iniExclusions": []` bypasses the check entirely and its `serverIni.RCONPassword`/etc. gets
+> written to the live `.ini`. This is a real capability-boundary violation — `templates.manage`
+> alone can rewrite credentials that should require `serverfiles.manage`. HIGH severity,
+> CONFIRMED LIVE, fix already dispatched to Kevin as of this reconciliation — see
+> `docs/qa/creed-findings.md` Finding 7 for full detail. The original check here likely tested
+> "does validateTemplate refuse a template with excluded keys and no custom iniExclusions" and
+> didn't try supplying a competing `iniExclusions` alongside the excluded key — an easy case to
+> miss precisely because the function's own comment asserts it's unconditional.
+
 ## Area checked clean — templates.js + services/templateService.js (a SEPARATE, more sophisticated system from serverFiles.js's own embedded `/templates` routes above — worth knowing both exist)
 
 **READ:** `server/routes/templates.js` (full, 137 lines), `services/templateService.js` (full), `utils/templateSchema.js`'s validation/exclusion logic, `utils/templateFiles.js`'s file-writing helpers.
@@ -151,6 +195,10 @@ Findings 2, 3, 4 above are everything found in this file. Everything else checke
 No findings — if anything, this file is the "restore path is genuinely solid" of this hunt: a second, harder-to-get-right multi-file write problem, done correctly right next to two files that got it wrong.
 
 ---
+
+> **RECONCILED 2026-08-24 (fork):** FIXED at `7ff8763` ("fix(security): serverFinder's SSRF
+> deny-list now blocks 100.64.0.0/10"). `isPrivateIp()` now includes
+> `if (a === 100 && b >= 64 && b <= 127) return true;` — the exact fix suggested below, verbatim.
 
 ## Finding 5 — serverFinder.js's SSRF deny-list misses 100.64.0.0/10 (Carrier-Grade NAT / shared address space)
 
@@ -174,6 +222,16 @@ No findings — if anything, this file is the "restore path is genuinely solid" 
 
 ## Finding 6 — panelBridge.js: dead checks fixed (this hunt), stale comment (not fixed), one item flagged as unverified rather than guessed
 
+> **RECONCILED 2026-08-24 (fork):** Dead checks — FIXED, self-reported and verified: `0cacaa8`
+> is a real commit, confirmed via `git show`, and a repo-wide grep for `isAbsolute(resolve` /
+> `isAbsolute(path.resolve` now returns zero hits anywhere. Stale comment — ALSO NOW FIXED (was
+> open when this file was written): `24f2338` ("docs(security): reword the POST /command comment
+> tonight's own work falsified") rewrote it; current text no longer claims the gate "has no
+> effect today," instead states plainly it's "live and doing real work today" with the reasoning
+> the original comment was missing. The `/server-info` player-data-sensitivity item below is
+> Lua-side and out of this reconciliation's reach the same way it was out of the original hunt's
+> — no verdict possible without the Lua mod source.
+
 **Dead checks fixed directly, per your instruction ("fix those while you are there"):** `servers.js:254` (`/auto-scan`), `servers.js:368` (`/detect`), `panelBridge.js:2670` (`/install-mod`) — all the same `isAbsolute(resolve(x))` shape Creed already named. Grepped the whole file for every remaining `isAbsolute` occurrence first to confirm these were the only three left (the other two hits, lines 228/800, are Creed's already-correct raw-input checks). Checked for existing tests first — none of the three had any (confirms Creed's read: "invisible to tests and review"). Fixed by moving the `isAbsolute` check to run on the raw input before `path.resolve()`, added `server/tests/deadIsAbsoluteChecksFix.test.js` (3 tests, one per site) proving each now genuinely refuses a relative path. Both gates green, committed as `0cacaa8`.
 
 **Stale comment, NOT fixed — reporting per "anything larger, I route it," and this is a judgment call about intent, not a one-liner:** `panelBridge.js:1104-1109`, above `POST /command` (the generic passthrough for every PanelBridge action — teleport, giveItem, character import/export, horde spawning): *"Every account is currently created as 'admin' (see auth.js), so this has no effect today, but keeps the route safe if a lower-privilege role is ever introduced."* That premise was true when written but isn't anymore — tonight's entire session has been building exactly the lower-privilege-role reality this comment treats as hypothetical (technician/moderator have existed for a while; custom roles via the matrix are brand new). The GATE itself (`requirePermission("bridge.command")`) is correct and unaffected — this is a documentation-staleness issue, not a functional bug, but it undersells the gate's current importance to a future reader ("has no effect today" now reads as false reassurance for code that matters more than ever). Not touching it myself: rewording it correctly means asserting what's now true across the app, which is more than a one-line mechanical fix — your call whether it's worth a pass, possibly alongside Jim's look at the debug.js header comment from earlier tonight (same shape: a comment overtaken by the app's own evolution).
@@ -193,6 +251,14 @@ No findings — if anything, this file is the "restore path is genuinely solid" 
 **READ:** full file, 627 lines. Router-level gate (`requirePermission('server.install')`, all 4 routes) — no pattern-4 gap. `GET /` queries the Steam Web API / Steam master server list, not caller-supplied addresses, so it isn't part of the SSRF surface above. `GET /debug` is the same shape, gated the same way, no new pattern. Everything reports errors as errors (no success-regardless-of-outcome instances beyond `/ping` deliberately treating an unreachable server as a legitimate `{success:true, online:false}` result, which is honest — "ping" against an offline server isn't a panel failure).
 
 ---
+
+## RECONCILIATION SUMMARY (2026-08-24, fork)
+
+All 6 findings in this file verified against current source: **6 FIXED, 0 LIVE, 0 INVALID.**
+Commits: `4e2f0c5`, `494de7a`, `9305865`, `913fc3a`, `7ff8763`, plus `0cacaa8`/`24f2338` (Finding
+6's two parts). One "checked clean" verdict corrected — templates.js's `DEFAULT_INI_EXCLUSIONS`
+enforcement is NOT clean; see the correction note above that section and
+`docs/qa/creed-findings.md` Finding 7 for the confirmed-live bypass found later the same night.
 
 ## Coverage summary
 

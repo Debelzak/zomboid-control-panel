@@ -73,6 +73,15 @@ works and isn't just decorative.
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `a4c3030` ("fix(paths): stop resolving data/log
+> locations from process.cwd(), and fix a diagnostic that could never be right"). `crashDirs`
+> now uses `getDataPaths().logsDir` instead of `process.cwd()`. Same commit also fixed the "?
+> collections, 0 MB" diagnostic below AND found+fixed a third instance of the same bug class in
+> `services/panelBridgeSftp.js`'s `getSftpCachePath()`, per the commit message — acting directly
+> on your own "someone might grep for siblings" suggestion. Covered by
+> `server/tests/dataPathDrift.test.js` (both directions: a configured non-default data dir, and
+> the real unmocked default).
+
 ## BUG: Crash Logs tab reads `process.cwd()`, not the configured logs directory — WHERE: `server/routes/debug.js:4300-4305` (`GET /api/debug/crash-logs`) and `:4386-4389` (`GET /api/debug/crash-logs/:filename`)
 
 **WHAT HAPPENS:** The Debug page's "Crashes" tab is supposed to show this panel install's own
@@ -121,6 +130,12 @@ for siblings.
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED, same commit as the Crash Logs bug above (`a4c3030`).
+> A new `formatDbAccessibleMessage(dbStats)` function (debug.js:2109) replaces the broken
+> `collections.length`/`.size` string-interpolation. Tests cover three cases explicitly: populated
+> stats, unavailable stats (still renders "?" — unknown stays unknown), and a genuinely empty
+> database (renders "0", not "?" — an honest zero is not the same as "couldn't tell").
+
 ## BUG: "Database accessible" diagnostic always shows "? collections, 0 MB" — WHERE: `server/routes/debug.js:3156`, feeding off `server/database/init.js:845-889` (`getDatabaseStatsSync`)
 
 **WHAT HAPPENS:** Debug → Diagnostics → Storage & Database → "Database accessible" always renders
@@ -150,6 +165,16 @@ specifically so an operator can trust the diagnostics, and "?" next to a green c
 "this passed, ignore the weird placeholder" rather than the actual bug it is.
 
 ---
+
+## RECONCILIATION SUMMARY (2026-08-24, fork)
+
+All 5 BUG findings in this file verified against current source: **5 FIXED, 0 LIVE, 0 INVALID.**
+Commits: `a4c3030` (crash logs + database diagnostic, two findings in one commit),
+`7f3be0a` (error-code translation + the roles.json gap, also two findings in one commit),
+`87c3d3a`..`df1f75a` (8-commit Diagnostics-tab translation effort, 46/47 checks, one deliberately
+deferred). The two OBSERVATION items (accented username field, built-in template card
+localization) were explicitly not filed as bugs by the original author and are left as-is —
+no verdict needed for a question, not a finding.
 
 ## Coverage so far
 
@@ -207,6 +232,13 @@ now and its top-level headers ("WORLD CONTROL", "Event Console", "Weather, time,
 still English while its sub-sections are already French — textbook mid-save state, not a defect,
 not reporting it.
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `7f3be0a` ("fix(i18n): getUserErrorMessage now
+> prefers a registered error.code translation"). `getUserErrorMessage()` now extracts
+> `error.code` and checks `getRegisteredTranslation(code, params)` FIRST, before ever falling
+> back to the raw `error.message` — the raw-message path is now genuinely the fallback, not the
+> primary path. The same commit also filled in the "Download a backup archive" French gap
+> (Finding below) — a bundled fix.
+
 ### BUG: `getUserErrorMessage()` never translates by error code — always shows the server's raw English text, even when a correct French translation already exists — WHERE: `client/src/lib/errorMessage.ts:3-28`, used at 18 call sites in `ServerConfig.tsx`, 6 in `Events.tsx`, 1 in `Dashboard.tsx`
 
 **WHAT HAPPENS:** In French, `/server-config` with no active server shows a banner that's French
@@ -248,6 +280,16 @@ whoever wrote the French `errors.json` entries reasonably believes this is alrea
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED, in a large, deliberate multi-batch effort — 8 commits
+> (`87c3d3a` batch 1 through `df1f75a` batch 8), each translating one diagnostic group (Core
+> Services, Active Server, Storage & Database, Runtime & Memory, Updates, PanelBridge IPC, Mods,
+> server.recentCrash) via the same server-emits-codes-and-params-the-client-interpolates
+> mechanism the original finding correctly identified as the real fix shape (not "add French
+> strings" — there was nothing to add strings TO). Batch 8's own commit message states 46 of 47
+> checks are now translated, with `server.configDrift` "deliberately deferred" (named, not
+> silently skipped) — call this FIXED with one small, documented, intentional exception rather
+> than fully closed.
+
 ### BUG: Debug → Diagnostics tab is 100% untranslated, by design of where the text comes from — WHERE: every check pushed in `server/routes/debug.js`'s `/diagnostics` handler (~40+ `diagOk`/`diagWarn`/`diagSkip` calls, e.g. lines 1940-1970 and on)
 
 **WHAT HAPPENS:** In French, the Diagnostics tab's page chrome, tab labels, and a handful of
@@ -276,6 +318,11 @@ English health-check prose the whole time, in the one part of the app whose enti
 understood correctly under stress.
 
 ---
+
+> **RECONCILED 2026-08-24 (fork):** FIXED, same commit as the errorMessage.ts fix above
+> (`7f3be0a`). `fr/roles.json`'s `backups.download` entry now reads "Télécharger une archive de
+> sauvegarde" / a full translated description. Both `en/roles.json` and `fr/roles.json` have 28
+> `"label"` entries — counts match, nothing else missing in this section.
 
 ### BUG (small, isolated): Roles & Permissions — one capability row never got translated — WHERE: `client/src/locales/fr/roles.json` (or wherever the "Backups" section's capability copy lives), row "Download a backup archive"
 
