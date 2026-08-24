@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two more places where text or a button ran off the edge of a phone screen.** The Server Log's
+  file path was cut short with no way to see the rest of it, so on a narrow screen you could not read
+  where your log actually lives. And on the Server Configuration tabs, the row of buttons above the
+  settings - Form/Raw, download, Wiki, and Save & reload - did not wrap, pushing Save itself past the
+  right edge of the screen where it could not be reached at all.
+
 - **Scanning a large mod library for conflicts froze the rest of the panel.** The scan walked every
   file of every installed mod without ever pausing, so on a big library nothing else the panel was
   doing could get a turn - the player list, RCON, any other tab, all stalled until it finished. On a
