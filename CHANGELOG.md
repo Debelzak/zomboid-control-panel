@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A scheduled task could be set to run every few seconds and slowly grind the server down.** The
+  panel refuses any schedule that repeats more often than every five minutes, to stop a task being
+  used to hammer the server. That limit only understood the ordinary five-part schedule format. Give
+  it the six-part format that adds seconds and the check read the seconds column as though it were
+  minutes - so a task set to fire every five seconds looked, to the panel, like one firing every five
+  minutes, and was allowed. The most extreme case (every single second) happened to be caught by
+  accident, which is why this went unnoticed. The panel now rejects the six-part format outright and
+  says plainly that seconds-precision schedules are not supported, rather than misreading one.
+
 - **A config template could quietly rewrite your RCON password, your ports and your server's public
   name.** Templates are meant to carry gameplay rules only - a short list of sensitive settings,
   including the RCON password, the game and UDP ports, and the public server name, was supposed to be
@@ -38,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Map diagnostics and the crash-log viewer - discarded the real reason ("log file not found", "no
   support logs found") in favour of a bare HTTP code. Saving the auto-start setting on the Dashboard
   swallowed its error completely and looked like nothing had happened. And a failure to load your
-  list of servers gave no reason at all. All of these now tell you what actually failed.
+  list of servers, your scheduled tasks, or your backups gave no reason at all. All of these now tell
+  you what actually failed.
 
 - **Two more places where text or a button ran off the edge of a phone screen.** The Server Log's
   file path was cut short with no way to see the rest of it, so on a narrow screen you could not read
