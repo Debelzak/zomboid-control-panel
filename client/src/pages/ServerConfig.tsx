@@ -1986,6 +1986,15 @@ export default function ServerConfig() {
             </AlertDescription>
           </Alert>
         )}
+        {activeTab === 'ini' && invalidIniSettings.length > 0 && (
+          <Alert className="mt-3 border-destructive/40 bg-destructive/10">
+            <AlertCircle className="h-4 w-4 text-destructive" />
+            <AlertTitle>{t('invalidValuesAlert.title')}</AlertTitle>
+            <AlertDescription>
+              {t('invalidValuesAlert.description', { settings: invalidIniSettings.map(getIniSettingLabel).join(listSep) })}
+            </AlertDescription>
+          </Alert>
+        )}
         {activeTab === 'sandbox' && invalidSandboxSettings.length > 0 && (
           <Alert className="mt-3 border-destructive/40 bg-destructive/10">
             <AlertCircle className="h-4 w-4 text-destructive" />

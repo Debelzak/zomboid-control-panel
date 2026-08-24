@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-24
+
+### Fixed
+
+- **INI validation feedback**: identify the invalid INI values that keep the save action disabled, instead of leaving the operator without an explanation.
+
 ## [1.2.2] - 2026-08-24
 
 ### Fixed
