@@ -302,7 +302,7 @@ export default function Servers() {
       setServers(data.servers || [])
     } catch (error) {
       reportClientError('Failed to fetch servers.', error)
-      toast({ title: t('toasts.error'), description: t('toasts.loadServersFailed'), variant: 'destructive' })
+      toast({ title: t('toasts.error'), description: error instanceof Error ? error.message : t('toasts.loadServersFailed'), variant: 'destructive' })
     } finally {
       setLoading(false)
     }
