@@ -149,6 +149,57 @@ describe("template mutation routes", () => {
     expect(applyTemplate).not.toHaveBeenCalled();
   });
 
+  // 2026-08-24 conv-template-privesc: the running-state guard above only
+  // ever ran inside the "target IS the active server" branch, so applying a
+  // template to any OTHER configured server skipped it entirely -- no
+  // check ran at all, and the apply proceeded unconditionally. serverManager
+  // can only probe the active server's process, so there's no check to run
+  // for a non-active target; the fix is to fail closed (refuse) rather than
+  // silently treat "can't check" as "must be fine."
+  it("refuses to apply a template to a server that isn't the active one -- the panel can't check its running state", async () => {
+    getActiveServer.mockResolvedValue({ id: "server-1" });
+    const response = createResponse();
+
+    await runRoute(
+      "/:id/apply",
+      "post",
+      {
+        params: { id: "template-1" },
+        body: { serverId: "server-2" },
+        user: { role: "admin" },
+        app: {
+          get: () => ({
+            getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: false })),
+          }),
+        },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(409);
+    expect(applyTemplate).not.toHaveBeenCalled();
+  });
+
+  it("still applies normally when no server is active at all and the request targets a specific server -- refused, not silently allowed", async () => {
+    getActiveServer.mockResolvedValue(null);
+    const response = createResponse();
+
+    await runRoute(
+      "/:id/apply",
+      "post",
+      {
+        params: { id: "template-1" },
+        body: { serverId: "server-1" },
+        user: { role: "admin" },
+        app: { get: () => ({}) },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(409);
+    expect(applyTemplate).not.toHaveBeenCalled();
+  });
+
   it("proceeds when the scan confirms the server is stopped (running:false, scanFailed:false)", async () => {
     getActiveServer.mockResolvedValue({ id: "server-1" });
     applyTemplate.mockResolvedValue({ success: true });
