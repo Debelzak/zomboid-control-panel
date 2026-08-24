@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import Console from '../Console'
 import { ConfirmProvider } from '@/contexts/ConfirmContext'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { Toaster } from '@/components/ui/toaster'
 import { serverApi, serversApi, rconApi, type ServerInstance } from '@/lib/api'
 import enConsole from '../../locales/en/console.json'
 
@@ -106,6 +107,35 @@ describe('Console -- server log clear button', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /erase/i }))
 
     await waitFor(() => expect(clearConsoleLog).toHaveBeenCalledTimes(1))
+  })
+
+  // conv-hunt-resume lens: what does the operator see when the call fails?
+  // server/routes/server.js's POST /console-log/clear returns a specific,
+  // actionable message on failure -- "Server data path not configured" (400,
+  // code SERVER_DATA_PATH_NOT_CONFIGURED) when no server is configured, or
+  // the real filesystem error (permission denied, disk full, ...) sanitized
+  // into the 500 body otherwise. The catch block here threw both away and
+  // showed the same generic t('toasts.clearLogFailed') regardless of which
+  // one happened, or why.
+  it('shows the real reason the clear failed, not a generic fallback', async () => {
+    clearConsoleLog.mockRejectedValueOnce(new Error('Server data path not configured'))
+
+    render(
+      <TooltipProvider>
+        <ConfirmProvider>
+          <Console />
+          <Toaster />
+        </ConfirmProvider>
+      </TooltipProvider>,
+    )
+
+    const clearButton = await screen.findByRole('button', { name: /clear/i })
+    fireEvent.click(clearButton)
+
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /erase/i }))
+
+    await screen.findByText('Server data path not configured')
   })
 
   it("the tooltip copy doesn't promise safety the button doesn't deliver", () => {

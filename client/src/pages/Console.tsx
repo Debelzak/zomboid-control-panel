@@ -453,7 +453,7 @@ export default function Console() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: t('toasts.clearLogFailed'),
+        description: error instanceof Error ? error.message : t('toasts.clearLogFailed'),
         variant: 'destructive',
       })
     }
