@@ -69,7 +69,7 @@
   "SETUP_REQUIRED": "Premye konfigirasyon obligatwa",
   "AUTH_REQUIRED": "Otantifikasyon obligatwa",
   "TOKEN_EXPIRED": "Jeton envalid oswa ekspire",
-  "SERVER_STATE_UNKNOWN": "Pa ka verifye si sèvè a sispann. Eseye ankò talè.",
+  "SERVER_STATE_UNKNOWN": "Nou pa ka verifye si sèvè a reyèlman sispann — se eskanaj deteksyon pwosesis la menm ki echwe, se pa sèvè a. Tcheke jounal panèl la pou wè erè a. Si sa kontinye rive, gen kèk bagay sou machin sa a (antivirus, yon disk plen, oswa yon zouti sistèm ki manke) ki ka bloke deteksyon an.",
   "SERVER_RUNNING": "Sispann sèvè a anvan w modifye konfigirasyon an.",
   "PERMISSION_DENIED": "Otorizasyon ensifizan",
   "ROLE_NOT_FOUND": "Wòl pa jwenn",
