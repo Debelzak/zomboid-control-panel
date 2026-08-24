@@ -753,6 +753,29 @@ function isValidConfigPath(inputPath) {
 }
 
 // Update paths (runtime only - doesn't persist to .env)
+//
+// INVESTIGATED 2026-08-24 (conv-hunt-resume, config-live-pointer-mutations-
+// no-running-guard): unlike PUT / above, this has no
+// requireStoppedForLocalConfigMutation. Concluded no guard is needed --
+// this mutates serverManager's in-memory serverPath/savePath fields only
+// (explicitly runtime-only, never touches a file or the database), and
+// every consumer that could turn a stale pointer into something worse than
+// a confusing display is independently guarded already: server.js's /wipe
+// and /wipe/preview require BOTH a real OS-level process scan confirming
+// the server is stopped (not derived from this field) AND the specific
+// Saves/Multiplayer/{serverName} subpath to exist (404s rather than
+// silently acting on an unrelated directory in the overwhelming majority of
+// misconfigurations); PUT /config's saveServerConfig() is already gated by
+// requireStoppedForLocalConfigMutation; and backupService/chunks.js resolve
+// their own paths from the database (getActiveServer()/getSetting()), not
+// from this field at all, so this route cannot affect them. The worst
+// realistic outcome while the real server keeps running unaffected on its
+// old path is the panel's own config/status displays showing stale, missing,
+// or (rarely) a different install's data -- confusing, self-correcting once
+// noticed, never destructive. A running-state guard would not close the one
+// real edge case found (a wrong-but-structurally-matching savePath later
+// enabling a misdirected wipe after a legitimate stop) since that risk
+// exists independent of the server's state when this route was called.
 router.put("/paths", requirePermission("server.configure"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
@@ -791,6 +814,18 @@ const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
 const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // Update RCON configuration
+//
+// INVESTIGATED 2026-08-24 (conv-hunt-resume, config-live-pointer-mutations-
+// no-running-guard): also has no requireStoppedForLocalConfigMutation, also
+// concluded no guard is needed, for a stronger reason than /paths above:
+// rcon.js's updateConfig() disconnects any live connection immediately on a
+// config change (see rcon.js), and every RCON action after that reconnects
+// against the NEW config -- a wrong host/port simply fails to connect. This
+// fails LOUD and immediately: there is no code path where a bad RCON
+// pointer produces plausible-but-wrong data, since RCON is a live
+// connection, not a file read. The existing /test-rcon route and RCON
+// status reporting (`connected: false`) already surface this without any
+// guard needed here.
 router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
