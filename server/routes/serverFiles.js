@@ -1964,7 +1964,20 @@ router.post("/save-and-reload", async (req, res) => {
       });
     }
 
+    // Reflect what RCON actually reported, not a hardcoded success. execute()
+    // (which reloadOptions() wraps) already distinguishes success from
+    // failure ({success:false, error} on a timeout, disconnect, or rejected
+    // command) -- this used to discard that and always claim "Options
+    // reloaded", so a failed live reload was invisible: the file on disk was
+    // correct, but the running server silently kept its old settings.
     const result = await rconService.reloadOptions();
+    if (!result?.success) {
+      return res.json({
+        success: false,
+        error: result?.error || "Failed to reload options via RCON",
+        result,
+      });
+    }
     res.json({ success: true, message: "Options reloaded", result });
   } catch (error) {
     log.error("Failed to reload options:", error);
@@ -2145,6 +2158,11 @@ router.post("/templates", async (req, res) => {
 // POST /templates/:id/apply - Apply a template to current config
 router.post("/templates/:id/apply", async (req, res) => {
   log.info(`POST /templates/${req.params.id}/apply`);
+  // Declared OUTSIDE the try block, not inside it: the catch below needs to
+  // see whatever landed before a later step threw, so a partial apply (INI
+  // written, Sandbox write then failed) can be reported honestly instead of
+  // reading as "nothing happened".
+  const applied = [];
   try {
     // Sanitize template ID to prevent path traversal
     const safeId = path.basename(req.params.id).replace(/[^a-z0-9_-]/gi, "");
@@ -2171,7 +2189,6 @@ router.post("/templates/:id/apply", async (req, res) => {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
 
-    const applied = [];
     const backupWarnings = [];
 
     // Apply INI settings
@@ -2228,7 +2245,15 @@ router.post("/templates/:id/apply", async (req, res) => {
     });
   } catch (error) {
     log.error("Failed to apply template:", error);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    // `applied` tracks each write as it actually lands (pushed right after
+    // its own withFileLock call returns), so if INI succeeded and Sandbox
+    // then threw, `applied` already says so here -- a flat 500 with no
+    // reference to it reads as "nothing happened" when part of the template
+    // really did land on disk.
+    res.status(500).json({
+      error: sanitizeError(error.message),
+      ...(applied.length > 0 ? { success: false, partiallyApplied: applied } : {}),
+    });
   }
 });
 

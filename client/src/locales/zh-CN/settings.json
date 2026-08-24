@@ -771,6 +771,14 @@
     "invalidCorsOrigins": {
       "title": "CORS 来源无效"
     },
+    "invalidPanelPort": {
+      "title": "面板端口无效",
+      "description": "面板端口必须是 1 到 65535 之间的整数。"
+    },
+    "invalidHttpsPort": {
+      "title": "HTTPS 端口无效",
+      "description": "HTTPS 端口必须是 1 到 65535 之间的整数。"
+    },
     "settingsSaved": {
       "title": "设置已保存",
       "description": "面板设置已保存。"

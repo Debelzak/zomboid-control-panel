@@ -45,4 +45,16 @@ describe('BridgeStatusBadge', () => {
     expect(el.getAttribute('title')).toContain('Custom detail from server')
     expect(el.getAttribute('title')).not.toContain(en.offline.hint)
   })
+
+  it('the accessible name leads with the visible state word and still includes the hint/path detail -- role="status" does not derive a name from visible text, so without an explicit aria-label the state word alone is silently dropped from what a screen reader announces', () => {
+    render(<BridgeStatusBadge connected={false} running={false} bridgePath="/opt/pz/mods/bridge" />)
+    const el = screen.getByRole('status')
+    expect(el).toHaveAccessibleName(`${en.offline.label}\n${en.offline.hint}\nPath: /opt/pz/mods/bridge`)
+  })
+
+  it('still has a real accessible name when there is no hint or path to add (loading has neither) -- previously this was a completely silent live region', () => {
+    render(<BridgeStatusBadge connected loading />)
+    const el = screen.getByRole('status')
+    expect(el).toHaveAccessibleName(en.loading.label)
+  })
 })

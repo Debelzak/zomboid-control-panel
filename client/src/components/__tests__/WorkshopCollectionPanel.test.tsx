@@ -169,6 +169,27 @@ describe('WorkshopCollectionPanel', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Untrack' })).toBeEnabled())
   })
 
+  it('exposes the Add-to-collection disabled reason as an accessible name, not just a hover title', async () => {
+    collectionDiff.mockResolvedValue({
+      ...baseDiff([
+        { workshopId: '444', name: ACCENTED_NAME, status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+      ]),
+      hasCredentials: false,
+    } as any)
+    render(
+      <MemoryRouter>
+        <WorkshopCollectionPanel />
+      </MemoryRouter>
+    )
+    await screen.findByText(ACCENTED_NAME)
+
+    const addButton = screen.getByTitle('Need Steam cookies')
+    expect(addButton).toBeDisabled()
+    // A native title is invisible on touch and unreliable for screen readers on a
+    // disabled control -- the same reason must also be the button's accessible name.
+    expect(addButton).toHaveAccessibleName('Need Steam cookies')
+  })
+
   it('defaults to the "missing from collection" filter, hiding in-sync items until asked', async () => {
     await renderPanel([
       { workshopId: '1', name: 'Missing Mod', status: 'to-add', inTracked: true, inCollection: false, inServer: false },

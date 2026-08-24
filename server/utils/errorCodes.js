@@ -102,6 +102,11 @@ export const ErrorCode = Object.freeze({
   /** server/routes/auth.js -- POST /api/auth/reset-token/local, request did
    * not originate from the panel host itself. */
   LOCAL_RESET_NOT_LOCAL: "LOCAL_RESET_NOT_LOCAL",
+  /** server/routes/auth.js -- POST /api/auth/reset-token/local, refused
+   * because the panel is behind a reverse proxy (trust proxy configured) and
+   * so cannot verify the request's real origin. Fails closed rather than
+   * trusting a forwarded header -- see isPanelBehindTrustProxy. */
+  LOCAL_RESET_BEHIND_PROXY: "LOCAL_RESET_BEHIND_PROXY",
   /** server/routes/auth.js -- POST /api/auth/reset-token/local, writing the
    * token file itself failed. */
   LOCAL_RESET_TOKEN_CREATE_FAILED: "LOCAL_RESET_TOKEN_CREATE_FAILED",
@@ -477,6 +482,28 @@ export const ErrorCode = Object.freeze({
   /** server/routes/server.js (2 sites: /install, /quick-setup) -- optional
    * zomboidDataPath fails isValidPath(). */
   ZOMBOID_DATA_PATH_INVALID: "ZOMBOID_DATA_PATH_INVALID",
+  /** server/routes/server.js (3 sites: /install, /quick-setup,
+   * /configure-network) -- serverPort isn't an integer in [1024, 65535].
+   * Refused rather than coerced: requireIntInRange(), not validateInt()'s
+   * coerceIntInRange() sibling -- a wrong port here silently listens
+   * somewhere the operator's firewall rule and port forward don't point at,
+   * with no error telling them why. See 2026-08-23 validateInt-coerces
+   * audit. */
+  INVALID_SERVER_PORT: "INVALID_SERVER_PORT",
+  /** server/routes/server.js (3 sites: /install, /quick-setup,
+   * /configure-rcon) -- rconPort isn't an integer in [1024, 65535]. Same
+   * refuse-don't-coerce reasoning as INVALID_SERVER_PORT above. */
+  INVALID_RCON_PORT: "INVALID_RCON_PORT",
+  /** server/routes/server.js (2 sites: /install, /quick-setup) -- minMemory
+   * isn't an integer in [1, 64] (GB). Refused rather than coerced: unlike a
+   * port, a silently-substituted memory value doesn't break connectivity,
+   * but it's still the operator's explicit input being discarded without a
+   * word -- see 2026-08-23 validateInt-coerces audit. */
+  INVALID_MIN_MEMORY: "INVALID_MIN_MEMORY",
+  /** server/routes/server.js (2 sites: /install, /quick-setup) -- maxMemory
+   * isn't an integer in [1, 128] (GB). Same reasoning as INVALID_MIN_MEMORY
+   * above. */
+  INVALID_MAX_MEMORY: "INVALID_MAX_MEMORY",
   /** server/routes/server.js -- formatWritablePathError(), 4 call sites
    * across /install and /quick-setup (installPath, then the Zomboid data
    * folder). The underlying message has two English-only variants (bare-metal

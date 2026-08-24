@@ -282,7 +282,7 @@ async function fetchWithRetry(
       }
 
       try {
-        const response = await fetch(url, {
+        let response = await fetch(url, {
           ...withAuth(options),
           signal: controller.signal,
         });
@@ -306,13 +306,26 @@ async function fetchWithRetry(
               ...withAuth(options),
               signal: retryController.signal,
             }).finally(() => clearTimeout(retryTimeoutId));
-            if (retryResponse.status !== 401) {
-              return retryResponse;
+            if (retryResponse.status === 401) {
+              // Refreshed token still 401s — nothing left to retry, force
+              // reload to show login.
+              window.location.reload();
+              return response;
             }
+            // The refresh-retry consumed this attempt's fetch, but a
+            // transient failure (5xx/429) on the RETRIED request still
+            // deserves the same backoff-retry resilience as every other
+            // response. Replace `response` and fall through to the shared
+            // retryable check below instead of returning unconditionally --
+            // returning here unconditionally used to skip fetchWithRetry's
+            // own retry loop entirely for exactly the unluckiest requests:
+            // an expired token AND a transient blip on the very next call.
+            response = retryResponse;
+          } else {
+            // Refresh failed — force reload to show login.
+            window.location.reload();
+            return response;
           }
-          // Refresh failed or still 401 — force reload to show login
-          window.location.reload();
-          return response;
         }
 
         // If response is not retryable error, return it
@@ -676,7 +689,10 @@ export const playersApi = {
     destination?: string | { x: number; y: number; z?: number },
   ) => {
     if (destination && typeof destination === "object") {
-      return apiPost("/players/teleport", {
+      // Coordinate form goes through PanelBridge server-side (server/routes/
+      // players.js forwards bridge.teleportPlayer()'s result via res.json
+      // unmodified) -- same envelope shape as panelBridgeApi.sendCommand.
+      return apiPost<BridgeCommandResult>("/players/teleport", {
         player1,
         x: destination.x,
         y: destination.y,
@@ -2037,6 +2053,19 @@ export const templatesApi = {
     }>,
 };
 
+// Wire shape of every response from POST /panel-bridge/command. `data.verified`
+// is present on every successful mutating command as of the verify-gating pass
+// (2026-08-23) -- typed here (rather than left as the `apiPost<T = any>`
+// default) specifically so the next person adding a bridge call site is TOLD
+// the field exists instead of having to already know to look for it. See
+// client/src/lib/bridgeVerify.ts for how to interpret it (three states, not a
+// boolean -- a missing key means an out-of-date bridge mod, not "unconfirmed").
+export interface BridgeCommandResult<T = Record<string, unknown>> {
+  success: boolean;
+  data?: T & { verified?: "confirmed" | "unverifiable" };
+  error?: string;
+}
+
 // Panel Bridge API (for direct Lua mod communication)
 export const panelBridgeApi = {
   // Get bridge status
@@ -2263,8 +2292,11 @@ export const panelBridgeApi = {
   ping: () => apiGet("/panel-bridge/ping"),
 
   // Send a command to the game
-  sendCommand: (action: string, args?: Record<string, unknown>) =>
-    apiPost("/panel-bridge/command", { action, args }),
+  sendCommand: <T = Record<string, unknown>>(
+    action: string,
+    args?: Record<string, unknown>,
+  ) =>
+    apiPost<BridgeCommandResult<T>>("/panel-bridge/command", { action, args }),
 
   // Get weather info
   getWeather: () => apiGet("/panel-bridge/weather"),
@@ -2557,11 +2589,11 @@ export const panelBridgeApi = {
 
   // Spawn horde near a player (50-70 tiles away)
   spawnHordeNear: (username: string, count: number) =>
-    apiPost("/panel-bridge/zombies/spawn-near", { username, count }),
+    apiPost<BridgeCommandResult>("/panel-bridge/zombies/spawn-near", { username, count }),
 
   // Spawn horde behind a player based on facing direction
   spawnHordeBehind: (username: string, count: number) =>
-    apiPost("/panel-bridge/zombies/spawn-behind", { username, count }),
+    apiPost<BridgeCommandResult>("/panel-bridge/zombies/spawn-behind", { username, count }),
 
   // Clear ALL zombies from loaded cells
   clearAllZombies: () => apiPost("/panel-bridge/zombies/clear-all"),
@@ -2995,6 +3027,10 @@ export const mapApi = {
     width: number;
     height: number;
     maxLevel: number;
+    // Deepest level actually worth requesting -- see mapProxy.js's
+    // discoverRenderedMaxLevel. maxLevel alone is the theoretical full DZI
+    // pyramid depth, not evidence the tile host rendered that deep.
+    renderedMaxLevel: number;
     // Isometric projection origin from the build's own map_info.json.
     // Absent if map.projectzomboid.com couldn't be reached.
     x0?: number;

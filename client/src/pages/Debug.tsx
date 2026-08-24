@@ -270,6 +270,24 @@ type DiagnosticsFixAction = {
   note?: string;
 };
 
+// This whole file fetches with authFetch() (a raw fetch, not the JSON
+// api.ts client that already parses `{ error, code }` bodies), so a
+// non-ok response needs its own body read before the real server message
+// -- "Log file not found", "No support logs found", "Invalid filename",
+// etc. -- can reach a catch block instead of just an HTTP status number.
+export async function parseDownloadError(res: Response, fallback: string): Promise<string> {
+  try {
+    const data: unknown = await res.json();
+    if (data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string") {
+      const message = (data as { error: string }).error;
+      if (message) return message;
+    }
+  } catch {
+    // Not a JSON body (e.g. an HTML error page from a proxy) -- fall through.
+  }
+  return fallback;
+}
+
 function getDiagMetaStringList(check: DiagCheck, key: string): string[] {
   const raw = check.meta?.[key];
   if (!Array.isArray(raw)) return [];
@@ -803,7 +821,7 @@ export default function Debug() {
     setRefreshingHealth(true);
     try {
       const res = await authFetch("/api/debug/health");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data?.services) {
         setHealthStatus(data);
@@ -825,7 +843,7 @@ export default function Debug() {
     setRefreshingDiagnostics(true);
     try {
       const res = await authFetch("/api/debug/diagnostics");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data?.checks) {
         setDiagnostics(data);
@@ -1139,7 +1157,7 @@ export default function Debug() {
     setWorldMapError(null);
     try {
       const res = await authFetch("/api/debug/worldmap");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data?.checks) {
         setWorldMapDiag(data);
@@ -1492,15 +1510,15 @@ export default function Debug() {
       const res = await authFetch(
         `/api/debug/crash-logs/${encodeURIComponent(filename)}`,
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data.content !== undefined && data.content !== null) {
         setCrashLogContent(data.content || t("crashesTab.emptyFile"));
       } else {
         setCrashLogContent(t("crashesTab.loadFailed"));
       }
-    } catch {
-      setCrashLogContent(t("crashesTab.loadFailed"));
+    } catch (error) {
+      setCrashLogContent(error instanceof Error ? error.message : t("crashesTab.loadFailed"));
     } finally {
       setLoadingCrashLog(false);
     }
@@ -1762,7 +1780,7 @@ export default function Debug() {
       } else {
         // Download full log file from server
         const res = await authFetch("/api/debug/logs/download");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
         const blob = await res.blob();
         url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -1773,7 +1791,7 @@ export default function Debug() {
     } catch (error) {
       toast({
         title: t("logsTab.downloadFailedTitle"),
-        description: t("logsTab.downloadFailedDesc"),
+        description: error instanceof Error ? error.message : t("logsTab.downloadFailedDesc"),
         variant: "destructive",
       });
     } finally {
@@ -1788,7 +1806,7 @@ export default function Debug() {
         const res = await authFetch(
           `/api/debug/logs/download/${encodeURIComponent(filename)}`,
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
 
         const blob = await res.blob();
         url = window.URL.createObjectURL(blob);
@@ -1802,7 +1820,7 @@ export default function Debug() {
       } catch (error) {
         toast({
           title: t("logsTab.downloadFailedTitle"),
-          description: t("logsTab.downloadFileFailedDesc", { name: filename }),
+          description: error instanceof Error ? error.message : t("logsTab.downloadFileFailedDesc", { name: filename }),
           variant: "destructive",
         });
       } finally {
@@ -1822,7 +1840,7 @@ export default function Debug() {
       const res = await authFetch("/api/debug/logs/download-zip", {
         headers: { "X-UI-Language": getCurrentLanguage() },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
 
       const blob = await res.blob();
       url = window.URL.createObjectURL(blob);
@@ -1836,7 +1854,7 @@ export default function Debug() {
     } catch (error) {
       toast({
         title: t("logsTab.downloadFailedTitle"),
-        description: t("logsTab.downloadArchiveFailedDesc"),
+        description: error instanceof Error ? error.message : t("logsTab.downloadArchiveFailedDesc"),
         variant: "destructive",
       });
     } finally {
@@ -4520,7 +4538,7 @@ export default function Debug() {
           <Card>
             <CardHeader className="pb-4">
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-y-2">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Terminal className="w-5 h-5" />

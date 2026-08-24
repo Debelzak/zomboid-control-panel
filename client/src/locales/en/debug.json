@@ -452,6 +452,11 @@
             "label": "Stale lock files in save folder",
             "message": "{{count}} .lock file(s) older than 1 hour in {{dir}}. PZ will refuse to load the save until they are removed.",
             "hint": "Stop the server, delete every *.lock file under the save folder, then restart."
+          },
+          "warn": {
+            "label": "Could not fully check for stale lock files",
+            "message": "{{dir}} is too large to fully scan for stale lock files within the diagnostics time budget. Stale lock files may be present but undetected.",
+            "hint": "Run \"Delete stale lock files\" to scan and clear in one pass -- it gets a much larger time budget than this automatic check -- or check the save folder manually if the server won't boot."
           }
         },
         "jreWorks": {

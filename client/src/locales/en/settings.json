@@ -674,6 +674,8 @@
     "recoveryCodesGenerated": { "title": "Recovery codes generated", "description": "Save them now — they cannot be shown again." },
     "recoveryCodesFailed": { "title": "Could not generate recovery codes", "fallback": "Try again." },
     "invalidCorsOrigins": { "title": "Invalid CORS Origins" },
+    "invalidPanelPort": { "title": "Invalid Panel Port", "description": "Panel port must be a whole number between 1 and 65535." },
+    "invalidHttpsPort": { "title": "Invalid HTTPS Port", "description": "HTTPS port must be a whole number between 1 and 65535." },
     "settingsSaved": { "title": "Settings Saved", "description": "Your panel settings were saved." },
     "settingsSaveFailed": { "title": "Could Not Save Settings", "fallback": "The panel could not save your settings. Try again." },
     "corsReloaded": { "title": "CORS Rules Reloaded", "description": "The backend reloaded CORS settings from the database." },

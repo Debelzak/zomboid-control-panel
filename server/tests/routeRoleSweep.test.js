@@ -59,11 +59,24 @@ function createResponse() {
 // (that's always where this sweep put its guard, ahead of any route-
 // specific handler and, in serverFiles.js's case, ahead of that file's own
 // pre-existing unconfigured-server gate too) and runs it directly.
+//
+// A real Express request always has path/url/method -- req.path is a
+// getter derived from req.url, never undefined -- so a bare { user } object
+// was never a faithful stand-in for one, just one that happened to work
+// for every gate until mods.js's carve-out became the first to read
+// anything besides req.user. Default the request-identity fields here
+// instead of hand-rolling them at every call site, and let a caller
+// override any of them (see the mods.js /thumbnail/ cases below) --
+// fixing the double, not the production code it was misrepresenting
+// (conv-mods-thumbnails: bb3e778's routeRoleSweep red gate).
+function fakeRequest(req) {
+  return { path: "/", url: "/", method: "GET", ...req };
+}
 async function runFirstUseLayer(router, req) {
   const res = createResponse();
   const layer = router.stack.find((entry) => !entry.route);
   let calledNext = false;
-  await layer.handle(req, res, () => {
+  await layer.handle(fakeRequest(req), res, () => {
     calledNext = true;
   });
   return { res, calledNext };
@@ -101,6 +114,35 @@ describe("mods.js: admin+technician (mods/config is technician's job, not modera
     const { default: router } = await import("../routes/mods.js");
     const { calledNext } = await runFirstUseLayer(router, { user: { role: "technician" } });
     expect(calledNext).toBe(true);
+  });
+
+  // conv-mods-thumbnails (bb3e778): the two tests above prove the gate
+  // refuses, but prove nothing about whether the /thumbnail/ carve-out is
+  // actually narrow -- that it's scoped to one path, not a blanket bypass
+  // of the router's role check. Even a role this describe block otherwise
+  // refuses (moderator) must sail through on /thumbnail/, and the SAME
+  // moderator must still be refused everywhere else -- the carve-out reads
+  // req.path, not req.user, so this is the case that actually exercises
+  // that branch. The HTTP-level test (modsThumbnailAuthGate.test.js) covers
+  // the real end-to-end request (no req.user at all, via the real
+  // authService.middleware()); this pins the same property at the unit
+  // level, in the file the next person reading this sweep will look at to
+  // learn what mods.js's gate does.
+  it("does NOT refuse a moderator on /thumbnail/:id -- the deliberate path-based carve-out overrides the role gate entirely for this one route", async () => {
+    const { default: router } = await import("../routes/mods.js");
+    const { calledNext } = await runFirstUseLayer(router, {
+      user: { role: "moderator" },
+      path: "/thumbnail/123",
+    });
+    expect(calledNext).toBe(true);
+  });
+  it("still refuses that same moderator on every other path -- the carve-out is one route, not the whole router", async () => {
+    const { default: router } = await import("../routes/mods.js");
+    const { res } = await runFirstUseLayer(router, {
+      user: { role: "moderator" },
+      path: "/status",
+    });
+    expect(res.getStatusCode()).toBe(403);
   });
 });
 

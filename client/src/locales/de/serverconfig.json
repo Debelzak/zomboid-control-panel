@@ -33,7 +33,7 @@
   },
   "stopServerAlert": {
     "title": "Der Server läuft",
-    "description": "Du kannst deine Änderungen jetzt speichern. Sie wirken sich erst auf das laufende Spiel aus, wenn der Server neu gestartet wurde."
+    "description": "Du kannst deine Änderungen jetzt speichern. Je nachdem, was du bearbeitest, ist eventuell ein Serverneustart nötig, damit sie wirksam werden — die Bestätigung nach dem Speichern sagt dir, ob das der Fall ist."
   },
   "invalidValuesAlert": {
     "title": "Behebe ungültige Werte vor dem Speichern",
@@ -320,6 +320,8 @@
     "copyFailed": "Kopieren des Inhalts in die Zwischenablage fehlgeschlagen.",
     "optionUpdatedTitle": "Option aktualisiert",
     "optionUpdatedDesc": "{{option}} erfolgreich gesetzt",
+    "bridgeUnverifiedDesc": "{{action}} wurde gesendet, aber das Mod konnte nicht bestätigen, dass es wirksam wurde.",
+    "bridgeOldBridgeDesc": "{{action}} hat möglicherweise funktioniert, aber diese Version des PanelBridge-Mods meldet nicht zurück, ob es so war. Aktualisiere das Mod, um Ergebnisse zu bestätigen.",
     "appliedNotSavedTitle": "Angewendet, aber nicht gespeichert",
     "notPersistedDesc": "{{option}} ist nicht in SandboxVars.lua enthalten und wird daher beim Neustart des Servers zurückgesetzt.",
     "willResetFallback": "{{option}} wird beim Neustart des Servers zurückgesetzt.",

@@ -505,6 +505,8 @@
   },
   "toasts": {
     "actionFailedTitle": "{{action}} 失败",
+    "bridgeUnverifiedDesc": "{{action}} 已发送，但模组无法确认是否生效。",
+    "bridgeOldBridgeDesc": "{{action}} 可能已生效，但此版本的 PanelBridge 模组不会回报结果。请更新模组以确认结果。",
     "bridgeFailedDesc": "{{message}}。请检查桥接/服务器连接后重试。",
     "commandFailedDesc": "{{message}}。请检查命令设置后重试。",
     "commandFailedFallback": "命令失败",

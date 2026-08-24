@@ -866,7 +866,16 @@ export default function ChunkCleaner() {
   }, []);
 
   // ─── B42 DZI tile loading ───
-  const dziCacheRef = useRef<Record<string, HTMLImageElement | null>>({});
+  // `null` = requested, still waiting. `false` = confirmed unavailable (404
+  // or load error) -- a distinct sentinel from "still loading" so the draw
+  // loop can tell "upstream genuinely has no imagery here" apart from "give
+  // it another frame". Without this distinction a permanently-missing tile
+  // (upstream's own top-down render can have regional gaps for a build,
+  // independent of anything this panel does) looks identical, forever, to
+  // one that just hasn't arrived yet: the untouched dark canvas background
+  // shows through either way, which reads as a broken black hole rather
+  // than "no imagery for this area".
+  const dziCacheRef = useRef<Record<string, HTMLImageElement | null | false>>({});
   const loadDziTile = useCallback((level: number, col: number, row: number) => {
     const key = `dzi_${level}_${col}_${row}`;
     if (key in dziCacheRef.current) return;
@@ -888,7 +897,15 @@ export default function ChunkCleaner() {
       }
     };
     img.onerror = () => {
-      /* tile missing */
+      dziCacheRef.current[key] = false;
+      // Redraw so the "no imagery here" fill appears now instead of only
+      // on the next unrelated interaction.
+      if (drawRequestRef.current === 0) {
+        drawRequestRef.current = requestAnimationFrame(() => {
+          drawRequestRef.current = 0;
+          drawCanvasRef.current();
+        });
+      }
     };
     img.src = `${B42_DZI_CDN}/${level}/${col}_${row}.webp`;
   }, []);
@@ -995,7 +1012,7 @@ export default function ChunkCleaner() {
             for (let col = colMin; col <= colMax; col++) {
               loadDziTile(level, col, row);
               const img = dziCacheRef.current[`dzi_${level}_${col}_${row}`];
-              if (img) {
+              if (img || img === false) {
                 // This DZI tile starts at chunk coordinate:
                 const tileChunkX = col * B42_DZI_TILE_PX * chunkPerDziPx;
                 const tileChunkY = row * B42_DZI_TILE_PX * chunkPerDziPx;
@@ -1015,7 +1032,16 @@ export default function ChunkCleaner() {
                 const sy = tileChunkY * scale + offset.y;
                 const sw = chunkW * scale;
                 const sh = chunkH * scale;
-                ctx.drawImage(img, sx, sy, sw, sh);
+                if (img) {
+                  ctx.drawImage(img, sx, sy, sw, sh);
+                } else {
+                  // Confirmed unavailable (upstream 404 or load error), not
+                  // just still loading -- a soft, distinct fill instead of
+                  // leaving the raw dark canvas background, which reads as
+                  // a broken black hole rather than "no imagery here".
+                  ctx.fillStyle = hsl(mutedFgVar, 0.08);
+                  ctx.fillRect(sx, sy, sw, sh);
+                }
               }
             }
           }

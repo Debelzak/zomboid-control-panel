@@ -208,6 +208,11 @@ const B42_GEOMETRY_FALLBACK = {
   width: 2318656,
   height: 1019040,
   maxLevel: 22,
+  // This path never gets to run discoverRenderedMaxLevel (no live directory
+  // to probe), so fall back to the same known-safe floor hasTileCoverage
+  // uses everywhere else rather than trusting maxLevel itself — see
+  // discoverRenderedMaxLevel's comment.
+  renderedMaxLevel: 16,
   x0: 1040384,
   y0: -139296,
   sqr: 128,
@@ -291,6 +296,14 @@ const COVERAGE_PROBE_FRACTIONS = [
 ];
 let _b42Map = null;
 let _b42DirFetchedAt = 0;
+// A cold cache means every concurrent tile request on the same page load
+// calls getB42Map() before any of them has finished resolving — without
+// this, EACH ONE independently reruns the full discovery (its own
+// fetchBuildDefault/fetchBuildList/fetchMapGeometry/hasTileCoverage curl
+// round trips) instead of sharing the one already in flight. Measured: 80
+// concurrent cold tile requests took 7.3s with this uncoalesced; under 1s
+// once discovery was already warm. Same shape as THUMB_INFLIGHT in mods.js.
+let _b42ResolvePromise = null;
 // Tracks WHY the current _b42Map is what it is, for the worldmap diagnostic.
 // The fallback directory can coincidentally match the directory a real
 // dynamic resolve would have picked (it does today), so the directory string
@@ -303,8 +316,7 @@ let _b42FallbackReason = null; // why we're not on "dynamic", or null when the l
 // the one discovery request that's fine on plain Node fetch (see the
 // perf-regression note on CURL_DISCOVERY_UA above): tile bytes aren't behind
 // the Cloudflare descriptor-path challenge for any client tested.
-async function hasTileCoverage(directory, geometry) {
-  const level = Math.max(0, geometry.maxLevel - 6);
+async function probeLevelHasCoverage(directory, geometry, level) {
   const levelScale = 2 ** (geometry.maxLevel - level);
   const levelW = Math.ceil(geometry.width / levelScale);
   const levelH = Math.ceil(geometry.height / levelScale);
@@ -331,6 +343,45 @@ async function hasTileCoverage(directory, geometry) {
   return false;
 }
 
+async function hasTileCoverage(directory, geometry) {
+  return probeLevelHasCoverage(
+    directory,
+    geometry,
+    Math.max(0, geometry.maxLevel - 6),
+  );
+}
+
+// geometry.maxLevel (fetchMapGeometry, above) is Math.ceil(log2(max(width,
+// height))) — the depth a FULL Deep Zoom pyramid would need for an image of
+// that size, computed from the DZI descriptor's own dimensions. It is not
+// evidence the tile host actually rendered that deep: level 21 at 1024px
+// tiles is roughly 563,000 tiles for one floor, so real coverage falls well
+// short and the client (WorldMap.tsx) was clamping to this inflated ceiling
+// and asking for tiles that 404 across most of the map — see GH#109 /
+// conv-gh109-worldmap-black. hasTileCoverage() above already establishes,
+// empirically, that maxLevel-6 is deep enough to find real tiles at these
+// probe points; that's what gates picking this directory at all, so it's a
+// known-good floor here, not a guess. Binary search the [maxLevel-6,
+// maxLevel] gap (at most a handful of HEAD requests, same probe points,
+// run once per directory resolve and cached alongside the rest of the
+// geometry — see B42_DIR_TTL_MS) for the deepest level any probe tile still
+// resolves at, and report that as the depth a client should actually be
+// allowed to zoom to.
+async function discoverRenderedMaxLevel(directory, geometry) {
+  const floor = Math.max(0, geometry.maxLevel - 6);
+  let lo = floor; // known covered — hasTileCoverage just confirmed it
+  let hi = geometry.maxLevel;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    if (await probeLevelHasCoverage(directory, geometry, mid)) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo;
+}
+
 // The top-down (base_top) view is rendered separately from the isometric base
 // and does not use the same image format across builds: 42.19.0 publishes webp
 // while 42.20.0 publishes jpg. Requesting the wrong extension is a hard 404, so
@@ -343,10 +394,24 @@ const TOP_CONTENT_TYPES = {
   png: "image/png",
 };
 const _topFormatCache = new Map(); // directory -> format
+// Same coalescing problem and fix as _b42ResolvePromise above: a cold cache
+// means every concurrent toptiles request independently curls the same
+// base_top/layer0.dzi descriptor instead of sharing the one in flight.
+const _topFormatInflight = new Map(); // directory -> Promise<format>
 
 async function getB42TopFormat(directory) {
   const cached = _topFormatCache.get(directory);
   if (cached) return cached;
+  const pending = _topFormatInflight.get(directory);
+  if (pending) return pending;
+  const resolvePromise = resolveB42TopFormat(directory).finally(() => {
+    _topFormatInflight.delete(directory);
+  });
+  _topFormatInflight.set(directory, resolvePromise);
+  return resolvePromise;
+}
+
+async function resolveB42TopFormat(directory) {
   try {
     // XML descriptor path — curl, not fetch, same reason as fetchMapGeometry.
     const resp = await fetchViaCurl(
@@ -413,6 +478,14 @@ async function getB42Map() {
   if (_b42Map && now - _b42DirFetchedAt < B42_DIR_TTL_MS) {
     return _b42Map;
   }
+  if (_b42ResolvePromise) return _b42ResolvePromise;
+  _b42ResolvePromise = resolveB42Map(now).finally(() => {
+    _b42ResolvePromise = null;
+  });
+  return _b42ResolvePromise;
+}
+
+async function resolveB42Map(now) {
   let failureReason = null;
 
   async function tryResolve(directory) {
@@ -431,12 +504,13 @@ async function getB42Map() {
       );
       return false;
     }
+    const renderedMaxLevel = await discoverRenderedMaxLevel(directory, geometry);
     if (_b42Map?.directory !== directory || _b42Source !== "dynamic") {
       log.info(
-        `B42 map directory resolved: ${directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel})`,
+        `B42 map directory resolved: ${directory} (${geometry.width}x${geometry.height}, tile ${geometry.tileSize}, max level ${geometry.maxLevel}, rendered max level ${renderedMaxLevel})`,
       );
     }
-    _b42Map = { directory, ...geometry };
+    _b42Map = { directory, ...geometry, renderedMaxLevel };
     _b42DirFetchedAt = now;
     _b42Source = "dynamic";
     _b42FallbackReason = null;
@@ -684,6 +758,14 @@ router.get("/resolve", async (req, res) => {
     width: map.width,
     height: map.height,
     maxLevel: map.maxLevel,
+    // The deepest level the client should actually request — see
+    // discoverRenderedMaxLevel's comment. This particular _b42Map shouldn't
+    // ever predate the field post-fix, but if it somehow does (an old-shaped
+    // cached response during a rolling restart), fail CLOSED to the same
+    // known-safe floor discoverRenderedMaxLevel's own search starts from —
+    // NOT map.maxLevel, which is exactly the inflated, never-actually-
+    // rendered ceiling this whole fix exists to stop trusting.
+    renderedMaxLevel: map.renderedMaxLevel ?? Math.max(0, map.maxLevel - 6),
     x0: map.x0,
     y0: map.y0,
     sqr: map.sqr,

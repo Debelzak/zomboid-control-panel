@@ -20,6 +20,7 @@ import { requirePermission } from "../services/permissions.js";
 import { runManagedLifecycle } from "../services/managedContainer.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
+import { invalidateMapFolderScan } from "./chunks.js";
 
 const router = express.Router();
 
@@ -552,11 +553,55 @@ export function formatDirectoryReadError(
 // Security: INI sanitization imported from shared util
 // sanitizeIniValue strips \r\n;= to prevent injection
 
-// Security: Validate integer in range
-function validateInt(value, min, max, defaultVal) {
+// Shared range constants for the requireIntInRange call sites below AND in
+// config.js's PUT /app-settings (which imports these rather than retyping
+// the numbers) -- game port, RCON port and panel port all mean "a bindable
+// TCP port outside the well-known range," so they share one PORT_MIN/
+// PORT_MAX pair. Memory shares a floor (both fields refuse below 1 GB) but
+// have distinct ceilings. Exporting these is the actual fix for a claim
+// made in the 2026-08-23 validateInt-coerces audit that turned out false:
+// "no disagreement possible by construction" was said of two files with
+// sixteen hand-typed literal copies of these five numbers and no shared
+// constant anywhere -- true only of the FUNCTION (requireIntInRange itself,
+// imported), not the ranges. A future range change is one edit here instead
+// of a grep-and-hope across both files.
+export const PORT_MIN = 1024;
+export const PORT_MAX = 65535;
+export const MEMORY_GB_MIN = 1;
+export const MIN_MEMORY_GB_MAX = 64;
+export const MAX_MEMORY_GB_MAX = 128;
+
+// Coerces `value` to an integer in [min, max], silently substituting
+// defaultVal on NaN or out-of-range input. Despite the old name this
+// function replaced ("validateInt"), it does not validate -- it never
+// refuses a bad value or tells anyone it was replaced. Only use this for a
+// machine-supplied or optional parameter where the substituted default IS
+// the designed behaviour (e.g. a listing limit nobody typed deliberately).
+// A value a human typed into a field belongs in requireIntInRange below
+// instead -- see 2026-08-23 validateInt-coerces audit (server.js call sites
+// were split between the two on a case-by-case basis, not a blanket switch).
+function coerceIntInRange(value, min, max, defaultVal) {
   const num = parseInt(value, 10);
   if (isNaN(num) || num < min || num > max) return defaultVal;
   return num;
+}
+
+// Parses `value` as an integer in [min, max]. Returns { ok: true, value }
+// on success, or { ok: false, message } naming the field and the valid
+// range on failure -- for a value a human typed into a field, where
+// silently substituting something else would leave them believing they set
+// something they didn't (a port they typed being silently swapped is the
+// motivating case: their firewall rule and port forward end up pointing at
+// a number nothing is listening on, with nothing telling them why).
+export function requireIntInRange(value, min, max, fieldLabel) {
+  const num = parseInt(value, 10);
+  if (isNaN(num) || num < min || num > max) {
+    return {
+      ok: false,
+      message: `${fieldLabel} must be a whole number between ${min} and ${max}.`,
+    };
+  }
+  return { ok: true, value: num };
 }
 
 // Build the Java classpath entries for launching the dedicated server.
@@ -1332,7 +1377,12 @@ router.post("/events/horde", requirePermission("server.world_events"), async (re
   try {
     const rconService = req.app.get("rconService");
     const { count, username } = req.body;
-    const safeCount = validateInt(count, 1, 500, 50);
+    // Coerced, not refused: the UI's slider already clamps to [10, 500], so
+    // an out-of-range value here only reaches this route via a direct API
+    // call, and a smaller-than-asked horde is not a "your setting was
+    // silently ignored" story the way a swapped port is -- see
+    // 2026-08-23 validateInt-coerces audit.
+    const safeCount = coerceIntInRange(count, 1, 500, 50);
     if (username && (typeof username !== "string" || username.length > 64)) {
       return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
@@ -1694,11 +1744,30 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
       });
     }
 
-    // Validate numeric inputs
-    const safeMinMemory = validateInt(minMemory, 1, 64, 4);
-    const safeMaxMemory = validateInt(maxMemory, 1, 128, 8);
-    const safeServerPort = validateInt(serverPort, 1024, 65535, 16261);
-    const safeRconPort = validateInt(rconPort, 1024, 65535, 27015);
+    // Validate numeric inputs -- each of these was explicitly typed into a
+    // field by the operator, so an out-of-range value is refused (with a
+    // named field + range) rather than silently swapped for a default they
+    // never chose. See 2026-08-23 validateInt-coerces audit.
+    const minMemoryCheck = requireIntInRange(minMemory, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
+    if (!minMemoryCheck.ok) {
+      return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.INVALID_MIN_MEMORY });
+    }
+    const maxMemoryCheck = requireIntInRange(maxMemory, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
+    if (!maxMemoryCheck.ok) {
+      return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
+    }
+    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, PORT_MAX, "Game port");
+    if (!serverPortCheck.ok) {
+      return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
+    }
+    const rconPortCheck = requireIntInRange(rconPort, PORT_MIN, PORT_MAX, "RCON port");
+    if (!rconPortCheck.ok) {
+      return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
+    }
+    const safeMinMemory = minMemoryCheck.value;
+    const safeMaxMemory = maxMemoryCheck.value;
+    const safeServerPort = serverPortCheck.value;
+    const safeRconPort = rconPortCheck.value;
 
     // Sanitize string inputs for batch file
     const safeAdminPassword = sanitizeForBatch(adminPassword);
@@ -2180,11 +2249,28 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
       });
     }
 
-    // Validate numeric inputs
-    const safeMinMemory = validateInt(minMemory, 1, 64, 4);
-    const safeMaxMemory = validateInt(maxMemory, 1, 128, 8);
-    const safeServerPort = validateInt(serverPort, 1024, 65535, 16261);
-    const safeRconPort = validateInt(rconPort, 1024, 65535, 27015);
+    // Validate numeric inputs -- same refuse-don't-coerce reasoning as
+    // /install above. See 2026-08-23 validateInt-coerces audit.
+    const minMemoryCheck = requireIntInRange(minMemory, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
+    if (!minMemoryCheck.ok) {
+      return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.INVALID_MIN_MEMORY });
+    }
+    const maxMemoryCheck = requireIntInRange(maxMemory, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
+    if (!maxMemoryCheck.ok) {
+      return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
+    }
+    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, PORT_MAX, "Game port");
+    if (!serverPortCheck.ok) {
+      return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
+    }
+    const rconPortCheck = requireIntInRange(rconPort, PORT_MIN, PORT_MAX, "RCON port");
+    if (!rconPortCheck.ok) {
+      return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
+    }
+    const safeMinMemory = minMemoryCheck.value;
+    const safeMaxMemory = maxMemoryCheck.value;
+    const safeServerPort = serverPortCheck.value;
+    const safeRconPort = rconPortCheck.value;
     const safeAdminPassword = sanitizeForBatch(adminPassword);
 
     log.info(
@@ -2350,7 +2436,12 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
 router.post("/configure-rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const { rconPassword, rconPort: rawRconPort = 27015 } = req.body;
-    const rconPort = validateInt(rawRconPort, 1024, 65535, 27015);
+    // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
+    const rconPortCheck = requireIntInRange(rawRconPort, PORT_MIN, PORT_MAX, "RCON port");
+    if (!rconPortCheck.ok) {
+      return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
+    }
+    const rconPort = rconPortCheck.value;
 
     if (!rconPassword) {
       return res.status(400).json({ error: "RCON password is required", code: ErrorCode.CONFIGURE_RCON_PASSWORD_REQUIRED });
@@ -2423,7 +2514,12 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
 router.post("/configure-network", requirePermission("server.configure"), async (req, res) => {
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body;
-    const serverPort = validateInt(rawServerPort, 1024, 65535, 16261);
+    // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
+    const serverPortCheck = requireIntInRange(rawServerPort, PORT_MIN, PORT_MAX, "Game port");
+    if (!serverPortCheck.ok) {
+      return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
+    }
+    const serverPort = serverPortCheck.value;
 
     // Get the server config path from active server or settings
     const serverConfigPath = await getServerConfigPath();
@@ -2636,7 +2732,11 @@ router.post("/stats", requirePermission("server.configure"), async (req, res) =>
         .json({ error: `Invalid mode. Valid: ${validModes.join(", ")}`, code: ErrorCode.STATS_INVALID_MODE });
     }
 
-    const validPeriod = period ? validateInt(period, 1, 3600, null) : null;
+    // Coerced, not refused: no client caller sets this today (unused API
+    // surface), and an out-of-range value already falls back to `null`
+    // (stats reporting off) rather than a plausible-looking wrong number --
+    // see 2026-08-23 validateInt-coerces audit.
+    const validPeriod = period ? coerceIntInRange(period, 1, 3600, null) : null;
 
     const result = await rconService.setStats(mode, validPeriod);
     res.json(result);
@@ -2705,7 +2805,7 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       const processDetails = await serverManager.getServerProcessDetails();
       if (processDetails.scanFailed) {
         return res.status(503).json({
-          error: "Cannot verify whether the server is stopped. Try again shortly.",
+          error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
           code: ErrorCode.SERVER_STATE_UNKNOWN,
         });
       }
@@ -2719,7 +2819,7 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
     } catch (e) {
       log.warn(`Could not verify server status before update: ${e.message}`);
       return res.status(503).json({
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }
@@ -3320,7 +3420,7 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
     const processDetails = await serverManager.getServerProcessDetails();
     if (processDetails.scanFailed) {
       return res.status(503).json({
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }
@@ -4062,6 +4162,87 @@ router.post("/update-check/interval", requirePermission("server.configure"), asy
 // Guard against concurrent wipe operations
 let wipeInProgress = false;
 
+// Run `worker` over `items` with at most `limit` in flight at once. Mirrors
+// chunks.js's runWithConcurrency (same reasoning: unbounded Promise.all over
+// a directory with hundreds of entries can exhaust file handles or, on slow
+// storage, queue so many concurrent round trips that it's slower than doing
+// them one at a time) -- duplicated locally rather than imported since
+// chunks.js doesn't export it and these two route files don't otherwise
+// depend on each other.
+const WIPE_PREVIEW_WALK_CONCURRENCY = 8;
+async function runWithConcurrencyBounded(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= items.length) return;
+        results[i] = await worker(items[i], i);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+// Recursively count files and total size under `dir`. Was fully synchronous
+// (fs.readdirSync/fs.statSync, no concurrency, no cap) -- Jim measured 20.7
+// SECONDS for map/ alone on a 147,136-file save, fully blocking the Node
+// event loop that whole time for every other admin session and RCON call on
+// the panel, not just the requester's own page. Now async with bounded
+// per-level concurrency (same shape as chunks.js's getDirStats) and a
+// shared `budget` -- a wall-clock deadline plus an entry cap, same pattern
+// as debug.js's scanSaveStats -- so a pathologically large or slow-storage
+// save can't hang the request open-endedly. Once the budget runs out,
+// `budget.truncated` is set and every further call returns zero rather than
+// silently continuing to count: the caller MUST report that flag rather
+// than presenting a wipe-preview number that quietly stopped being exact.
+export async function countDir(dir, budget) {
+  if (budget.truncated || Date.now() >= budget.deadline || budget.visited >= budget.maxEntries) {
+    budget.truncated = true;
+    return { files: 0, size: 0 };
+  }
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    log.debug(`countDir readdir failed for ${dir}: ${e.message}`);
+    return { files: 0, size: 0 };
+  }
+  const results = await runWithConcurrencyBounded(
+    entries,
+    WIPE_PREVIEW_WALK_CONCURRENCY,
+    async (entry) => {
+      if (budget.truncated || Date.now() >= budget.deadline || budget.visited >= budget.maxEntries) {
+        budget.truncated = true;
+        return { files: 0, size: 0 };
+      }
+      budget.visited++;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return countDir(fullPath, budget);
+      }
+      let size = 0;
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        size = stat.size;
+      } catch (e) {
+        log.debug(`Stat failed for ${fullPath}: ${e.message}`);
+      }
+      return { files: 1, size };
+    },
+  );
+  let files = 0;
+  let size = 0;
+  for (const r of results) {
+    files += r.files;
+    size += r.size;
+  }
+  return { files, size };
+}
+
 // Preview what will be wiped (dry-run). Admin-only, same as /wipe itself --
 // this pairs with the actual wipe, so anyone who can't wipe has no reason
 // to preview one.
@@ -4110,32 +4291,19 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
     const preview = {};
     let totalFiles = 0;
     let totalSize = 0;
-
-    const countDir = (dir) => {
-      let files = 0;
-      let size = 0;
-      if (!fs.existsSync(dir)) return { files: 0, size: 0 };
-      try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            const sub = countDir(fullPath);
-            files += sub.files;
-            size += sub.size;
-          } else {
-            files++;
-            try {
-              size += fs.statSync(fullPath).size;
-            } catch (e) {
-              log.debug(`Stat failed for ${fullPath}: ${e.message}`);
-            }
-          }
-        }
-      } catch (e) {
-        log.debug(`countDir readdir failed for ${dir}: ${e.message}`);
-      }
-      return { files, size };
+    // Shared across every countDir() call below so the budget covers the
+    // WHOLE preview request (every target's directories combined), not each
+    // directory independently -- otherwise several individually-under-
+    // budget walks could still add up to the multi-second block this fix
+    // exists to remove. 15s / 300,000 entries is generous headroom over
+    // Jim's 20.7s/147,136-file measurement (which was the fully synchronous,
+    // no-concurrency walk); truncation is a backstop for pathological or
+    // slow-storage cases, not an expected outcome for a normal save.
+    const budget = {
+      deadline: Date.now() + 15_000,
+      visited: 0,
+      maxEntries: 300_000,
+      truncated: false,
     };
 
     // Directories belonging to each target
@@ -4165,7 +4333,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
       for (const dirName of MAP_DIRS) {
         const dir = path.join(saveDir, dirName);
         if (fs.existsSync(dir)) {
-          const sub = countDir(dir);
+          const sub = await countDir(dir, budget);
           mapFiles += sub.files;
           mapSize += sub.size;
         }
@@ -4207,7 +4375,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
       for (const dirName of WORLD_DIRS) {
         const dir = path.join(saveDir, dirName);
         if (fs.existsSync(dir)) {
-          const sub = countDir(dir);
+          const sub = await countDir(dir, budget);
           worldFiles += sub.files;
           worldSize += sub.size;
         }
@@ -4253,7 +4421,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
           }
           const fullPath = path.join(saveDir, entry.name);
           if (entry.isDirectory()) {
-            const sub = countDir(fullPath);
+            const sub = await countDir(fullPath, budget);
             extraFiles += sub.files;
             extraSize += sub.size;
           } else {
@@ -4300,6 +4468,12 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
       preview,
       totalFiles,
       totalSize,
+      // True if the walk hit its wall-clock/entry-count budget before
+      // finishing -- the counts above are then a LOWER BOUND, not exact.
+      // Never silently swallowed: the wipe dialog is about to act on these
+      // numbers, so an operator seeing a truncated preview needs to know
+      // it undercounts rather than trusting it as final.
+      truncated: budget.truncated,
     });
   } catch (error) {
     log.error(`Wipe preview failed: ${error.message}`);
@@ -4333,7 +4507,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     const processDetails = await serverManager.getServerProcessDetails();
     if (processDetails.scanFailed) {
       return res.status(503).json({
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
         code: ErrorCode.SERVER_STATE_UNKNOWN,
       });
     }
@@ -4421,6 +4595,12 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
           deletedCount > 0
             ? `deleted ${deletedCount} directories`
             : "not found";
+        // chunks.js's /chunks and /stats routes cache a scan of this save's
+        // map/ folder for a few seconds (see getMapFolderScan()'s comment).
+        // This wipe just deleted it out from under that cache -- without
+        // this, a page reload within the TTL window would show chunk counts
+        // for a map/ folder that no longer exists.
+        invalidateMapFolderScan(path.join(saveDir, "map"));
       }
 
       if (targets.includes("players")) {

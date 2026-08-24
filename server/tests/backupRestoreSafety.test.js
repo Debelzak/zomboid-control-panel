@@ -11,6 +11,13 @@ vi.mock("../database/init.js", () => ({
   logServerEvent: vi.fn(async () => {}),
 }));
 
+const { invalidateMapFolderScanMock } = vi.hoisted(() => ({
+  invalidateMapFolderScanMock: vi.fn(),
+}));
+vi.mock("../routes/chunks.js", () => ({
+  invalidateMapFolderScan: invalidateMapFolderScanMock,
+}));
+
 const { BackupService } = await import("../services/backupService.js");
 
 const SERVER_NAME = "servertest";
@@ -55,6 +62,7 @@ beforeEach(() => {
   backupsPath = path.join(root, "backups");
   fs.mkdirSync(backupsPath, { recursive: true });
   writeWorld(savesPath, "LIVE");
+  invalidateMapFolderScanMock.mockClear();
 });
 
 afterEach(() => {
@@ -137,6 +145,38 @@ describe("restoreBackup archive safety", () => {
 
     expect(result.success).toBe(true);
     expect(fs.readFileSync(path.join(savesPath, "map_meta.bin"), "utf8")).toBe("PORTABLE");
+  });
+
+  it("invalidates chunks.js's cached map/ folder scan after a successful restore", async () => {
+    // Regression: chunks.js's /chunks and /stats routes cache a scan of a
+    // save's map/ folder for a few seconds (getMapFolderScan()'s TTL
+    // backstop). A restore swaps the whole save in from the archive but has
+    // no path to call into chunks.js's own explicit invalidation -- without
+    // this, a page reload within the TTL window after a restore would show
+    // chunk counts for the PRE-restore map/ contents.
+    const good = path.join(backupsPath, "good.zip");
+    await writeValidBackup(good, "RESTORED");
+
+    const result = await createService().restoreBackup("good.zip", {
+      createPreRestoreBackup: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(invalidateMapFolderScanMock).toHaveBeenCalledWith(
+      path.join(savesPath, "map"),
+    );
+  });
+
+  it("does not invalidate the map/ folder scan when the restore fails", async () => {
+    const corrupt = path.join(backupsPath, "corrupt.zip");
+    fs.writeFileSync(corrupt, Buffer.from("PK truncated payload"));
+
+    const result = await createService().restoreBackup("corrupt.zip", {
+      createPreRestoreBackup: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(invalidateMapFolderScanMock).not.toHaveBeenCalled();
   });
 
   it("leaves no staging folder behind", async () => {

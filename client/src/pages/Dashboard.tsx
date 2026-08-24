@@ -230,6 +230,7 @@ export default function Dashboard() {
   const [wipePreview, setWipePreview] = useState<{
     totalFiles: number; totalSize: number
     preview: Record<string, { files: number; size: number }>
+    truncated?: boolean
   } | null>(null)
   const [wipeLoading, setWipeLoading] = useState(false)
 
@@ -373,9 +374,9 @@ export default function Dashboard() {
         title: checked ? t('toasts.autoStartEnabledTitle') : t('toasts.autoStartDisabledTitle'),
         description: checked ? t('toasts.autoStartEnabledDesc') : t('toasts.autoStartDisabledDesc'),
       })
-    } catch {
+    } catch (error) {
       setAutoStartServer(!checked)
-      toast({ title: t('toasts.errorTitle'), description: t('toasts.autoStartSaveFailed'), variant: 'destructive' })
+      toast({ title: t('toasts.errorTitle'), description: error instanceof Error ? error.message : t('toasts.autoStartSaveFailed'), variant: 'destructive' })
     }
   }
 
@@ -1422,6 +1423,9 @@ export default function Dashboard() {
                       : <div key={key} className="text-muted-foreground">{t('wipeDialog.noCategoryFilesFound', { category })}</div>
                   })}
                   <div className="pt-1 font-medium">{t('wipeDialog.total', { count: wipePreview.totalFiles.toLocaleString(), mb: (wipePreview.totalSize / 1024 / 1024).toFixed(1) })}</div>
+                  {wipePreview.truncated && (
+                    <div className="pt-1 text-warning">{t('wipeDialog.truncatedWarning')}</div>
+                  )}
                 </>
               )}
             </div>

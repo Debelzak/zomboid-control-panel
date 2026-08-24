@@ -301,6 +301,111 @@ describe('RconService', () => {
     });
   });
 
+  describe('classifyRconResponse (rejection shapes execute() recognizes as failure)', () => {
+    it('still classifies "Unknown command" as a failure', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('Unknown command "foo"');
+      expect(result).not.toBeNull();
+      expect(result.error).toContain('not available on this server build');
+    });
+
+    it('classifies "Wrong arguments!" as a failure -- seen verbatim in GodModePlayerCommand.class/InvisiblePlayerCommand.class', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('Wrong arguments!');
+      expect(result).not.toBeNull();
+      expect(result.error).toMatch(/syntax may have changed/i);
+    });
+
+    it('classifies "Not enough rights" as a failure -- seen verbatim in NoClipCommand.class', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('Not enough rights');
+      expect(result).not.toBeNull();
+      expect(result.error).toMatch(/does not have permission/i);
+    });
+
+    it('classifies "<command> can be executed only from the game" as a failure -- seen verbatim in ReleaseSafehouseCommand.class', () => {
+      const liveRcon = new RconService();
+      const result = liveRcon.classifyRconResponse('releasesafehouse can be executed only from the game');
+      expect(result).not.toBeNull();
+      expect(result.error).toMatch(/only be run from in-game/i);
+    });
+
+    it('does not classify an ordinary informative response as a failure', () => {
+      const liveRcon = new RconService();
+      expect(liveRcon.classifyRconResponse('Players connected (2):\n-Alice\n-Bob')).toBeNull();
+      expect(liveRcon.classifyRconResponse('')).toBeNull();
+      expect(liveRcon.classifyRconResponse(undefined)).toBeNull();
+    });
+  });
+
+  describe('setGodMode / setInvisible player targeting', () => {
+    it('setGodMode sends godmodplayer (not the self-only godmod) when a username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setGodMode('Bob', true);
+
+      expect(executeSpy).toHaveBeenCalledWith('godmodplayer "Bob" -true');
+    });
+
+    it('setGodMode still sends the self-only godmod when no username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setGodMode(null, false);
+
+      expect(executeSpy).toHaveBeenCalledWith('godmod -false');
+    });
+
+    it('setInvisible sends invisibleplayer (not the self-only invisible) when a username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setInvisible('Bob', true);
+
+      expect(executeSpy).toHaveBeenCalledWith('invisibleplayer "Bob" -true');
+    });
+
+    it('setInvisible still sends the self-only invisible when no username is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.setInvisible(null, false);
+
+      expect(executeSpy).toHaveBeenCalledWith('invisible -false');
+    });
+  });
+
+  describe('releaseSafehouse', () => {
+    it('refuses honestly instead of sending a command the real server always rejects over RCON', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute');
+
+      await expect(liveRcon.releaseSafehouse()).rejects.toThrow(/only be done from in-game/i);
+      expect(executeSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('kickPlayer reason', () => {
+    it('sends -r "<reason>" -- KickUserCommand.class carries the same -r AltCommandArgs flag as BanUserCommand in the real B42 jar', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.kickPlayer('Bob', 'Comportement toxique répété');
+
+      expect(executeSpy).toHaveBeenCalledWith('kickuser "Bob" -r "Comportement toxique repete"');
+    });
+
+    it('omits -r entirely when no reason is given', async () => {
+      const liveRcon = new RconService();
+      const executeSpy = vi.spyOn(liveRcon, 'execute').mockResolvedValue({ success: true, response: 'ok' });
+
+      await liveRcon.kickPlayer('Bob');
+
+      expect(executeSpy).toHaveBeenCalledWith('kickuser "Bob"');
+    });
+  });
+
   describe('quoted argument safety', () => {
     it('rejects player names that could break out of quoted RCON args', async () => {
       const liveRcon = new RconService();

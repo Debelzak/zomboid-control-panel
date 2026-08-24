@@ -58,13 +58,42 @@ async function requireCapabilityInline(capability, req, res) {
   return passed;
 }
 
+// node-cron (this app's cron engine) accepts an optional LEADING seconds
+// field -- 6 space-separated fields instead of 5 -- which nothing in this
+// app documents, exposes, or needs: the UI's format hint and every preset
+// are 5-field ("minute hour day month weekday", see
+// client/src/locales/en/scheduler.json's cronFormatHint/customExpressionPlaceholder),
+// but the free-text custom-expression input (Scheduler.tsx) accepts
+// anything cron.validate() accepts, including 6 fields. isCronTooFrequent()
+// below was built to analyse a 5-field expression and always reads parts[0]
+// as MINUTES -- for a 6-field expression parts[0] is actually SECONDS, so
+// e.g. "*/5 * * * * *" (fires every 5 SECONDS) reads as minute="*/5", which
+// looks like a harmless once-every-5-minutes value and sails through the
+// DoS guard untouched. The bypass window is narrower than "any 6-field
+// expression": "* * * * * *" and "*/1"-"*/4" seconds are caught BY ACCIDENT
+// (parts[0] still matches the every-minute checks below), which is exactly
+// why this survived -- spot-checking with the obvious "every second" case
+// would have shown the guard working. What sails through is "*/5" to
+// "*/59" seconds, which look like ordinary sub-5-minute-safe minute values.
+// Reject outright rather than teaching the guard a second field grammar
+// for a feature this app has never exposed or tested.
+export function hasUnsupportedCronFieldCount(expr) {
+  return expr.trim().split(/\s+/).length !== 5;
+}
+
 /**
  * Check if a cron expression runs more frequently than every 5 minutes.
  * Parses the minute and hour fields to detect sub-5-minute intervals.
+ * Assumes a 5-field expression -- callers must reject anything else via
+ * hasUnsupportedCronFieldCount() first (both scheduler.js routes do). The
+ * arity check below is defense-in-depth for any other caller, not the
+ * primary gate: treats anything but exactly 5 fields as too-frequent-to-be-
+ * safe (fail closed) rather than silently misreading a field it was never
+ * built to parse.
  */
 function isCronTooFrequent(expr) {
   const parts = expr.trim().split(/\s+/);
-  if (parts.length < 5) return false;
+  if (parts.length !== 5) return true;
   const [minute, hour] = parts;
 
   // Every minute: * or */1 through */4 (also catches range-step forms like 0-59/2)
@@ -140,6 +169,16 @@ router.post('/validate-cron', async (req, res) => {
       return res.json({ valid: false, error: 'Invalid cron expression format' });
     }
 
+    // Keep this preview endpoint's verdict consistent with what POST /tasks
+    // and PUT /tasks/:id will actually accept -- without this, a 6-field
+    // expression previews as valid here and then gets refused on submit.
+    if (hasUnsupportedCronFieldCount(cronExpression)) {
+      return res.json({
+        valid: false,
+        error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday.',
+      });
+    }
+
     res.json({ valid: true });
   } catch (error) {
     res.status(500).json({ valid: false, error: sanitizeError(error.message) });
@@ -179,6 +218,13 @@ router.post('/tasks', async (req, res) => {
     // Validate cron expression before saving
     if (!cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
+    }
+
+    // The panel does not support seconds-precision (6-field) schedules --
+    // see hasUnsupportedCronFieldCount()'s comment for why this must be
+    // checked before isCronTooFrequent, not folded into it.
+    if (hasUnsupportedCronFieldCount(cronExpression)) {
+      return res.status(400).json({ error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday (e.g., "0 */6 * * *").' });
     }
 
     // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
@@ -266,6 +312,13 @@ router.put('/tasks/:id', async (req, res) => {
     // Validate cron expression before saving to prevent DB/scheduler inconsistency
     if (cronExpression && !cron.validate(cronExpression)) {
       return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
+    }
+
+    // The panel does not support seconds-precision (6-field) schedules --
+    // see hasUnsupportedCronFieldCount()'s comment for why this must be
+    // checked before isCronTooFrequent, not folded into it.
+    if (cronExpression && hasUnsupportedCronFieldCount(cronExpression)) {
+      return res.status(400).json({ error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday (e.g., "0 */6 * * *").' });
     }
 
     // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS

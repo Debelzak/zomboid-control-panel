@@ -452,6 +452,11 @@
             "label": "Verwaiste Sperrdateien im Spielstandordner",
             "message": ".lock-Dateien älter als 1 Stunde in {{dir}}: {{count}}. PZ lädt den Spielstand erst, wenn sie entfernt wurden.",
             "hint": "Server stoppen, alle *.lock-Dateien im Spielstandordner löschen, dann neu starten."
+          },
+          "warn": {
+            "label": "Veraltete Sperrdateien konnten nicht vollständig geprüft werden",
+            "message": "{{dir}} ist zu groß, um innerhalb des Diagnose-Zeitbudgets vollständig auf veraltete Sperrdateien durchsucht zu werden. Veraltete Sperrdateien können vorhanden, aber unentdeckt sein.",
+            "hint": "Führe „Veraltete Sperrdateien löschen“ aus, um in einem Durchgang zu scannen und zu bereinigen — dafür steht ein deutlich größeres Zeitbudget zur Verfügung als für diese automatische Prüfung — oder überprüfe den Speicherordner manuell, wenn der Server nicht startet."
           }
         },
         "jreWorks": {

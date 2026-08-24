@@ -14,14 +14,30 @@ export async function requireStoppedForLocalConfigMutation(req, res, next) {
     if (activeServer?.isRemote) return next();
 
     const serverManager = req.app?.get?.("serverManager");
-    if (typeof serverManager?.checkServerRunning !== "function") {
+    // getServerProcessDetails(), not checkServerRunning() -- the latter
+    // discards the scan's own scanFailed flag and returns a plain boolean,
+    // so a scan that completed but couldn't determine the server's state
+    // (timeout, PowerShell/exec error) came back indistinguishable from
+    // "confirmed stopped" and let this wholesale overwrite proceed, exactly
+    // the case this guard exists to refuse. Same fail-open class already
+    // fixed at /wipe, backup restore, and chunks.js's delete-chunks/
+    // delete-region.
+    if (typeof serverManager?.getServerProcessDetails !== "function") {
       return res.status(503).json({
         code: "SERVER_STATE_UNKNOWN",
-        error: "Cannot verify whether the server is stopped. Try again shortly.",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
       });
     }
 
-    if (await serverManager.checkServerRunning()) {
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        code: "SERVER_STATE_UNKNOWN",
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+      });
+    }
+
+    if (processDetails.running) {
       return res.status(409).json({
         code: "SERVER_RUNNING",
         error: "Stop the server before editing configuration.",
@@ -35,7 +51,7 @@ export async function requireStoppedForLocalConfigMutation(req, res, next) {
     );
     return res.status(503).json({
       code: "SERVER_STATE_UNKNOWN",
-      error: "Cannot verify whether the server is stopped. Try again shortly.",
+      error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
     });
   }
 }

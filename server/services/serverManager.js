@@ -450,7 +450,19 @@ export class ServerManager {
       );
     }
 
-    this.isRunning = resolved.length > 0;
+    // A failed scan always resolves to an empty `matched` list, so
+    // `resolved.length > 0` is unconditionally false here whenever
+    // scanFailed is true -- writing it into the cached this.isRunning would
+    // silently overwrite the last known-good state with a confident "not
+    // running" the moment detection starts failing, which is exactly the
+    // false confidence scanFailed exists to prevent elsewhere. Every reader
+    // of this cached field (server/routes/serverStatus.js, the dashboard's
+    // host signal) gets the SAME wrong "stopped" a failed detection scan
+    // gives it, instead of "we don't know." Leave it at its previous value
+    // when the scan couldn't tell.
+    if (!scan.scanFailed) {
+      this.isRunning = resolved.length > 0;
+    }
     return {
       running: resolved.length > 0,
       matched: resolved.slice(0, 3).map((entry) => ({
@@ -479,7 +491,7 @@ export class ServerManager {
 
       const timeout = setTimeout(() => {
         log.warn(
-          "getServerProcessDetails: process detection timed out, assuming server is not running",
+          "getServerProcessDetails: process detection timed out, cannot determine server state",
         );
         resolve({ running: false, matched: [], scanFailed: true });
       }, 10000);
@@ -489,9 +501,27 @@ export class ServerManager {
           "powershell -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$' } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation\"";
         exec(psCmd, { timeout: 8000 }, (psError, psStdout) => {
           clearTimeout(timeout);
-          if (psError || !psStdout) {
-            this.isRunning = false;
+          if (psError) {
+            log.warn(
+              `getServerProcessDetails: Windows process scan failed (${psError.message}), cannot determine server state`,
+            );
             resolve({ running: false, matched: [], scanFailed: true });
+            return;
+          }
+          // Empty stdout with NO error is a legitimate, successful result,
+          // not a failure: ConvertTo-Csv derives its header from the first
+          // object it receives, so an empty filtered Win32_Process pipeline
+          // (the normal, expected shape when no PZ server process exists)
+          // produces NO output at all -- not even a header row. Confirmed
+          // empirically on a real Windows host (2026-08-23): psError is
+          // null, exit code 0, psStdout is "". Treating that identically to
+          // a real exec failure meant a genuinely STOPPED Windows server
+          // could never be confirmed stopped -- deterministically, on every
+          // check -- which is exactly the state every fail-closed guard
+          // (/wipe included) exists to detect. This is what a real user hit.
+          if (!psStdout) {
+            this.isRunning = false;
+            resolve({ running: false, matched: [] });
             return;
           }
 
@@ -559,7 +589,9 @@ export class ServerManager {
             exec("ps aux -ww", { timeout: 8000 }, (err, stdout) => {
               clearTimeout(timeout);
               if (err || !stdout) {
-                this.isRunning = false;
+                log.warn(
+                  `getServerProcessDetails: ps aux scan failed (${err ? err.message : "empty output"}), cannot determine server state`,
+                );
                 resolve({ running: false, matched: [], scanFailed: true });
                 return;
               }

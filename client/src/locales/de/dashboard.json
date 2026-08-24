@@ -278,6 +278,7 @@
     "filesCount": "{{count}} Dateien – {{category}} ({{mb}} MB)",
     "noCategoryFilesFound": "Keine Dateien für „{{category}}“ gefunden",
     "total": "Gesamt: {{count}} Dateien ({{mb}} MB)",
+    "truncatedWarning": "Der Scan wurde bei einem sehr großen Save frühzeitig abgebrochen — diese Zahlen sind ein Minimum, die echten Werte können höher liegen.",
     "cancel": "Abbrechen",
     "preview": "Vorschau",
     "wipeNow": "Jetzt unwiderruflich löschen",

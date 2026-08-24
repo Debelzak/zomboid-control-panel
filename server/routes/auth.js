@@ -87,7 +87,23 @@ function getResetTokenPath() {
   return path.join(dataDir, "reset-token.txt");
 }
 
+// When trust proxy is configured (server/index.js, TRUST_PROXY env var), the
+// TCP peer on every request is the reverse proxy itself, not the real
+// client -- the panel has no way to tell a local caller from a remote one at
+// the socket layer. Trusting a forwarded header instead would let a remote
+// caller spoof local trust (see bugfixes.test.js's "does not trust
+// proxy-derived IP fields" test, which defends against exactly that). Fail
+// closed rather than guess in either direction: under a proxy, nothing is
+// ever treated as local.
+export function isPanelBehindTrustProxy(req) {
+  return Boolean(req.app?.get?.("trust proxy"));
+}
+
 export function isLocalPanelRequest(req) {
+  if (isPanelBehindTrustProxy(req)) {
+    return false;
+  }
+
   const candidateAddresses = [
     req.socket?.remoteAddress,
     req.connection?.remoteAddress,
@@ -430,6 +446,24 @@ router.post("/change-password", async (req, res) => {
         code: ErrorCode.CHANGE_PASSWORD_FIELDS_REQUIRED,
       });
     }
+    // Every other password-setting path in this file caps the maximum at
+    // 128 chars (createUser in services/auth.js, POST /reset-password both
+    // here and in authService.resetPassword) -- this route was the one
+    // missing it. Two real consequences of an unbounded length reaching
+    // bcrypt.hash(): bcrypt silently truncates at 72 BYTES, so two
+    // passwords sharing the same first 72 bytes become interchangeable for
+    // login with no warning; and bcrypt is deliberately slow, so this was
+    // an available (if authenticated) way to spend meaningfully more server
+    // CPU per request than any other password-setting path permits.
+    // Reusing RESET_PASSWORD_TOO_LONG's code: its locale text is already
+    // fully generic ("Password must be 128 characters or fewer"), no
+    // reset-specific wording to mismatch.
+    if (newPassword.length > 128) {
+      return res.status(400).json({
+        error: "Password must be 128 characters or fewer",
+        code: ErrorCode.RESET_PASSWORD_TOO_LONG,
+      });
+    }
     await authService.changePassword(user.userId, currentPassword, newPassword);
     res.clearCookie("refreshToken", getRefreshCookieOptions(req, false));
 
@@ -762,6 +796,13 @@ router.post("/recover-with-code", resetLimiter, async (req, res) => {
 router.post("/reset-token/local", localResetTokenLimiter, async (req, res) => {
   try {
     if (!isLocalPanelRequest(req)) {
+      if (isPanelBehindTrustProxy(req)) {
+        return res.status(403).json({
+          error:
+            "This panel is running behind a reverse proxy, so it can't verify a request came from the server itself. Create data/reset-token.txt on the host directly, or use a recovery code instead.",
+          code: ErrorCode.LOCAL_RESET_BEHIND_PROXY,
+        });
+      }
       return res.status(403).json({
         error:
           "This recovery action is only available when the panel is opened from the server itself.",

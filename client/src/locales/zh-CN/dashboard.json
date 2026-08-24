@@ -278,6 +278,7 @@
     "filesCount": "{{count}} 个{{category}}文件（{{mb}} MB）",
     "noCategoryFilesFound": "未找到{{category}}文件",
     "total": "总计：{{count}} 个文件（{{mb}} MB）",
+    "truncatedWarning": "由于存档过大，扫描提前停止——以上数字为最低估计，实际数量可能更多。",
     "cancel": "取消",
     "preview": "预览",
     "wipeNow": "立即清除",

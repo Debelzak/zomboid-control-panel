@@ -118,8 +118,8 @@ export default function Backups() {
       setBackupSchedule(status.schedule)
       setBackupMaxCount(status.maxBackups)
       setLoadError(null)
-    } catch {
-      setLoadError(t('toasts.loadStatusFailed'))
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : t('toasts.loadStatusFailed'))
     }
   }, [t])
 
@@ -139,8 +139,8 @@ export default function Backups() {
         })
         return newSelection
       })
-    } catch {
-      setLoadError(t('toasts.loadBackupsFailed'))
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : t('toasts.loadBackupsFailed'))
     }
   }, [t])
 
@@ -898,7 +898,7 @@ export default function Backups() {
               </div>
 
               {/* Backup List */}
-              <ScrollArea className="h-[300px] sm:h-[400px] [&_[data-radix-scroll-area-viewport]>div]:!block">
+              <ScrollArea className="h-[300px] sm:h-[400px]">
                 <div className="space-y-2 pr-4">
                   {backups.map((backup, idx) => {
                     const isSelected = selectedBackups.has(backup.name)

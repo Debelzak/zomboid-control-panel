@@ -216,6 +216,15 @@ function toSettingBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+// Mirrors server/routes/config.js's own httpsPort range check so the client
+// can reject an out-of-range port before submitting -- panelPort has no such
+// check on the server at all (unlike its httpsPort sibling), so an
+// out-of-range panelPort would otherwise save silently and only surface
+// later, on the next restart, as a redirect to a port nothing is listening on.
+export function isValidPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
 // Human-friendly age string for bridge diagnostics. Avoids showing the user
 // raw seconds counts like "3344627s" which read as gibberish.
 function formatBridgeAge(seconds: number): string {
@@ -876,6 +885,23 @@ export default function Settings() {
   };
 
   const handleSave = async () => {
+    if (!isValidPort(Number(settings.panelPort))) {
+      toast({
+        title: t("toasts.invalidPanelPort.title"),
+        description: t("toasts.invalidPanelPort.description"),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (settings.httpsEnabled && !isValidPort(Number(settings.httpsPort))) {
+      toast({
+        title: t("toasts.invalidHttpsPort.title"),
+        description: t("toasts.invalidHttpsPort.description"),
+        variant: "destructive",
+      });
+      return;
+    }
+
     const validationError = validateCorsOriginsInput(
       settings.corsAllowedOrigins,
     );

@@ -104,6 +104,8 @@
     "bridgeOfflineDrops": "bridge offline — drops unavailable"
   },
   "toasts": {
+    "bridgeUnverifiedDesc": "{{action}} was sent, but the mod could not confirm it took effect.",
+    "bridgeOldBridgeDesc": "{{action}} may have worked, but this PanelBridge mod version doesn't report back whether it did. Update the mod to confirm results.",
     "vehicleRepaired": "Vehicle repaired",
     "repairFailed": "Repair failed",
     "fuelFilled": "Fuel filled to 100%",

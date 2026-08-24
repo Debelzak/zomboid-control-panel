@@ -64,7 +64,23 @@ const router = express.Router();
 // instead of silently inheriting the central-login-gate-only exposure this
 // whole file had before (any logged-in role — including moderator — could
 // previously edit sandbox vars, mod lists, or workshop collections).
-router.use(requirePermission("mods.manage"));
+//
+// EXCEPT /thumbnail/:workshopId, carved out below: authService.middleware()
+// (services/auth.js) deliberately never sets req.user for
+// "/api/mods/thumbnail/" — it's loaded via <img> tags, which cannot carry
+// an Authorization header, the same reason /api/map/*tiles/ are exempted
+// there too. Gating this router at the request level with no carve-out
+// re-imposes the very check middleware() intentionally skipped, so
+// req.user is always absent and requirePermission() 401s every thumbnail
+// request, for every user, always — this is exactly the bug that shipped
+// in 9c6ce2e / v1.2.0 (conv-mods-thumbnails). The exemption has to be
+// explicit and live here rather than via route registration order: order
+// is invisible, and the next reorder of this file breaks it again silently.
+const requireModsManage = requirePermission("mods.manage");
+router.use((req, res, next) => {
+  if (req.path.startsWith("/thumbnail/")) return next();
+  return requireModsManage(req, res, next);
+});
 
 // ─── INI write mutex ────────────────────────────────────────────────────────
 // Serialises write operations to the same INI file so concurrent requests
@@ -5451,6 +5467,19 @@ const HASH_MAX_BYTES = 50 * 1024 * 1024;
 
 const WALK_MAX_DEPTH = 20;
 const WALK_MAX_FILES = 50_000;
+
+// Global cap on how many entries buildFileIndex() will accumulate across ALL
+// mods combined (panel-oom-buildfileindex-unbounded). WALK_MAX_FILES bounds
+// a single mod's walk, but ctx.left is created fresh per top-level walkDir()
+// call, so the real ceiling was 50,000 x number of mods -- unbounded by mod
+// count. Measured (synthetic, matching the real entry shape -- workshopId +
+// modId + modName + absPath strings per entry): ~500 bytes/entry, so a
+// heavy modlist (150 mods, several routinely near the per-mod ceiling) can
+// reach millions of entries and gigabytes, reproducing the operator's exact
+// "Mark-Compact thrashing near the limit, then heap OOM" crash. 300,000
+// entries (~150MB worst case) matches the maxEntries budget server.js's
+// wipe-preview countDir() already uses for the same class of problem.
+export const FILE_INDEX_MAX_ENTRIES = 300_000;
 const WALK_SKIP_DIRS = new Set([
   ".git",
   ".svn",
@@ -5473,19 +5502,37 @@ function isInsideRoot(target, root) {
   return target === root || target.startsWith(root + path.sep);
 }
 
+// How many directory entries to process between yields to the event loop.
+// Measured (mods-conflict-scan-unmeasured-at-scale): a single mod sitting at
+// WALK_MAX_FILES (a real, code-enforced ceiling, not a hypothetical one —
+// see the truncation branch below) blocked the event loop for ~690ms in one
+// synchronous burst, because the old sync walkDir() only ever yielded
+// between MODS (buildFileIndex's own loop), never within one mod's walk.
+// One large map/texture mod is enough to freeze every other request on the
+// panel for that long. Yielding every WALK_YIELD_EVERY entries bounds a
+// single burst to a few tens of ms regardless of how large one mod's media
+// tree is.
+const WALK_YIELD_EVERY = 1000;
+
 // Recursively collect all files under a directory, returning relative paths.
 // Guarded with depth and file-count limits to prevent runaway traversal.
 // Returns { files: string[], truncated: boolean }
-function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
+async function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
   // The budget is shared across the whole recursion; a per-call limit let a
-  // deep tree return many times the intended maximum.
-  const ctx = _ctx || { left: WALK_MAX_FILES, root: safeRealpath(dir) || dir };
+  // deep tree return many times the intended maximum. sinceYield is shared
+  // the same way, so the yield cadence is measured across the whole mod's
+  // walk, not reset every time recursion descends into a new subdirectory.
+  const ctx = _ctx || {
+    left: WALK_MAX_FILES,
+    root: safeRealpath(dir) || dir,
+    sinceYield: 0,
+  };
   const results = [];
   let truncated = false;
   if (_depth > WALK_MAX_DEPTH) return { files: results, truncated };
   let entries;
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch (e) {
     log.debug(`walkDir: could not read ${dir}: ${e.message}`);
     return { files: results, truncated };
@@ -5494,6 +5541,10 @@ function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
     if (ctx.left <= 0) {
       truncated = true;
       break;
+    }
+    if (++ctx.sinceYield >= WALK_YIELD_EVERY) {
+      ctx.sinceYield = 0;
+      await yieldTick();
     }
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     const fullPath = path.join(dir, entry.name);
@@ -5505,7 +5556,7 @@ function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
       const real = safeRealpath(fullPath);
       if (!real || !isInsideRoot(real, ctx.root)) continue;
       try {
-        isDirectory = fs.statSync(real).isDirectory();
+        isDirectory = (await fs.promises.stat(real)).isDirectory();
       } catch (e) {
         log.debug(`walkDir: could not stat link ${fullPath}: ${e.message}`);
         continue;
@@ -5514,7 +5565,7 @@ function walkDir(dir, prefix = "", _depth = 0, _ctx = null) {
     if (isDirectory) {
       // Skip version-control and metadata directories — never game content
       if (WALK_SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-      const sub = walkDir(fullPath, rel, _depth + 1, ctx);
+      const sub = await walkDir(fullPath, rel, _depth + 1, ctx);
       results.push(...sub.files);
       if (sub.truncated) truncated = true;
     } else {
@@ -5957,22 +6008,29 @@ async function readIniModLists() {
 // Build the file index and collect per-mod metadata.
 // Calls `onModScanned(modId, modName, wsId, fileCount)` for each mod.
 // If `activeModIds` is provided, only mod directories whose ID is in that set are scanned.
-async function buildFileIndex(
+// `maxEntries` defaults to the real production cap; tests override it with a
+// small value (same pattern as server.js's countDir(dir, budget)) so the cap
+// mechanism is provable without a fixture at the real 300,000-entry scale.
+export async function buildFileIndex(
   workshopIds,
   serverPath,
   onModScanned,
   activeModIds,
+  maxEntries = FILE_INDEX_MAX_ENTRIES,
 ) {
   const fileIndex = {};
   const modInfoMap = {};
   let modsScanned = 0;
   let modsNotFound = 0;
   let modsSkippedInactive = 0;
+  let indexedEntries = 0;
+  let indexTruncated = false;
   const warnings = [];
   const totalWorkshopIds = workshopIds.length;
   const activeSet = activeModIds ? new Set(activeModIds) : null;
 
-  for (let wsIdx = 0; wsIdx < totalWorkshopIds; wsIdx++) {
+  outer: for (let wsIdx = 0; wsIdx < totalWorkshopIds; wsIdx++) {
+    if (indexTruncated) break;
     const wsId = workshopIds[wsIdx];
     if (!/^\d{1,15}$/.test(wsId)) {
       warnings.push(`Skipped invalid workshop ID: ${wsId.slice(0, 20)}`);
@@ -6004,6 +6062,7 @@ async function buildFileIndex(
     }
     let modsFoundInThisWs = 0;
     for (const modDir of modEntries) {
+      if (indexTruncated) break;
       if (!modDir.isDirectory()) continue;
       const modDirPath = path.join(searchBase, modDir.name);
       // Collect all media paths — direct + B42 versioned subfolders (42/, 42.X/, common/)
@@ -6044,14 +6103,37 @@ async function buildFileIndex(
       modsFoundInThisWs++;
       let totalFileCount = 0;
       for (const mediaPath of mediaPaths) {
-        const { files, truncated } = walkDir(mediaPath);
+        if (indexTruncated) break;
+        const { files, truncated } = await walkDir(mediaPath);
         if (truncated) {
           warnings.push(
             `${modName} (${wsId}): file scan hit the 50,000 file limit — some files were skipped`,
           );
         }
         totalFileCount += files.length;
+        // Measured (mods-conflict-scan-unmeasured-at-scale): this loop, not
+        // walkDir() itself, was the real event-loop-blocking cost. A mod at
+        // the WALK_MAX_FILES ceiling (50,000 files -- a real, code-enforced
+        // case, see the truncation branch above) blocked here for ~316ms in
+        // one unbroken synchronous burst, because this loop had no yield of
+        // its own; the outer per-mod loop only yields once ALL of a mod's
+        // media paths are fully indexed. Same WALK_YIELD_EVERY cadence as
+        // walkDir(), so one giant mod can't freeze every other request on
+        // the panel for the length of its own indexing.
+        let sinceYield = 0;
         for (const relFile of files) {
+          // Global cap (panel-oom-buildfileindex-unbounded): WALK_MAX_FILES
+          // only bounds ONE mod's walk. Without this, fileIndex keeps
+          // accumulating entries across every mod combined, unbounded by mod
+          // count — this is the check that actually stops the OOM. Bail out
+          // of the whole scan (not just this mod) the moment the cap is hit;
+          // continuing to walk further mods after the index is already full
+          // just burns more CPU and memory building `files` arrays nothing
+          // will use.
+          if (indexedEntries >= maxEntries) {
+            indexTruncated = true;
+            break outer;
+          }
           const normalizedPath = relFile.replace(/\\/g, "/").toLowerCase();
           if (!fileIndex[normalizedPath]) {
             fileIndex[normalizedPath] = [];
@@ -6062,6 +6144,11 @@ async function buildFileIndex(
             modName,
             absPath: path.join(mediaPath, relFile),
           });
+          indexedEntries++;
+          if (++sinceYield >= WALK_YIELD_EVERY) {
+            sinceYield = 0;
+            await yieldTick();
+          }
         }
       }
       if (onModScanned)
@@ -6083,12 +6170,21 @@ async function buildFileIndex(
     // Yield after each workshop item so SSE writes and incoming requests aren't starved
     await yieldTick();
   }
+  if (indexTruncated) {
+    // A truncated scan is a wrong answer presented as a complete one unless
+    // it says so — both here (a machine-checkable field) and in `warnings`
+    // (what the UI already surfaces to the operator, see ConflictsPanel.tsx).
+    warnings.push(
+      `File index reached the global ${maxEntries.toLocaleString()}-entry limit — the conflict scan is incomplete. Scan fewer mods at once or remove unused ones and retry.`,
+    );
+  }
   return {
     fileIndex,
     modInfoMap,
     modsScanned,
     modsNotFound,
     modsSkippedInactive,
+    truncated: indexTruncated,
     warnings,
   };
 }
@@ -6820,6 +6916,7 @@ router.get("/conflicts", async (req, res) => {
         modsScanned: 0,
         missingDeps: [],
         modLoadOrder: modIdsFromIni,
+        truncated: false,
         warnings: [],
         scanDurationMs: Date.now() - scanStart,
       });
@@ -6830,6 +6927,7 @@ router.get("/conflicts", async (req, res) => {
       modsScanned,
       modsNotFound,
       modsSkippedInactive,
+      truncated,
       warnings,
     } = await buildFileIndex(workshopIds, serverPath, null, modIdsFromIni);
     const {
@@ -6883,6 +6981,7 @@ router.get("/conflicts", async (req, res) => {
       steamDeps,
       idCollisions,
       modLoadOrder: modIdsFromIni,
+      truncated,
       warnings,
       scanDurationMs: Date.now() - scanStart,
     };
@@ -6988,6 +7087,7 @@ router.get("/conflicts/stream", async (req, res) => {
         totalWorkshopIds: 0,
         missingDeps: [],
         modLoadOrder: modIdsFromIni,
+        truncated: false,
         warnings: [],
         scanDurationMs: Date.now() - scanStart,
       });
@@ -7002,6 +7102,7 @@ router.get("/conflicts/stream", async (req, res) => {
       modsScanned,
       modsNotFound,
       modsSkippedInactive,
+      truncated,
       warnings,
     } = await buildFileIndex(
       workshopIds,
@@ -7139,6 +7240,7 @@ router.get("/conflicts/stream", async (req, res) => {
       steamDeps,
       idCollisions,
       modLoadOrder: modIdsFromIni,
+      truncated,
       warnings,
       scanDurationMs: Date.now() - scanStart,
     };
@@ -8241,6 +8343,16 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
 // Cache lives at <dataDir>/mod-thumbnails/<workshopId>.img — single file per
 // mod, no extension games. Content-Type is always reported as image/jpeg;
 // browsers handle the actual decoding regardless (Steam serves JPEG or PNG).
+//
+// A resolution FAILURE is never written to that disk cache (there is nothing
+// worth persisting), which used to mean a host where resolution is broken —
+// missing preview_url and an unreachable/failing Steam — re-ran the full
+// Steam round trip for every tracked mod on every single page load, forever.
+// THUMB_FAIL_CACHE remembers a failure for THUMB_FAIL_TTL_MS so it can be
+// skipped cheaply instead of retried immediately, without ever writing
+// anything to disk, so it can never be confused with a real cached image.
+// It must expire — a transient outage should not blank a thumbnail forever —
+// so failures are retried periodically rather than cached indefinitely.
 const THUMB_FETCH_TIMEOUT_MS = 12_000;
 const THUMB_MAX_BYTES = 5 * 1024 * 1024; // 5 MB hard cap
 const THUMB_INFLIGHT = new Map(); // workshopId → Promise<Buffer|null>
@@ -8248,6 +8360,51 @@ const THUMB_EMPTY_GIF = Buffer.from(
   "R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
   "base64",
 );
+// Retry a failed resolve sooner than "never" — same interval mapProxy.js
+// uses for the same reason (B42_DIR_RETRY_MS), for consistency across the
+// codebase's failed-external-resolution retry windows.
+const THUMB_FAIL_TTL_MS = 5 * 60 * 1000;
+const THUMB_FAIL_CACHE = new Map(); // workshopId → { failedAt, reason }
+let _thumbLastFailure = null; // { workshopId, reason, at } — outlives any one entry's TTL, for diagnostics
+
+function recordThumbFailure(wsId, reason) {
+  const failedAt = Date.now();
+  THUMB_FAIL_CACHE.set(wsId, { failedAt, reason });
+  _thumbLastFailure = { workshopId: wsId, reason, at: failedAt };
+}
+
+function clearThumbFailure(wsId) {
+  THUMB_FAIL_CACHE.delete(wsId);
+}
+
+// Live (non-expired) failure entry for wsId, or null. Prunes the entry as a
+// side effect once it has expired, so no separate cleanup timer is needed.
+function liveThumbFailure(wsId) {
+  const entry = THUMB_FAIL_CACHE.get(wsId);
+  if (!entry) return null;
+  if (Date.now() - entry.failedAt >= THUMB_FAIL_TTL_MS) {
+    THUMB_FAIL_CACHE.delete(wsId);
+    return null;
+  }
+  return entry;
+}
+
+// For Debug diagnostics / the support bundle: how many tracked mods are
+// currently in a failed-resolution state, and what the most recent failure
+// was (which can outlive any individual entry's TTL).
+export async function getThumbnailResolutionStatus() {
+  const now = Date.now();
+  let failing = 0;
+  for (const [wsId, entry] of [...THUMB_FAIL_CACHE]) {
+    if (now - entry.failedAt < THUMB_FAIL_TTL_MS) {
+      failing++;
+    } else {
+      THUMB_FAIL_CACHE.delete(wsId);
+    }
+  }
+  const tracked = await getTrackedMods();
+  return { failing, total: tracked.length, lastError: _thumbLastFailure };
+}
 
 function sendEmptyThumbnail(res) {
   res.setHeader("Content-Type", "image/gif");
@@ -8344,6 +8501,12 @@ router.get("/thumbnail/:workshopId", async (req, res) => {
     /* not cached yet */
   }
 
+  // A recent failure for this mod is remembered — skip straight to the
+  // placeholder with zero network calls instead of retrying every request.
+  if (liveThumbFailure(wsId)) {
+    return sendEmptyThumbnail(res);
+  }
+
   // Coalesce concurrent requests for the same mod.
   let pending = THUMB_INFLIGHT.get(wsId);
   if (!pending) {
@@ -8364,13 +8527,20 @@ router.get("/thumbnail/:workshopId", async (req, res) => {
           }
         }
       }
-      if (!previewUrl) return null;
+      if (!previewUrl) {
+        recordThumbFailure(wsId, "no Steam preview URL available");
+        return null;
+      }
       const buf = await downloadThumbnail(previewUrl);
-      if (!buf) return null;
+      if (!buf) {
+        recordThumbFailure(wsId, "preview image download failed");
+        return null;
+      }
       await fsp.mkdir(cacheDir, { recursive: true });
       const tmp = `${cacheFile}.tmp-${process.pid}-${Date.now()}`;
       await fsp.writeFile(tmp, buf);
       await fsp.rename(tmp, cacheFile);
+      clearThumbFailure(wsId);
       return buf;
     })().finally(() => {
       THUMB_INFLIGHT.delete(wsId);
@@ -8386,6 +8556,7 @@ router.get("/thumbnail/:workshopId", async (req, res) => {
     return res.end(buf);
   } catch (err) {
     log.debug(`Thumbnail fetch failed for ${wsId}: ${err.message}`);
+    recordThumbFailure(wsId, err.message);
     return sendEmptyThumbnail(res);
   }
 });

@@ -43,6 +43,7 @@ import {
   getB42TopFormat,
   getB42ResolutionStatus,
 } from "./mapProxy.js";
+import { getThumbnailResolutionStatus } from "./mods.js";
 import {
   getCandidateZomboidPaths,
   inspectZomboidPath,
@@ -1883,14 +1884,24 @@ async function scanLocalMods(zPath) {
 
 // Recursively scan a save folder. Returns total bytes, .bin chunk count,
 // and any stale lock files (>1h old, which prevent boot). Bounded by
-// MAX_FILES to keep huge saves from making diagnostics hang.
-async function scanSaveStats(saveDir) {
+// MAX_FILES AND by `budgetMs` (wall-clock) so huge saves can't make
+// diagnostics hang -- and so the walk itself self-terminates well before
+// the caller's own outer timeout, instead of relying on that outer race to
+// kill it. Each individual readdir/stat is already time-boxed by
+// safeReaddir/safeStat (FS_TIMEOUT_MS), so the walk checks its deadline
+// BEFORE issuing the next one rather than mid-flight -- Node's fs.promises
+// readdir/stat don't accept an AbortSignal, so a call already in flight
+// when the deadline passes can't be cancelled, only not-followed-by-another.
+// That bounds the "still running after the caller stopped waiting" tail to
+// at most one FS_TIMEOUT_MS, not the open-ended rest of a 50,000-file walk.
+async function scanSaveStats(saveDir, budgetMs) {
   if (!saveDir) return null;
   const exists = await safePathExists(saveDir);
   if (!exists) return null;
   const MAX_FILES = 50000;
   const staleAfterMs = 60 * 60 * 1000;
   const now = Date.now();
+  const deadline = now + budgetMs;
   let totalBytes = 0;
   let chunks = 0;
   let staleLocks = [];
@@ -1898,14 +1909,14 @@ async function scanSaveStats(saveDir) {
   let truncated = false;
 
   const walk = async (dir) => {
-    if (visited >= MAX_FILES) {
+    if (visited >= MAX_FILES || Date.now() >= deadline) {
       truncated = true;
       return;
     }
     const names = await safeReaddir(dir);
     if (!names) return;
     for (const name of names) {
-      if (++visited > MAX_FILES) {
+      if (++visited > MAX_FILES || Date.now() >= deadline) {
         truncated = true;
         return;
       }
@@ -2115,6 +2126,191 @@ function fmtAge(ms) {
   return `${Math.round(h / 24)}d ago`;
 }
 
+// Mod thumbnails silently fail on every real request (GET /thumbnail/:id
+// returns HTTP 200 with a 1x1 transparent GIF on every failure path, so the
+// browser's onError can never fire), so this check is the only place a
+// failed resolution is ever surfaced. DELIBERATE DEVIATION from every other
+// check in this file: it counts ALL tracked mods host-wide, not just the
+// active server's. If it were server-scoped, a host with zero Steam access
+// whose active server happens to track no mods would report "0 of 0
+// failing" -- a clean green tick while everything is actually broken.
+// Thumbnails resolve per-mod, not per-server, and
+// getThumbnailResolutionStatus() itself counts unscoped -- this follows that
+// rather than re-scoping it to match the rest of the tab. Extracted as its
+// own function (mirrors buildSystemInfo/buildServerConfigSummary etc.
+// earlier in this file) so it's independently testable without invoking the
+// whole GET /diagnostics handler.
+function buildThumbnailResolutionCheck(thumbStatus) {
+  const failing = thumbStatus?.failing;
+  const total = thumbStatus?.total;
+  const lastError = thumbStatus?.lastError ?? null;
+
+  if (typeof failing !== "number" || typeof total !== "number") {
+    // Unrecognised shape from getThumbnailResolutionStatus() -- fail closed
+    // to warn, not ok, same rule as worldmap.tiles.buildDetect.
+    return diagWarn(
+      "mods.thumbnailResolution",
+      "Mod thumbnail status unavailable",
+      "Could not determine mod thumbnail resolution status.",
+      { category: "services" },
+    );
+  }
+
+  if (failing === 0) {
+    return diagOk(
+      "mods.thumbnailResolution",
+      "Mod thumbnails resolving normally",
+      total > 0
+        ? `${total} tracked mod${total === 1 ? "" : "s"}, all thumbnails resolving.`
+        : "No thumbnail resolution failures.",
+      { category: "services", params: { total } },
+    );
+  }
+
+  if (failing < total) {
+    const reason = lastError?.reason || "unknown reason";
+    const workshopId = lastError?.workshopId || "unknown";
+    const age = lastError ? fmtAge(Date.now() - lastError.at).replace(/ ago$/, "") : "unknown";
+    return diagWarn(
+      "mods.thumbnailResolution",
+      "Some mod thumbnails are not resolving",
+      `${failing} of ${total} tracked mods currently have no thumbnail. Last failure: ${reason} (Workshop ID ${workshopId}, ${age} ago).`,
+      {
+        category: "services",
+        hint: "Usually means those specific Workshop items were deleted, made private, or region-restricted on Steam — check the Workshop ID above on steamcommunity.com. Resolution retries automatically every 5 minutes; this clears on its own if the item is public and Steam is reachable.",
+        params: { failing, total, reason, workshopId, age },
+      },
+    );
+  }
+
+  const reason = lastError?.reason || "unknown reason";
+  return diagFail(
+    "mods.thumbnailResolution",
+    "No mod thumbnails are resolving",
+    `All ${total} tracked mods currently have no thumbnail. Last failure: ${reason}.`,
+    {
+      category: "services",
+      hint: "Every mod failing at once, rather than just a few, usually means this host cannot reach Steam at all rather than a problem with any individual mod — check outbound HTTPS to api.steampowered.com and steamuserimages-a.akamaihd.net / *.steamstatic.com / *.akamaihd.net / images.steamusercontent.com (firewall, proxy, or DNS). Once reachable, thumbnails resolve automatically within 5 minutes — no restart needed.",
+      params: { total, reason },
+    },
+  );
+}
+
+// Windowed inspection of the panel's own RCON command history (the same log
+// the Console page's History panel renders) for a real refusal FROM THE
+// GAME -- deliberately EXCLUDES connection/timeout failures, which the
+// rcon.connected check above already covers; reporting one outage through
+// two checks would be redundant, not more informative.
+//
+// A game-side rejection re-matches one of RconService.classifyRconResponse's
+// known patterns even after being persisted: logCommand() stores
+// rejection.error (the already-describe()-transformed text), not the raw
+// RCON reply, and each of the 4 known patterns still matches its own
+// transformed output (verified against server/services/rcon.js's
+// KNOWN_RCON_REJECTIONS literally, not guessed). A connection-error entry
+// (e.g. "Server is starting...") also carries success:0 but was never run
+// through classifyRconResponse in the first place, so re-classifying it here
+// correctly returns null and excludes it.
+const RCON_REJECTION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const RCON_REJECTION_HISTORY_SCAN_LIMIT = 500; // matches RETENTION.command_history's own cap
+
+// Keyed to the SAME 4 rejection shapes rcon.js's KNOWN_RCON_REJECTIONS
+// classifies, matched here against the persisted (already-transformed) text
+// since classifyRconResponse itself only reports THAT something matched,
+// not WHICH pattern.
+const RCON_REJECTION_REASON_HINTS = [
+  {
+    match: /^Unknown command\b/i,
+    hint: "The command does not exist on this build — commands are added and removed between PZ versions, so it's worth checking it is still right for the installed build.",
+  },
+  {
+    match: /^Wrong arguments\b/i,
+    hint: "The game rejected the arguments. If this started recently, the syntax may have changed in an update — report the exact action to the panel developers.",
+  },
+  {
+    match: /^Not enough rights\b/i,
+    hint: "The RCON account lacks permission on the GAME SERVER. This is the game's own admin access level, separate from this panel's Roles & Permissions — fix in-game or via setaccesslevel.",
+  },
+  {
+    match: /can only be run from in-game/i,
+    hint: "Only works typed in-game, never over RCON. Expected for releasing a safehouse until PanelBridge supports it — not a misconfiguration.",
+  },
+];
+
+// Always present, both states -- not filler: there is no reliable way to
+// flag an UNRECOGNISED rejection shape without an unproven heuristic, so
+// this names where a human should look instead of pretending to cover it.
+const RCON_REJECTIONS_CLOSING_LINE =
+  "Everything the panel can positively identify as a rejection is listed above. For anything that looks wrong but is not, the Console page's command history shows the exact raw response every RCON command received, so a person can spot something no automated check catches.";
+
+// Pure summarizer -- no live RconService needed, `classify` is injected so
+// this (and buildRconCommandRejectionsCheck below) are testable without a
+// real RCON connection. `history` is getCommandHistory()'s raw array
+// (newest first, per appendCapped's default). Returns null if `classify`
+// itself isn't available (no rconService registered) -- distinct from a
+// clean zero-rejections result.
+function summarizeRconRejections(history, classify, { windowMs = RCON_REJECTION_WINDOW_MS, now = Date.now() } = {}) {
+  if (typeof classify !== "function") return null;
+  const cutoff = now - windowMs;
+  const byCommand = new Map();
+  let total = 0;
+  const reasonHints = new Set();
+
+  for (const entry of history || []) {
+    if (entry?.success) continue; // classifyRconResponse only ever fails a success:0 entry
+    const executedAt = new Date(entry?.executed_at).getTime();
+    if (!Number.isFinite(executedAt) || executedAt < cutoff) continue;
+    const rejection = classify(entry?.response);
+    if (!rejection) continue; // a connection/timeout failure, not a game rejection
+
+    total++;
+    byCommand.set(entry.command, (byCommand.get(entry.command) || 0) + 1);
+    const known = RCON_REJECTION_REASON_HINTS.find((r) => r.match.test(entry.response));
+    if (known) reasonHints.add(known.hint);
+  }
+
+  return {
+    total,
+    breakdown: [...byCommand.entries()].map(([command, count]) => ({ command, count })),
+    reasonHints: [...reasonHints],
+  };
+}
+
+function buildRconCommandRejectionsCheck(summary) {
+  if (!summary || typeof summary.total !== "number" || !Array.isArray(summary.breakdown)) {
+    // Unrecognised/unavailable -- fail closed to warn, not ok, same rule as
+    // worldmap.tiles.buildDetect and mods.thumbnailResolution.
+    return diagWarn(
+      "rcon.commandRejections",
+      "RCON command rejection status unavailable",
+      "Could not determine whether the game server has rejected any RCON commands recently.",
+      { category: "rcon", hint: RCON_REJECTIONS_CLOSING_LINE },
+    );
+  }
+
+  if (summary.total === 0) {
+    return diagOk(
+      "rcon.commandRejections",
+      "No RCON command rejections",
+      "No RCON commands have been rejected by the game server recently.",
+      { category: "rcon", hint: RCON_REJECTIONS_CLOSING_LINE },
+    );
+  }
+
+  const list = summary.breakdown.map((b) => `${b.command} (x${b.count})`).join(", ");
+  const hint = [...summary.reasonHints, RCON_REJECTIONS_CLOSING_LINE].join(" ");
+  return diagWarn(
+    "rcon.commandRejections",
+    "The game server has rejected some RCON commands",
+    `${summary.total} commands were rejected by the game server in the last 24 hours: ${list}.`,
+    {
+      category: "rcon",
+      hint,
+      params: { total: summary.total, list },
+    },
+  );
+}
+
 router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   try {
@@ -2243,6 +2439,29 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
         );
       }
 
+      // Deliberately excludes connection/timeout failures -- rcon.connected
+      // above already covers that outage; reporting it through both checks
+      // would double-report the same thing. Own try/catch so a failure here
+      // can't take out checks already pushed above it.
+      try {
+        const summary = summarizeRconRejections(
+          await getCommandHistory(RCON_REJECTION_HISTORY_SCAN_LIMIT),
+          rconService?.classifyRconResponse
+            ? rconService.classifyRconResponse.bind(rconService)
+            : null,
+        );
+        checks.push(buildRconCommandRejectionsCheck(summary));
+      } catch (e) {
+        checks.push(
+          diagWarn(
+            "rcon.commandRejections",
+            "RCON command rejection status unavailable",
+            `Could not determine whether the game server has rejected any RCON commands recently: ${e?.message || "unknown"}`,
+            { category: "rcon" },
+          ),
+        );
+      }
+
       if (modChecker?.isRunning) {
         const interval = Math.round((modChecker.checkInterval || 0) / 60000);
         checks.push(
@@ -2326,6 +2545,25 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           diagSkip("discord.bot", "Discord bot", "Not configured (optional).", {
             category: "services",
           }),
+        );
+      }
+
+      // Mod thumbnails silently fail (the endpoint returns HTTP 200 with a
+      // 1x1 transparent GIF on every failure path), so this is the only
+      // place a failed resolution is ever surfaced. Own try/catch (not the
+      // shared services.error catch below) so a failure here can't take out
+      // the checks already pushed above it, matching every other
+      // collector's degrade-alone contract.
+      try {
+        checks.push(buildThumbnailResolutionCheck(await getThumbnailResolutionStatus()));
+      } catch (e) {
+        checks.push(
+          diagWarn(
+            "mods.thumbnailResolution",
+            "Mod thumbnail status unavailable",
+            `Could not determine mod thumbnail resolution status: ${e?.message || "unknown"}`,
+            { category: "services" },
+          ),
         );
       }
     } catch (e) {
@@ -3354,8 +3592,15 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
           for (const sp of saveDirCandidates) {
             const st = await safeStat(sp);
             if (st && st.isDirectory()) {
+              // scanSaveStats gets a budget comfortably under the outer
+              // withTimeout below, so it almost always finishes (with
+              // truncated: true if it ran out of room) rather than being
+              // raced away -- the outer wrap stays only as a last-resort
+              // safety net. Both `null` (raced away) and `truncated: true`
+              // (self-bounded early exit) mean the same thing to the check
+              // below: this scan could not fully confirm the save is clean.
               saveStats = await withTimeout(
-                scanSaveStats(sp),
+                scanSaveStats(sp, FS_TIMEOUT_MS * 3),
                 FS_TIMEOUT_MS * 4,
                 null,
               );
@@ -3363,31 +3608,8 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               break;
             }
           }
-          if (saveStats && saveStats.staleLocks.length > 0) {
-            checks.push(
-              diagFail(
-                "server.staleLocks",
-                "Stale lock files in save folder",
-                `${saveStats.staleLocks.length} .lock file${saveStats.staleLocks.length === 1 ? "" : "s"} older than 1 hour in ${saveDirUsed}. PZ will refuse to load the save until they are removed.`,
-                {
-                  category: "server",
-                  hint: "Stop the server, delete every *.lock file under the save folder, then restart.",
-                  meta: { staleLocks: saveStats.staleLocks.slice(0, 10) },
-                  // NOTE (flagged to god, not inherited by accident): `dir`
-                  // is the save folder's absolute path. The English fallback
-                  // `message` above already ships it unredacted (message/
-                  // label/hint were never sanitized, only `params` is) --
-                  // but sanitizeErrorParams() WILL redact this specific
-                  // param to "[path]" before a French client ever sees it,
-                  // since it's an absolute path. Net effect: French users
-                  // see strictly less detail here than English users for
-                  // this one check (a translation-richness gap, not a new
-                  // security exposure -- English was already unredacted).
-                  params: { count: saveStats.staleLocks.length, dir: saveDirUsed },
-                },
-              ),
-            );
-          }
+          const staleLocksCheck = buildStaleLocksCheck(saveStats, saveDirUsed);
+          if (staleLocksCheck) checks.push(staleLocksCheck);
           // Save-size info is emitted in the Storage section below — we
           // stash the stats on the response context via a per-request var.
           req._diagSaveStats = saveStats ? { ...saveStats, saveDirUsed } : null;
@@ -4333,6 +4555,63 @@ async function detectSaveBuild(savePath) {
   return "unknown";
 }
 
+// Turns a scanSaveStats() result into the server.staleLocks diagnostics
+// check (or null, when there's nothing to report). Kept as a standalone,
+// module-level function (not inlined at its call site above, and NOT moved
+// up near scanSaveStats itself) so this decision -- fail on a confirmed
+// finding, warn honestly when the scan couldn't finish, stay silent only
+// when it actually confirmed the save is clean -- can be unit tested
+// directly (see server/tests/scanSaveStatsDeadline.test.js), while still
+// living inside the GET /diagnostics-to-GET /worldmap textual range that
+// server/tests/diagnosticsCheckRegistry.test.js scans for
+// diagOk/Fail/Warn/Skip/Info calls to enforce locale coverage -- a call
+// site outside that range is invisible to it. (Deliberately not spelling
+// out that route-registration literal here, so this comment itself can't
+// be mistaken by that test's own indexOf() scan for the boundary it's
+// looking for -- exactly the bug this comment used to cause.)
+function buildStaleLocksCheck(saveStats, saveDirUsed) {
+  if (saveStats && saveStats.staleLocks.length > 0) {
+    return diagFail(
+      "server.staleLocks",
+      "Stale lock files in save folder",
+      `${saveStats.staleLocks.length} .lock file${saveStats.staleLocks.length === 1 ? "" : "s"} older than 1 hour in ${saveDirUsed}. PZ will refuse to load the save until they are removed.`,
+      {
+        category: "server",
+        hint: "Stop the server, delete every *.lock file under the save folder, then restart.",
+        meta: { staleLocks: saveStats.staleLocks.slice(0, 10) },
+        // NOTE (flagged to god, not inherited by accident): `dir` is the
+        // save folder's absolute path. The English fallback `message`
+        // above already ships it unredacted (message/label/hint were never
+        // sanitized, only `params` is) -- but sanitizeErrorParams() WILL
+        // redact this specific param to "[path]" before a French client
+        // ever sees it, since it's an absolute path. Net effect: French
+        // users see strictly less detail here than English users for this
+        // one check (a translation-richness gap, not a new security
+        // exposure -- English was already unredacted).
+        params: { count: saveStats.staleLocks.length, dir: saveDirUsed },
+      },
+    );
+  }
+  if (saveDirUsed && (!saveStats || saveStats.truncated)) {
+    // The check could not finish (raced away by the outer timeout, or
+    // self-truncated at MAX_FILES/the wall-clock budget) -- report that
+    // honestly instead of silently omitting the check. A blank space here
+    // previously meant "confirmed clean" and "gave up looking" identically;
+    // they are not the same finding.
+    return diagWarn(
+      "server.staleLocks",
+      "Could not fully check for stale lock files",
+      `${saveDirUsed} is too large to fully scan for stale lock files within the diagnostics time budget. Stale lock files may be present but undetected.`,
+      {
+        category: "server",
+        hint: "Run \"Delete stale lock files\" to scan and clear in one pass -- it gets a much larger time budget than this automatic check -- or check the save folder manually if the server won't boot.",
+        params: { dir: saveDirUsed },
+      },
+    );
+  }
+  return null;
+}
+
 router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res) => {
   const t0 = Date.now();
   const checks = [];
@@ -4911,17 +5190,40 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
   try {
     log.info("POST /clear-stale-locks");
     const serverManager = req.app.get("serverManager");
-    let running = false;
+    // getServerProcessDetails(), not checkServerRunning() -- the latter
+    // discards the scan's own scanFailed flag and returns a plain boolean,
+    // so a scan that completed but couldn't determine the server's state
+    // (timeout, PowerShell/exec error) came back indistinguishable from
+    // "confirmed stopped" and let this delete proceed, exactly the "yank a
+    // lock the JVM still holds open" case this route's own comment warns
+    // about. Same fail-open class already fixed at /wipe, /delete-files,
+    // chunks.js's delete-chunks/delete-region, backup.js's restore, and
+    // templates.js's apply. A thrown check (or no serverManager at all) also
+    // fails closed now, instead of falling back to the unrelated
+    // serverManager.isRunning flag.
+    let details;
     try {
-      if (typeof serverManager?.checkServerRunning === "function") {
-        running = await serverManager.checkServerRunning();
+      if (typeof serverManager?.getServerProcessDetails === "function") {
+        details = await serverManager.getServerProcessDetails();
       } else {
-        running = !!serverManager?.isRunning;
+        return res.status(503).json({
+          success: false,
+          error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+        });
       }
     } catch {
-      running = !!serverManager?.isRunning;
+      return res.status(503).json({
+        success: false,
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+      });
     }
-    if (running) {
+    if (details.scanFailed) {
+      return res.status(503).json({
+        success: false,
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+      });
+    }
+    if (details.running) {
       return res.status(409).json({
         success: false,
         error:
@@ -4977,34 +5279,34 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
     const MAX_FILES = 50000;
     const staleAfterMs = 60 * 60 * 1000;
     const now = Date.now();
+    // User-triggered, not a background poll -- generous budget compared to
+    // scanSaveStats's diagnostics-cycle one, since letting a deliberate
+    // delete run longer is better than truncating it early. Still bounded:
+    // same reasoning as scanSaveStats above, an unbounded raw
+    // fs.promises.readdir/stat here could hang the whole request forever on
+    // a dead network mount, so this walk gets the same FS_TIMEOUT_MS-bounded
+    // safeReaddir/safeStat plus its own wall-clock deadline.
+    const deadline = now + 30000;
     const deleted = [];
     const failed = [];
     let visited = 0;
     let truncated = false;
 
     const walk = async (dir) => {
-      if (visited >= MAX_FILES) {
+      if (visited >= MAX_FILES || Date.now() >= deadline) {
         truncated = true;
         return;
       }
-      let names;
-      try {
-        names = await fs.promises.readdir(dir);
-      } catch {
-        return;
-      }
+      const names = await safeReaddir(dir);
+      if (!names) return;
       for (const name of names) {
-        if (++visited > MAX_FILES) {
+        if (++visited > MAX_FILES || Date.now() >= deadline) {
           truncated = true;
           return;
         }
         const full = path.join(dir, name);
-        let st;
-        try {
-          st = await fs.promises.stat(full);
-        } catch {
-          continue;
-        }
+        const st = await safeStat(full);
+        if (!st) continue;
         if (st.isDirectory()) {
           await walk(full);
         } else if (
@@ -5025,7 +5327,8 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
     await walk(saveDir);
 
     log.info(
-      `Cleared ${deleted.length} stale lock file(s) from ${saveDir} (${failed.length} failed)`,
+      `Cleared ${deleted.length} stale lock file(s) from ${saveDir} (${failed.length} failed)` +
+        (truncated ? " -- scan stopped early, save too large to fully check in one pass" : ""),
     );
     res.json({
       success: true,
@@ -5036,7 +5339,9 @@ router.post("/clear-stale-locks", requirePermission("diagnostics.manage"), async
       message:
         `Removed ${deleted.length} stale lock file${deleted.length === 1 ? "" : "s"}` +
         (failed.length > 0 ? ` (${failed.length} could not be deleted)` : "") +
-        ".",
+        (truncated
+          ? ". Stopped early -- this save is too large to fully check in one pass, so some stale lock files may remain undetected."
+          : ".") ,
     });
   } catch (error) {
     log.error(`Failed to clear stale locks: ${error.message}`);
@@ -5356,3 +5661,13 @@ export {
   buildBackupsSummary,
   buildDiscordBotStatus,
 };
+// Exported for direct unit testing of the GET /diagnostics thumbnail-
+// resolution check -- see server/tests/thumbnailResolutionCheck.test.js.
+export { buildThumbnailResolutionCheck };
+// Exported for direct unit testing of the GET /diagnostics RCON
+// command-rejection check -- see server/tests/rconCommandRejectionsCheck.test.js.
+export { summarizeRconRejections, buildRconCommandRejectionsCheck };
+// Exported for direct unit testing of the stale-lock save-folder walk's
+// deadline behavior and its diagnostics-check decision -- see
+// server/tests/scanSaveStatsDeadline.test.js.
+export { scanSaveStats, buildStaleLocksCheck };

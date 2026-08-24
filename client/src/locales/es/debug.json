@@ -452,6 +452,11 @@
             "label": "Archivos de bloqueo obsoletos en la carpeta de partidas guardadas",
             "message": "Archivos .lock con más de 1 hora de antigüedad en {{dir}}: {{count}}. PZ no podrá cargar la partida guardada hasta que se eliminen.",
             "hint": "Detener el servidor, eliminar todos los archivos *.lock de la carpeta de partidas guardadas y reiniciar."
+          },
+          "warn": {
+            "label": "No se pudo comprobar por completo si hay archivos de bloqueo obsoletos",
+            "message": "{{dir}} es demasiado grande para explorarse por completo en busca de archivos de bloqueo obsoletos dentro del tiempo asignado al diagnóstico. Puede haber archivos de bloqueo obsoletos presentes sin detectar.",
+            "hint": "Ejecuta «Eliminar archivos de bloqueo obsoletos» para explorar y limpiar en un solo paso — dispone de un tiempo mucho mayor que esta comprobación automática — o revisa la carpeta de guardado manualmente si el servidor no arranca."
           }
         },
         "jreWorks": {

@@ -223,9 +223,23 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
       return res.status(400).json({ error: "Invalid backup file", code: ErrorCode.BACKUP_INVALID_FILE });
     }
 
-    // Check if server is running
-    const isRunning = await serverManager.checkServerRunning();
-    if (isRunning) {
+    // Check if server is running. checkServerRunning() collapses a FAILED
+    // detection scan into a plain `false` -- indistinguishable from a
+    // confirmed-stopped server -- which would let this restore silently
+    // overwrite the live world save while the server might still be running
+    // and holding those files open. getServerProcessDetails() exposes that
+    // distinction via scanFailed, so use it directly and fail closed when
+    // detection itself failed, same as /wipe, /delete-files and
+    // chunks.js's delete-chunks/delete-region.
+    const processDetails = await serverManager.getServerProcessDetails();
+    if (processDetails.scanFailed) {
+      return res.status(503).json({
+        success: false,
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      });
+    }
+    if (processDetails.running) {
       return res.status(400).json({
         success: false,
         error:

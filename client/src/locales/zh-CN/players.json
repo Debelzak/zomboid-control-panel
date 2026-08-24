@@ -349,6 +349,8 @@
   "toasts": {
     "successTitle": "成功",
     "successDesc": "{{action}}已完成",
+    "bridgeUnverifiedDesc": "{{action}} 已发送，但模组无法确认是否生效。",
+    "bridgeOldBridgeDesc": "{{action}} 可能已生效，但此版本的 PanelBridge 模组不会回报结果。请更新模组以确认结果。",
     "errorTitle": "错误",
     "actionFailedFallback": "操作失败",
     "noteSavedTitle": "备注已保存",

@@ -1,3 +1,12 @@
+> **RECONCILED 2026-08-24 (fork):** FIXED — all 29 dead branches across all 9 commits in the table
+> below verified against current source. Confirmed all 9 commit hashes exist and match their
+> described work exactly (`git show --stat -s <hash>` for each). Spot-checked that the fixes are
+> durable (not reverted by a later commit): the most recent commit touching `WorldMap.tsx` is
+> `dff85f4`, an unrelated later feature commit, not a revert of `f234e77`. This document is itself a
+> completed-work retrospective (every row already names its fixing commit), not an open-findings
+> list — nothing here needed re-derivation, only verification that the named commits are real and
+> still in effect. No LIVE or INVALID items.
+
 # Jim's Dead-Else-Branch Sweep — full reasoning
 
 Angela found the first instance of this bug class (an OIDC test-connection handler). God gave me

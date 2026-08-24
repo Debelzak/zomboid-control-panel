@@ -14,6 +14,7 @@ import {
 import { sanitizeError } from "../utils/sanitize.js";
 import { captureBackupSnapshot } from "../utils/backupSnapshot.js";
 import { addBackupRecord, removeBackupRecord } from "./backupRecords.js";
+import { invalidateMapFolderScan } from "../routes/chunks.js";
 
 // Dynamic import for unzipper (CommonJS module)
 let unzipper;
@@ -1009,6 +1010,13 @@ export class BackupService {
           "Restore may have failed - saves folder not found after extraction",
         );
       }
+
+      // chunks.js's /chunks and /stats routes cache a scan of this save's
+      // map/ folder for a few seconds (see getMapFolderScan()'s comment).
+      // This restore just swapped that whole save in from the archive --
+      // without this, a page reload within the TTL window would show chunk
+      // counts for the PRE-restore map/ contents.
+      invalidateMapFolderScan(path.join(savesPath, "map"));
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       log.info(`Restore completed in ${duration}s`);

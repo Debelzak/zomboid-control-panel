@@ -123,7 +123,7 @@ async function setPlayerMode(req, bridgeAction, rconMethod, username, enabled) {
   return {
     ...result,
     via: 'rcon',
-    warning: 'PanelBridge is offline; RCON cannot target another player for this command.',
+    warning: 'PanelBridge is offline; this was sent via RCON instead, which reports less detail about the result.',
   };
 }
 

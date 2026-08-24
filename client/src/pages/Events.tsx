@@ -56,6 +56,7 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { rconApi, serverApi, playersApi, panelBridgeApi } from '@/lib/api'
+import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
@@ -251,7 +252,7 @@ function getVehiclePresets(t: TFunction) {
 // PanelBridge operation catalog. `args` are literal JSON payload examples with
 // placeholder values (e.g. "PlayerName") — API templates, not prose, so they
 // stay in English. `label`/`description` are real UI text and get translated.
-function getBridgeOperationTemplates(t: TFunction): Record<string, { label: string; description: string; args: string }> {
+export function getBridgeOperationTemplates(t: TFunction): Record<string, { label: string; description: string; args: string }> {
   return {
     getSafehouses: { label: t('operations.getSafehouses.label'), description: t('operations.getSafehouses.description'), args: '{}' },
     safehouseAddPlayer: { label: t('operations.safehouseAddPlayer.label'), description: t('operations.safehouseAddPlayer.description'), args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName"\n}' },
@@ -259,11 +260,9 @@ function getBridgeOperationTemplates(t: TFunction): Record<string, { label: stri
     safehouseSetOwner: { label: t('operations.safehouseSetOwner.label'), description: t('operations.safehouseSetOwner.description'), args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "owner": "PlayerName"\n}' },
     safehouseSetRespawn: { label: t('operations.safehouseSetRespawn.label'), description: t('operations.safehouseSetRespawn.description'), args: '{\n  "safehouseRef": "SafehouseIdOrTitle",\n  "username": "PlayerName",\n  "enabled": true\n}' },
     getFactions: { label: t('operations.getFactions.label'), description: t('operations.getFactions.description'), args: '{}' },
-    createFaction: { label: t('operations.createFaction.label'), description: t('operations.createFaction.description'), args: '{\n  "name": "FactionName",\n  "owner": "PlayerName"\n}' },
     factionAddPlayer: { label: t('operations.factionAddPlayer.label'), description: t('operations.factionAddPlayer.description'), args: '{\n  "factionName": "FactionName",\n  "username": "PlayerName"\n}' },
     factionRemovePlayer: { label: t('operations.factionRemovePlayer.label'), description: t('operations.factionRemovePlayer.description'), args: '{\n  "factionName": "FactionName",\n  "username": "PlayerName"\n}' },
     factionSetTag: { label: t('operations.factionSetTag.label'), description: t('operations.factionSetTag.description'), args: '{\n  "factionName": "FactionName",\n  "tag": "TAG"\n}' },
-    removeFaction: { label: t('operations.removeFaction.label'), description: t('operations.removeFaction.description'), args: '{\n  "factionName": "FactionName"\n}' },
     getVehiclesDetailed: { label: t('operations.getVehiclesDetailed.label'), description: t('operations.getVehiclesDetailed.description'), args: '{}' },
     triggerSwarmEvent: { label: t('operations.triggerSwarmEvent.label'), description: t('operations.triggerSwarmEvent.description'), args: '{\n  "count": 25,\n  "x1": 10500,\n  "y1": 9800,\n  "x2": 10600,\n  "y2": 9900\n}' },
     runEventSequence: { label: t('operations.runEventSequence.label'), description: t('operations.runEventSequence.description'), args: '{\n  "steps": [\n    { "kind": "chat", "message": "Event incoming", "channel": "general" },\n    { "kind": "weather", "weatherType": "storm", "duration": 2 }\n  ]\n}' },
@@ -309,7 +308,7 @@ interface BridgeResultData {
   timestamp: string
 }
 
-function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationForm> {
+export function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationForm> {
   const f = t as (key: string) => string
   return {
     getSafehouses: { fields: [] },
@@ -339,12 +338,6 @@ function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationFo
       ],
     },
     getFactions: { fields: [] },
-    createFaction: {
-      fields: [
-        { key: 'name', label: f('operationForms.factionName'), type: 'text', required: true, placeholder: 'FactionName', maxLength: 64 },
-        { key: 'owner', label: f('operationForms.ownerUsername'), type: 'combo', required: true, placeholder: f('operationForms.selectPlayer') },
-      ],
-    },
     factionAddPlayer: {
       fields: [
         { key: 'factionName', label: f('operationForms.factionName'), type: 'combo', required: true, placeholder: f('operationForms.selectFaction') },
@@ -370,11 +363,6 @@ function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationFo
           pattern: /^[A-Za-z0-9_-]{1,12}$/,
           patternHint: f('operationForms.tagPatternHint'),
         },
-      ],
-    },
-    removeFaction: {
-      fields: [
-        { key: 'factionName', label: f('operationForms.factionName'), type: 'combo', required: true, placeholder: f('operationForms.selectFaction') },
       ],
     },
     getVehiclesDetailed: { fields: [] },
@@ -496,6 +484,40 @@ function getBridgeOperationForms(t: TFunction): Record<string, BridgeOperationFo
       ],
     },
   }
+}
+
+export function getBridgeOperationGroups(t: TFunction) {
+  return [
+    {
+      id: 'territory',
+      label: t('operationGroups.territory.label'),
+      description: t('operationGroups.territory.description'),
+      // createFaction and removeFaction are deliberately absent: Faction.createFaction
+      // and faction:removeFaction do not exist anywhere in the real B42 jar (confirmed
+      // by a full 23,740-class scan) -- offering them was a control that always failed
+      // with no path to ever working, dressed up as a normal quick-pick button. The
+      // remaining faction operations below call real methods and work.
+      operations: ['getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn', 'getFactions', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag'],
+    },
+    {
+      id: 'vehicles',
+      label: t('operationGroups.vehicles.label'),
+      description: t('operationGroups.vehicles.description'),
+      operations: ['getVehiclesDetailed'],
+    },
+    {
+      id: 'events',
+      label: t('operationGroups.events.label'),
+      description: t('operationGroups.events.description'),
+      operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot'],
+    },
+    {
+      id: 'moderation',
+      label: t('operationGroups.moderation.label'),
+      description: t('operationGroups.moderation.description'),
+      operations: ['moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID'],
+    },
+  ] as const
 }
 
 const formatPanelTimestamp = (date: Date): string => {
@@ -836,32 +858,7 @@ export default function Events() {
   const vehicles = useMemo(() => getVehiclePresets(t), [t])
   const bridgeOperationTemplates = useMemo(() => getBridgeOperationTemplates(t), [t])
   const bridgeOperationForms = useMemo(() => getBridgeOperationForms(t), [t])
-  const bridgeOperationGroups = useMemo(() => ([
-    {
-      id: 'territory',
-      label: t('operationGroups.territory.label'),
-      description: t('operationGroups.territory.description'),
-      operations: ['getSafehouses', 'safehouseAddPlayer', 'safehouseRemovePlayer', 'safehouseSetOwner', 'safehouseSetRespawn', 'getFactions', 'createFaction', 'factionAddPlayer', 'factionRemovePlayer', 'factionSetTag', 'removeFaction'],
-    },
-    {
-      id: 'vehicles',
-      label: t('operationGroups.vehicles.label'),
-      description: t('operationGroups.vehicles.description'),
-      operations: ['getVehiclesDetailed'],
-    },
-    {
-      id: 'events',
-      label: t('operationGroups.events.label'),
-      description: t('operationGroups.events.description'),
-      operations: ['triggerSwarmEvent', 'runEventSequence', 'getInfrastructureSnapshot'],
-    },
-    {
-      id: 'moderation',
-      label: t('operationGroups.moderation.label'),
-      description: t('operationGroups.moderation.description'),
-      operations: ['moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID'],
-    },
-  ] as const), [t])
+  const bridgeOperationGroups = useMemo(() => getBridgeOperationGroups(t), [t])
   const EVENT_SECTION_GROUPS = useMemo(() => ([
     {
       group: t('groups.weather'),
@@ -1246,17 +1243,33 @@ export default function Events() {
     return rconApi.execute(command)
   }, [])
 
+  // `fn` normally resolves to something this function doesn't inspect (RCON
+  // commands, vehicle spawns, etc. -- no verify concept). A handler that DOES
+  // need to override the generic success toast (createHorde/createHorde2
+  // below, when the mod couldn't confirm the spawn -- see
+  // panelBridgeSpawnHordeFabricatedCount.test.js) resolves to
+  // `{ toastOverride }` instead -- runtime-checked here rather than widening
+  // `fn`'s type, so every other caller is unaffected.
   const handleAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
     setLoading(action)
     try {
-      await fn()
-      const successCopy = getEventSuccessCopy(action, t)
-      toast({
-        title: successCopy.title,
-        description: successCopy.description,
-        variant: 'success' as const,
-      })
-      pushActivity(successCopy.title, true)
+      const result = await fn()
+      const override =
+        result && typeof result === 'object' && 'toastOverride' in result
+          ? (result as { toastOverride: { title: string; description?: string; variant?: 'default' | 'destructive' | 'success' } }).toastOverride
+          : null
+      if (override) {
+        toast(override)
+        pushActivity(override.title, true)
+      } else {
+        const successCopy = getEventSuccessCopy(action, t)
+        toast({
+          title: successCopy.title,
+          description: successCopy.description,
+          variant: 'success' as const,
+        })
+        pushActivity(successCopy.title, true)
+      }
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.commandFailedFallback'))
       toast({
@@ -1341,16 +1354,38 @@ export default function Events() {
     return players[Math.floor(Math.random() * players.length)].name
   }
 
+  // Reports verified:false (never surfaced as ok:false -- see
+  // panelBridgeSpawnHordeFabricatedCount.test.js) when the spawned count was
+  // fabricated from a fallback rather than read back from
+  // VirtualZombieManager. Builds the handleAction toastOverride so
+  // "Horde created" doesn't imply a count the mod couldn't actually confirm.
+  const hordeToastOverride = (
+    actionKey: 'spawnHordeNearPlayer' | 'spawnHordeBehindPlayer',
+    actionLabel: string,
+    response: { data?: { verified?: unknown } | null } | undefined,
+  ) => {
+    const state = getBridgeVerifiedState(actionKey, response?.data)
+    if (state === 'unverifiable') {
+      return { toastOverride: { title: actionLabel, description: t('toasts.bridgeUnverifiedDesc', { action: actionLabel }), variant: 'default' as const } }
+    }
+    if (state === 'old-bridge') {
+      return { toastOverride: { title: actionLabel, description: t('toasts.bridgeOldBridgeDesc', { action: actionLabel }), variant: 'default' as const } }
+    }
+    return undefined
+  }
+
   // Zombie commands — use PanelBridge (CreateSwarm) for proper distance control
-  const createHorde = (count: number, username?: string) => {
+  const createHorde = async (count: number, username?: string) => {
     if (!username) throw new Error(t('toasts.targetPlayerRequiredHorde'))
-    return panelBridgeApi.spawnHordeNear(username, count)
+    const response = await panelBridgeApi.spawnHordeNear(username, count)
+    return hordeToastOverride('spawnHordeNearPlayer', getEventSuccessCopy('Create horde', t).title, response)
   }
 
   // Spawn horde behind the player based on their facing direction
-  const createHorde2 = (count: number, username?: string) => {
+  const createHorde2 = async (count: number, username?: string) => {
     if (!username) throw new Error(t('toasts.targetPlayerRequiredHorde'))
-    return panelBridgeApi.spawnHordeBehind(username, count)
+    const response = await panelBridgeApi.spawnHordeBehind(username, count)
+    return hordeToastOverride('spawnHordeBehindPlayer', getEventSuccessCopy('Create horde (behind)', t).title, response)
   }
 
   // Clear all zombies from loaded cells
@@ -1511,18 +1546,33 @@ export default function Events() {
   const runInlineAction = async (action: string, args: Record<string, unknown>, label: string) => {
     setBridgeLoading(action)
     try {
-      await panelBridgeApi.sendCommand(action, args)
-      toast({
-        title: `${label}`,
-        description: t('toasts.operationCompletedDesc'),
-        variant: 'success' as const,
-      })
+      const response = await panelBridgeApi.sendCommand(action, args)
+      const verifyState = getBridgeVerifiedState(action, response?.data)
+      if (verifyState === 'unverifiable') {
+        toast({
+          title: label,
+          description: t('toasts.bridgeUnverifiedDesc', { action: label }),
+          variant: 'default',
+        })
+      } else if (verifyState === 'old-bridge') {
+        toast({
+          title: label,
+          description: t('toasts.bridgeOldBridgeDesc', { action: label }),
+          variant: 'default',
+        })
+      } else {
+        toast({
+          title: `${label}`,
+          description: t('toasts.operationCompletedDesc'),
+          variant: 'success' as const,
+        })
+      }
       pushActivity(label, true)
       // Re-run the current list operation to refresh table data
       if (bridgeResultData?.operation) {
         try {
           const refreshed = await panelBridgeApi.sendCommand(bridgeResultData.operation, {})
-          const payload = (refreshed as Record<string, unknown>)?.data ?? refreshed
+          const payload = refreshed?.data ?? refreshed
           setBridgeResultData({
             operation: bridgeResultData.operation,
             success: true,
@@ -1574,7 +1624,7 @@ export default function Events() {
     setBridgeFormError(null)
     try {
       const response = await panelBridgeApi.sendCommand(bridgeOperation, parsedArgs)
-      const payload = (response as Record<string, unknown>)?.data ?? response
+      const payload = response?.data ?? response
       setBridgeResultData({
         operation: bridgeOperation,
         success: true,
@@ -1586,11 +1636,27 @@ export default function Events() {
       if (['getSafehouses', 'getFactions', 'getVehiclesDetailed'].includes(bridgeOperation)) {
         setBridgeOptionsRefreshTick((prev) => prev + 1)
       }
-      toast({
-        title: t('toasts.operationExecutedSuffix', { label: bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation }),
-        description: t('toasts.operationCompletedDesc'),
-        variant: 'success' as const,
-      })
+      const operationLabel = bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation
+      const verifyState = getBridgeVerifiedState(bridgeOperation, response?.data)
+      if (verifyState === 'unverifiable') {
+        toast({
+          title: t('toasts.operationExecutedSuffix', { label: operationLabel }),
+          description: t('toasts.bridgeUnverifiedDesc', { action: operationLabel }),
+          variant: 'default',
+        })
+      } else if (verifyState === 'old-bridge') {
+        toast({
+          title: t('toasts.operationExecutedSuffix', { label: operationLabel }),
+          description: t('toasts.bridgeOldBridgeDesc', { action: operationLabel }),
+          variant: 'default',
+        })
+      } else {
+        toast({
+          title: t('toasts.operationExecutedSuffix', { label: operationLabel }),
+          description: t('toasts.operationCompletedDesc'),
+          variant: 'success' as const,
+        })
+      }
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.bridgeOperationFailedFallback'))
       setBridgeResultData({

@@ -278,6 +278,7 @@
     "filesCount": "{{count}} fichiers {{category}} ({{mb}} Mo)",
     "noCategoryFilesFound": "Aucun fichier {{category}} trouvé",
     "total": "Total : {{count}} fichiers ({{mb}} Mo)",
+    "truncatedWarning": "L'analyse s'est arrêtée tôt sur une sauvegarde très volumineuse — ces totaux sont un minimum, les chiffres réels peuvent être plus élevés.",
     "cancel": "Annuler",
     "preview": "Aperçu",
     "wipeNow": "Effacer maintenant",

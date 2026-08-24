@@ -100,6 +100,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
 import { serverApi, serverFilesApi, panelBridgeApi, ApiError, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
+import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
 import { EmptyState } from '@/components/EmptyState'
@@ -637,7 +638,7 @@ function TacticalPanel({
   )
 }
 
-function SectionHeader({
+export function SectionHeader({
   label,
   sublabel,
   icon: Icon,
@@ -651,7 +652,7 @@ function SectionHeader({
   tone?: PanelTone
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 select-none">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3 select-none">
       <span className="flex min-w-0 items-center gap-2">
         {Icon && <Icon className={cn('h-4 w-4 shrink-0', toneText(tone))} />}
         <span className="truncate text-sm font-semibold text-foreground">{label}</span>
@@ -662,7 +663,7 @@ function SectionHeader({
           </span>
         )}
       </span>
-      {action && <div className="flex items-center gap-1.5 shrink-0">{action}</div>}
+      {action && <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:shrink-0">{action}</div>}
     </div>
   )
 }
@@ -1122,7 +1123,7 @@ export default function ServerConfig() {
     try {
       const response = await panelBridgeApi.sendCommand('setSandboxOption', { name: optName, value: newValue }) as {
         success?: boolean
-        data?: { name: string; value: unknown; type: string }
+        data?: { name: string; value: unknown; type: string; verified?: unknown }
         error?: string
       }
       if (response?.success && response.data) {
@@ -1144,7 +1145,21 @@ export default function ServerConfig() {
           }
           return updated
         })
-        toast({ title: t('toasts.optionUpdatedTitle'), description: t('toasts.optionUpdatedDesc', { option: optName }) })
+        // setSandboxOption's Lua handler reports this under `verified` as of
+        // the matched->verified rename (2026-08-23, same pass as the shared
+        // verify-gating helper) -- a mod still running the pre-rename build
+        // reports the identical check under `matched` instead, which reads
+        // here as 'old-bridge' (no `verified` key) until the operator
+        // updates. That's the correct signal either way: an un-migrated mod
+        // genuinely IS an old bridge relative to this contract.
+        const verifyState = getBridgeVerifiedState('setSandboxOption', response.data)
+        toast(
+          verifyState === 'unverifiable'
+            ? { title: t('toasts.optionUpdatedTitle'), description: t('toasts.bridgeUnverifiedDesc', { action: optName }), variant: 'default' }
+            : verifyState === 'old-bridge'
+              ? { title: t('toasts.optionUpdatedTitle'), description: t('toasts.bridgeOldBridgeDesc', { action: optName }), variant: 'default' }
+              : { title: t('toasts.optionUpdatedTitle'), description: t('toasts.optionUpdatedDesc', { option: optName }) },
+        )
 
         // The bridge only changes the live value. Without this the option
         // reverts to whatever SandboxVars.lua still says on the next restart.
@@ -1990,7 +2005,7 @@ export default function ServerConfig() {
               icon={FileText}
               tone={hasIniChanges ? 'warning' : 'primary'}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {hasIniChanges && (
                     <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
                       <AlertTriangle className="mr-1 h-3 w-3" />
@@ -2411,7 +2426,7 @@ export default function ServerConfig() {
               icon={Code}
               tone={hasSandboxChanges ? 'warning' : 'primary'}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {hasSandboxChanges && (
                     <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
                       <AlertTriangle className="mr-1 h-3 w-3" />
@@ -2849,7 +2864,7 @@ export default function ServerConfig() {
               icon={MapPin}
               tone="muted"
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
                     <Button
                       variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
@@ -2968,7 +2983,7 @@ export default function ServerConfig() {
               sublabel={t('spawnRegionsTab.sectionSublabel', { count: spawnRegions.length })}
               icon={Map}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
                     <Button
                       variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
@@ -3128,7 +3143,7 @@ export default function ServerConfig() {
               icon={Puzzle}
               tone={modifiedModSettingsCount > 0 ? 'warning' : 'info'}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {modifiedModSettingsCount > 0 && (
                     <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
                       {t('modSettingsTab.modifiedBadge', { count: modifiedModSettingsCount })}

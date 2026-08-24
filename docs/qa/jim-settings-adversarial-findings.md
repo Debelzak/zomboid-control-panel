@@ -8,6 +8,19 @@ Kevin's brief: (1) input reaching something live, (2) accepted input that silent
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `c005a7d` ("fix(security): a bad HTTPS setting no
+> longer bricks the whole panel"), commit message explicitly citing this finding by name
+> ("Follow-up to 35d3f3f's finding"). Both halves of the recommended fix are in place, verified
+> directly against current source: `config.js`'s `PUT /app-settings` now validates
+> `httpsCertPath`/`httpsKeyPath` (must exist, must be a regular file via `fs.statSync(...).isFile()`,
+> must be readable via `fs.accessSync(..., R_OK)`) and `httpsPort` (integer 1-65535, not equal to the
+> stored `panelPort`, with a bidirectional check on the `panelPort` side too) at save time, matching
+> the finding's recommendation almost verbatim. `certs.js`'s `loadOrCreateCerts` now wraps its
+> `fs.statSync`/`fs.readFileSync` calls in try/catch and falls back to self-signed on any problem,
+> with a comment explicitly cross-referencing this fix. `index.js`'s `httpsServer` now has an
+> `.on("error", ...)` handler (line 608), mirroring `httpServer`'s. Defense-in-depth fully closed,
+> not just the save-time half.
+
 ## FINDING 1 (High): saving an HTTPS cert/key path or port with no validation crashes the ENTIRE panel process on the next restart — WHERE: `server/routes/config.js`'s `PUT /app-settings` (no validation for `httpsCertPath`/`httpsKeyPath`/`httpsPort`) + `server/utils/certs.js:211-223` (`loadOrCreateCerts`, unguarded `fs.readFileSync`) + `server/index.js:2695-2732` (HTTPS boot sequence, no local try/catch) + `server/index.js:138-145` (global `uncaughtException`/`unhandledRejection` → `fatalExit` → `process.exit(1)`)
 
 **WHAT HAPPENS:** Settings → HTTPS tab lets an operator type a certificate path, a key path, and a
@@ -113,6 +126,9 @@ moment of the mistake, and with no in-panel recovery path once it fires.
   case is a reconnect loop that's too fast or effectively never fires, not a crash or an injection.
   Real gap, much lower stakes than Finding 1 — not writing it up as its own finding, noting it here
   instead of silently passing over it.
+  > **RECONCILED 2026-08-24 (fork):** FIXED at `c005a7d` (same commit as Finding 1 — the numeric-
+  > field audit closed this alongside httpsPort/panelPort). `config.js:531-535` now validates
+  > `reconnectInterval` is a whole number 1-60, returning 400 otherwise. Verified directly.
 - **SFTP settings (Bridge tab: host/port/username/password/bridgePath/pollIntervalSeconds):**
   `POST /sftp/test` and `/sftp/configure` both wrap their work in try/catch returning a plain 400 on
   failure (`server/routes/panelBridge.js`) — a bad host/port/path fails the connection attempt

@@ -131,4 +131,20 @@ describe('FileDiffViewer', () => {
     await screen.findByText('+1')
     expect(screen.getByTitle('Café Mod')).toBeInTheDocument()
   })
+
+  it('explains what "shadowed" means as real content when the row is expanded, not just in the badge\'s hover title', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => textDiff() } as any)
+    render(<FileDiffViewer {...baseProps} overlap={{ kind: 'lua-shadow', items: [], total: 0 }} />)
+
+    // Sighted on a mouse, the explanation is already reachable via the
+    // compact badge's hover title -- confirm that's still there too.
+    expect(screen.getByTitle(/no symbol names overlap/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Recipes.lua/ }))
+    await screen.findByText('+1')
+
+    // A touch user who taps the row open (no hover available) must be able
+    // to read the same explanation as real, visible content.
+    expect(screen.getByText(/no symbol names overlap/)).toBeInTheDocument()
+  })
 })

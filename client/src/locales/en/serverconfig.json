@@ -33,7 +33,7 @@
   },
   "stopServerAlert": {
     "title": "The server is running",
-    "description": "You can save changes now. They won't reach the running game until the server restarts."
+    "description": "You can save changes now. Depending on what you're editing, they may need a server restart to take effect — the confirmation after saving will tell you."
   },
   "invalidValuesAlert": {
     "title": "Fix invalid values before saving",
@@ -325,6 +325,8 @@
     "copyFailed": "Failed to copy content to clipboard.",
     "optionUpdatedTitle": "Option Updated",
     "optionUpdatedDesc": "{{option}} set successfully",
+    "bridgeUnverifiedDesc": "{{action}} was sent, but the mod could not confirm it took effect.",
+    "bridgeOldBridgeDesc": "{{action}} may have worked, but this PanelBridge mod version doesn't report back whether it did. Update the mod to confirm results.",
     "appliedNotSavedTitle": "Applied, but not saved",
     "notPersistedDesc": "{{option}} is not in SandboxVars.lua, so it will reset when the server restarts.",
     "willResetFallback": "{{option}} will reset when the server restarts.",

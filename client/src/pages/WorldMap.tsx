@@ -68,8 +68,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib/api'
+import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
+import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
 
@@ -177,6 +179,13 @@ interface MapConfig {
   fullWidth: number
   fullHeight: number
   maxLevel: number
+  // Deepest level actually worth requesting -- maxLevel is the depth a FULL
+  // Deep Zoom pyramid would need for these dimensions, not evidence the
+  // tile host rendered that deep. Defaults to maxLevel for configs that have
+  // no better source (MAP_B41 has no server-side discovery yet); B42 gets a
+  // real discovered value from /api/map/resolve. See GH#109 /
+  // conv-gh109-worldmap-black.
+  renderedMaxLevel: number
   isoX0: number
   isoY0: number
   isoHalfSqr: number
@@ -192,6 +201,11 @@ const MAP_B42: MapConfig = {
   fullWidth: 1157312,
   fullHeight: 509520,
   maxLevel: 21,
+  // Placeholder used before /api/map/resolve returns (e.g. first paint every
+  // session) -- fails CLOSED to the conservative floor, not the full 21,
+  // same as b42ConfigFor's own `??` fallback below. See
+  // conservativeRenderedMaxLevel's comment in worldMapTileFallback.ts.
+  renderedMaxLevel: conservativeRenderedMaxLevel(21),
   isoX0: 518144,
   isoY0: -69648,
   isoHalfSqr: 32,
@@ -239,6 +253,7 @@ function b42ConfigFor(info: {
   width: number
   height: number
   maxLevel: number
+  renderedMaxLevel?: number
   b42Dir?: string
   x0?: number
   y0?: number
@@ -270,6 +285,13 @@ function b42ConfigFor(info: {
     fullWidth: info.width,
     fullHeight: info.height,
     maxLevel: info.maxLevel,
+    // If the server response predates this field (rolling restart) or a
+    // resolve genuinely failed to determine it, fail CLOSED to the
+    // conservative floor -- NOT info.maxLevel, which is exactly the
+    // inflated, never-actually-rendered ceiling this fix exists to stop
+    // trusting. See conservativeRenderedMaxLevel's comment in
+    // worldMapTileFallback.ts.
+    renderedMaxLevel: info.renderedMaxLevel ?? conservativeRenderedMaxLevel(info.maxLevel),
     isoX0,
     isoY0,
     isoHalfSqr,
@@ -291,6 +313,15 @@ const MAP_B41: MapConfig = {
   fullWidth: 2285184,
   fullHeight: 990400,
   maxLevel: 22, // ceil(log2(2285184)) = 22
+  // B41 has no server-side discovery like B42's discoverRenderedMaxLevel
+  // (mapProxy.js) -- it's a legacy/frozen build served from a hardcoded
+  // directory with no dynamic /resolve geometry today. Uses the same
+  // conservativeRenderedMaxLevel floor as B42's own static placeholder
+  // (see its comment above) rather than the full (near-certainly-too-deep)
+  // maxLevel. The coarser-tile fallback in drawTileWithFallback covers
+  // whatever this clamp gets wrong either way. See GH#109 /
+  // conv-gh109-worldmap-black.
+  renderedMaxLevel: conservativeRenderedMaxLevel(22),
   // Isometric projection from pzmap.org (multiply=2):
   // Origin derived from PxToTileOffset {x:-5577, y:10327}
   isoX0: 1017856,  // (5577 + 10327) * 64
@@ -306,6 +337,9 @@ const MIN_SCALE = 0.0003        // canvas px per DZI px (zoomed way out)
 const MAX_SCALE = 1.0           // canvas px per DZI px (zoomed way in)
 const POLL_INTERVAL = 3000
 const MARKER_HIT_RADIUS = 14
+// How many coarser levels drawTileWithFallback will walk up looking for a
+// cached tile to degrade to. See GH#109 / conv-gh109-worldmap-black.
+const MAX_FALLBACK_LEVELS = 8
 
 // ─── Cached top-down vehicle icons ────────────────────────
 // Top-down car silhouette rendered to offscreen canvases. Much more legible
@@ -820,12 +854,21 @@ export default function WorldMap() {
 
   // ─── Map tile cache ─────────────────────────────────────
   // 'empty' marks a tile the upstream server confirmed doesn't exist (a
-  // real HTTP 404, not a network/proxy failure) — e.g. a sparse/edge tile
-  // near the map boundary. pzmap.org's own OpenSeadragon
-  // viewer just renders these blank; treating them as errors caused a
-  // false "tiles offline" banner and visible view jumps on zoom. See the
-  // status-aware fetch() below — an <img> tag alone can't distinguish a
-  // 404 from any other failure.
+  // real HTTP 404, not a network/proxy failure) — e.g. a sparse/edge tile,
+  // or any tile past the real (often much shallower than maxLevel) rendered
+  // coverage depth for this build (see mapProxy.js's discoverRenderedMaxLevel
+  // and GH#109 / conv-gh109-worldmap-black). Treating a 404 as a load error
+  // caused a false "tiles offline" banner and visible view jumps on zoom, so
+  // it's tracked as its own state rather than folded into a failure retry —
+  // see the status-aware fetch() below, since an <img> tag alone can't
+  // distinguish a 404 from any other failure.
+  // pzmap.org's own OpenSeadragon viewer renders an 'empty' tile blank too,
+  // but that is NOT evidence blank is the right answer here — it is a
+  // reference-conformance fact, not a UX one, and it does not survive a real
+  // user staring at a black map (GH#109, filed by Everyday44). The
+  // requirement this state actually carries is: drawMap must fall back to
+  // the nearest cached coarser tile for an 'empty' entry (see
+  // drawTileWithFallback / worldMapTileFallback.ts), never draw nothing.
   const tileCacheRef = useRef<Record<string, HTMLImageElement | null | 'empty'>>({})
 
   // Resolved once per session: lets the browser build direct-to-upstream
@@ -933,10 +976,10 @@ export default function WorldMap() {
     const proxyUrl = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${proxyFloorParam}`
 
     // Loads through this server's proxy — the "smart" path that can tell a
-    // real 404 (tile genuinely absent; the reference OpenSeadragon viewer
-    // on pzmap.org just renders these blank) apart from an
-    // actual connectivity failure, since an <img> tag alone can't see HTTP
-    // status codes. Used directly when we haven't resolved a direct
+    // real 404 (tile genuinely absent — see tileCacheRef's comment above for
+    // what 'empty' means and why it must fall back, not render blank) apart
+    // from an actual connectivity failure, since an <img> tag alone can't
+    // see HTTP status codes. Used directly when we haven't resolved a direct
     // upstream URL yet, and as the fallback when a direct browser load
     // fails for an ambiguous reason (which itself might just be a real
     // 404 — routing it through here resolves that ambiguity).
@@ -1022,6 +1065,35 @@ export default function WorldMap() {
     }
     directImg.src = directUrl
   }, [buildDirectTileUrl])
+
+  // A requested level can be within maxLevel yet still have no tile rendered
+  // upstream for most of the map -- see GH#109 / conv-gh109-worldmap-black
+  // and worldMapTileFallback.ts's header comment. When the exact tile is
+  // missing or still loading, draw the matching sub-rectangle of the
+  // nearest cached COARSER tile instead of leaving the rect untouched.
+  const drawTileWithFallback = useCallback((
+    ctx: CanvasRenderingContext2D,
+    floor: number,
+    level: number,
+    col: number,
+    row: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ) => {
+    const fallback = resolveFallbackTile(
+      level,
+      col,
+      row,
+      (l, c, r) => tileCacheRef.current[`${floor}/${l}/${c}_${r}`],
+      (l, c, r) => loadDziTile(l, c, r),
+      MAX_FALLBACK_LEVELS,
+    )
+    if (!fallback) return false
+    ctx.drawImage(fallback.img, fallback.srcX, fallback.srcY, fallback.srcW, fallback.srcH, dx, dy, dw, dh)
+    return true
+  }, [loadDziTile])
 
   // ─── Coordinate transforms (DZI pixel ↔ canvas, game-tile ↔ DZI) ─
   const dziToCanvas = useCallback(
@@ -1225,7 +1297,14 @@ export default function WorldMap() {
 
     // ── DZI map tiles ──
     const mc = mapCfgRef.current
-    const level = Math.max(0, Math.min(mc.maxLevel, Math.round(mc.maxLevel + Math.log2(s))))
+    // Clamp to renderedMaxLevel, not maxLevel -- maxLevel is the depth a
+    // FULL Deep Zoom pyramid would need for these dimensions, not evidence
+    // the tile host actually rendered that deep (see GH#109 /
+    // conv-gh109-worldmap-black). The DZI addressing math below (levelScale
+    // etc.) still keys off the real maxLevel, since tile level numbering is
+    // defined relative to the full theoretical pyramid regardless of how
+    // much of it actually exists upstream.
+    const level = Math.max(0, Math.min(mc.renderedMaxLevel, Math.round(mc.maxLevel + Math.log2(s))))
     const levelScale = Math.pow(2, mc.maxLevel - level)
     const levelW = Math.ceil(mc.fullWidth / levelScale)
     const levelH = Math.ceil(mc.fullHeight / levelScale)
@@ -1255,15 +1334,21 @@ export default function WorldMap() {
       for (let col = minCol; col <= maxCol; col++) {
         loadDziTile(level, col, row)
         const img = tileCacheRef.current[`${floorRef.current}/${level}/${col}_${row}`]
+        // Floor the origin and pad the size by 1px so adjacent tiles
+        // slightly overlap instead of leaving a sub-pixel seam (visible as
+        // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
+        const dx = Math.floor(col * tileSize * levelScale * s + off.x)
+        const dy = Math.floor(row * tileSize * levelScale * s + off.y)
         if (img && img !== 'empty') {
-          // Floor the origin and pad the size by 1px so adjacent tiles
-          // slightly overlap instead of leaving a sub-pixel seam (visible as
-          // a dark line since tiles draw at globalAlpha 0.9 over a dark bg).
-          const dx = Math.floor(col * tileSize * levelScale * s + off.x)
-          const dy = Math.floor(row * tileSize * levelScale * s + off.y)
           const dw = Math.ceil(img.naturalWidth * levelScale * s) + 1
           const dh = Math.ceil(img.naturalHeight * levelScale * s) + 1
           ctx.drawImage(img, dx, dy, dw, dh)
+        } else {
+          // Exact tile missing (confirmed absent) or still loading -- draw a
+          // coarser cached tile's matching sub-rectangle instead of nothing.
+          const dw = Math.ceil(tileSize * levelScale * s) + 1
+          const dh = Math.ceil(tileSize * levelScale * s) + 1
+          drawTileWithFallback(ctx, floorRef.current, level, col, row, dx, dy, dw, dh)
         }
       }
     }
@@ -1776,7 +1861,7 @@ export default function WorldMap() {
       ctx.stroke()
       ctx.setLineDash([])
     }
-  }, [canvasSize, loadDziTile, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle, t, presetLabel])
+  }, [canvasSize, loadDziTile, drawTileWithFallback, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle, t, presetLabel])
 
   // ─── Animation loop ─────────────────────────────────────
   useEffect(() => {
@@ -2408,18 +2493,35 @@ export default function WorldMap() {
         // with { success: true, ... } -- an in-game failure rejects the
         // promise instead (see processResult()'s pending.reject branch), so
         // handleResponse() throws into the catch below either way. This
-        // never sees res.success === false.
-        await panelBridgeApi.sendCommand('teleportPlayer', {
+        // never sees res.success === false. It CAN resolve with
+        // data.verified !== 'confirmed' though (mod couldn't read back the
+        // new position) -- that's not a rejection, so it needs its own check.
+        const response = await panelBridgeApi.sendCommand('teleportPlayer', {
           username,
           x: Math.round(x),
           y: Math.round(y),
           z: Math.round(z),
         })
         if (!mountedRef.current) return
-        toast({
-          title: t('toasts.teleportedTitle'),
-          description: t('toasts.teleportedDesc', { username, x: Math.round(x), y: Math.round(y) }),
-        })
+        const verifyState = getBridgeVerifiedState('teleportPlayer', response?.data)
+        toast(
+          verifyState === 'unverifiable'
+            ? {
+                title: t('toasts.teleportedTitle'),
+                description: t('toasts.bridgeUnverifiedDesc', { action: t('toasts.teleportedTitle') }),
+                variant: 'default',
+              }
+            : verifyState === 'old-bridge'
+              ? {
+                  title: t('toasts.teleportedTitle'),
+                  description: t('toasts.bridgeOldBridgeDesc', { action: t('toasts.teleportedTitle') }),
+                  variant: 'default',
+                }
+              : {
+                  title: t('toasts.teleportedTitle'),
+                  description: t('toasts.teleportedDesc', { username, x: Math.round(x), y: Math.round(y) }),
+                },
+        )
         fetchPlayerPositions()
       } catch (err) {
         if (!mountedRef.current) return
@@ -2824,7 +2926,16 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('god-card')
                     panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
-                      .then(() => toast({ title: t('dossier.godModeEnabled') }))
+                      .then((response) => {
+                        const state = getBridgeVerifiedState('setGodMode', response?.data)
+                        if (state === 'unverifiable') {
+                          toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('dossier.god') }), variant: 'default' })
+                        } else if (state === 'old-bridge') {
+                          toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('dossier.god') }), variant: 'default' })
+                        } else {
+                          toast({ title: t('dossier.godModeEnabled') })
+                        }
+                      })
                       .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
                       .finally(() => setActionLoading(null))
                   }}
@@ -3007,8 +3118,15 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-fuel')
                     panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, percent: 100 })
-                      .then(() => {
-                        toast({ title: t('toasts.fuelFilled') })
+                      .then((response) => {
+                        const state = getBridgeVerifiedState('vehicleSetFuel', response?.data)
+                        if (state === 'unverifiable') {
+                          toast({ title: t('toasts.fuelFilled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('toasts.fuelFilled') }), variant: 'default' })
+                        } else if (state === 'old-bridge') {
+                          toast({ title: t('toasts.fuelFilled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('toasts.fuelFilled') }), variant: 'default' })
+                        } else {
+                          toast({ title: t('toasts.fuelFilled') })
+                        }
                         fetchOverlays()
                       })
                       .catch((err) => toast({ title: t('toasts.fuelFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
@@ -3023,8 +3141,15 @@ export default function WorldMap() {
                   onClick={() => {
                     setActionLoading('vehicle-battery')
                     panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, charge: 100 })
-                      .then(() => {
-                        toast({ title: t('toasts.batteryCharged') })
+                      .then((response) => {
+                        const state = getBridgeVerifiedState('vehicleSetBattery', response?.data)
+                        if (state === 'unverifiable') {
+                          toast({ title: t('toasts.batteryCharged'), description: t('toasts.bridgeUnverifiedDesc', { action: t('toasts.batteryCharged') }), variant: 'default' })
+                        } else if (state === 'old-bridge') {
+                          toast({ title: t('toasts.batteryCharged'), description: t('toasts.bridgeOldBridgeDesc', { action: t('toasts.batteryCharged') }), variant: 'default' })
+                        } else {
+                          toast({ title: t('toasts.batteryCharged') })
+                        }
                         fetchOverlays()
                       })
                       .catch((err) => toast({ title: t('toasts.batteryFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))

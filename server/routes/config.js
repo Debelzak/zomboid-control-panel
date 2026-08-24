@@ -18,6 +18,39 @@ import {
   minutesToCheckIntervalMs,
 } from "../services/modChecker.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
+import {
+  requireIntInRange,
+  PORT_MIN,
+  PORT_MAX,
+  MEMORY_GB_MIN,
+  MIN_MEMORY_GB_MAX,
+  MAX_MEMORY_GB_MAX,
+} from "./server.js";
+
+// Local to this route: autoExportMaxPerPlayer has no counterpart check in
+// server.js (or anywhere else), so unlike the port/memory constants above
+// there's no cross-file drift risk to guard against -- a plain local
+// constant is enough to remove the hand-typed literal. Range matches
+// Settings.tsx's own input (min=1 max=50).
+const AUTO_EXPORT_MAX_PER_PLAYER_MIN = 1;
+const AUTO_EXPORT_MAX_PER_PLAYER_MAX = 50;
+
+// Also local: neither of these has a server.js counterpart. Ranges chased
+// from their consuming services rather than guessed -- see the comments at
+// each call site below for the source. modRestartDelay's floor is 0, not
+// Settings.tsx's min=1: the service (modChecker.js's setRestartOptions) is
+// the authority on what the system can actually do, and it demonstrably
+// accepts 0. Refusing a value here that the consumer handles fine would be
+// a NEW disagreement between two layers -- the exact bug class this whole
+// thread closed, just pointing the other way (a save that rejects what the
+// consumer accepts, instead of a wizard that refuses what /app-settings
+// accepts). Settings.tsx keeping min=1 is fine and unrelated: that's a UI
+// recommendation, not a claim about server capability, and the two are
+// allowed to differ. See 2026-08-23 config.js numeric-field audit part 5.
+const MOD_RESTART_DELAY_MIN = 0;
+const MOD_RESTART_DELAY_MAX = 30;
+const SERVER_AUTO_UPDATE_WARNING_MINUTES_MIN = 0;
+const SERVER_AUTO_UPDATE_WARNING_MINUTES_MAX = 60;
 
 const router = express.Router();
 
@@ -286,6 +319,44 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         });
       }
 
+      // Bound chased from the consuming service (modChecker.js's
+      // setRestartOptions: `Math.max(0, Math.min(30, val))`): [0, 30].
+      // Settings.tsx's own input says min=1, a real discrepancy -- flagged
+      // rather than resolved silently, and the ruling went with the
+      // service's floor, not the client's: the service is the authority on
+      // what the system can do, and refusing 0 here while the consumer
+      // accepts it fine would be a NEW save-vs-consumer disagreement, the
+      // same bug class this whole thread closed. Settings.tsx keeping min=1
+      // is fine and unrelated -- a UI recommendation, not a capability
+      // claim. See 2026-08-23 config.js numeric-field audit part 5.
+      if (key === "modRestartDelay") {
+        const modRestartDelayCheck = requireIntInRange(
+          value,
+          MOD_RESTART_DELAY_MIN,
+          MOD_RESTART_DELAY_MAX,
+          "Mod restart delay (minutes)",
+        );
+        if (!modRestartDelayCheck.ok) {
+          return res.status(400).json({ error: modRestartDelayCheck.message });
+        }
+      }
+
+      // Bound chased from the consuming service (updateChecker.js's
+      // parseAutoUpdateWarningMinutes: `Math.min(60, Math.max(0, ...))`,
+      // default 15) -- matches Settings.tsx's own input (min=0 max=60)
+      // exactly, no discrepancy to report for this one.
+      if (key === "serverAutoUpdateWarningMinutes") {
+        const warningMinutesCheck = requireIntInRange(
+          value,
+          SERVER_AUTO_UPDATE_WARNING_MINUTES_MIN,
+          SERVER_AUTO_UPDATE_WARNING_MINUTES_MAX,
+          "Server auto-update warning (minutes)",
+        );
+        if (!warningMinutesCheck.ok) {
+          return res.status(400).json({ error: warningMinutesCheck.message });
+        }
+      }
+
       if (key === "lanIpAddress" && value !== "" && net.isIP(value) !== 4) {
         return res
           .status(400)
@@ -300,6 +371,18 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           "panelBridgeAutoUpdate",
           "autoExportOnLogin",
           "enablePublicIpLookup",
+          // The other 8 boolean-shaped keys in VALID_SETTINGS_KEYS, added in
+          // the same pass as rconPort/serverPort/min+maxMemory/panelPort
+          // below -- accepted any truthy/falsy JS value with no gate at all
+          // until now. See 2026-08-23 config.js numeric-field audit.
+          "modAutoRestart",
+          "serverAutoUpdate",
+          "darkMode",
+          "autoReconnect",
+          "httpsEnabled",
+          "autoStartServer",
+          "workshopCollectionAutoSync",
+          "panelBridgeSftpEnabled",
         ].includes(key) &&
         typeof value !== "boolean"
       ) {
@@ -356,6 +439,88 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           return res.status(400).json({
             error: `httpsPort cannot be the same as the panel's HTTP port (${panelPort})`,
           });
+        }
+      }
+
+      // Same missing-range-check shape httpsPort/reconnectInterval closed
+      // above, but this one IS the lockout case, not the mild one: panelPort
+      // sat in this same allowed-keys list, two lines from httpsPort, with
+      // no case at all here. An out-of-range value saved silently (200,
+      // no error), index.js only discovers it can't bind at the NEXT
+      // restart and falls back to 3001 -- but the Restart Panel button has
+      // already sent the browser to the port the operator typed, which
+      // nothing is listening on. Range matches auth.js's /setup check for
+      // the same field (ErrorCode.SETUP_PANEL_PORT_INVALID) -- reusing
+      // server.js's requireIntInRange rather than a third hand-rolled
+      // range check. See 2026-08-23 validateInt-coerces / config.js
+      // numeric-field audit.
+      //
+      // The collision check below is bidirectional on purpose: httpsPort's
+      // check above only compared a new httpsPort against the STORED
+      // panelPort. Left one-directional, the exact collision that guard
+      // exists to prevent was still reachable by approaching from the other
+      // side -- setting panelPort to whatever httpsPort already is. A guard
+      // reachable by walking around it from the other direction isn't a
+      // guard, it's a speed bump on one approach.
+      if (key === "panelPort") {
+        const panelPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "Panel port");
+        if (!panelPortCheck.ok) {
+          return res.status(400).json({ error: panelPortCheck.message });
+        }
+        const httpsPort = await getSetting("httpsPort");
+        if (httpsPort && panelPortCheck.value === Number(httpsPort)) {
+          return res.status(400).json({
+            error: `panelPort cannot be the same as the panel's HTTPS port (${httpsPort})`,
+          });
+        }
+      }
+
+      // The exact four fields server.js's /install, /quick-setup,
+      // /configure-rcon and /configure-network now refuse out-of-range on
+      // (2026-08-23 validateInt-coerces audit, commit 39f836f) were also
+      // reachable through THIS route with zero validation -- a second door
+      // onto the same four values, invisible from inside server.js since it
+      // lives in a completely different file. Same ranges as server.js's
+      // checks so the two doors can't disagree with each other.
+      if (key === "rconPort") {
+        const rconPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "RCON port");
+        if (!rconPortCheck.ok) {
+          return res.status(400).json({ error: rconPortCheck.message });
+        }
+      }
+
+      if (key === "serverPort") {
+        const serverPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "Game port");
+        if (!serverPortCheck.ok) {
+          return res.status(400).json({ error: serverPortCheck.message });
+        }
+      }
+
+      if (key === "minMemory") {
+        const minMemoryCheck = requireIntInRange(value, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
+        if (!minMemoryCheck.ok) {
+          return res.status(400).json({ error: minMemoryCheck.message });
+        }
+      }
+
+      if (key === "maxMemory") {
+        const maxMemoryCheck = requireIntInRange(value, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
+        if (!maxMemoryCheck.ok) {
+          return res.status(400).json({ error: maxMemoryCheck.message });
+        }
+      }
+
+      // Lower priority than the fields above -- a garbage value here
+      // doesn't misdirect anything, it self-heals to 3 via `Number(...) ||
+      // 3` the next time it's read (see index.js's export-rotation code).
+      // But an unvalidated garbage value would still sit in the database
+      // forever, unreadable by that fallback's intent, as a trap for
+      // whoever next reads that column expecting a real number. Range
+      // matches Settings.tsx's own input (min=1 max=50).
+      if (key === "autoExportMaxPerPlayer") {
+        const autoExportMaxCheck = requireIntInRange(value, AUTO_EXPORT_MAX_PER_PLAYER_MIN, AUTO_EXPORT_MAX_PER_PLAYER_MAX, "Auto-export copies kept");
+        if (!autoExportMaxCheck.ok) {
+          return res.status(400).json({ error: autoExportMaxCheck.message });
         }
       }
 
@@ -588,6 +753,29 @@ function isValidConfigPath(inputPath) {
 }
 
 // Update paths (runtime only - doesn't persist to .env)
+//
+// INVESTIGATED 2026-08-24 (conv-hunt-resume, config-live-pointer-mutations-
+// no-running-guard): unlike PUT / above, this has no
+// requireStoppedForLocalConfigMutation. Concluded no guard is needed --
+// this mutates serverManager's in-memory serverPath/savePath fields only
+// (explicitly runtime-only, never touches a file or the database), and
+// every consumer that could turn a stale pointer into something worse than
+// a confusing display is independently guarded already: server.js's /wipe
+// and /wipe/preview require BOTH a real OS-level process scan confirming
+// the server is stopped (not derived from this field) AND the specific
+// Saves/Multiplayer/{serverName} subpath to exist (404s rather than
+// silently acting on an unrelated directory in the overwhelming majority of
+// misconfigurations); PUT /config's saveServerConfig() is already gated by
+// requireStoppedForLocalConfigMutation; and backupService/chunks.js resolve
+// their own paths from the database (getActiveServer()/getSetting()), not
+// from this field at all, so this route cannot affect them. The worst
+// realistic outcome while the real server keeps running unaffected on its
+// old path is the panel's own config/status displays showing stale, missing,
+// or (rarely) a different install's data -- confusing, self-correcting once
+// noticed, never destructive. A running-state guard would not close the one
+// real edge case found (a wrong-but-structurally-matching savePath later
+// enabling a misdirected wipe after a legitimate stop) since that risk
+// exists independent of the server's state when this route was called.
 router.put("/paths", requirePermission("server.configure"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
@@ -626,6 +814,18 @@ const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
 const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // Update RCON configuration
+//
+// INVESTIGATED 2026-08-24 (conv-hunt-resume, config-live-pointer-mutations-
+// no-running-guard): also has no requireStoppedForLocalConfigMutation, also
+// concluded no guard is needed, for a stronger reason than /paths above:
+// rcon.js's updateConfig() disconnects any live connection immediately on a
+// config change (see rcon.js), and every RCON action after that reconnects
+// against the NEW config -- a wrong host/port simply fails to connect. This
+// fails LOUD and immediately: there is no code path where a bad RCON
+// pointer produces plausible-but-wrong data, since RCON is a live
+// connection, not a file read. The existing /test-rcon route and RCON
+// status reporting (`connected: false`) already surface this without any
+// guard needed here.
 router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
