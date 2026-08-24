@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import { permissionsPolicy } from "./middleware/permissionsPolicy.js";
 import { logSetupTokenIfNeeded } from "./utils/setupToken.js";
 import { computeInlineScriptCspHash } from "./utils/cspScriptHash.js";
+import { parseTrustProxySetting } from "./utils/trustProxy.js";
 import { createServer } from "http";
 import { createServer as createHttpsServer } from "https";
 import { Server } from "socket.io";
@@ -261,18 +262,23 @@ const app = express();
 // LAN/home-server deployment) spoof X-Forwarded-For to dodge IP-keyed rate
 // limiting (login, setup, RCON limiters all key on req.ip) and to influence
 // the x-forwarded-proto secure-cookie logic.
-const trustProxyEnv = (process.env.TRUST_PROXY || "").trim().toLowerCase();
-let trustProxySetting = false;
-if (trustProxyEnv === "true") {
-  trustProxySetting = 1;
-} else if (trustProxyEnv && trustProxyEnv !== "false") {
-  const hops = parseInt(trustProxyEnv, 10);
-  trustProxySetting = Number.isFinite(hops) && hops > 0 ? hops : false;
+const trustProxyEnv = process.env.TRUST_PROXY || "";
+let trustProxySetting = parseTrustProxySetting(trustProxyEnv);
+try {
+  app.set("trust proxy", trustProxySetting);
+} catch (error) {
+  log.warn(
+    `Invalid TRUST_PROXY value (${trustProxyEnv}), proxy trust disabled: ${error.message}`,
+  );
+  trustProxySetting = false;
+  app.set("trust proxy", false);
 }
-app.set("trust proxy", trustProxySetting);
 if (trustProxySetting) {
+  const configuredProxy = Array.isArray(trustProxySetting)
+    ? trustProxySetting.join(",")
+    : trustProxySetting;
   log.info(
-    `trust proxy enabled (${trustProxySetting} hop${trustProxySetting === 1 ? "" : "s"}) via TRUST_PROXY env var`,
+    `trust proxy enabled (${configuredProxy}) via TRUST_PROXY env var`,
   );
 }
 const httpServer = createServer(app);

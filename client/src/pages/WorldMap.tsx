@@ -71,6 +71,7 @@ import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
+import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
@@ -591,6 +592,8 @@ export default function WorldMap() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapWrapperRef = useRef<HTMLDivElement>(null)
   const animFrameRef = useRef<number>(0)
+  const playerFetchGateRef = useRef(createInFlightGate())
+  const overlayFetchGateRef = useRef(createInFlightGate())
   const playersRef = useRef<MapPlayer[]>([])
   const drawRequestRef = useRef<number>(0)
   const canvasColorsRef = useRef<CanvasColors>(resolveCanvasColors())
@@ -1136,6 +1139,7 @@ export default function WorldMap() {
       setLoading(false)
       return
     }
+    if (!playerFetchGateRef.current.enter()) return
 
     try {
       const res = await panelBridgeApi.getServerInfo()
@@ -1168,6 +1172,7 @@ export default function WorldMap() {
     } catch {
       setBridgeConnected(false)
     } finally {
+      playerFetchGateRef.current.leave()
       setLoading(false)
     }
   }, [hasActiveServer])
@@ -1193,6 +1198,7 @@ export default function WorldMap() {
   // Fetch vehicles + safehouses from PanelBridge
   const fetchOverlays = useCallback(async () => {
     if (!mountedRef.current || !hasActiveServer) return
+    if (!overlayFetchGateRef.current.enter()) return
     try {
       const [vRes, persistedRes, sRes] = await Promise.allSettled([
         panelBridgeApi.sendCommand('getVehiclesDetailed'),
@@ -1223,7 +1229,10 @@ export default function WorldMap() {
         const sList = Array.isArray(sData) ? sData : Array.isArray(sData.safehouses) ? sData.safehouses : []
         setSafehouses((sList as MapSafehouse[]).filter(s => typeof s.x === 'number' && typeof s.y === 'number' && isFinite(s.x) && isFinite(s.y)))
       }
-    } catch { /* best-effort */ }
+    } catch { /* best-effort */
+    } finally {
+      overlayFetchGateRef.current.leave()
+    }
   }, [hasActiveServer])
 
   // ─── Polling ────────────────────────────────────────────

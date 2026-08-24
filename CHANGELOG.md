@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-24
+
+### Fixed
+
+- **Reverse-proxy requests triggered `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`** when Express saw
+  `X-Forwarded-For` but did not trust the configured nginx hop. `TRUST_PROXY` now accepts a hop count,
+  IP, subnet, or comma-separated IP/subnet list, and the Docker/systemd templates document how to set it
+  without enabling unsafe trust-all behavior (#110).
+
+- **World Map fallback zoom stopped at low resolution when build discovery returned HTTP 403.** The
+  hardcoded 42.20.0 fallback now preserves its verified level-22 tile ceiling while still falling
+  back to coarser tiles for individual missing edge tiles.
+
+- **Windows server-state checks could not distinguish an empty successful process scan from a failed
+  PowerShell probe.** The panel now invokes PowerShell explicitly, reports diagnostics, and fails
+  closed when the probe returns an error or stderr output.
+
+- **World Map bridge polling could overlap while large responses were still in flight.** Player and
+  vehicle/safehouse polling now uses single-flight gates to prevent competing requests and reduce
+  memory pressure.
+
+- **Windows release packages could contain an LF-only `Start.bat`.** The launcher generator now
+  writes CRLF line endings for reliable Windows execution.
+
 ## [1.2.1] - 2026-08-23
 
 ### Fixed

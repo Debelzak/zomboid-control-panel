@@ -177,12 +177,11 @@ describe("discoverRenderedMaxLevel (via /api/map/resolve)", () => {
 // run (curl entirely unavailable, the same failure mode
 // mapProxyB42Discovery.test.js already covers for getB42Dir/directory
 // selection), the served geometry falls back to B42_GEOMETRY_FALLBACK.
-// renderedMaxLevel there must be the conservative floor (maxLevel-6), not
-// the raw maxLevel -- that's exactly the path nobody exercises, and it's
-// the one where a client would otherwise clamp to the ceiling this whole
-// fix proved untrustworthy.
+// renderedMaxLevel there must preserve the known fallback build's verified
+// full DZI ceiling, so a temporary discovery outage does not silently remove
+// its higher-resolution tiles from the client.
 describe("discoverRenderedMaxLevel: fails CLOSED when discovery cannot run at all", () => {
-  it("falls back to the conservative floor, not the raw maxLevel, when curl itself is unavailable", async () => {
+  it("keeps the verified fallback ceiling when curl itself is unavailable", async () => {
     mockExecFile.mockImplementation((_file, _args, _options, callback) => {
       const err = new Error("spawn curl ENOENT");
       err.code = "ENOENT";
@@ -193,8 +192,8 @@ describe("discoverRenderedMaxLevel: fails CLOSED when discovery cannot run at al
     const body = await callResolve(router);
 
     expect(body.maxLevel).toBe(22); // B42_GEOMETRY_FALLBACK
-    expect(body.renderedMaxLevel).toBe(16); // maxLevel - 6, NOT 22
-    expect(body.renderedMaxLevel).toBeLessThan(body.maxLevel);
+    expect(body.renderedMaxLevel).toBe(22); // verified B42_DIR_FALLBACK ceiling
+    expect(body.renderedMaxLevel).toBe(body.maxLevel);
   });
 });
 

@@ -19,23 +19,23 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 // Windows install, the moment those guards started respecting scanFailed
 // in 1.2.0. This is what a real user (reported via Discord, forwarded by
 // the operator) hit.
-const { execMock } = vi.hoisted(() => ({ execMock: vi.fn() }));
+const { execFileMock } = vi.hoisted(() => ({ execFileMock: vi.fn() }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, exec: (...args) => execMock(...args) };
+  return { ...actual, execFile: (...args) => execFileMock(...args) };
 });
 
 const { ServerManager } = await import('../services/serverManager.js');
 
 describe('ServerManager Windows scan: empty match set vs a genuine exec failure', () => {
   beforeEach(() => {
-    execMock.mockReset();
+    execFileMock.mockReset();
   });
 
   it.runIf(process.platform === 'win32')(
     'reports a confirmed stop (scanFailed: false), not scanFailed, when PowerShell runs successfully and finds nothing',
     async () => {
-      execMock.mockImplementation((_cmd, _opts, callback) => {
+      execFileMock.mockImplementation((_file, _args, _opts, callback) => {
         // The real, confirmed shape: no error, exit 0, empty stdout --
         // ConvertTo-Csv on an empty pipeline.
         callback(null, '', '');
@@ -47,14 +47,34 @@ describe('ServerManager Windows scan: empty match set vs a genuine exec failure'
       expect(result.scanFailed).toBeFalsy();
       expect(result.running).toBe(false);
       expect(result.matched).toEqual([]);
+      expect(execFileMock).toHaveBeenCalledWith(
+        expect.stringMatching(/powershell\.exe$/i),
+        expect.arrayContaining(['-NoProfile', '-NonInteractive', '-Command']),
+        { timeout: 8000 },
+        expect.any(Function),
+      );
     },
   );
 
   it.runIf(process.platform === 'win32')(
     'still reports scanFailed when the shell-out genuinely errors',
     async () => {
-      execMock.mockImplementation((_cmd, _opts, callback) => {
+      execFileMock.mockImplementation((_file, _args, _opts, callback) => {
         callback(new Error('powershell.exe is not recognized'), '', 'not recognized');
+      });
+
+      const manager = new ServerManager();
+      const result = await manager._scanDedicatedServerProcesses();
+
+      expect(result.scanFailed).toBe(true);
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'fails closed when PowerShell reports diagnostics despite a zero exit code',
+    async () => {
+      execFileMock.mockImplementation((_file, _args, _opts, callback) => {
+        callback(null, '', 'Get-CimInstance : Access is denied');
       });
 
       const manager = new ServerManager();
@@ -70,7 +90,7 @@ describe('ServerManager Windows scan: empty match set vs a genuine exec failure'
       // A command that both errors AND happens to produce no stdout --
       // must not accidentally read as a confirmed stop just because
       // stdout is empty.
-      execMock.mockImplementation((_cmd, _opts, callback) => {
+      execFileMock.mockImplementation((_file, _args, _opts, callback) => {
         callback(new Error('timed out'), '', '');
       });
 
