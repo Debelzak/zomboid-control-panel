@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A config template could quietly rewrite your RCON password, your ports and your server's public
+  name.** Templates are meant to carry gameplay rules only - a short list of sensitive settings,
+  including the RCON password, the game and UDP ports, and the public server name, was supposed to be
+  refused no matter what a template contained. That protected list was being read out of the template
+  itself, so a template that simply declared the list to be empty switched the protection off and its
+  values were written straight into the live server configuration when it was applied. It meant
+  someone trusted only with editing gameplay templates could change settings that are supposed to
+  require full server-file access. The protected list is now fixed in the panel and cannot be
+  narrowed by anything a template says; a template may only ever add to it. The same mistake existed
+  independently in three separate places, including the preview that shows you what a template will
+  change, and all three now share one implementation.
+
+- **Applying a template to a server that was not the one currently selected skipped the
+  are-you-stopped check entirely.** The panel refuses to apply a template over a running server,
+  because doing so overwrites configuration files the game itself has open. That refusal only ever
+  ran when the template was aimed at the server you had selected. Aim it at any of your other
+  configured servers - a normal thing to do if you keep more than one profile - and no check happened
+  at all. The panel can only inspect the currently selected server, so rather than guess, it now
+  declines and tells you to switch to that server first.
+
+- **Several places showed "something went wrong" when the panel already knew exactly what had gone
+  wrong.** The server's own explanation was being thrown away and replaced with a generic message.
+  Clearing the server log said nothing about a missing log path or a filesystem error. Seven separate
+  actions on the Debug page - the three log downloads, the health check, the diagnostics, the World
+  Map diagnostics and the crash-log viewer - discarded the real reason ("log file not found", "no
+  support logs found") in favour of a bare HTTP code. Saving the auto-start setting on the Dashboard
+  swallowed its error completely and looked like nothing had happened. And a failure to load your
+  list of servers gave no reason at all. All of these now tell you what actually failed.
+
 - **Two more places where text or a button ran off the edge of a phone screen.** The Server Log's
   file path was cut short with no way to see the rest of it, so on a narrow screen you could not read
   where your log actually lives. And on the Server Configuration tabs, the row of buttons above the
