@@ -374,9 +374,9 @@ export default function Dashboard() {
         title: checked ? t('toasts.autoStartEnabledTitle') : t('toasts.autoStartDisabledTitle'),
         description: checked ? t('toasts.autoStartEnabledDesc') : t('toasts.autoStartDisabledDesc'),
       })
-    } catch {
+    } catch (error) {
       setAutoStartServer(!checked)
-      toast({ title: t('toasts.errorTitle'), description: t('toasts.autoStartSaveFailed'), variant: 'destructive' })
+      toast({ title: t('toasts.errorTitle'), description: error instanceof Error ? error.message : t('toasts.autoStartSaveFailed'), variant: 'destructive' })
     }
   }
 
