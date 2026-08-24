@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveFallbackTile } from "../worldMapTileFallback";
+import { conservativeRenderedMaxLevel, resolveFallbackTile } from "../worldMapTileFallback";
 
 // GH#109 / conv-gh109-worldmap-black: a requested tile level can be inside
 // the map's theoretical maxLevel yet have no tile actually rendered
@@ -106,5 +106,31 @@ describe("resolveFallbackTile", () => {
     // level 2 -> only k=1,2 make sense (parentLevel 1, then 0)
     expect(request).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenNthCalledWith(2, 0, 0, 0);
+  });
+});
+
+// GH#109 follow-up (god's review of 3d09d94): B42's static placeholder and
+// the `??` fallbacks used to default renderedMaxLevel to the raw maxLevel --
+// exactly the inflated ceiling this whole fix exists to stop trusting --
+// while B41's static default already used a conservative floor. Pinning
+// this here so "discovery unknown -> conservative, not maxLevel" can't
+// silently regress back to the inconsistency.
+describe("conservativeRenderedMaxLevel", () => {
+  it("subtracts the known-safe offset from maxLevel", () => {
+    expect(conservativeRenderedMaxLevel(21)).toBe(15);
+    expect(conservativeRenderedMaxLevel(22)).toBe(16);
+  });
+
+  it("never goes negative for a small maxLevel", () => {
+    expect(conservativeRenderedMaxLevel(3)).toBe(0);
+    expect(conservativeRenderedMaxLevel(0)).toBe(0);
+  });
+
+  it("is always strictly less than maxLevel for any real build depth, never equal to it", () => {
+    // The whole point: a caller that falls back to this value must never
+    // land back on the untrusted raw ceiling.
+    for (const maxLevel of [10, 15, 21, 22, 30]) {
+      expect(conservativeRenderedMaxLevel(maxLevel)).toBeLessThan(maxLevel);
+    }
   });
 });

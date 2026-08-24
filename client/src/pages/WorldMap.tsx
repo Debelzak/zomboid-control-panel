@@ -71,7 +71,7 @@ import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import { resolveFallbackTile } from './worldMapTileFallback'
+import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
 
@@ -201,7 +201,11 @@ const MAP_B42: MapConfig = {
   fullWidth: 1157312,
   fullHeight: 509520,
   maxLevel: 21,
-  renderedMaxLevel: 21,
+  // Placeholder used before /api/map/resolve returns (e.g. first paint every
+  // session) -- fails CLOSED to the conservative floor, not the full 21,
+  // same as b42ConfigFor's own `??` fallback below. See
+  // conservativeRenderedMaxLevel's comment in worldMapTileFallback.ts.
+  renderedMaxLevel: conservativeRenderedMaxLevel(21),
   isoX0: 518144,
   isoY0: -69648,
   isoHalfSqr: 32,
@@ -281,9 +285,13 @@ function b42ConfigFor(info: {
     fullWidth: info.width,
     fullHeight: info.height,
     maxLevel: info.maxLevel,
-    // Fall back to maxLevel itself only if the server response predates
-    // this field (rolling restart) -- same behaviour as before this fix.
-    renderedMaxLevel: info.renderedMaxLevel ?? info.maxLevel,
+    // If the server response predates this field (rolling restart) or a
+    // resolve genuinely failed to determine it, fail CLOSED to the
+    // conservative floor -- NOT info.maxLevel, which is exactly the
+    // inflated, never-actually-rendered ceiling this fix exists to stop
+    // trusting. See conservativeRenderedMaxLevel's comment in
+    // worldMapTileFallback.ts.
+    renderedMaxLevel: info.renderedMaxLevel ?? conservativeRenderedMaxLevel(info.maxLevel),
     isoX0,
     isoY0,
     isoHalfSqr,
@@ -307,12 +315,13 @@ const MAP_B41: MapConfig = {
   maxLevel: 22, // ceil(log2(2285184)) = 22
   // B41 has no server-side discovery like B42's discoverRenderedMaxLevel
   // (mapProxy.js) -- it's a legacy/frozen build served from a hardcoded
-  // directory with no dynamic /resolve geometry today. Same maxLevel-6
-  // known-safe-floor heuristic hasTileCoverage uses for B42, hardcoded here
-  // rather than left at the full (near-certainly-too-deep) maxLevel. The
-  // coarser-tile fallback in drawTileWithFallback covers whatever this
-  // clamp gets wrong either way. See GH#109 / conv-gh109-worldmap-black.
-  renderedMaxLevel: 16,
+  // directory with no dynamic /resolve geometry today. Uses the same
+  // conservativeRenderedMaxLevel floor as B42's own static placeholder
+  // (see its comment above) rather than the full (near-certainly-too-deep)
+  // maxLevel. The coarser-tile fallback in drawTileWithFallback covers
+  // whatever this clamp gets wrong either way. See GH#109 /
+  // conv-gh109-worldmap-black.
+  renderedMaxLevel: conservativeRenderedMaxLevel(22),
   // Isometric projection from pzmap.org (multiply=2):
   // Origin derived from PxToTileOffset {x:-5577, y:10327}
   isoX0: 1017856,  // (5577 + 10327) * 64

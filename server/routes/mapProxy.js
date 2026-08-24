@@ -759,11 +759,13 @@ router.get("/resolve", async (req, res) => {
     height: map.height,
     maxLevel: map.maxLevel,
     // The deepest level the client should actually request — see
-    // discoverRenderedMaxLevel's comment. Falls back to maxLevel itself only
-    // if this particular _b42Map somehow predates that field (shouldn't
-    // happen post-fix, but a client reading an old-shaped cached response
-    // during a rolling restart should still get a sane value, not undefined).
-    renderedMaxLevel: map.renderedMaxLevel ?? map.maxLevel,
+    // discoverRenderedMaxLevel's comment. This particular _b42Map shouldn't
+    // ever predate the field post-fix, but if it somehow does (an old-shaped
+    // cached response during a rolling restart), fail CLOSED to the same
+    // known-safe floor discoverRenderedMaxLevel's own search starts from —
+    // NOT map.maxLevel, which is exactly the inflated, never-actually-
+    // rendered ceiling this whole fix exists to stop trusting.
+    renderedMaxLevel: map.renderedMaxLevel ?? Math.max(0, map.maxLevel - 6),
     x0: map.x0,
     y0: map.y0,
     sqr: map.sqr,

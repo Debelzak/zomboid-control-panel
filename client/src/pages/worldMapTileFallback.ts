@@ -11,6 +11,22 @@
 // rendering fine. Pulled out of WorldMap.tsx as a pure function so the
 // fallback-selection math can be unit tested without mounting the canvas.
 
+// Conservative stand-in for renderedMaxLevel wherever the real discovered
+// depth isn't known: the static placeholder configs in WorldMap.tsx (used
+// before /api/map/resolve returns, e.g. on first paint every session), and
+// its `??` fallback if a server response ever predates or fails discovery.
+// Same known-safe floor hasTileCoverage/discoverRenderedMaxLevel use
+// server-side (mapProxy.js). Deliberately fails CLOSED, same doctrine this
+// codebase applies to server-state checks everywhere else: costing a user
+// some zoom depth for a moment is nothing, showing them a black map is the
+// bug GH#109 exists to fix. Falling back to the raw maxLevel instead would
+// be exactly the inflated, never-actually-rendered ceiling this whole fix
+// exists to stop trusting.
+const CONSERVATIVE_LEVEL_OFFSET = 6;
+export function conservativeRenderedMaxLevel(maxLevel: number): number {
+  return Math.max(0, maxLevel - CONSERVATIVE_LEVEL_OFFSET);
+}
+
 export type TileCacheValue = HTMLImageElement | null | "empty" | undefined;
 
 export interface FallbackTileDraw {
