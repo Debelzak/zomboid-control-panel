@@ -34,6 +34,21 @@
 // a disabled check silently reads as a passing one -- worse than no check
 // at all. Run it by hand or on a schedule and read the output.
 //
+// VERIFIED BOTH DIRECTIONS AT THE ACTUAL 30-MINUTE WINDOW, NOT JUST ONE:
+// disabling the window (set to 0) on the current tree reproduces exactly the
+// 22 known false positives from the pzmap.org host-migration fix and nothing
+// else -- proves the window SUPPRESSES known noise. Separately, pointing the
+// same code at the historical revision 1725281^ (immediately before the
+// SERVER_STATE_UNKNOWN fix landed, via `git blame <rev>`/`git show <rev>:path`
+// instead of the working tree -- no file on disk touched) at the real
+// 30-minute window reports exactly one candidate: the known true positive,
+// ht/errors.json/SERVER_STATE_UNKNOWN, gap 44 minutes, nothing spurious
+// alongside it across all 55 namespaces. A filter that swallows everything
+// and a filter that works correctly look identical on a tree with nothing
+// left to find (both report zero) -- this second check is what rules that
+// out, since zero-mutation reruns against real history are cheap and a tool
+// that only shows it can be quiet is not yet shown to be able to speak.
+//
 // Usage: node scripts/i18n-staleness-check.mjs [--lang=fr,de] [--ns=errors,debug]
 import { execFileSync } from "child_process";
 import fs from "fs";
