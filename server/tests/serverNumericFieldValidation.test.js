@@ -40,8 +40,8 @@ function getHandler(routePath) {
   return stack[stack.length - 1].handle;
 }
 
-function fakeReq(body) {
-  return { app: { get: () => undefined }, body };
+function fakeReq(body, io = { emit: vi.fn() }) {
+  return { app: { get: () => io }, body };
 }
 
 let root;
@@ -118,6 +118,19 @@ describe("POST /api/server/install refuses an out-of-range numeric field", () =>
   it("passes valid numeric fields through to the next validation stage (not rejected as a numeric error)", async () => {
     const handler = getHandler("/install");
     const response = createResponse();
+    fs.mkdirSync(steamcmdPath, { recursive: true });
+    const steamcmdExecutable = path.join(
+      steamcmdPath,
+      process.platform === "win32" ? "steamcmd.exe" : "steamcmd.sh",
+    );
+    fs.writeFileSync(
+      steamcmdExecutable,
+      process.platform === "win32"
+        ? "@echo off\r\nexit /b 1\r\n"
+        : "#!/bin/sh\nexit 1\n",
+    );
+    if (process.platform !== "win32") fs.chmodSync(steamcmdExecutable, 0o755);
+
     await handler(
       fakeReq(
         baseInstallBody({
@@ -126,20 +139,17 @@ describe("POST /api/server/install refuses an out-of-range numeric field", () =>
           minMemory: 4,
           maxMemory: 8,
         }),
+        { emit: vi.fn() },
       ),
       response,
     );
 
-    // steamcmdPath doesn't actually contain steamcmd.exe/steamcmd.sh in this
-    // temp dir, so a request that clears the numeric gate falls through to
-    // the steamcmd-not-found check next -- proof it wasn't rejected as a
-    // numeric error.
-    expect(response.status).toHaveBeenCalledWith(400);
-    const code = response.json.mock.calls[0][0].code;
-    expect(code).not.toBe("INVALID_SERVER_PORT");
-    expect(code).not.toBe("INVALID_RCON_PORT");
-    expect(code).not.toBe("INVALID_MIN_MEMORY");
-    expect(code).not.toBe("INVALID_MAX_MEMORY");
+    expect(response.json).toHaveBeenCalled();
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.code).not.toBe("INVALID_SERVER_PORT");
+    expect(payload.code).not.toBe("INVALID_RCON_PORT");
+    expect(payload.code).not.toBe("INVALID_MIN_MEMORY");
+    expect(payload.code).not.toBe("INVALID_MAX_MEMORY");
   });
 });
 

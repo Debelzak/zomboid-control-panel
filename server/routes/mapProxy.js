@@ -208,11 +208,11 @@ const B42_GEOMETRY_FALLBACK = {
   width: 2318656,
   height: 1019040,
   maxLevel: 22,
-  // This path never gets to run discoverRenderedMaxLevel (no live directory
-  // to probe), so fall back to the same known-safe floor hasTileCoverage
-  // uses everywhere else rather than trusting maxLevel itself — see
-  // discoverRenderedMaxLevel's comment.
-  renderedMaxLevel: 16,
+  // The fallback directory is 42.20.0, and the same inhabited-area probes
+  // used by discovery resolve through level 22. Keep the full DZI ceiling
+  // available when build discovery is temporarily blocked. Individual
+  // sparse/edge 404s still use WorldMap's coarser-tile fallback.
+  renderedMaxLevel: 22,
   x0: 1040384,
   y0: -139296,
   sqr: 128,

@@ -497,55 +497,83 @@ export class ServerManager {
       }, 10000);
 
       if (isWindows) {
-        const psCmd =
-          "powershell -Command \"Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$' } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation\"";
-        exec(psCmd, { timeout: 8000 }, (psError, psStdout) => {
-          clearTimeout(timeout);
-          if (psError) {
-            log.warn(
-              `getServerProcessDetails: Windows process scan failed (${psError.message}), cannot determine server state`,
-            );
-            resolve({ running: false, matched: [], scanFailed: true });
-            return;
-          }
-          // Empty stdout with NO error is a legitimate, successful result,
-          // not a failure: ConvertTo-Csv derives its header from the first
-          // object it receives, so an empty filtered Win32_Process pipeline
-          // (the normal, expected shape when no PZ server process exists)
-          // produces NO output at all -- not even a header row. Confirmed
-          // empirically on a real Windows host (2026-08-23): psError is
-          // null, exit code 0, psStdout is "". Treating that identically to
-          // a real exec failure meant a genuinely STOPPED Windows server
-          // could never be confirmed stopped -- deterministically, on every
-          // check -- which is exactly the state every fail-closed guard
-          // (/wipe included) exists to detect. This is what a real user hit.
-          if (!psStdout) {
-            this.isRunning = false;
-            resolve({ running: false, matched: [] });
-            return;
-          }
-
-          const lines = psStdout.split(/\r?\n/);
-          for (let raw of lines) {
-            raw = raw.trim();
-            if (!raw || raw.startsWith('"ProcessId"')) continue;
-            // CSV: "<pid>","<cmd>" — strip outer quotes / un-double internal "" pairs.
-            const csvMatch = raw.match(/^"([^"]*)","((?:[^"]|"")*)"$/);
-            if (!csvMatch) continue;
-            const pid = csvMatch[1];
-            const cmd = csvMatch[2].replace(/""/g, '"');
-            if (!cmd) continue;
-            if (isWindowsDedicatedServerCommandLine(cmd)) {
-              log.debug(
-                `getServerProcessDetails: matched PZ server process pid=${pid}: ${cmd.substring(0, 200)}`,
+        const powershellPath = path.join(
+          process.env.SystemRoot || "C:\\Windows",
+          "System32",
+          "WindowsPowerShell",
+          "v1.0",
+          "powershell.exe",
+        );
+        const powershellScript =
+          "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(java\\.exe|ProjectZomboid64\\.exe|ProjectZomboid32\\.exe)$' } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation";
+        execFile(
+          powershellPath,
+          [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            powershellScript,
+          ],
+          { timeout: 8000 },
+          (psError, psStdout, psStderr) => {
+            clearTimeout(timeout);
+            const stderr = String(psStderr || "").trim();
+            if (psError || stderr) {
+              const detail = [
+                psError?.message,
+                stderr,
+              ]
+                .filter(Boolean)
+                .join(": ");
+              log.warn(
+                `getServerProcessDetails: Windows process scan failed (${detail}), cannot determine server state`,
               );
-              pushMatch(cmd, pid);
+              resolve({ running: false, matched: [], scanFailed: true });
+              return;
             }
-          }
 
-          this.isRunning = matched.length > 0;
-          resolve({ running: matched.length > 0, matched });
-        });
+            // Empty stdout with NO error is a legitimate, successful result,
+            // not a failure: ConvertTo-Csv derives its header from the first
+            // object it receives, so an empty filtered Win32_Process pipeline
+            // (the normal, expected shape when no PZ server process exists)
+            // produces NO output at all -- not even a header row. Confirmed
+            // empirically on a real Windows host (2026-08-23): psError is
+            // null, exit code 0, psStdout is "". Treating that identically to
+            // a real exec failure meant a genuinely STOPPED Windows server
+            // could never be confirmed stopped -- deterministically, on every
+            // check -- which is exactly the state every fail-closed guard
+            // (/wipe included) exists to detect. This is what a real user hit.
+            if (!psStdout) {
+              this.isRunning = false;
+              resolve({ running: false, matched: [] });
+              return;
+            }
+
+            const lines = psStdout.split(/\r?\n/);
+            for (let raw of lines) {
+              raw = raw.trim();
+              if (!raw || raw.startsWith('"ProcessId"')) continue;
+              // CSV: "<pid>","<cmd>" — strip outer quotes / un-double internal "" pairs.
+              const csvMatch = raw.match(/^"([^"]*)","((?:[^"]|"")*)"$/);
+              if (!csvMatch) continue;
+              const pid = csvMatch[1];
+              const cmd = csvMatch[2].replace(/""/g, '"');
+              if (!cmd) continue;
+              if (isWindowsDedicatedServerCommandLine(cmd)) {
+                log.debug(
+                  `getServerProcessDetails: matched PZ server process pid=${pid}: ${cmd.substring(0, 200)}`,
+                );
+                pushMatch(cmd, pid);
+              }
+            }
+
+            this.isRunning = matched.length > 0;
+            resolve({ running: matched.length > 0, matched });
+          },
+        );
       } else {
         // Linux/macOS: pgrep first (faster, more reliable), fall back to ps aux -ww.
         // Use the same dedicated-server heuristics as Windows (module-level

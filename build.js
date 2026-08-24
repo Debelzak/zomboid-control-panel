@@ -424,8 +424,8 @@ goto :eof
   rem %~1 = message. Appends a timestamped line to LOG_FILE.
   for /f "usebackq delims=" %%T in (\`powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"\`) do set "NOW=%%T"
   >>"%LOG_FILE%" echo [!NOW!] %~1
-goto :eof
-`;
+  goto :eof
+`.replace(/\r?\n/g, "\r\n");
 }
 
 async function main() {

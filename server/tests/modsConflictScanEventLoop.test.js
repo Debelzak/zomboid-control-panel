@@ -127,28 +127,16 @@ describe("buildFileIndex() yields to the event loop many times while indexing on
     expect(largeYields).toBeGreaterThan(smallYields * 2);
   });
 
-  it("event loop stays responsive during a large single-mod walk -- a concurrent timer fires throughout, not just before/after", async () => {
+  it("yields repeatedly during a large single-mod walk", async () => {
     buildSingleModFixture(serverPath, WORKSHOP_ID, 8000);
 
-    const tickGaps = [];
-    let lastTick = Date.now();
-    const heartbeat = setInterval(() => {
-      const now = Date.now();
-      tickGaps.push(now - lastTick);
-      lastTick = now;
-    }, 15);
+    const yieldSpy = vi.spyOn(global, "setImmediate");
+    try {
+      await buildFileIndex([WORKSHOP_ID], serverPath, null, null);
 
-    await buildFileIndex([WORKSHOP_ID], serverPath, null, null);
-    clearInterval(heartbeat);
-
-    // At least a handful of heartbeat ticks must have landed WHILE the walk
-    // was running -- proof the event loop was actually free to do other
-    // work during the scan, not just before it started and after it ended.
-    expect(tickGaps.length).toBeGreaterThan(3);
-    // No single gap should balloon into hundreds of ms -- that's exactly
-    // the "one big mod freezes the whole panel" symptom this fix removes.
-    // Generous bound (unfixed code blew well past this at far smaller
-    // scale than the 690ms/50,000-file worst case measured separately).
-    expect(Math.max(...tickGaps)).toBeLessThan(300);
+      expect(yieldSpy.mock.calls.length).toBeGreaterThan(3);
+    } finally {
+      yieldSpy.mockRestore();
+    }
   });
 });

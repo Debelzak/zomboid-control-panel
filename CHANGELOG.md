@@ -7,353 +7,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-24
+
+### Fixed
+
+- **INI validation feedback**: identify the invalid INI values that keep the save action disabled, instead of leaving the operator without an explanation.
+
+## [1.2.2] - 2026-08-24
+
+### Fixed
+
+- **Reverse-proxy requests triggered `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`** when Express saw
+  `X-Forwarded-For` but did not trust the configured nginx hop. `TRUST_PROXY` now accepts a hop count,
+  IP, subnet, or comma-separated IP/subnet list, and the Docker/systemd templates document how to set it
+  without enabling unsafe trust-all behavior (#110).
+
+- **World Map fallback zoom stopped at low resolution when build discovery returned HTTP 403.** The
+  hardcoded 42.20.0 fallback now preserves its verified level-22 tile ceiling while still falling
+  back to coarser tiles for individual missing edge tiles.
+
+- **Windows server-state checks could not distinguish an empty successful process scan from a failed
+  PowerShell probe.** The panel now invokes PowerShell explicitly, reports diagnostics, and fails
+  closed when the probe returns an error or stderr output.
+
+- **World Map bridge polling could overlap while large responses were still in flight.** Player and
+  vehicle/safehouse polling now uses single-flight gates to prevent competing requests and reduce
+  memory pressure.
+
+- **Windows release packages could contain an LF-only `Start.bat`.** The launcher generator now
+  writes CRLF line endings for reliable Windows execution.
+
 ## [1.2.1] - 2026-08-23
 
 ### Fixed
 
-- **The World Map went completely black as soon as you zoomed past about 137%, while player and
-  vehicle markers carried on showing.** (Reported as #109.) The map is served as a stack of
-  pre-rendered image tiles at increasing detail, and the panel worked out how many levels of detail
-  existed by calculating what a complete stack *would* contain for an image that size - rather than
-  checking how far the map service had actually rendered. It hasn't rendered that far, and it never
-  will: the deepest level alone would be over half a million tiles. So past a certain zoom the panel
-  was asking for tiles that do not exist, getting nothing back, and drawing nothing - leaving bare
-  background with the markers still painted on top of it. The panel now finds out how deep the real
-  map goes instead of assuming, and - just as importantly - when any tile is missing or still
-  loading it now stretches the next coarser tile over the gap instead of leaving it empty. The map
-  goes briefly blurry where it used to go black, including during ordinary panning.
+- **World Map went black above ~137% zoom** while player and vehicle markers kept showing (#109). The
+  panel assumed the map was rendered to full depth and asked for tiles that do not exist. It now checks
+  how deep the map really goes, and covers any missing tile with the next coarser one instead of nothing.
 
-- **Scanning a large mod library for conflicts could crash the whole panel.** The conflict scan builds
-  an index of every file in every installed mod. There was a limit on how many files it would read
-  from any single mod, but nothing at all limited the total across all of them, so the index simply
-  grew with the size of your library until the panel ran out of memory and died - taking everything
-  else with it, mid-scan, with no warning. Reproduced here at realistic library sizes: a hundred and
-  fifty mods was enough to exhaust four gigabytes and terminate the panel outright. The index is now
-  capped as a whole rather than per mod, and the scan stops the moment it fills. If it does fill, the
-  panel says so and tells you the conflict list is incomplete, rather than quietly showing you a
-  partial answer as though it were the whole picture.
+- **Scanning a large mod library for conflicts could crash the panel.** The file index was capped per
+  mod but not in total, so it grew until memory ran out - 150 mods was enough to exhaust 4GB. Now capped
+  overall, and it tells you when the conflict list is incomplete rather than showing a partial one.
 
-- **A scheduled task could be set to run every few seconds and slowly grind the server down.** The
-  panel refuses any schedule that repeats more often than every five minutes, to stop a task being
-  used to hammer the server. That limit only understood the ordinary five-part schedule format. Give
-  it the six-part format that adds seconds and the check read the seconds column as though it were
-  minutes - so a task set to fire every five seconds looked, to the panel, like one firing every five
-  minutes, and was allowed. The most extreme case (every single second) happened to be caught by
-  accident, which is why this went unnoticed. The panel now rejects the six-part format outright and
-  says plainly that seconds-precision schedules are not supported, rather than misreading one.
+- **A scheduled task could be set to run every few seconds.** The five-minute minimum only understood
+  5-field cron; a 6-field one had its seconds column read as minutes. Seconds-precision schedules are
+  now rejected with a clear message.
 
-- **A config template could quietly rewrite your RCON password, your ports and your server's public
-  name.** Templates are meant to carry gameplay rules only - a short list of sensitive settings,
-  including the RCON password, the game and UDP ports, and the public server name, was supposed to be
-  refused no matter what a template contained. That protected list was being read out of the template
-  itself, so a template that simply declared the list to be empty switched the protection off and its
-  values were written straight into the live server configuration when it was applied. It meant
-  someone trusted only with editing gameplay templates could change settings that are supposed to
-  require full server-file access. The protected list is now fixed in the panel and cannot be
-  narrowed by anything a template says; a template may only ever add to it. The same mistake existed
-  independently in three separate places, including the preview that shows you what a template will
-  change, and all three now share one implementation.
+- **A config template could rewrite your RCON password, ports and public server name.** The list of
+  protected settings was read from the template itself, so a template declaring it empty switched the
+  protection off. That list is now fixed in the panel and a template may only add to it.
 
-- **Applying a template to a server that was not the one currently selected skipped the
-  are-you-stopped check entirely.** The panel refuses to apply a template over a running server,
-  because doing so overwrites configuration files the game itself has open. That refusal only ever
-  ran when the template was aimed at the server you had selected. Aim it at any of your other
-  configured servers - a normal thing to do if you keep more than one profile - and no check happened
-  at all. The panel can only inspect the currently selected server, so rather than guess, it now
-  declines and tells you to switch to that server first.
+- **Applying a template to a non-selected server skipped the are-you-stopped check.** The panel can only
+  inspect the active server, so it now declines and asks you to switch to that server first.
 
-- **Several places showed "something went wrong" when the panel already knew exactly what had gone
-  wrong.** The server's own explanation was being thrown away and replaced with a generic message.
-  Clearing the server log said nothing about a missing log path or a filesystem error. Seven separate
-  actions on the Debug page - the three log downloads, the health check, the diagnostics, the World
-  Map diagnostics and the crash-log viewer - discarded the real reason ("log file not found", "no
-  support logs found") in favour of a bare HTTP code. Saving the auto-start setting on the Dashboard
-  swallowed its error completely and looked like nothing had happened. And a failure to load your
-  list of servers, your scheduled tasks, or your backups gave no reason at all. All of these now tell
-  you what actually failed.
+- **Twelve places showed "something went wrong" when the panel knew exactly what failed** - clearing the
+  server log, seven actions on the Debug page, the Dashboard auto-start setting, and loading your
+  servers, scheduled tasks and backups. All now report the real reason.
 
-- **Two more places where text or a button ran off the edge of a phone screen.** The Server Log's
-  file path was cut short with no way to see the rest of it, so on a narrow screen you could not read
-  where your log actually lives. And on the Server Configuration tabs, the row of buttons above the
-  settings - Form/Raw, download, Wiki, and Save & reload - did not wrap, pushing Save itself past the
-  right edge of the screen where it could not be reached at all.
+- **Two more places where text or a button ran off a phone screen:** the Server Log's file path, and the
+  button row above Server Configuration that pushed Save past the right edge.
 
-- **Scanning a large mod library for conflicts froze the rest of the panel.** The scan walked every
-  file of every installed mod without ever pausing, so on a big library nothing else the panel was
-  doing could get a turn - the player list, RCON, any other tab, all stalled until it finished. On a
-  library with one very large mod in it that stall was measured at just under seven tenths of a
-  second, in a single unbroken block. It is now under thirty milliseconds. Two separate loops were
-  responsible; the second and larger one only came to light after the first was fixed and the
-  improvement turned out to be smaller than it should have been.
+- **Scanning a large mod library froze the rest of the panel.** The scan never paused, stalling the
+  player list, RCON and every other tab. Just under 0.7s in a single block, now under 30ms.
 
-- **Banning or unbanning by Steam ID accepted anything you typed.** The player allowlist field already
-  kept only digits, stopped at seventeen of them, and refused to submit until it had exactly that -
-  matching what the server requires. Its two neighbours, Ban by Steam ID and Unban by Steam ID, took
-  free text and only checked that you had typed something, so a mistyped or partial ID travelled to
-  the server and came back rejected with nothing pointing at what was wrong. All three fields now
-  behave the same way.
+- **Ban and Unban by Steam ID accepted anything you typed**, unlike the allowlist field beside them. All
+  three now enforce 17 digits.
 
-- **Setting the panel's own port out of range saved without complaint, then sent you to a dead
-  address.** The panel port field on the Settings page accepted any number. The save reported success,
-  because the server checks the HTTPS port and the reconnect interval on that form but had no check at
-  all for the panel port sitting beside them. Clicking Restart Panel then pointed the browser at
-  whatever you had typed, while the panel itself quietly fell back to port 3001 - so the browser hung
-  on an address nothing was listening to, with no error to explain it and no obvious way back. The
-  field now refuses an out-of-range port before saving, as does the HTTPS port field.
+- **The panel's own port accepted any number, then sent you to a dead address.** Restart Panel pointed
+  the browser at whatever you typed while the panel fell back to 3001. Out-of-range ports are now
+  refused, as on the HTTPS port field.
 
-- **Out-of-range numbers in the Install and Quick Setup wizards were silently replaced instead of
-  refused.** The server port, RCON port and the memory limits all went through a helper that was named
-  and documented as validating its input but in practice swapped anything out of range for a default
-  and said nothing. Type port 80 and the server was installed on 16261, with no message anywhere - so
-  a port forward or firewall rule set up for the port you chose pointed at nothing, and every symptom
-  after that led away from the cause. Those fields, in Install, Quick Setup, and the later RCON and
-  network configuration steps, now refuse an out-of-range value and name the field and the range they
-  expect. Two remaining uses of the old behaviour were deliberately left alone, as places where
-  falling back to a default is the intended behaviour rather than a silent substitution.
+- **Out-of-range numbers in the Install and Quick Setup wizards were silently replaced.** Type port 80
+  and the server installed on 16261 with no message. Those fields now refuse and name the valid range.
 
-- **Mod thumbnails did not load for anyone in 1.2.0.** Every Workshop thumbnail in the panel came
-  back rejected as unauthenticated, on every install, for every signed-in user including
-  administrators. The cause was two correct decisions that stopped agreeing. Thumbnail images are
-  requested by the browser through ordinary image tags, which cannot send a login header, so the
-  panel deliberately exempts that one address from its login check. Last release moved every mod
-  route behind a single permission gate applied to the whole group, and that gate refuses anything
-  arriving without a signed-in user before it ever looks at what the user is allowed to do. The
-  exemption that makes thumbnails work was therefore exactly what made them fail. The exemption is
-  now written out explicitly at the gate itself, with each half of the pair naming the other, and a
-  test requests a thumbnail with no login header at all and fails if it is refused - the check the
-  original change did not have. If your thumbnails have been missing since updating, this was not
-  Steam and not your server.
+- **Mod thumbnails did not load for anyone in 1.2.0.** Image tags cannot send a login header, and last
+  release's group-wide permission gate rejected them before checking anything else. The exemption is now
+  explicit at the gate, with a test.
 
-- **Server ports outside the valid range could be typed in and submitted.** The Add Server and Edit
-  Server dialogs accepted any number in their game-port and RCON-port fields - 0, 99999, anything -
-  and left the save button enabled. The request then travelled to the server and came back as a
-  generic failure with nothing pointing at which field was wrong. Only one of the four fields had a
-  range check. All four now refuse to submit an out-of-range port and say so next to the field.
+- **Add/Edit Server accepted out-of-range game and RCON ports.** Only one of the four fields had a range
+  check; all four now do.
 
-- **The Events page offered two controls that could never have worked.** Create Faction and Remove
-  Faction were listed among the world actions, but Project Zomboid provides no way to do either
-  from a mod - the methods are absent from the entire game, not merely undocumented - so both had
-  always failed. They have been removed rather than disabled, because a greyed-out control with an
-  explanation is still an invitation to switch it back on later.
+- **Removed Create Faction and Remove Faction from the Events page.** Project Zomboid provides no way to
+  do either from a mod, so both had always failed.
 
-- **Four more places could act on a server whose state the panel could not actually determine.** The
-  fix above closed that gap for wiping the world, updating through SteamCMD, the unattended
-  auto-updater and automatic mod restarts. The same "cannot tell" being read as "confirmed stopped"
-  was still present in four more: deleting map chunks or a whole region, restoring a backup,
-  applying a config template, and clearing stale lock files. Two of those overwrite live data
-  outright - restoring a backup rolls the world back over every player currently standing in it,
-  and deleting chunks can corrupt save files a still-running server is holding open. All four now
-  refuse outright when the server's state cannot be confirmed, matching the rule already applied
-  everywhere else.
+- **Four more places could act on a server whose state the panel could not determine** - deleting chunks
+  or a region, restoring a backup, applying a template, and clearing stale locks. All now refuse rather
+  than treating "cannot tell" as "stopped".
 
-- **A sandbox setting could be reported as saved and be gone after the next restart.** Applying a
-  sandbox option through the in-game bridge calls the game's own world-save function to persist it,
-  but the result of that save was thrown away - so a save that failed, whether from a full disk or
-  a world already mid-save, still told the panel it had worked. The setting looked applied right up
-  until the server restarted and reverted to whatever was actually on disk. The save's real result
-  is now checked, logged when it fails, and reported back.
+- **A sandbox setting could report saved and be gone after restart.** The game's world-save result was
+  discarded, so a failed save still reported success. It is now checked and reported.
 
-- **Several RCON-only actions reported success while doing nothing at all.** The panel's check for
-  "the game refused this command" recognised exactly one wording - `Unknown command` - so every
-  other way the game says no was read as success. An audit against the real dedicated-server code
-  found four places this let the panel lie. **Kicking a player with a reason** accepted the reason,
-  wrote it to the panel's own log, and never sent it to the game, so the kicked player and the
-  server's logs never saw why. **Releasing a safehouse** can never work over RCON at all - Project
-  Zomboid refuses that specific command from anything but the game itself - and the panel reported
-  success on every attempt anyway; it now says plainly that it cannot do it. (Doing it through the
-  in-game mod instead would be new work, not a fix, and is not part of this release.) **God mode
-  and invisibility aimed at another player** were sent as the command that toggles them on
-  yourself, which has no slot for someone else's name - so it could never reach the player you
-  picked. The panel now sends the command the game actually provides for targeting someone else.
-  The refusal check itself now recognises three more ways the game says no, and is applied to
-  retried commands too: previously a command that reconnected and was then still refused reported
-  success regardless. A warning on the Players page claiming RCON could never target another player
-  has been removed - it was true when it was written, and stopped being true the moment the fix
-  above landed.
+- **Several RCON-only actions reported success while doing nothing**, because only one wording for
+  "the game refused this" was recognised. Kicking never sent the reason, releasing a safehouse cannot
+  work over RCON at all, and god mode/invisibility on another player used the self-targeting command.
 
-- **Three more places reported success without checking whether the thing they claimed to do had
-  happened**, found by the same audit as the 42 above. Applying a config template writes the main
-  settings and the sandbox settings as two separate steps; if the first succeeded and the second
-  failed, the panel reported a flat failure as though neither had happened, when the first was
-  already on disk. Changing the Discord bot's token or server ID while it is running reconnects it
-  immediately, and a reconnect that failed - a bad token, a timeout - was reported exactly like one
-  that worked; the settings themselves always saved correctly, it was only the reconnect status
-  that was wrong. And saving server configuration and immediately telling the running server to
-  reload it always reported the reload half as successful, whatever the server actually said. All
-  three now report what genuinely happened.
+- **Three more places reported success without checking:** the second half of a template apply, a
+  Discord reconnect after changing token or server ID, and the reload half of save-and-reload.
 
-- **The off-screen-buttons bug already fixed for Backups was hiding on three more screens.** A long
-  task name in Scheduler could push its Run, Edit, Toggle and Delete buttons completely out of
-  reach on a phone; the Refresh and Clear buttons above the execution history could be clipped the
-  same way, worse in German; the Debug Logs page had the identical problem in both its header
-  controls and its log lines; and a long player name on the Players page defeated its own
-  truncation and pushed the row's expand arrow off the screen. All four are fixed, and the fix now
-  lives in one shared component instead of being hand-copied a fifth time - so this particular bug
-  cannot come back by copy-paste on whatever screen is built next.
+- **The off-screen-button bug fixed for Backups was hiding on three more screens** - Scheduler, Debug
+  Logs and Players. The fix now lives in one shared component instead of being copied a fifth time.
 
-- **Several disabled buttons and status badges explained themselves only to a mouse.** The reason a
-  button was greyed out - an expired Steam session, missing cookies - lived only in a hover tooltip
-  that a keyboard, touchscreen or screen-reader user never receives. Fixed in three places: the
-  Add and Remove buttons on the Mods page now expose their disabled reason properly; the PanelBridge
-  connection badge announced nothing at all for two of its four states and dropped part of the
-  announcement for the other two, and now announces all four; and a mod conflict badge's
-  "shadowed" explanation is now shown as real visible text instead of hiding behind a hover.
+- **Several disabled buttons and badges explained themselves only to a mouse.** The Mods page
+  Add/Remove buttons, the PanelBridge connection badge and a mod conflict badge now work for keyboard,
+  touch and screen-reader users.
 
-- **Player traits never loaded at all on Build 42.** The in-game bridge asked for a player's traits
-  using three different method names in turn, and none of the three exist in Build 42 - so every
-  trait lookup came back empty, every time, and looked like a player who simply had no traits. It
-  now uses the method Build 42 actually provides. Two smaller faults of the same kind were fixed
-  alongside it: an enum-type sandbox option never reported which choice was selected, and an
-  inventory item's progress values (how far through a book you are, how much is left in a drainable
-  item) were always blank because the panel asked for a single value the game does not have -
-  it now carries both of the real ones.
+- **Player traits never loaded on Build 42.** All three method names the bridge tried are absent from
+  B42. Fixed alongside two of the same kind: enum sandbox options and inventory progress values.
 
-- **Deleting the server you were currently using left the panel talking to the one you deleted.** The
-  panel picks another server to make active when you delete the active one, and the database was
-  updated correctly - but the parts of the panel that actually connect to a server were never told.
-  They carried on using the deleted server's file paths and RCON details until something else happened
-  to refresh them, so the panel looked like it had switched and had not. Activating a server from the
-  list always did this correctly; deleting one now uses the same code path, so the two cannot drift
-  apart again.
+- **Deleting the active server left the panel talking to the deleted one.** The database updated but the
+  connection layer was never told. It now uses the same path as activating a server.
 
-- **Changing your password had no length limit, and very long passwords were being silently cut
-  short.** Every other password path in the panel caps at 128 characters; this one did not. That
-  mattered for a reason that is invisible from the outside: the password hashing the panel uses stops
-  reading after 72 bytes, so two very long passwords that begin the same way would both unlock the
-  same account, with nothing anywhere reporting a problem. Overlong passwords are now rejected with a
-  clear message instead of being quietly truncated.
+- **Password changes had no length limit and were silently truncated.** The hashing stops reading after
+  72 bytes, so two long passwords sharing a prefix unlocked the same account. Overlong passwords are now
+  rejected.
 
-- **The Server Log's "Clear" button deleted the real log file, while its own tooltip promised it did
-  not.** The tooltip read "Clear the log display (does not delete the server log file)". It emptied
-  the actual server-console.txt on disk, permanently, with no confirmation of any kind - the only
-  destructive action in the panel without one. It now asks first, and the tooltip says what it really
-  does.
+- **The Server Log's "Clear" button deleted the real log file** while its tooltip promised it did not -
+  permanently, with no confirmation. It now asks first and the tooltip is honest.
 
-- **The "server is running" notice claimed every setting needed a restart, which was untrue on three
-  of the four screens it appeared on.** It said changes "won't reach the running game until the server
-  restarts". Sandbox settings genuinely do need one. Server settings do not - saving them reloads the
-  running game live, and the panel's own confirmation says "Saved & Reloaded" one screen below the
-  notice telling you the opposite. Spawn points and regions decide per change. The notice now says
-  what is always true: some changes need a restart and the confirmation after saving tells you which.
+- **The "server is running" notice claimed every setting needed a restart**, untrue on three of the four
+  screens it appeared on. It now says that some changes need a restart and the save confirmation tells
+  you which.
 
-- **The map did the same lookup work over and over while it was loading.** On the first load of a map,
-  every tile the page asked for independently repeated the whole "which map format is this server
-  using" discovery instead of waiting for the answer already on its way. The panel now shares one
-  in-progress lookup between all of them.
+- **The map repeated the same format-discovery lookup for every tile** on first load. One lookup is now
+  shared.
 
-- **Part of the map could look permanently broken when the tiles simply do not exist yet.** The
-  upstream map service is missing a block of tiles in the top-left of the current Build 42 map - that
-  is their data, and nothing the panel can create. The real problem was on our side: a tile that will
-  never arrive and a tile that has not arrived yet looked identical, both leaving a dark empty square,
-  so a known gap in someone else's map was indistinguishable from a page that had frozen mid-load.
-  Tiles confirmed missing now render as a distinct, deliberate-looking area.
+- **Missing map tiles were indistinguishable from a page frozen mid-load.** The upstream service is
+  missing a block of Build 42 tiles; confirmed-missing tiles now render as a deliberate-looking area.
 
-- **Map Cleanup was reading your entire save twice every time you opened it.** The page asks for the
-  chunk list and the storage summary at the same moment, and each of those walked every chunk file on
-  disk independently. On a large save that is a lot of work done twice for one page load. Both answers
-  now come from a single pass. Measured on a 147,000-chunk save, the two requests together went from
-  15.3 seconds to 5.6. That is not the whole page load - a separate listing step runs before either of
-  them and is being worked on next. The scan is shared only between requests that are genuinely in flight together
-  and is never cached beyond that, so deleting chunks still shows an accurate count immediately
-  afterwards.
+- **Map Cleanup read your entire save twice on open.** Both answers now come from one pass - on a
+  147,000-chunk save, 15.3s to 5.6s.
 
-- **Behind a reverse proxy, the panel treated every visitor on the internet as if they were sitting at
-  the server.** The "recover my account from the machine itself" option decides whether you are local
-  by looking at the network address the request arrived from. With nginx or Caddy in front of the panel
-  - a setup this project documents and supports - every request arrives from the proxy running on the
-  same machine, so everyone looked local. The panel now recognises when it is behind a proxy and stops
-  claiming it can tell, rather than guessing wrong in the dangerous direction. If you are in that
-  situation the panel says so and points you at the two paths that still work: creating
-  data/reset-token.txt on the host yourself, or using a recovery code.
+- **Behind a reverse proxy, every visitor looked local.** Local-machine account recovery decided by
+  request address, and with nginx or Caddy in front every request arrives from localhost. The panel now
+  detects the proxy, stops claiming it can tell, and points you at the two paths that still work.
 
 - **"Cannot verify whether the server is stopped" - the panel could never confirm a stopped server on
-  Windows.** Reported by a user who could not wipe his server after updating, on a server the panel
-  itself displayed as stopped, no matter how many times he stopped and started it. The panel checks for
-  a running server by asking Windows to list matching processes. When the server is genuinely stopped
-  that list comes back empty - and an empty list was being read as "the check itself failed" rather
-  than "nothing is running". Anything that refuses to act unless it is certain the server is down -
-  wiping, deleting chunks, restoring a backup, running a SteamCMD update - therefore refused forever.
-  Three related faults were found and fixed alongside it. The dashboard's server badge read a cached
-  flag that was being overwritten with a confident "stopped" every time a check failed, which is why
-  the dashboard and the wipe dialog disagreed with each other. A config-editing guard was failing
-  *open* in the same situation, allowing an edit it should have refused. And both failure paths were
-  completely silent, so nothing was ever written down about why a check had failed; they now record the
-  real error.
-  Worth being straight about: this was not introduced by the last release. The old code quietly treated
-  "the check failed" as "the server is stopped", so this has likely been happening on Windows for a long
-  time without ever showing a symptom - which also means a wipe or an update could have run against a
-  server that was actually live. The 1.2.0 safety checks did not cause the problem; they are what made
-  it visible.
+  Windows.** An empty process list read as a failed check, so anything needing a confirmed-stopped
+  server refused forever. Three related faults fixed alongside. Not new in 1.2.0 - the old code read a
+  failed check as "stopped", so a wipe or update could have run against a live server; 1.2.0 made it
+  visible.
 
-- **Thirteen faults in the in-game bridge, most of them reporting success for something that did not
-  happen.** The bridge mod is the only part of the panel that talks directly to the running game, and
-  until now nothing tested it automatically. It does now, and the first audit of all 96 of its commands
-  found a consistent pattern: code that reports success without checking whether the thing it claimed to
-  do actually happened.
-  The ones most likely to have affected you: player traits never loaded at all on Build 42, so every
-  player looked like they had none. Every successful vehicle hotwire was reported as a crash. Horde
-  spawning claimed to have spawned the number you asked for even when using methods the game may
-  silently ignore. Healing a player whose health could not be read reported success while healing
-  nobody. Teleporting reported "Player teleported" even when the player had not moved. God mode,
-  invisibility and noclip all claimed success without checking. Sandbox settings, character
-  import/export and the power/water controls each had a version of the same fault.
-  Commands now say which of three things happened: it worked and we confirmed it, it did not work, or
-  it was done but the game gives us no way to confirm it. That third answer is deliberate - "we cannot
-  check this" and "we checked and it is fine" are different things and should not look the same.
+- **Thirteen faults in the in-game bridge**, found by the first automated audit of all 96 commands -
+  mostly reporting success without checking. Hotwires reported as crashes, unverified horde counts, and
+  the same fault in healing, teleport, god mode, noclip, sandbox settings and the power/water controls.
 
-- **A Diagnostics check silently stopped answering on large saves.** The stale-lock check walks your
-  save folder, and on a big one it always ran out of time - at which point the Diagnostics page simply
-  showed nothing for it. No error, no warning, no "timed out": the question just quietly went
-  unanswered, and the abandoned scan kept running in the background afterwards. It now stops itself
-  cleanly and says so when it could not finish. The manual "clear stale locks" action had the same
-  problem, plus no time limit at all, so a disconnected network drive could hang it indefinitely.
+- **A Diagnostics check silently stopped answering on large saves.** The stale-lock scan timed out and
+  showed nothing at all - no error, no warning - while the abandoned scan kept running. It now stops
+  cleanly and says it could not finish. The manual clear-stale-locks action had no time limit at all.
 
-- **Map Cleanup opens roughly twice as fast.** Following the earlier fix to the same page: the initial
-  save listing was walking every chunk file on disk before the page had even offered you a save to pick,
-  and then the next step walked the same files again. On a 147,000-chunk save the whole sequence went
-  from about 13.7 seconds to between 6 and 8. The shared scan is deliberately short-lived and is thrown
-  away whenever chunks are deleted, so the counts you see before a destructive action are never stale.
+- **Map Cleanup opens roughly twice as fast**, following the earlier fix: the initial save listing
+  walked every chunk file before you had picked a save, then the next step walked them again. 13.7s to
+  6-8s on a 147,000-chunk save.
 
-- **The wipe preview froze the whole panel while it counted.** Ticking "Map & terrain" and pressing
-  Preview counted every file in the save, and it did so in a way that blocked the panel entirely - not
-  just that page, but everything: RCON, the player list, and any other admin signed in at the time.
-  On a large save that was over twenty seconds of a completely unresponsive panel, for what is a routine
-  step before wiping. The count now runs without blocking, and if it cannot finish in time the dialog
-  says so rather than presenting a possibly-incomplete total as final. A preview that quietly undercounts
-  is a dialog misdescribing what it is about to delete.
+- **The wipe preview froze the whole panel while counting** - over twenty seconds of unresponsiveness on
+  a large save, for every signed-in admin. It no longer blocks, and says so if it cannot finish rather
+  than presenting a possibly-incomplete total.
 
 ### Added
 
-- **The panel now tells you when an in-game action could not be confirmed.** Actions carried out
-  through the in-game bridge - teleporting a player, god mode, invisibility, noclip, safehouse and
-  faction operations, spawning a horde, changing a sandbox setting, the vehicle controls - now report
-  one of three things instead of a flat success. Either the mod read the game's state back and
-  confirmed the change actually took effect; or it made the call and says plainly that this particular
-  change cannot be read back, so it is reported as done-but-unconfirmed rather than as a success; or
-  the reply carries no verification at all, which now means one specific thing - the bridge mod on your
-  server is older than the panel and should be updated.
-  The controls behave accordingly. Previously a toggle such as god mode switched itself on the instant
-  you clicked it, whatever the game reported back, so a change the mod had explicitly failed to confirm
-  was displayed as having worked and stayed that way until something refreshed the page. A missed
-  notification is easy to overlook; a switch showing the wrong position is the panel actively telling
-  you something untrue. Those controls now wait for the confirmation before they move.
+- **In-game actions now report whether they were confirmed** - confirmed by reading the game's state
+  back, done but not verifiable, or no verification at all (meaning your bridge mod is older than the
+  panel). Toggles now wait for that confirmation instead of switching the instant you click.
 
-- **The panel is now available in Haitian Creole.** Kreyol ayisyen joins English, French, German,
-  Spanish and Simplified Chinese in the language menu - all 55 sets of text, around 7,000 individual
-  strings, translated from the English originals. Nothing about the existing five languages changed.
-  An honest caveat, since it is your server and your players: this was translated carefully and
-  consistently, working from a shared glossary so the same word is used for the same thing everywhere,
-  but not by a native speaker. Terms that were genuine judgment calls are listed in
-  client/src/locales/GLOSSARY.ht.md rather than being quietly smoothed over, so a Kreyol speaker can
-  review the handful of real decisions in a few minutes instead of reading seven thousand strings.
+- **The panel is now available in Haitian Creole.** Kreyol ayisyen joins the other five languages - all
+  55 sets of text, around 7,000 strings. Translated carefully from a shared glossary but not by a native
+  speaker; the genuine judgment calls are listed in `client/src/locales/GLOSSARY.ht.md` for review.
 
-- **Two more health checks on the Debug page.** One reports how many of your tracked mods currently
-  have no Workshop thumbnail and why - most often because Steam itself cannot be reached from the
-  panel's machine - and the panel now stops re-requesting every one of them on every page load once
-  it has seen a failure, instead of hammering Steam from a host where it already knows it cannot
-  get through. The other looks back over the last day of RCON commands for any the game itself
-  refused, as opposed to a connection failure, which a different check already covers, and names
-  which commands and why.
+- **Two more Debug page health checks:** one reports how many mods have no Workshop thumbnail and why
+  (and stops re-requesting them once it knows Steam is unreachable), the other lists RCON commands the
+  game itself refused over the last day.
 
 ## [1.2.0] - 2026-08-22
 
