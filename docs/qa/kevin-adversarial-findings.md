@@ -14,6 +14,16 @@ would actually type.
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `4a7dc86` ("fix(scheduler): require rcon.execute for
+> raw scheduled commands; label manual restarts"). All three paths that can produce or trigger a
+> raw-classified command (`POST /tasks` create, `PUT /tasks/:id` update, `POST /tasks/:id/run`
+> manual trigger) now call `requireCapabilityInline('rcon.execute', req, res)` when
+> `classifyScheduledCommand(command) === 'raw'` (confirmed at `scheduler.js:174-175, 253-254,
+> 368-369`). Also independently confirmed live tonight by a separate hunt-fork, which specifically
+> re-checked the edge case this finding implies is hardest — a task created by someone who HAD
+> rcon.execute, later run by someone who no longer does — and found the run-time check re-verifies
+> the CALLER's current capability, not whoever created the task. Verified by reading current source.
+
 ## FINDING 1 (High): `automation.manage` silently grants full raw-RCON execution — a capability the Roles screen presents as a separate, unrelated toggle — WHERE: `server/routes/scheduler.js:26` (router-level gate) + `server/services/scheduler.js:266-274` (`executeTask`'s fallback branch)
 
 **WHAT HAPPENS:** A custom role holding `automation.manage` ("Create and edit automated restarts,
@@ -76,6 +86,18 @@ now), and it's silent to both the operator granting the role and the RCON audit 
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `dff7dd2` ("fix(rcon): unify ban-reason and broadcast
+> text folding, transliterate accents"). A shared `foldToRconAscii()` helper now normalizes curly
+> quotes/dashes/ellipsis AND transliterates the full accented-Latin range via
+> `LATIN_TRANSLITERATION_MAP` (confirmed é→e, à→a, ç→c, œ→oe, etc. — real French coverage, not a
+> partial table) BEFORE `sanitizeForBanReason()` applies its punctuation whitelist
+> (`rcon.js:1273-1283`). Re-ran the exact repro from this finding by hand against the current
+> mapping: "répété" → "repete" (not silently dropped to "rpt"), "à" → "a" (not vanished), the curly
+> apostrophe in "d'autres" now folds to a straight `'` before the whitelist (survives) instead of
+> being silently dropped. `serverMessage()` and `sanitizeForBanReason()` now share the same folding
+> logic, closing the inconsistency this finding specifically called out. Verified by reading current
+> source.
+
 ## FINDING 2 (Medium): Ban reasons the panel accepts and logs as-typed get their accented characters silently deleted before reaching RCON — a curly-quote/accent handling gap `serverMessage()` in the SAME file already solved — WHERE: `server/services/rcon.js:1166-1180` (`sanitizeForBanReason` / `banPlayer`), contrast with `:1092-1104` (`serverMessage`)
 
 **WHAT HAPPENS:** `POST /players/ban` validates the `reason` field with `players.js`'s
@@ -128,6 +150,16 @@ places (moderation record-keeping, the ban itself) where an operator most needs 
 account of what happened to be literally true.
 
 ---
+
+> **RECONCILED 2026-08-24 (fork):** FIXED at `4a7dc86` (same commit as Finding 1). `performRestart()`
+> now takes an optional `label` option (defaulting to `"Auto Restart"`, unchanged behavior for the
+> cron job and other internal callers), threaded into every `logScheduleExecution()` call inside it
+> (`scheduler.js:663-672`). `POST /restart-now` now explicitly passes
+> `scheduler.performRestart(parsedWarningMinutes, { label: 'Manual restart' })`
+> (`routes/scheduler.js:410`) — confirmed directly, not inferred from the commit message. The
+> "immediate unconditional success response" half of this finding (the UI can't distinguish
+> "genuinely under way" from "about to fail") is unchanged — this fix addresses the mislabeling half
+> specifically, which is what the finding's own "WHAT SHOULD HAPPEN" asked for.
 
 ## FINDING 3 (Low): manually-triggered `Restart Now` always reports success immediately, and any later failure is recorded in Schedule History mislabeled "Auto Restart" — WHERE: `server/services/scheduler.js:636-651` (`performRestart`) called from `server/routes/scheduler.js:325-354` (`POST /restart-now`)
 

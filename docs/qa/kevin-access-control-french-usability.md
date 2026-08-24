@@ -20,6 +20,12 @@ Finding 1 (`server/services/permissions.js`, `server/routes/permissions.js`) are
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `1594548` ("fix(permissions): deleteRole() refuses
+> seeded roles outright, independent of member count"). `permissions.js`'s `deleteRole()` now
+> throws `ROLE_IS_SEEDED` (403, "Built-in roles cannot be deleted.") as its very first check, before
+> the member/reassignment logic. The fix commit's own comment cites this finding by name and file.
+> Verified directly by reading current source (`permissions.js:743-754`).
+
 ## FINDING 1 (High — this is a security/data-integrity gap, not a wording issue): "Les rôles intégrés ne peuvent pas être supprimés depuis cet écran" is true only of the button — nothing on the server enforces it
 
 **WHERE:** `client/src/locales/fr/roles.json` `matrix.deleteSeededTooltip`, describing the disabled
@@ -66,6 +72,13 @@ losing access, since a role that doesn't exist can't be reassigned back either.
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `d5e8bce` ("Fix three Kevin-review findings on
+> Users/Sign-in/Roles..."). All three screens now `import { getUserErrorMessage } from
+> '@/lib/errorMessage'` and route every catch-all fallback and initial-load error through it
+> (confirmed 13 call sites across Users.tsx/OidcSettings.tsx/RolesPermissions.tsx). The local
+> `describeError()` is gone from all three files. A `toasts.unknownError` fallback key was added to
+> each locale file for the true-no-message case. Verified by reading current source.
+
 ## FINDING 2 (Medium, systemic across all three screens): every unhandled error shows raw English, via three independently-reimplemented copies of the exact bug Toby already filed for `errorMessage.ts`
 
 **WHERE:** `Users.tsx:117-119`, `OidcSettings.tsx:90-92`, `RolesPermissions.tsx:147-149` — each
@@ -102,6 +115,13 @@ including the two newest ones (Users, OIDC) that didn't exist when the original 
 
 ---
 
+> **RECONCILED 2026-08-24 (fork):** FIXED at `d5e8bce` (same commit as Finding 2). Current field
+> order (`OidcSettings.tsx:71`, `FIELD_KEYS`) is `issuerUrl, clientId, redirectUri, scope,
+> providerName` for the tab-order constant, but the RENDERED layout (lines 332-399) is Issuer URL,
+> then Redirect URI (with its confirm note), THEN Client ID/Client Secret — Redirect URI now
+> appears before Client ID/Secret on screen, matching what a first-time operator needs. Verified by
+> reading the current JSX render order directly, not just the constant.
+
 ## FINDING 3 (Medium, usability — OIDC setup order): Client ID and Client Secret are asked for before the Redirect URI, but a first-time operator needs the Redirect URI *first*
 
 **WHERE:** `client/src/pages/OidcSettings.tsx:217-318` — field order top to bottom: Issuer URL,
@@ -128,6 +148,15 @@ OAuth dance from experience elsewhere), but works directly against the explicit 
 being usable by someone who has never done this before.
 
 ---
+
+> **RECONCILED 2026-08-24 (fork):** FIXED at `d5e8bce` (same commit as Findings 2-3). A new
+> `fields.redirectUriConfirmNote` string was added (en/fr) and is rendered directly under the
+> suggested Redirect URI field (`OidcSettings.tsx:376`), asking the operator to confirm the
+> suggestion matches the address they actually reach the panel on — exactly the mitigation this
+> finding recommended (the underlying `req.protocol`/trust-proxy mechanism itself is unchanged, this
+> fixes it via the honesty-note path the finding explicitly offered as the practical option since a
+> code-level fix isn't possible without knowing the operator's real deployment). Verified by reading
+> current source.
 
 ## FINDING 4 (Medium, correctness — not a translation bug, but the French help text doesn't warn about it): the auto-suggested Redirect URI can be silently wrong for the most common self-hosted deployment shape
 
