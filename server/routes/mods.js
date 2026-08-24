@@ -5467,6 +5467,19 @@ const HASH_MAX_BYTES = 50 * 1024 * 1024;
 
 const WALK_MAX_DEPTH = 20;
 const WALK_MAX_FILES = 50_000;
+
+// Global cap on how many entries buildFileIndex() will accumulate across ALL
+// mods combined (panel-oom-buildfileindex-unbounded). WALK_MAX_FILES bounds
+// a single mod's walk, but ctx.left is created fresh per top-level walkDir()
+// call, so the real ceiling was 50,000 x number of mods -- unbounded by mod
+// count. Measured (synthetic, matching the real entry shape -- workshopId +
+// modId + modName + absPath strings per entry): ~500 bytes/entry, so a
+// heavy modlist (150 mods, several routinely near the per-mod ceiling) can
+// reach millions of entries and gigabytes, reproducing the operator's exact
+// "Mark-Compact thrashing near the limit, then heap OOM" crash. 300,000
+// entries (~150MB worst case) matches the maxEntries budget server.js's
+// wipe-preview countDir() already uses for the same class of problem.
+export const FILE_INDEX_MAX_ENTRIES = 300_000;
 const WALK_SKIP_DIRS = new Set([
   ".git",
   ".svn",
@@ -5995,22 +6008,29 @@ async function readIniModLists() {
 // Build the file index and collect per-mod metadata.
 // Calls `onModScanned(modId, modName, wsId, fileCount)` for each mod.
 // If `activeModIds` is provided, only mod directories whose ID is in that set are scanned.
+// `maxEntries` defaults to the real production cap; tests override it with a
+// small value (same pattern as server.js's countDir(dir, budget)) so the cap
+// mechanism is provable without a fixture at the real 300,000-entry scale.
 export async function buildFileIndex(
   workshopIds,
   serverPath,
   onModScanned,
   activeModIds,
+  maxEntries = FILE_INDEX_MAX_ENTRIES,
 ) {
   const fileIndex = {};
   const modInfoMap = {};
   let modsScanned = 0;
   let modsNotFound = 0;
   let modsSkippedInactive = 0;
+  let indexedEntries = 0;
+  let indexTruncated = false;
   const warnings = [];
   const totalWorkshopIds = workshopIds.length;
   const activeSet = activeModIds ? new Set(activeModIds) : null;
 
-  for (let wsIdx = 0; wsIdx < totalWorkshopIds; wsIdx++) {
+  outer: for (let wsIdx = 0; wsIdx < totalWorkshopIds; wsIdx++) {
+    if (indexTruncated) break;
     const wsId = workshopIds[wsIdx];
     if (!/^\d{1,15}$/.test(wsId)) {
       warnings.push(`Skipped invalid workshop ID: ${wsId.slice(0, 20)}`);
@@ -6042,6 +6062,7 @@ export async function buildFileIndex(
     }
     let modsFoundInThisWs = 0;
     for (const modDir of modEntries) {
+      if (indexTruncated) break;
       if (!modDir.isDirectory()) continue;
       const modDirPath = path.join(searchBase, modDir.name);
       // Collect all media paths — direct + B42 versioned subfolders (42/, 42.X/, common/)
@@ -6082,6 +6103,7 @@ export async function buildFileIndex(
       modsFoundInThisWs++;
       let totalFileCount = 0;
       for (const mediaPath of mediaPaths) {
+        if (indexTruncated) break;
         const { files, truncated } = await walkDir(mediaPath);
         if (truncated) {
           warnings.push(
@@ -6100,6 +6122,18 @@ export async function buildFileIndex(
         // the panel for the length of its own indexing.
         let sinceYield = 0;
         for (const relFile of files) {
+          // Global cap (panel-oom-buildfileindex-unbounded): WALK_MAX_FILES
+          // only bounds ONE mod's walk. Without this, fileIndex keeps
+          // accumulating entries across every mod combined, unbounded by mod
+          // count — this is the check that actually stops the OOM. Bail out
+          // of the whole scan (not just this mod) the moment the cap is hit;
+          // continuing to walk further mods after the index is already full
+          // just burns more CPU and memory building `files` arrays nothing
+          // will use.
+          if (indexedEntries >= maxEntries) {
+            indexTruncated = true;
+            break outer;
+          }
           const normalizedPath = relFile.replace(/\\/g, "/").toLowerCase();
           if (!fileIndex[normalizedPath]) {
             fileIndex[normalizedPath] = [];
@@ -6110,6 +6144,7 @@ export async function buildFileIndex(
             modName,
             absPath: path.join(mediaPath, relFile),
           });
+          indexedEntries++;
           if (++sinceYield >= WALK_YIELD_EVERY) {
             sinceYield = 0;
             await yieldTick();
@@ -6135,12 +6170,21 @@ export async function buildFileIndex(
     // Yield after each workshop item so SSE writes and incoming requests aren't starved
     await yieldTick();
   }
+  if (indexTruncated) {
+    // A truncated scan is a wrong answer presented as a complete one unless
+    // it says so — both here (a machine-checkable field) and in `warnings`
+    // (what the UI already surfaces to the operator, see ConflictsPanel.tsx).
+    warnings.push(
+      `File index reached the global ${maxEntries.toLocaleString()}-entry limit — the conflict scan is incomplete. Scan fewer mods at once or remove unused ones and retry.`,
+    );
+  }
   return {
     fileIndex,
     modInfoMap,
     modsScanned,
     modsNotFound,
     modsSkippedInactive,
+    truncated: indexTruncated,
     warnings,
   };
 }
@@ -6872,6 +6916,7 @@ router.get("/conflicts", async (req, res) => {
         modsScanned: 0,
         missingDeps: [],
         modLoadOrder: modIdsFromIni,
+        truncated: false,
         warnings: [],
         scanDurationMs: Date.now() - scanStart,
       });
@@ -6882,6 +6927,7 @@ router.get("/conflicts", async (req, res) => {
       modsScanned,
       modsNotFound,
       modsSkippedInactive,
+      truncated,
       warnings,
     } = await buildFileIndex(workshopIds, serverPath, null, modIdsFromIni);
     const {
@@ -6935,6 +6981,7 @@ router.get("/conflicts", async (req, res) => {
       steamDeps,
       idCollisions,
       modLoadOrder: modIdsFromIni,
+      truncated,
       warnings,
       scanDurationMs: Date.now() - scanStart,
     };
@@ -7040,6 +7087,7 @@ router.get("/conflicts/stream", async (req, res) => {
         totalWorkshopIds: 0,
         missingDeps: [],
         modLoadOrder: modIdsFromIni,
+        truncated: false,
         warnings: [],
         scanDurationMs: Date.now() - scanStart,
       });
@@ -7054,6 +7102,7 @@ router.get("/conflicts/stream", async (req, res) => {
       modsScanned,
       modsNotFound,
       modsSkippedInactive,
+      truncated,
       warnings,
     } = await buildFileIndex(
       workshopIds,
@@ -7191,6 +7240,7 @@ router.get("/conflicts/stream", async (req, res) => {
       steamDeps,
       idCollisions,
       modLoadOrder: modIdsFromIni,
+      truncated,
       warnings,
       scanDurationMs: Date.now() - scanStart,
     };
