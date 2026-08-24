@@ -638,7 +638,7 @@ function TacticalPanel({
   )
 }
 
-function SectionHeader({
+export function SectionHeader({
   label,
   sublabel,
   icon: Icon,
@@ -652,7 +652,7 @@ function SectionHeader({
   tone?: PanelTone
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 select-none">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3 select-none">
       <span className="flex min-w-0 items-center gap-2">
         {Icon && <Icon className={cn('h-4 w-4 shrink-0', toneText(tone))} />}
         <span className="truncate text-sm font-semibold text-foreground">{label}</span>
@@ -663,7 +663,7 @@ function SectionHeader({
           </span>
         )}
       </span>
-      {action && <div className="flex items-center gap-1.5 shrink-0">{action}</div>}
+      {action && <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:shrink-0">{action}</div>}
     </div>
   )
 }
@@ -2005,7 +2005,7 @@ export default function ServerConfig() {
               icon={FileText}
               tone={hasIniChanges ? 'warning' : 'primary'}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {hasIniChanges && (
                     <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
                       <AlertTriangle className="mr-1 h-3 w-3" />
@@ -2426,7 +2426,7 @@ export default function ServerConfig() {
               icon={Code}
               tone={hasSandboxChanges ? 'warning' : 'primary'}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {hasSandboxChanges && (
                     <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
                       <AlertTriangle className="mr-1 h-3 w-3" />
@@ -2864,7 +2864,7 @@ export default function ServerConfig() {
               icon={MapPin}
               tone="muted"
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
                     <Button
                       variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
@@ -2983,7 +2983,7 @@ export default function ServerConfig() {
               sublabel={t('spawnRegionsTab.sectionSublabel', { count: spawnRegions.length })}
               icon={Map}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-muted/30 p-0.5">
                     <Button
                       variant={editorMode === 'structured' ? 'secondary' : 'ghost'}
@@ -3143,7 +3143,7 @@ export default function ServerConfig() {
               icon={Puzzle}
               tone={modifiedModSettingsCount > 0 ? 'warning' : 'info'}
               action={
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {modifiedModSettingsCount > 0 && (
                     <Badge variant="warning" className="h-5 px-1.5 py-0 font-mono text-[10px]">
                       {t('modSettingsTab.modifiedBadge', { count: modifiedModSettingsCount })}
