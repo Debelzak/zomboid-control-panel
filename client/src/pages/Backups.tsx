@@ -118,8 +118,8 @@ export default function Backups() {
       setBackupSchedule(status.schedule)
       setBackupMaxCount(status.maxBackups)
       setLoadError(null)
-    } catch {
-      setLoadError(t('toasts.loadStatusFailed'))
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : t('toasts.loadStatusFailed'))
     }
   }, [t])
 
@@ -139,8 +139,8 @@ export default function Backups() {
         })
         return newSelection
       })
-    } catch {
-      setLoadError(t('toasts.loadBackupsFailed'))
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : t('toasts.loadBackupsFailed'))
     }
   }, [t])
 
