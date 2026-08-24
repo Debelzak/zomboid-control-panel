@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The World Map went completely black as soon as you zoomed past about 137%, while player and
+  vehicle markers carried on showing.** (Reported as #109.) The map is served as a stack of
+  pre-rendered image tiles at increasing detail, and the panel worked out how many levels of detail
+  existed by calculating what a complete stack *would* contain for an image that size - rather than
+  checking how far the map service had actually rendered. It hasn't rendered that far, and it never
+  will: the deepest level alone would be over half a million tiles. So past a certain zoom the panel
+  was asking for tiles that do not exist, getting nothing back, and drawing nothing - leaving bare
+  background with the markers still painted on top of it. The panel now finds out how deep the real
+  map goes instead of assuming, and - just as importantly - when any tile is missing or still
+  loading it now stretches the next coarser tile over the gap instead of leaving it empty. The map
+  goes briefly blurry where it used to go black, including during ordinary panning.
+
 - **Scanning a large mod library for conflicts could crash the whole panel.** The conflict scan builds
   an index of every file in every installed mod. There was a limit on how many files it would read
   from any single mod, but nothing at all limited the total across all of them, so the index simply
