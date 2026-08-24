@@ -180,7 +180,7 @@ export default function Scheduler() {
       })
     } catch (error) {
       reportClientError('Failed to fetch scheduler data.', error)
-      setFetchError(t('fetchError.fallback'))
+      setFetchError(error instanceof Error ? error.message : t('fetchError.fallback'))
     } finally {
       setInitialLoading(false)
     }
