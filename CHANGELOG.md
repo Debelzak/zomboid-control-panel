@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Scanning a large mod library for conflicts could crash the whole panel.** The conflict scan builds
+  an index of every file in every installed mod. There was a limit on how many files it would read
+  from any single mod, but nothing at all limited the total across all of them, so the index simply
+  grew with the size of your library until the panel ran out of memory and died - taking everything
+  else with it, mid-scan, with no warning. Reproduced here at realistic library sizes: a hundred and
+  fifty mods was enough to exhaust four gigabytes and terminate the panel outright. The index is now
+  capped as a whole rather than per mod, and the scan stops the moment it fills. If it does fill, the
+  panel says so and tells you the conflict list is incomplete, rather than quietly showing you a
+  partial answer as though it were the whole picture.
+
 - **A scheduled task could be set to run every few seconds and slowly grind the server down.** The
   panel refuses any schedule that repeats more often than every five minutes, to stop a task being
   used to hammer the server. That limit only understood the ordinary five-part schedule format. Give
