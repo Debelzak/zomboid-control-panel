@@ -270,11 +270,11 @@ type DiagnosticsFixAction = {
   note?: string;
 };
 
-// The three log-download handlers below fetch with authFetch() (a raw
-// fetch, not the JSON api.ts client that already parses `{ error, code }`
-// bodies), so a non-ok response needs its own body read before the real
-// server message -- "Log file not found", "No support logs found", etc. --
-// can reach the catch block instead of just an HTTP status number.
+// This whole file fetches with authFetch() (a raw fetch, not the JSON
+// api.ts client that already parses `{ error, code }` bodies), so a
+// non-ok response needs its own body read before the real server message
+// -- "Log file not found", "No support logs found", "Invalid filename",
+// etc. -- can reach a catch block instead of just an HTTP status number.
 export async function parseDownloadError(res: Response, fallback: string): Promise<string> {
   try {
     const data: unknown = await res.json();
@@ -821,7 +821,7 @@ export default function Debug() {
     setRefreshingHealth(true);
     try {
       const res = await authFetch("/api/debug/health");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data?.services) {
         setHealthStatus(data);
@@ -843,7 +843,7 @@ export default function Debug() {
     setRefreshingDiagnostics(true);
     try {
       const res = await authFetch("/api/debug/diagnostics");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data?.checks) {
         setDiagnostics(data);
@@ -1157,7 +1157,7 @@ export default function Debug() {
     setWorldMapError(null);
     try {
       const res = await authFetch("/api/debug/worldmap");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data?.checks) {
         setWorldMapDiag(data);
@@ -1510,15 +1510,15 @@ export default function Debug() {
       const res = await authFetch(
         `/api/debug/crash-logs/${encodeURIComponent(filename)}`,
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
       const data = await res.json();
       if (data.content !== undefined && data.content !== null) {
         setCrashLogContent(data.content || t("crashesTab.emptyFile"));
       } else {
         setCrashLogContent(t("crashesTab.loadFailed"));
       }
-    } catch {
-      setCrashLogContent(t("crashesTab.loadFailed"));
+    } catch (error) {
+      setCrashLogContent(error instanceof Error ? error.message : t("crashesTab.loadFailed"));
     } finally {
       setLoadingCrashLog(false);
     }
