@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-08-25
+
+### Fixed
+
+- **Standalone self-updates could apply a stale executable from a mismatched release.**
+  Updates now verify that the downloaded binary and release archive share the
+  expected version and checksum, and the release pipeline refuses to publish
+  artifacts built from a different package version.
+
+- **Fresh all-in-one installs could fail with SteamCMD's misleading "Missing file
+  permissions" error.** SteamCMD and the panel now receive an explicit writable
+  home directory instead of inheriting an invalid root home in non-interactive
+  containers.
+
 ## [1.2.4] - 2026-08-25
 
 ### Fixed
