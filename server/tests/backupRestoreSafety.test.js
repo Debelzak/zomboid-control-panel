@@ -19,6 +19,7 @@ vi.mock("../routes/chunks.js", () => ({
 }));
 
 const { BackupService } = await import("../services/backupService.js");
+const { Open } = await import("unzipper");
 
 const SERVER_NAME = "servertest";
 
@@ -205,6 +206,51 @@ describe("createBackup archive safety", () => {
     const files = fs.readdirSync(backupsPath);
     expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
     expect(files.some((f) => f.endsWith(".zip"))).toBe(true);
+  });
+
+  it("does not depend on readdir arrays while creating a backup", async () => {
+    const service = createService();
+    service.cleanupOldBackups = async () => {};
+    const callbackReaddir = vi.spyOn(fs, "readdir").mockImplementation((...args) => {
+      args.at(-1)(new Error("readdir must not be used for backup traversal"));
+    });
+    const promiseReaddir = vi
+      .spyOn(fs.promises, "readdir")
+      .mockRejectedValue(new Error("readdir must not be used for backup traversal"));
+
+    try {
+      const result = await service.createBackup({});
+      expect(result.success).toBe(true);
+      expect(fs.existsSync(result.backup.path)).toBe(true);
+    } finally {
+      callbackReaddir.mockRestore();
+      promiseReaddir.mockRestore();
+    }
+  });
+
+  it("includes every nested save entry in the archive", async () => {
+    const nestedFiles = [
+      "map/chunk.bin",
+      "players/alpha/player.db",
+      "vehicles/zone-1/vehicle.db",
+    ];
+    for (const relativePath of nestedFiles) {
+      const filePath = path.join(savesPath, relativePath);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, relativePath);
+    }
+
+    const result = await createService().createBackup({});
+    const archive = await Open.file(result.backup.path);
+    const entryNames = archive.files.map((entry) => entry.path);
+
+    expect(result.success).toBe(true);
+    expect(entryNames).toEqual(
+      expect.arrayContaining([
+        ...nestedFiles.map((relativePath) => `${SERVER_NAME}/${relativePath}`),
+        "panel-server-snapshot.json",
+      ]),
+    );
   });
 
 });

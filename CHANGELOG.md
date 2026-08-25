@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-08-25
+
+### Fixed
+
+- **Scheduled backups could exhaust the packaged panel's Node.js heap on large
+  saves.** Backup traversal now uses bounded directory handles and feeds ZIP
+  entries one at a time instead of materializing directory listings or the
+  archiver's recursive glob queue.
+
 ## [1.2.3] - 2026-08-24
 
 ### Fixed

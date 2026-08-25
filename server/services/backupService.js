@@ -25,6 +25,99 @@ async function getUnzipper() {
   return unzipper;
 }
 
+async function* walkDirectory(rootDir) {
+  const pending = [{ dirPath: rootDir, archivePath: "", isRoot: true }];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    let directory;
+    try {
+      directory = await fs.promises.opendir(current.dirPath);
+    } catch (error) {
+      if (current.isRoot) throw error;
+      continue;
+    }
+
+    try {
+      let entry;
+      while ((entry = await directory.read()) !== null) {
+        const archivePath = current.archivePath
+          ? `${current.archivePath}/${entry.name}`
+          : entry.name;
+        const fullPath = path.join(current.dirPath, entry.name);
+
+        if (entry.isDirectory()) {
+          pending.push({
+            dirPath: fullPath,
+            archivePath,
+            isRoot: false,
+          });
+        }
+
+        yield { entry, fullPath, archivePath };
+      }
+    } finally {
+      await directory.close().catch(() => {});
+    }
+  }
+}
+
+async function countFiles(rootDir) {
+  let count = 0;
+  for await (const { entry } of walkDirectory(rootDir)) {
+    if (!entry.isDirectory()) count++;
+  }
+  return count;
+}
+
+function waitForArchiveEntry(archive, append) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      archive.off("entry", onEntry);
+      archive.off("error", onError);
+      archive.off("warning", onWarning);
+    };
+
+    const settle = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      handler(value);
+    };
+
+    const onEntry = () => settle(resolve);
+    const onError = (error) => settle(reject, error);
+    const onWarning = (error) => {
+      if (error.code === "ENOENT") {
+        settle(resolve);
+      } else {
+        settle(reject, error);
+      }
+    };
+
+    archive.on("entry", onEntry);
+    archive.on("error", onError);
+    archive.on("warning", onWarning);
+
+    try {
+      append();
+    } catch (error) {
+      settle(reject, error);
+    }
+  });
+}
+
+async function appendDirectoryToArchive(archive, sourceRoot, destinationRoot) {
+  for await (const { entry, fullPath, archivePath } of walkDirectory(sourceRoot)) {
+    const entryName = `${destinationRoot}/${archivePath}${entry.isDirectory() ? "/" : ""}`;
+    await waitForArchiveEntry(archive, () =>
+      archive.file(fullPath, { name: entryName }),
+    );
+  }
+}
+
 export class BackupService {
   constructor() {
     this.backupInProgress = false;
@@ -263,49 +356,8 @@ export class BackupService {
 
     emitProgress("preparing", 10, "Scanning files...");
 
-    // Count total files for progress (asynchronously to avoid blocking)
-    //
-    // NOTE (B28 in the backend audit): a fix was attempted here to replace
-    // this pre-count with archiver's own 'progress' event, on the theory
-    // that archiver already walks the tree internally so this walk is
-    // redundant. Live-tested against a real save and reverted: archiver's
-    // `entries.total` for a directory() source is NOT a pre-computed final
-    // count -- it grows 1:1 with `entries.processed` via lazy on-demand
-    // discovery (confirmed via raw event dumps: total===processed on every
-    // single event, all the way to completion). Using it as a percentage
-    // denominator made the progress bar jump straight from 15% to 90%
-    // instead of updating smoothly, which is a regression, not a fix. A
-    // real upfront total requires a separate walk one way or another; this
-    // one uses parallel readdir to keep it as cheap as reasonably possible.
+    // Count total files for progress without materializing directory listings.
     let totalFiles = 0;
-    // Iterative walk: recursing with Promise.all held one pending promise per
-    // entry for the whole tree at once, which on a large save is a needless
-    // heap and file-descriptor spike during an already memory-heavy operation.
-    const countFiles = async (rootDir) => {
-      let count = 0;
-      const pending = [rootDir];
-
-      while (pending.length > 0) {
-        const dir = pending.pop();
-        let entries;
-        try {
-          entries = await fs.promises.readdir(dir, { withFileTypes: true });
-        } catch {
-          // Unreadable directory (e.g. permission denied) - skip it.
-          continue;
-        }
-
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            pending.push(path.join(dir, entry.name));
-          } else {
-            count++;
-          }
-        }
-      }
-
-      return count;
-    };
 
     try {
       totalFiles = await countFiles(savesPath);
@@ -468,18 +520,34 @@ export class BackupService {
 
       archive.pipe(output);
 
-      // Add the saves folder to the archive
-      archive.directory(savesPath, path.basename(savesPath));
-      archive.append(JSON.stringify(serverSnapshot, null, 2), {
-        name: "panel-server-snapshot.json",
-      });
+      const appendBackupContents = async () => {
+        try {
+          await appendDirectoryToArchive(
+            archive,
+            savesPath,
+            path.basename(savesPath),
+          );
+          await waitForArchiveEntry(archive, () =>
+            archive.append(JSON.stringify(serverSnapshot, null, 2), {
+              name: "panel-server-snapshot.json",
+            }),
+          );
 
-      // Optionally include database
-      if (dbPathToInclude) {
-        archive.file(dbPathToInclude, { name: "db.json" });
-      }
+          if (dbPathToInclude) {
+            await waitForArchiveEntry(archive, () =>
+              archive.file(dbPathToInclude, { name: "db.json" }),
+            );
+          }
 
-      archive.finalize();
+          await archive.finalize();
+        } catch (error) {
+          archive.abort();
+          cleanupTemp();
+          reject(error);
+        }
+      };
+
+      void appendBackupContents();
     });
   }
 
