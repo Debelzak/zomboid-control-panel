@@ -1049,7 +1049,7 @@ export default function Dashboard() {
               >
                 <X className="h-3.5 w-3.5" />
               </Button>
-              <Link to="/settings?tab=panel">
+              <Link to="/settings?tab=updates">
                 <Button
                   size="sm"
                   variant={lastFailed ? 'destructive' : 'default'}
