@@ -1203,14 +1203,14 @@ export default function Events() {
       active = false
       clearInterval(interval)
     }
-  }, [bridgeConnected, bridgeOptionsRefreshTick])
+  }, [bridgeConnected, bridgeOptionsRefreshTick, i18n.language])
 
   const pushActivity = useCallback((label: string, ok: boolean) => {
     setActivity((prev) => [
       { key: Date.now() + Math.random(), label, ok, at: formatPanelTimestamp(new Date(), i18n.language) },
       ...prev,
     ].slice(0, 6))
-  }, [])
+  }, [i18n.language])
 
   // Bridge weather commands
   const handleBridgeAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {

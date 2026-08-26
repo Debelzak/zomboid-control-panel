@@ -2083,7 +2083,7 @@ export default function Mods() {
         }
       />
     )
-  }, [demoMode, selectedMods, configuredWorkshopIds, loading, toggleModSelect, toast, t])
+  }, [demoMode, selectedMods, configuredWorkshopIds, loading, toggleModSelect, toast, t, i18n.language])
 
   // ── Virtualized tracked mods list ──
   type ModGroup = 'update' | 'neverChecked' | 'upToDate' | 'deactivated'

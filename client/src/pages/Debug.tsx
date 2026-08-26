@@ -1531,7 +1531,7 @@ export default function Debug() {
     } finally {
       if (thisFetchId === perfFetchIdRef.current) setRefreshingPerformance(false);
     }
-  }, [authFetch, perfRange]);
+  }, [authFetch, perfRange, i18n.language]);
 
   const fetchCrashLogs = async () => {
     setRefreshingCrashLogs(true);
