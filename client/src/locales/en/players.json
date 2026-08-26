@@ -310,6 +310,8 @@
     "exportButton": "Export {{player}}",
     "exportButtonFallback": "Player",
     "characterDataLabel": "Character Data",
+    "copyCharacterDataAria": "Copy character data",
+    "copiedAria": "Copied",
     "downloadFileButton": "Download File",
     "importTitle": "Import Character",
     "importDesc": "Restore XP, perks, skills, and exported inventory",
@@ -322,7 +324,9 @@
     "savedExportsTitle": "Saved Exports ({{count}})",
     "sizeKb": "({{size}} KB)",
     "downloadTitle": "Download",
-    "deleteTitle": "Delete"
+    "deleteTitle": "Delete",
+    "downloadExportAria": "Download {{username}}'s saved export",
+    "deleteExportAria": "Delete {{username}}'s saved export"
   },
   "actions": {
     "kickPlayer": "Kick player",

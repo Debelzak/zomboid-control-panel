@@ -310,6 +310,8 @@
     "exportButton": "Ekspòte {{player}}",
     "exportButtonFallback": "Jwè",
     "characterDataLabel": "Done Pèsonaj",
+    "copyCharacterDataAria": "Kopye done pèsonaj",
+    "copiedAria": "Kopye",
     "downloadFileButton": "Telechaje Dosye",
     "importTitle": "Enpòte Pèsonaj",
     "importDesc": "Retabli XP, konpetans, ak envantè ekspòte",
@@ -322,7 +324,9 @@
     "savedExportsTitle": "Ekspòtasyon Sove ({{count}})",
     "sizeKb": "({{size}} KB)",
     "downloadTitle": "Telechaje",
-    "deleteTitle": "Efase"
+    "deleteTitle": "Efase",
+    "downloadExportAria": "Telechaje ekspòte sovgade pou {{username}}",
+    "deleteExportAria": "Efase ekspòte sovgade pou {{username}}"
   },
   "actions": {
     "kickPlayer": "Mete jwè a deyò",

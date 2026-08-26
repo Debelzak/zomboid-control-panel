@@ -519,6 +519,7 @@ export default function RolesPermissions({ embedded = false }: { embedded?: bool
                                 size="icon"
                                 className="h-6 w-6"
                                 title={t('matrix.renameTooltip')}
+                                aria-label={t('matrix.renameTooltip')}
                                 onClick={() => openRenameDialog(role)}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -540,6 +541,7 @@ export default function RolesPermissions({ embedded = false }: { embedded?: bool
                                   size="icon"
                                   className="h-6 w-6 text-destructive hover:text-destructive"
                                   title={t('matrix.deleteTooltip')}
+                                  aria-label={t('matrix.deleteTooltip')}
                                   onClick={() => openDeleteDialog(role)}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />

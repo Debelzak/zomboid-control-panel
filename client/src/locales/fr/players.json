@@ -310,6 +310,8 @@
     "exportButton": "Exporter {{player}}",
     "exportButtonFallback": "Joueur",
     "characterDataLabel": "Données du personnage",
+    "copyCharacterDataAria": "Copier les données du personnage",
+    "copiedAria": "Copié",
     "downloadFileButton": "Télécharger le fichier",
     "importTitle": "Importer le personnage",
     "importDesc": "Restaurer l'XP, les compétences, capacités et l'inventaire exporté",
@@ -322,7 +324,9 @@
     "savedExportsTitle": "Exports enregistrés ({{count}})",
     "sizeKb": "({{size}} Ko)",
     "downloadTitle": "Télécharger",
-    "deleteTitle": "Supprimer"
+    "deleteTitle": "Supprimer",
+    "downloadExportAria": "Télécharger l'export enregistré de {{username}}",
+    "deleteExportAria": "Supprimer l'export enregistré de {{username}}"
   },
   "actions": {
     "kickPlayer": "Expulser le joueur",

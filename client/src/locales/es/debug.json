@@ -1400,6 +1400,8 @@
     "databaseLabel": "Base de datos:",
     "logsFolderLabel": "Carpeta de registros:",
     "copyPathTooltip": "Copiar ruta",
+    "copyDbPathAria": "Copiar ruta de la base de datos",
+    "copyLogsPathAria": "Copiar ruta de la carpeta de registros",
     "pathsUpdatedTitle": "Rutas actualizadas",
     "enterAtLeastOnePath": "Es necesario introducir al menos una ruta",
     "updatePathsFailedFallback": "Error al actualizar las rutas"

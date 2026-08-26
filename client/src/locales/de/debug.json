@@ -1400,6 +1400,8 @@
     "databaseLabel": "Datenbank:",
     "logsFolderLabel": "Protokollordner:",
     "copyPathTooltip": "Pfad kopieren",
+    "copyDbPathAria": "Datenbankpfad kopieren",
+    "copyLogsPathAria": "Pfad des Protokollordners kopieren",
     "pathsUpdatedTitle": "Pfade aktualisiert",
     "enterAtLeastOnePath": "Gib mindestens einen Pfad ein",
     "updatePathsFailedFallback": "Aktualisieren der Pfade fehlgeschlagen"

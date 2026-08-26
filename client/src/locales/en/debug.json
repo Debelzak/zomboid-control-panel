@@ -1400,6 +1400,8 @@
     "databaseLabel": "Database:",
     "logsFolderLabel": "Logs folder:",
     "copyPathTooltip": "Copy path",
+    "copyDbPathAria": "Copy database path",
+    "copyLogsPathAria": "Copy logs folder path",
     "pathsUpdatedTitle": "Paths Updated",
     "enterAtLeastOnePath": "Please enter at least one path",
     "updatePathsFailedFallback": "Failed to update paths"

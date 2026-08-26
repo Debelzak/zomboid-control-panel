@@ -1400,6 +1400,8 @@
     "databaseLabel": "Baz Done:",
     "logsFolderLabel": "Dosye jounal:",
     "copyPathTooltip": "Kopye chemen",
+    "copyDbPathAria": "Kopye chemen baz done",
+    "copyLogsPathAria": "Kopye chemen dosye jounal",
     "pathsUpdatedTitle": "Chemen Mete Ajou",
     "enterAtLeastOnePath": "Tanpri antre omwen yon chemen",
     "updatePathsFailedFallback": "Pa t kapab mete ajou chemen yo"

@@ -2882,6 +2882,7 @@ export default function Players() {
                       size="sm"
                       variant="ghost"
                       className="h-7 w-7 p-0"
+                      aria-label={copied ? t('importExport.copiedAria') : t('importExport.copyCharacterDataAria')}
                       onClick={() => {
                         copyText(characterData)
                         setCopied(true)
@@ -3055,6 +3056,7 @@ export default function Players() {
                             size="sm"
                             className="h-6 w-6 p-0"
                             title={t('importExport.downloadTitle')}
+                            aria-label={t('importExport.downloadExportAria', { username: exp.username })}
                             onClick={async () => {
                               try {
                                 const data = await playersApi.getExport(exp.username, exp.filename)
@@ -3077,6 +3079,7 @@ export default function Players() {
                             size="sm"
                             className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                             title={t('importExport.deleteTitle')}
+                            aria-label={t('importExport.deleteExportAria', { username: exp.username })}
                             onClick={async () => {
                               try {
                                 await playersApi.deleteExport(exp.username, exp.filename)

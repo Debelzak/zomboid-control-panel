@@ -1400,6 +1400,8 @@
     "databaseLabel": "Base de données :",
     "logsFolderLabel": "Dossier de journaux :",
     "copyPathTooltip": "Copier le chemin",
+    "copyDbPathAria": "Copier le chemin de la base de données",
+    "copyLogsPathAria": "Copier le chemin du dossier des journaux",
     "pathsUpdatedTitle": "Chemins mis à jour",
     "enterAtLeastOnePath": "Veuillez saisir au moins un chemin",
     "updatePathsFailedFallback": "Échec de la mise à jour des chemins"

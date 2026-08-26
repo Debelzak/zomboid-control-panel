@@ -310,6 +310,8 @@
     "exportButton": "导出 {{player}}",
     "exportButtonFallback": "玩家",
     "characterDataLabel": "角色数据",
+    "copyCharacterDataAria": "复制角色数据",
+    "copiedAria": "已复制",
     "downloadFileButton": "下载文件",
     "importTitle": "导入角色",
     "importDesc": "恢复经验值、技能特长、技能与已导出的背包",
@@ -322,7 +324,9 @@
     "savedExportsTitle": "已保存的导出（{{count}}）",
     "sizeKb": "（{{size}} KB）",
     "downloadTitle": "下载",
-    "deleteTitle": "删除"
+    "deleteTitle": "删除",
+    "downloadExportAria": "下载 {{username}} 的已保存导出",
+    "deleteExportAria": "删除 {{username}} 的已保存导出"
   },
   "actions": {
     "kickPlayer": "踢出玩家",

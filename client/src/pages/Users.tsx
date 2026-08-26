@@ -340,6 +340,7 @@ export default function Users({ embedded = false }: { embedded?: boolean }) {
                                 size="icon"
                                 className="h-8 w-8 text-destructive hover:text-destructive"
                                 title={t('table.removeTooltip', { username: user.username })}
+                                aria-label={t('table.removeTooltip', { username: user.username })}
                                 onClick={() => handleDelete(user)}
                               >
                                 <Trash2 className="h-4 w-4" />

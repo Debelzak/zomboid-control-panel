@@ -93,6 +93,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { cn, copyText } from "@/lib/utils";
 import {
   apiFetch,
+  ApiError,
   modsApi,
   panelBridgeApi,
   serverApi,
@@ -1083,10 +1084,18 @@ export default function Debug() {
             failed?: number;
             message?: string;
             error?: string;
+            code?: string;
           } | null;
           if (!res.ok || data?.success === false) {
-            throw new Error(
+            // 2026-08-26: authFetch/apiFetch bypasses lib/api.ts's
+            // handleResponse(), so this throw is the only place that ever
+            // sees this response -- a plain Error here would discard
+            // res.status and any code the server sent before the
+            // getUserErrorMessage() call in this function's own catch
+            // block (below) could ever use them.
+            throw new ApiError(
               data?.error || data?.message || `HTTP ${res.status}`,
+              { status: res.status, code: data?.code },
             );
           }
           toast({
@@ -5957,6 +5966,7 @@ export default function Debug() {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0 shrink-0"
+                            aria-label={t("systemTab.copyDbPathAria")}
                             onClick={async () => {
                               const ok = await copyText(systemInfo.dbPath);
                               toast({
@@ -5991,6 +6001,7 @@ export default function Debug() {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0 shrink-0"
+                            aria-label={t("systemTab.copyLogsPathAria")}
                             onClick={async () => {
                               const ok = await copyText(systemInfo.logsPath);
                               toast({

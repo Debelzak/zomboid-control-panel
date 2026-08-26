@@ -310,6 +310,8 @@
     "exportButton": "{{player}} exportieren",
     "exportButtonFallback": "Spieler",
     "characterDataLabel": "Charakterdaten",
+    "copyCharacterDataAria": "Charakterdaten kopieren",
+    "copiedAria": "Kopiert",
     "downloadFileButton": "Datei herunterladen",
     "importTitle": "Charakter importieren",
     "importDesc": "XP, Perks, Skills und exportiertes Inventar wiederherstellen",
@@ -322,7 +324,9 @@
     "savedExportsTitle": "Gespeicherte Exporte ({{count}})",
     "sizeKb": "({{size}} KB)",
     "downloadTitle": "Herunterladen",
-    "deleteTitle": "Löschen"
+    "deleteTitle": "Löschen",
+    "downloadExportAria": "Gespeicherten Export von {{username}} herunterladen",
+    "deleteExportAria": "Gespeicherten Export von {{username}} löschen"
   },
   "actions": {
     "kickPlayer": "Spieler kicken",

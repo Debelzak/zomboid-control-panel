@@ -359,6 +359,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
               <button
                 type="button"
                 onClick={() => setSearch('')}
+                aria-label={t('clearSearchAria')}
                 className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground shrink-0"
               >
                 <X className="w-3 h-3" />
@@ -371,6 +372,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
               disabled={scanning}
               className="h-7 w-7 p-0 shrink-0"
               title={t('rescanTitle')}
+              aria-label={t('rescanTitle')}
             >
               {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             </Button>

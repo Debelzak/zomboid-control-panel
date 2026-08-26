@@ -1400,6 +1400,8 @@
     "databaseLabel": "数据库：",
     "logsFolderLabel": "日志文件夹：",
     "copyPathTooltip": "复制路径",
+    "copyDbPathAria": "复制数据库路径",
+    "copyLogsPathAria": "复制日志文件夹路径",
     "pathsUpdatedTitle": "路径已更新",
     "enterAtLeastOnePath": "请至少输入一个路径",
     "updatePathsFailedFallback": "更新路径失败"

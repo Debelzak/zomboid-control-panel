@@ -403,6 +403,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
               <button
                 type="button"
                 onClick={() => setSearch('')}
+                aria-label={t('clearSearchAria')}
                 className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground shrink-0 motion-safe:transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
@@ -415,6 +416,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
               disabled={scanning}
               className="h-8 w-8 p-0 shrink-0"
               title={t('rescanTitle')}
+              aria-label={t('rescanTitle')}
             >
               {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             </Button>
