@@ -705,7 +705,7 @@ export default function Settings() {
     } catch (error) {
       reportClientError("Failed to fetch settings.", error);
       const message =
-        error instanceof Error ? error.message : t("pageHeader.loadFailedFallback");
+        getUserErrorMessage(error, t("pageHeader.loadFailedFallback"));
       setSettingsLoadError(message);
     } finally {
       setLoading(false);
@@ -789,9 +789,7 @@ export default function Settings() {
       }
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : t("updates.couldNotLoadUpdaterStatus");
+        getUserErrorMessage(error, t("updates.couldNotLoadUpdaterStatus"));
       setPanelUpdateStatusError(message);
       reportClientError("Failed to fetch panel update status.", error);
     }
@@ -902,7 +900,7 @@ export default function Settings() {
       toast({
         title: t("toasts.recoveryCodesFailed.title"),
         description:
-          error instanceof Error ? error.message : t("toasts.recoveryCodesFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.recoveryCodesFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -961,9 +959,7 @@ export default function Settings() {
       toast({
         title: t("toasts.settingsSaveFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.settingsSaveFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.settingsSaveFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -994,9 +990,7 @@ export default function Settings() {
       toast({
         title: t("toasts.corsReloadFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.corsReloadFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.corsReloadFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1018,9 +1012,7 @@ export default function Settings() {
       toast({
         title: t("toasts.corsLogClearFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.corsLogClearFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.corsLogClearFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1052,8 +1044,7 @@ export default function Settings() {
         if (apiErr?.code === "apply_in_progress") {
           toast({
             title: t("toasts.updateInProgress.title"),
-            description:
-              apiErr.message || t("toasts.updateInProgress.fallback"),
+            description: getUserErrorMessage(err, t("toasts.updateInProgress.fallback")),
           });
           return;
         }
@@ -1091,9 +1082,7 @@ export default function Settings() {
       toast({
         title: t("toasts.updateCheckFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.updateCheckFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.updateCheckFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1149,9 +1138,7 @@ export default function Settings() {
       toast({
         title: t("toasts.downloadFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.downloadFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.downloadFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1308,9 +1295,7 @@ export default function Settings() {
       toast({
         title: t("toasts.rconFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.rconFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.rconFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1327,7 +1312,7 @@ export default function Settings() {
     } catch (error) {
       reportClientError("Failed to fetch bridge status.", error);
       setBridgeError(
-        error instanceof Error ? error.message : t("bridge.statusFetchFailedFallback"),
+        getUserErrorMessage(error, t("bridge.statusFetchFailedFallback")),
       );
     }
   }, [t]);
@@ -1383,9 +1368,7 @@ export default function Settings() {
       toast({
         title: t("toasts.installFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.installFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.installFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1486,7 +1469,7 @@ export default function Settings() {
       toast({
         title: t("toasts.backupFailed.title"),
         description:
-          error instanceof Error ? error.message : t("toasts.backupFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.backupFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1510,7 +1493,7 @@ export default function Settings() {
       toast({
         title: t("toasts.deleteFailed.title"),
         description:
-          error instanceof Error ? error.message : t("toasts.deleteFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.deleteFailed.fallback")),
         variant: "destructive",
       });
     }
@@ -1535,7 +1518,7 @@ export default function Settings() {
       toast({
         title: t("toasts.restoreFailed.title"),
         description:
-          error instanceof Error ? error.message : t("toasts.restoreFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.restoreFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1588,9 +1571,7 @@ export default function Settings() {
       toast({
         title: t("toasts.backupSettingsSaveFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.backupSettingsSaveFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.backupSettingsSaveFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1616,9 +1597,7 @@ export default function Settings() {
       toast({
         title: t("toasts.backupsUpdateFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.backupsUpdateFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.backupsUpdateFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1728,7 +1707,7 @@ export default function Settings() {
       await fetchBridgeStatus();
     } catch (error) {
       setBridgeError(
-        error instanceof Error ? error.message : t("errors.couldNotAutoConfigure"),
+        getUserErrorMessage(error, t("errors.couldNotAutoConfigure")),
       );
     } finally {
       setBridgeLoading(false);
@@ -1749,9 +1728,7 @@ export default function Settings() {
       toast({
         title: t("toasts.bridgeStopFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.bridgeStopFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.bridgeStopFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -1778,9 +1755,7 @@ export default function Settings() {
       await fetchBridgeStatus();
     } catch (error) {
       setBridgeError(
-        error instanceof Error
-          ? error.message
-          : t("errors.couldNotConfigureBridge"),
+        getUserErrorMessage(error, t("errors.couldNotConfigureBridge")),
       );
     } finally {
       setBridgeLoading(false);
@@ -1811,7 +1786,7 @@ export default function Settings() {
     } catch (error) {
       setRemoteLogs([]);
       setRemoteLogError(
-        error instanceof Error ? error.message : t("errors.couldNotListRemoteLogs"),
+        getUserErrorMessage(error, t("errors.couldNotListRemoteLogs")),
       );
     } finally {
       setLoadingRemoteLogs(false);
@@ -1833,9 +1808,7 @@ export default function Settings() {
     } catch (error) {
       setRemoteConfigFiles([]);
       setRemoteConfigError(
-        error instanceof Error
-          ? error.message
-          : t("errors.couldNotReadRemoteConfig"),
+        getUserErrorMessage(error, t("errors.couldNotReadRemoteConfig")),
       );
     } finally {
       setLoadingRemoteConfig(false);
@@ -1860,7 +1833,7 @@ export default function Settings() {
     } catch (error) {
       setRemoteLogContent(null);
       setRemoteLogError(
-        error instanceof Error ? error.message : t("errors.couldNotReadLogFile"),
+        getUserErrorMessage(error, t("errors.couldNotReadLogFile")),
       );
     } finally {
       setLoadingRemoteLogs(false);
@@ -1940,9 +1913,7 @@ export default function Settings() {
       toast({
         title: t("toasts.modNoResponse.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.modNoResponse.fallback"),
+          getUserErrorMessage(error, t("toasts.modNoResponse.fallback")),
         variant: "destructive",
         action: (
           <ToastAction altText={t("toasts.modNoResponse.openBridgeAlt")} onClick={() => handleTabChange("bridge")}>
@@ -2080,9 +2051,7 @@ export default function Settings() {
       toast({
         title: t("toasts.passwordChangeFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.passwordChangeFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.passwordChangeFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -2104,9 +2073,7 @@ export default function Settings() {
       toast({
         title: t("security.regenerateJwt.failedTitle"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("security.regenerateJwt.failedFallback"),
+          getUserErrorMessage(error, t("security.regenerateJwt.failedFallback")),
         variant: "destructive",
       });
     } finally {
@@ -2141,9 +2108,7 @@ export default function Settings() {
       toast({
         title: t("toasts.recoveryUnavailable.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.recoveryUnavailable.fallback"),
+          getUserErrorMessage(error, t("toasts.recoveryUnavailable.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -2202,9 +2167,7 @@ export default function Settings() {
       toast({
         title: t("toasts.passwordResetFailed.title"),
         description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.passwordResetFailed.fallback"),
+          getUserErrorMessage(error, t("toasts.passwordResetFailed.fallback")),
         variant: "destructive",
       });
     } finally {
@@ -3030,9 +2993,7 @@ export default function Settings() {
                                   toast({
                                     title: t("updates.couldNotReadLog.title"),
                                     description:
-                                      error instanceof Error
-                                        ? error.message
-                                        : t("updates.couldNotReadLog.fallback"),
+                                      getUserErrorMessage(error, t("updates.couldNotReadLog.fallback")),
                                     variant: "destructive",
                                   });
                                 }
@@ -5875,9 +5836,7 @@ function WorkshopCollectionSyncCard({
       return true;
     } catch (error) {
       setPasteError(
-        error instanceof Error
-          ? error.message
-          : t("workshopSync.toasts.couldNotSaveCookies"),
+        getUserErrorMessage(error, t("workshopSync.toasts.couldNotSaveCookies")),
       );
       return false;
     } finally {
@@ -5950,7 +5909,7 @@ function WorkshopCollectionSyncCard({
     } catch (err: any) {
       setPasteOpen(true);
       setPasteError(
-        err?.message || t("workshopSync.toasts.clipboardReadFailed"),
+        getUserErrorMessage(err, t("workshopSync.toasts.clipboardReadFailed")),
       );
     }
   };
@@ -5970,7 +5929,7 @@ function WorkshopCollectionSyncCard({
       if (!r.ok && r.error) setDiffError(r.error);
     } catch (err: any) {
       if (seq !== refreshDiffSeqRef.current) return;
-      setDiffError(err?.message || t("workshopSync.toasts.failedToReadCollection"));
+      setDiffError(getUserErrorMessage(err, t("workshopSync.toasts.failedToReadCollection")));
     } finally {
       if (seq === refreshDiffSeqRef.current) setDiffLoading(false);
     }
@@ -6032,7 +5991,7 @@ function WorkshopCollectionSyncCard({
       toast({
         variant: "destructive",
         title: t("workshopSync.toasts.extractFailed.title", { browser: label }),
-        description: err?.message || t("workshopSync.toasts.extractFailed.requestFailed"),
+        description: getUserErrorMessage(err, t("workshopSync.toasts.extractFailed.requestFailed")),
       });
     } finally {
       setExtractingFrom(null);
@@ -6050,7 +6009,7 @@ function WorkshopCollectionSyncCard({
       toast({
         variant: "destructive",
         title: t("workshopSync.toasts.testFailed.title"),
-        description: err?.message || t("workshopSync.toasts.testFailed.fallback"),
+        description: getUserErrorMessage(err, t("workshopSync.toasts.testFailed.fallback")),
       });
     } finally {
       setTesting(false);
@@ -6163,7 +6122,7 @@ function WorkshopCollectionSyncCard({
       toast({
         variant: "destructive",
         title: t("workshopSync.toasts.actionFailed.title"),
-        description: err?.message || t("workshopSync.toasts.actionFailed.fallback"),
+        description: getUserErrorMessage(err, t("workshopSync.toasts.actionFailed.fallback")),
       });
     } finally {
       setRowBusy((prev) => {
