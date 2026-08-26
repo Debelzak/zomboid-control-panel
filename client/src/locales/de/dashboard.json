@@ -94,6 +94,7 @@
   },
   "successCopy": {
     "startServer": { "title": "Server wird gestartet", "description": "Behalte das Dashboard für den Live-Status im Blick." },
+    "startServerScriptBackup": { "title": "Server wird gestartet — Startskript gesichert", "description": "Der Panel hat Änderungen am Startskript erkannt und deine Version vor dem Neuerstellen gesichert." },
     "stopServer": { "title": "Server gestoppt", "description": "Sitzung sauber beendet." },
     "forceStopServer": { "title": "Server sofort gestoppt", "description": "Der Spielprozess wurde ohne RCON beendet." },
     "restartServer": { "title": "Neustart geplant", "description": "Der Server wird in Kürze neu gestartet." },

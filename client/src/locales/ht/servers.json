@@ -185,7 +185,7 @@
     "dataPathLabel": "Chemen Done Zomboid",
     "dataPathPlaceholder": "Kite vid pou default",
     "customStartCommandLabel": "Kòmand Demaraj Pèsonalize",
-    "customStartCommandTooltip": "Ranplase script demaraj default la ak yon kòmand pèsonalize. Sipòte agiman. Kite vid pou itilize deteksyon fichye bat/sh default la.",
+    "customStartCommandTooltip": "Ranplase script demaraj default la ak yon kòmand pèsonalize. Sipòte agiman. Kite vid, e panèl la ap rejenere script demaraj bat/sh default la apati paramèt sa yo chak fwa sèvè a demare — sa a REMPLASE fichye sa a, ansanm ak nenpòt chanjman ou fè manyèlman, menmsi yon fichye ki chanje sovgade anvan.",
     "customStartCommandPlaceholder": "pa egzanp ./start-server.sh -servername MyServer",
     "customStartCommandDisallowed": "Kòmand lan gen karaktè shell ki pa otorize",
     "noSteamLabel": "Lanse san Steam",

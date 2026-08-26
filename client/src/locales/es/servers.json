@@ -185,7 +185,7 @@
     "dataPathLabel": "Ruta de datos de Zomboid",
     "dataPathPlaceholder": "Dejar vacío para usar el valor predeterminado",
     "customStartCommandLabel": "Comando de inicio personalizado",
-    "customStartCommandTooltip": "Sustituye el script de inicio predeterminado por un comando personalizado. Admite argumentos. Déjalo vacío para usar la detección automática del archivo bat/sh.",
+    "customStartCommandTooltip": "Sustituye el script de inicio predeterminado por un comando personalizado. Admite argumentos. Déjalo vacío y el panel regenerará el script de inicio bat/sh predeterminado a partir de esta configuración cada vez que se inicie el servidor — esto SOBRESCRIBE ese archivo, incluidas las ediciones manuales, aunque primero se hace una copia de seguridad del archivo modificado.",
     "customStartCommandPlaceholder": "p. ej. ./start-server.sh -servername MiServidor",
     "customStartCommandDisallowed": "El comando contiene caracteres de shell no permitidos",
     "noSteamLabel": "Iniciar sin Steam",

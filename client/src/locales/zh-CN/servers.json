@@ -185,7 +185,7 @@
     "dataPathLabel": "Zomboid 数据路径",
     "dataPathPlaceholder": "留空则使用默认值",
     "customStartCommandLabel": "自定义启动命令",
-    "customStartCommandTooltip": "使用自定义命令覆盖默认启动脚本，支持参数。留空则使用默认的 bat/sh 文件检测。",
+    "customStartCommandTooltip": "使用自定义命令覆盖默认启动脚本，支持参数。留空的话，面板会在每次启动服务器时根据这些设置重新生成默认的 bat/sh 启动脚本——这会覆盖该文件，包括任何手动修改，不过修改过的文件会先被备份。",
     "customStartCommandPlaceholder": "例如：./start-server.sh -servername MyServer",
     "customStartCommandDisallowed": "命令中包含不允许的 shell 字符",
     "noSteamLabel": "不通过 Steam 启动",

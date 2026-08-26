@@ -5,6 +5,7 @@ import https from "https";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import crypto from "crypto";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Server");
 import {
@@ -868,6 +869,108 @@ export LD_LIBRARY_PATH="\${INSTDIR}/natives/:\${INSTDIR}/natives/linux64/:\${INS
   return { bat: batchContent, sh: shellContent };
 }
 
+// Filename for the per-install sidecar that records the hash of the content
+// THIS PANEL last wrote to each startup script. Kept next to the scripts
+// rather than a new DB column -- no migration, and it travels naturally with
+// a moved/copied install directory the same way the scripts themselves do.
+const SCRIPT_FINGERPRINT_FILE = ".pz-panel-scripts.json";
+
+function hashScriptContent(content) {
+  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * Regenerate the panel-managed startup script(s), but never let a
+ * regeneration silently discard content the panel didn't itself last write.
+ *
+ * `files` is `[{ path, content }, ...]`. For each: if a file already exists
+ * at that path AND its current on-disk hash doesn't match the fingerprint
+ * recorded the last time THIS function wrote it, the existing file is backed
+ * up (timestamped, alongside the original) before being overwritten. Config
+ * changes still always take effect -- every file is written through
+ * regardless -- only the decision to back up first depends on provenance.
+ *
+ * A MISSING fingerprint (no sidecar at all -- true for every install that
+ * predates this fix, i.e. the entire upgrade population) is deliberately
+ * treated the same as a mismatch, not as "assume unmodified": we cannot
+ * prove a pre-fingerprint file is still the panel's own untouched output, so
+ * the safe default is one harmless backup on the first post-upgrade start
+ * rather than risking a silent clobber of a real hand-edit. A backup nobody
+ * needed is a small, one-time cost; treating unknown provenance as safe is
+ * exactly the bug this exists to fix.
+ *
+ * Backups are never pruned -- an unbounded folder of .bak files is a smaller
+ * problem than data loss, and every install already has an operator who can
+ * clean them up manually. Deliberate choice, not an oversight.
+ *
+ * Returns an array of human-readable messages, one per file that was backed
+ * up (empty if none were). Never throws for a single file's backup/read
+ * failure -- that file's regeneration still proceeds and a warning is logged
+ * server-side, since "config changes take effect" must not depend on the
+ * backup step succeeding.
+ */
+export function regenerateStartupScriptsWithBackup(installPath, files) {
+  const fingerprintPath = path.join(installPath, SCRIPT_FINGERPRINT_FILE);
+  let fingerprints = {};
+  try {
+    fingerprints = JSON.parse(fs.readFileSync(fingerprintPath, "utf8"));
+  } catch {
+    fingerprints = {}; // missing/corrupt sidecar -- treated as "no known-good fingerprints" below
+  }
+
+  const backupMessages = [];
+  for (const { path: filePath, content } of files) {
+    const fileName = path.basename(filePath);
+    let existingContent = null;
+    try {
+      existingContent = fs.readFileSync(filePath, "utf8");
+    } catch {
+      existingContent = null; // no prior file -- first-ever generation, nothing to protect
+    }
+
+    if (existingContent !== null) {
+      const knownHash = fingerprints[fileName];
+      const currentHash = hashScriptContent(existingContent);
+      if (!knownHash || knownHash !== currentHash) {
+        const backupPath = `${filePath}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+        try {
+          fs.copyFileSync(filePath, backupPath);
+          backupMessages.push(
+            `${fileName} had content the panel didn't last write (a hand-edit, or an install from before this backup existed) -- your version was saved to ${path.basename(backupPath)} before regenerating.`,
+          );
+        } catch (backupErr) {
+          log.warn(
+            `Could not back up ${filePath} before regenerating: ${backupErr.message}`,
+          );
+        }
+      }
+    }
+
+    try {
+      writeFileAtomic(
+        filePath,
+        content,
+        filePath.endsWith(".sh") ? { encoding: "utf8", mode: 0o750 } : "utf8",
+      );
+      fingerprints[fileName] = hashScriptContent(content);
+    } catch (writeErr) {
+      log.warn(`Could not write ${filePath}: ${writeErr.message}`);
+    }
+  }
+
+  try {
+    writeFileAtomic(
+      fingerprintPath,
+      JSON.stringify(fingerprints, null, 2),
+      "utf8",
+    );
+  } catch (fpErr) {
+    log.warn(`Could not persist script fingerprint file: ${fpErr.message}`);
+  }
+
+  return backupMessages;
+}
+
 // Role sweep for this file: routes below are grouped into what's actually
 // operational duty (start/stop/restart/save the running process, install or
 // update the game, edit its .ini config, browse the filesystem to set that
@@ -987,6 +1090,7 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
 
     // Regenerate startup scripts so any config changes (admin password, memory, etc.) take effect.
     // Skipped for a managed container: its image owns the launch command.
+    let scriptBackupWarnings = [];
     if (
       !managed.handled &&
       activeServer &&
@@ -1009,15 +1113,22 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
           activeServer.installPath,
           `StartServer_${activeServer.serverName}.bat`,
         );
-        writeFileAtomic(batPath, scripts.bat, "utf8");
         const shPath = path.join(
           activeServer.installPath,
           `start-server_${activeServer.serverName}.sh`,
         );
-        writeFileAtomic(shPath, scripts.sh.replace(/\r\n/g, "\n"), {
-          encoding: "utf8",
-          mode: 0o750,
-        });
+        scriptBackupWarnings = regenerateStartupScriptsWithBackup(
+          activeServer.installPath,
+          [
+            { path: batPath, content: scripts.bat },
+            { path: shPath, content: scripts.sh.replace(/\r\n/g, "\n") },
+          ],
+        );
+        if (scriptBackupWarnings.length > 0) {
+          log.warn(
+            `Startup script regeneration backed up existing content: ${scriptBackupWarnings.join(" ")}`,
+          );
+        }
         log.info("Regenerated startup scripts with current server config");
       } catch (scriptErr) {
         log.warn(`Could not regenerate startup scripts: ${scriptErr.message}`);
@@ -1027,6 +1138,9 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
     const result = managed.handled
       ? { success: true, message: managed.message || "Container starting" }
       : await serverManager.startServer();
+    if (scriptBackupWarnings.length > 0) {
+      result.scriptWarnings = scriptBackupWarnings;
+    }
 
     // Emit status update via Socket.IO
     const io = req.app.get("io");

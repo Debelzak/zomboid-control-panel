@@ -185,7 +185,7 @@
     "dataPathLabel": "Zomboid Data Path",
     "dataPathPlaceholder": "Leave empty for default",
     "customStartCommandLabel": "Custom Start Command",
-    "customStartCommandTooltip": "Override the default startup script with a custom command. Supports arguments. Leave empty to use the default bat/sh file detection.",
+    "customStartCommandTooltip": "Override the default startup script with a custom command. Supports arguments. Leave empty and the panel will regenerate the default bat/sh startup script from these settings every time the server starts — this OVERWRITES that file, including any manual edits, though a changed file is backed up first.",
     "customStartCommandPlaceholder": "e.g. ./start-server.sh -servername MyServer",
     "customStartCommandDisallowed": "Command contains disallowed shell characters",
     "noSteamLabel": "Launch without Steam",

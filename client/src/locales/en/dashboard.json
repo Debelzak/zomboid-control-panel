@@ -94,6 +94,7 @@
   },
   "successCopy": {
     "startServer": { "title": "Server starting", "description": "Watch the dashboard for live status." },
+    "startServerScriptBackup": { "title": "Server starting — startup script backed up", "description": "The panel detected changes to your startup script and saved your version before regenerating it." },
     "stopServer": { "title": "Server stopped", "description": "Session closed cleanly." },
     "forceStopServer": { "title": "Server force stopped", "description": "The game process was terminated without RCON." },
     "restartServer": { "title": "Restart scheduled", "description": "The server will restart shortly." },

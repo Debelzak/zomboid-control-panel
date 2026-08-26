@@ -580,7 +580,24 @@ export default function Dashboard() {
         throw new Error(result.error || result.message || t('toasts.actionFailedFallback'))
       }
       const copy = getDashboardSuccessCopy(t, action)
-      toast({ title: copy.title, description: copy.description, variant: 'success' as const })
+      // 2026-08-26 bug hunt: POST /start regenerates the startup script on
+      // every stopped-to-started transition and now backs up + reports any
+      // existing content it didn't itself last write (a hand-edit, or a
+      // pre-fix install) instead of silently discarding it. A silent log
+      // line is what let that go unnoticed in the first place, so this gets
+      // its own toast rather than folding into the generic success copy.
+      const scriptWarnings = action === 'Start server' && result && typeof result === 'object'
+        ? (result as { scriptWarnings?: string[] }).scriptWarnings
+        : undefined
+      if (scriptWarnings && scriptWarnings.length > 0) {
+        toast({
+          title: t('successCopy.startServerScriptBackup.title'),
+          description: `${t('successCopy.startServerScriptBackup.description')} ${scriptWarnings.join(' ')}`,
+          variant: 'success' as const,
+        })
+      } else {
+        toast({ title: copy.title, description: copy.description, variant: 'success' as const })
+      }
       if (action === 'Start server') {
         if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
         let attempts = 0

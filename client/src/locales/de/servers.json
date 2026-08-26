@@ -185,7 +185,7 @@
     "dataPathLabel": "Zomboid-Datenpfad",
     "dataPathPlaceholder": "Leer lassen für Standard",
     "customStartCommandLabel": "Eigener Startbefehl",
-    "customStartCommandTooltip": "Überschreibt das Standard-Startskript mit einem eigenen Befehl. Unterstützt Argumente. Leer lassen, um die automatische Erkennung der bat/sh-Datei zu verwenden.",
+    "customStartCommandTooltip": "Überschreibt das Standard-Startskript mit einem eigenen Befehl. Unterstützt Argumente. Leer lassen, und der Panel erzeugt bei jedem Serverstart das Standard-bat/sh-Startskript aus diesen Einstellungen neu — dabei wird diese Datei ÜBERSCHRIEBEN, auch manuelle Änderungen, wobei eine geänderte Datei zuvor gesichert wird.",
     "customStartCommandPlaceholder": "z. B. ./start-server.sh -servername MyServer",
     "customStartCommandDisallowed": "Befehl enthält nicht erlaubte Shell-Zeichen",
     "noSteamLabel": "Ohne Steam starten",
