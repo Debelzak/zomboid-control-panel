@@ -3696,6 +3696,7 @@ export default function Settings() {
                       loading={bridgeLoading}
                       bridgePath={bridgeStatus.bridgePath}
                       summary={bridgeStatus.connection?.summary}
+                      interactive={false}
                     />
                   )}
                 </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { EmptyState } from '../EmptyState'
 
 describe('EmptyState', () => {
@@ -40,5 +41,29 @@ describe('EmptyState', () => {
     const { container } = render(<EmptyState title="Test" />)
     const liveRegion = container.querySelector('[aria-live="polite"]')
     expect(liveRegion).toBeInTheDocument()
+  })
+
+  it('renders action as a real link to an internal destination when given `to` instead of `onClick` -- the whole reason this widened: a hint pointing at another screen previously had nowhere to send the click', () => {
+    render(
+      <MemoryRouter>
+        <EmptyState title="Bridge not configured" action={{ label: 'Go to Settings', to: '/settings?tab=bridge' }} />
+      </MemoryRouter>
+    )
+    const link = screen.getByRole('link', { name: 'Go to Settings' })
+    expect(link).toHaveAttribute('href', '/settings?tab=bridge')
+  })
+
+  it('defaults secondaryAction to the ghost variant like before, even when it links out via `to`', () => {
+    render(
+      <MemoryRouter>
+        <EmptyState
+          title="Nothing here"
+          action={{ label: 'Retry', onClick: () => {} }}
+          secondaryAction={{ label: 'Learn more', to: '/settings' }}
+        />
+      </MemoryRouter>
+    )
+    const link = screen.getByRole('link', { name: 'Learn more' })
+    expect(link.closest('button, a')).toBeTruthy()
   })
 })
