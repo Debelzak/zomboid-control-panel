@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The panel told you, in every language, to set an .ini key Project Zomboid does not recognise.**
+  It said `LuaChecksum=false`; the real key is `DoLuaChecksum`. Anyone who followed the instructions
+  exactly left the setting at its default and PanelBridge silently never worked. Corrected in 26
+  places across all six languages, including the demo data, which was reading the wrong key for real.
+
+- **The panel sent you to a button that had been renamed.** "Test SFTP" became "Verify and prepare
+  SFTP", but the setup walkthrough and an SFTP error message still used the old name in all six
+  languages. The last one lived in the message shown when the failure is unrecognised - exactly when
+  you are already stuck.
+
+- **Saving any setting failed when SFTP was switched off** (#118). The panel shipped `22` as the
+  default SFTP port and then refused it, because one port rule was shared between ports the panel
+  opens itself and ports it connects to elsewhere. Those are now separate rules, and a disabled
+  feature's fields no longer block unrelated saves.
+
+- **The dashboard said "Container down" while the Docker panel showed it running** (#114). The status
+  badge was reading a local process scan that cannot see inside another container. It now reads the
+  container itself, and says "unknown" rather than "down" when it genuinely cannot tell.
+
+- **Number fields snapped back to a default the moment you cleared them.** Clearing a port to retype
+  it silently restored `27015` or `16261` under your fingers. Fourteen fields across the wizards,
+  server settings, players and scheduler now keep what you typed and refuse on save instead.
+
+- **Advice you could see but not act on.** The PanelBridge status badge told you where to go and was
+  not clickable; empty screens could not offer a destination at all. Both now work. RCON
+  authentication failures and permission-denied errors also point at the place that fixes them, and
+  the login screen explains why local account recovery is unavailable instead of staying silent.
+
+### Changed
+
+- **Installation guides for every setup**, in `docs/install/`: Windows, Linux, Docker and Unraid,
+  rented/managed servers, and a symptom-first troubleshooting guide. They ship inside the release
+  archive, so they work with no internet. The README is now a one-read chooser rather than five
+  platforms interleaved.
+
+## [1.2.6] - 2026-08-25
+
+### Fixed
+
 - **New Docker installs no longer start an unreachable Project Zomboid server.** The primary
   Docker setup now uses a one-command all-in-one installer when the panel owns PZ. It validates
   Docker, generates secrets and LAN access settings, pulls exact release images with a local-build
