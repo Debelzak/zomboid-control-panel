@@ -239,6 +239,8 @@
     "random": "owaza",
     "targetFallback": "sib",
     "clearLoadedZombies": "efase zonbi chaje yo",
+    "removeAllConfirmTitle": "Efase tout zonbi chaje yo?",
+    "removeAllConfirmDescription": "Sa a retire imedyatman tout zonbi ki nan selil chaje yo, sou tout sèvè a -- ansanm ak sa yon jwè ap goumen ak li kounye a. Zonbi yo ap reparèt avèk tan, men sa fini konba a imedyatman pou moun ki te ladan l.",
     "noPlayersOnlineTitle": "Pa gen jwè anliy",
     "bridgeOfflineTitle": "Bridge òfliy",
     "sizeAria": "Gwosè mas zonbi a"

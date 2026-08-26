@@ -239,6 +239,8 @@
     "random": "random",
     "targetFallback": "target",
     "clearLoadedZombies": "clear loaded zombies",
+    "removeAllConfirmTitle": "Clear all loaded zombies?",
+    "removeAllConfirmDescription": "This instantly removes every zombie in loaded cells, server-wide -- including any a player is currently fighting. Zombies respawn over time, but this ends that encounter right now for whoever was in it.",
     "noPlayersOnlineTitle": "No players online",
     "bridgeOfflineTitle": "Bridge offline",
     "sizeAria": "Horde size"

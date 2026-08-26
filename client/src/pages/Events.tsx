@@ -2484,7 +2484,20 @@ export default function Events() {
                   {loading === 'Create horde (behind)' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
                   {t('horde.spawnBehind', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
                 </Button>
-                <Button variant="outline" onClick={() => handleAction('Remove all zombies', removeZombies)} disabled={loading !== null || !bridgeConnected} title={!bridgeConnected ? t('horde.bridgeOfflineTitle') : undefined} className="h-9 gap-2 text-xs font-medium text-destructive/95 hover:text-destructive hover:border-destructive/50 hover:bg-destructive/10">
+                <Button variant="outline" onClick={async () => {
+                  // Instant, world-wide, and every player on the server feels
+                  // it -- reversible (zombies respawn) doesn't undo whatever
+                  // someone was mid-fight against. Affects-others-but-
+                  // reversible tier: warning, not destructive-red, not silent.
+                  const ok = await confirm({
+                    title: t('horde.removeAllConfirmTitle'),
+                    description: t('horde.removeAllConfirmDescription'),
+                    confirmLabel: t('horde.clearLoadedZombies'),
+                    variant: 'warning',
+                  })
+                  if (!ok) return
+                  handleAction('Remove all zombies', removeZombies)
+                }} disabled={loading !== null || !bridgeConnected} title={!bridgeConnected ? t('horde.bridgeOfflineTitle') : undefined} className="h-9 gap-2 text-xs font-medium text-warning hover:text-warning hover:border-warning/50 hover:bg-warning/10">
                   {loading === 'Remove all zombies' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
                   {t('horde.clearLoadedZombies')}
                 </Button>

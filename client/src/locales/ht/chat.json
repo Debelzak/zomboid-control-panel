@@ -53,7 +53,7 @@
     "cancelAria": "Anile",
     "deleteAria": "Efase anons rapid {{index}}",
     "deleteConfirmTitle": "Efase anons rapid sa a?",
-    "deleteConfirmDescription": "\"{{preset}}\" pataje -- tout admin ki itilize anons rapid yo ap pèdi l tou.",
+    "deleteConfirmDescription": "\"{{preset}}\" pataje -- tout admin ki itilize anons rapid yo ap pèdi l tou. Ou ka toujou re-ajoute l.",
     "deleteConfirmButton": "Efase Anons Rapid"
   },
   "toasts": {

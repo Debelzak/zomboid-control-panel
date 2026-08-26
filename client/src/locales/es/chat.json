@@ -53,7 +53,7 @@
     "cancelAria": "Cancelar",
     "deleteAria": "Eliminar preajuste {{index}}",
     "deleteConfirmTitle": "¿Eliminar este preajuste?",
-    "deleteConfirmDescription": "\"{{preset}}\" es compartido -- todos los administradores que usan los mensajes rápidos también lo perderán.",
+    "deleteConfirmDescription": "\"{{preset}}\" es compartido -- todos los administradores que usan los mensajes rápidos también lo perderán. Siempre puedes volver a añadirlo.",
     "deleteConfirmButton": "Eliminar preajuste"
   },
   "toasts": {

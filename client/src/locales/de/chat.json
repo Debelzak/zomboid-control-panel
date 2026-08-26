@@ -53,7 +53,7 @@
     "cancelAria": "Abbrechen",
     "deleteAria": "Vorlage {{index}} löschen",
     "deleteConfirmTitle": "Diese Vorlage löschen?",
-    "deleteConfirmDescription": "\"{{preset}}\" ist gemeinsam genutzt -- jeder Admin, der Schnellansagen verwendet, verliert sie ebenfalls.",
+    "deleteConfirmDescription": "\"{{preset}}\" ist gemeinsam genutzt -- jeder Admin, der Schnellansagen verwendet, verliert sie ebenfalls. Du kannst sie jederzeit wieder hinzufügen.",
     "deleteConfirmButton": "Vorlage löschen"
   },
   "toasts": {

@@ -53,7 +53,7 @@
     "cancelAria": "取消",
     "deleteAria": "删除预设 {{index}}",
     "deleteConfirmTitle": "删除此预设？",
-    "deleteConfirmDescription": "“{{preset}}”是共享的——使用快速广播的每位管理员也会失去它。",
+    "deleteConfirmDescription": "“{{preset}}”是共享的——使用快速广播的每位管理员也会失去它。您随时可以重新添加它。",
     "deleteConfirmButton": "删除预设"
   },
   "toasts": {

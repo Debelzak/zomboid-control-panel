@@ -53,7 +53,7 @@
     "cancelAria": "Annuler",
     "deleteAria": "Supprimer le message rapide {{index}}",
     "deleteConfirmTitle": "Supprimer ce message rapide ?",
-    "deleteConfirmDescription": "\"{{preset}}\" est partagé -- tous les admins qui utilisent les messages rapides le perdront aussi.",
+    "deleteConfirmDescription": "\"{{preset}}\" est partagé -- tous les admins qui utilisent les messages rapides le perdront aussi. Vous pouvez toujours le rajouter.",
     "deleteConfirmButton": "Supprimer le message rapide"
   },
   "toasts": {

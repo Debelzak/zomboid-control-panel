@@ -239,6 +239,8 @@
     "random": "zufällig",
     "targetFallback": "Ziel",
     "clearLoadedZombies": "geladene Zombies entfernen",
+    "removeAllConfirmTitle": "Alle geladenen Zombies entfernen?",
+    "removeAllConfirmDescription": "Dadurch werden sofort alle Zombies in geladenen Zellen serverweit entfernt -- auch die, gegen die ein Spieler gerade kämpft. Zombies spawnen mit der Zeit neu, aber das beendet den Kampf für den Betroffenen sofort.",
     "noPlayersOnlineTitle": "Keine Spieler online",
     "bridgeOfflineTitle": "Brücke offline",
     "sizeAria": "Hordengröße"

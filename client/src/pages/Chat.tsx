@@ -276,13 +276,14 @@ export default function Chat() {
   const handleDeletePreset = useCallback(async (idx: number) => {
     // Quick-broadcast presets are a shared, panel-wide setting (persisted
     // via configApi.updateAppSettings), not per-admin -- deleting one here
-    // removes it for every other admin who uses it too, and this ran on a
-    // single click with no confirmation at all.
+    // reaches every other admin who uses it, even though re-typing it back
+    // is trivial. The "affects others but reversible" tier: warning-amber,
+    // not destructive-red, not silent either.
     const ok = await confirm({
       title: t('quickBroadcasts.deleteConfirmTitle'),
       description: t('quickBroadcasts.deleteConfirmDescription', { preset: presets[idx] }),
       confirmLabel: t('quickBroadcasts.deleteConfirmButton'),
-      destructive: false,
+      variant: 'warning',
     })
     if (!ok) return
     const next = presets.filter((_, i) => i !== idx)

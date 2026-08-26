@@ -239,6 +239,8 @@
     "random": "aléatoire",
     "targetFallback": "cible",
     "clearLoadedZombies": "supprimer les zombies chargés",
+    "removeAllConfirmTitle": "Supprimer tous les zombies chargés ?",
+    "removeAllConfirmDescription": "Cela supprime instantanément tous les zombies dans les cellules chargées, sur tout le serveur -- y compris ceux qu'un joueur est en train de combattre. Les zombies réapparaissent avec le temps, mais cela met fin à ce combat immédiatement pour la personne concernée.",
     "noPlayersOnlineTitle": "Aucun joueur en ligne",
     "bridgeOfflineTitle": "Bridge hors ligne",
     "sizeAria": "Taille de la horde"
