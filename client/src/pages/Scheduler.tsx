@@ -36,6 +36,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { reportClientError } from '@/lib/client-errors'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -181,7 +182,7 @@ export default function Scheduler() {
       })
     } catch (error) {
       reportClientError('Failed to fetch scheduler data.', error)
-      setFetchError(error instanceof Error ? error.message : t('fetchError.fallback'))
+      setFetchError(getUserErrorMessage(error, t('fetchError.fallback')))
     } finally {
       setInitialLoading(false)
     }
@@ -296,9 +297,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error
-          ? error.message
-          : editingTask ? t('toasts.taskUpdateFailedFallback') : t('toasts.taskCreateFailedFallback'),
+        description: getUserErrorMessage(error, editingTask ? t('toasts.taskUpdateFailedFallback') : t('toasts.taskCreateFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -392,7 +391,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.taskUpdateFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.taskUpdateFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -413,7 +412,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.taskDeleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.taskDeleteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -437,7 +436,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.taskRunFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.taskRunFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -457,7 +456,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.restartFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.restartFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -477,7 +476,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.restartFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.restartFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -497,7 +496,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.broadcastFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.broadcastFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -518,7 +517,7 @@ export default function Scheduler() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.historyClearFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.historyClearFailedFallback')),
         variant: 'destructive',
       })
     } finally {
