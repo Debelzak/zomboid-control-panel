@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A server name could be made to point somewhere it should not.** The panel validates server
+  names carefully everywhere it manages several servers, but one older settings screen accepted the
+  name without checking it, and that value was used to build a file path. A name containing path
+  navigation could therefore read or overwrite files outside the folder it was meant to stay in,
+  including the name of the startup script the panel runs. Setting it required an account with
+  permission to change panel settings, and the affected code path only runs on installations still
+  using the original single-server settings rather than a server profile - but neither is a reason
+  to leave it. The name is now checked when it is saved *and* again every time it is read, so an
+  unsafe value already stored on an existing installation stops working too, without any migration
+  step. It is ignored rather than used, and the panel behaves as though no name were set.
+
 ### Fixed
+
+- **Wiping a server destroyed the whole world with no way back.** Deleting the map, players or
+  accounts had no backup step at all, while the equivalent chunk-deletion tools have offered one
+  for a long time - and the confirmation only reassured you that your settings were safe, never
+  saying the world itself was gone for good. A wipe now takes a backup first, on by default, and
+  stops without deleting anything if that backup fails. The dialog says plainly what is about to be
+  lost, and shows the backup's progress so a large world does not look like a freeze.
+
+- **Closing the tab during an install lost the outcome entirely.** The wizard reported progress to
+  the page and nowhere else, so a refresh, a stray click, or simply waiting elsewhere during a
+  multi-gigabyte download meant the result - success *or* failure - arrived to nobody. The wizard
+  now remembers an install was started and offers to pick it up where you left off.
+
+- **"Failed to create server entry", on a server that was created.** Registering the new server and
+  switching to it shared one error path, so a problem with the second step reported the first step
+  as broken. The two now report separately.
 
 - **The panel told you, in every language, to set an .ini key Project Zomboid does not recognise.**
   It said `LuaChecksum=false`; the real key is `DoLuaChecksum`. Anyone who followed the instructions
@@ -45,6 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not clickable; empty screens could not offer a destination at all. Both now work. RCON
   authentication failures and permission-denied errors also point at the place that fixes them, and
   the login screen explains why local account recovery is unavailable instead of staying silent.
+
+### Added
+
+- **Swap is now shown alongside memory on the dashboard.** Host memory sitting at 95% is either
+  perfectly normal or nearly fatal, and the panel had no way to tell you which. The telemetry card
+  now reports host swap on Windows, Linux and macOS. A machine with no swap configured is shown as
+  exactly that - a real answer, not an alarm - and if the figure genuinely cannot be read, it says
+  so rather than reporting zero.
 
 ### Changed
 
