@@ -293,6 +293,8 @@
   "toasts": {
     "configReadFailedInline": "Could not read the Discord configuration. Nothing has been changed — refresh to try again.",
     "configLoadFailedInline": "Failed to load Discord configuration. Refresh and try again.",
+    "eventsReadFailedInline": "Could not read the webhook events configuration. What's shown below may not match what's actually saved — refresh to try again.",
+    "permissionsReadFailedInline": "Could not read the command permissions. What's shown below may not match what's actually saved — refresh to try again.",
     "tokenRequired": "Bot token is required",
     "guildIdRequired": "Guild ID is required",
     "invalidGuildIdFormat": "Invalid Guild ID format (should be 17-19 digit number)",

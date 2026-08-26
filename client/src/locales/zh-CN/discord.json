@@ -311,6 +311,8 @@
   "toasts": {
     "configReadFailedInline": "无法读取 Discord 配置。未做任何更改——请刷新后重试。",
     "configLoadFailedInline": "加载 Discord 配置失败。请刷新后重试。",
+    "eventsReadFailedInline": "无法读取 webhook 事件配置。下方显示的内容可能与实际保存的不一致——请刷新后重试。",
+    "permissionsReadFailedInline": "无法读取命令权限。下方显示的内容可能与实际保存的不一致——请刷新后重试。",
     "tokenRequired": "机器人令牌为必填项",
     "guildIdRequired": "服务器 ID 为必填项",
     "invalidGuildIdFormat": "服务器 ID 格式无效（应为 17-19 位数字）",

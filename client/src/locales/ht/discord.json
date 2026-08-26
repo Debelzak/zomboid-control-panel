@@ -293,6 +293,8 @@
   "toasts": {
     "configReadFailedInline": "Pa t kapab li konfigirasyon Discord la. Anyen pa chanje — rafrechi pou eseye ankò.",
     "configLoadFailedInline": "Echwe pou chaje konfigirasyon Discord. Rafrechi epi eseye ankò.",
+    "eventsReadFailedInline": "Pa t kapab li konfigirasyon evènman webhook yo. Sa ki afiche anba a ka pa koresponn ak sa ki reyèlman anrejistre — rafrechi pou eseye ankò.",
+    "permissionsReadFailedInline": "Pa t kapab li pèmisyon kòmand yo. Sa ki afiche anba a ka pa koresponn ak sa ki reyèlman anrejistre — rafrechi pou eseye ankò.",
     "tokenRequired": "Jeton bot obligatwa",
     "guildIdRequired": "ID Guild obligatwa",
     "invalidGuildIdFormat": "Fòma ID Guild envalid (dwe yon nonb 17-19 chif)",

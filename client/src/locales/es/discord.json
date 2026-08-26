@@ -311,6 +311,8 @@
   "toasts": {
     "configReadFailedInline": "No se pudo leer la configuración de Discord. No se ha cambiado nada — actualizar para volver a intentarlo.",
     "configLoadFailedInline": "No se pudo cargar la configuración de Discord. Actualizar e intentarlo de nuevo.",
+    "eventsReadFailedInline": "No se pudo leer la configuración de eventos de webhook. Lo que se muestra abajo puede no coincidir con lo realmente guardado — actualizar para volver a intentarlo.",
+    "permissionsReadFailedInline": "No se pudieron leer los permisos de comandos. Lo que se muestra abajo puede no coincidir con lo realmente guardado — actualizar para volver a intentarlo.",
     "tokenRequired": "El token del bot es obligatorio",
     "guildIdRequired": "El ID del servidor (Guild) es obligatorio",
     "invalidGuildIdFormat": "Formato de ID del servidor no válido (debe ser un número de 17 a 19 dígitos)",
