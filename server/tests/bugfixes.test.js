@@ -1203,7 +1203,9 @@ describe("Discord player presence", () => {
     const bot = Object.create(DiscordBot.prototype);
     bot.isRunning = true;
     bot.client = { user: { setActivity } };
-    bot.serverManager = { checkServerRunning: async () => true };
+    bot.serverManager = {
+      getServerProcessDetails: async () => ({ running: true, scanFailed: false }),
+    };
     bot.rconService = {
       connected: true,
       getPlayers: async () => ({ success: true, players: ["alice", "bob"] }),
@@ -1225,7 +1227,9 @@ describe("Discord player presence", () => {
     const bot = Object.create(DiscordBot.prototype);
     bot.isRunning = true;
     bot.client = { user: { setActivity } };
-    bot.serverManager = { checkServerRunning: async () => true };
+    bot.serverManager = {
+      getServerProcessDetails: async () => ({ running: true, scanFailed: false }),
+    };
     bot.rconService = { connected: false, getPlayers };
     bot._presenceUpdateInFlight = null;
 
@@ -1272,7 +1276,9 @@ describe("Discord /stop", () => {
   const makeBot = async (saveResult) => {
     const bot = Object.create(DiscordBot.prototype);
     const calls = [];
-    bot.serverManager = { checkServerRunning: async () => true };
+    bot.serverManager = {
+      getServerProcessDetails: async () => ({ running: true, scanFailed: false }),
+    };
     bot.rconService = {
       connected: true,
       save: async () => {
@@ -1441,7 +1447,9 @@ describe("Discord /restart", () => {
   const makeBot = async (restartResult) => {
     const bot = Object.create(DiscordBot.prototype);
     const serverMessages = [];
-    bot.serverManager = { checkServerRunning: async () => true };
+    bot.serverManager = {
+      getServerProcessDetails: async () => ({ running: true, scanFailed: false }),
+    };
     bot.rconService = {
       connected: true,
       serverMessage: async (m) => {
@@ -1520,7 +1528,7 @@ describe("Discord /start", () => {
   it("reports a failed start instead of claiming the server is starting", async () => {
     const bot = Object.create(DiscordBot.prototype);
     bot.serverManager = {
-      checkServerRunning: async () => false,
+      getServerProcessDetails: async () => ({ running: false, scanFailed: false }),
       startServer: async () => ({ success: false, error: "port in use" }),
     };
     const replies = [];
