@@ -87,6 +87,15 @@ describe("PUT /servers/:id -- editing useUpnp actually changes the server's own 
     const content = fs.readFileSync(iniPath, "utf-8");
     expect(content).toContain("UPnP=false");
     expect(content).not.toContain("UPnP=true");
+
+    // PZ only reads the ini at its own boot -- the write above is
+    // immediate, its effect on a currently-running server is not. The
+    // response must say so rather than implying the change is already
+    // live (2026-08-26: named explicitly after a same-night review caught
+    // this as the same "confident status the app cannot back" class as the
+    // two earlier fixes tonight).
+    const body = res.getBody();
+    expect(body.warnings?.some((w) => /next time this server starts/i.test(w))).toBe(true);
   });
 
   it("does NOT touch DefaultPort/UDPPort as a side effect of only changing useUpnp", async () => {

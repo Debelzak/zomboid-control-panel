@@ -1034,10 +1034,7 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
       // bug being fixed, one layer over -- found by a same-night audit
       // before this shipped). The real toggle is the UPnP= line in the
       // server's own .ini, the same one /configure-network writes -- reused
-      // here via applyUpnpToIni() rather than duplicated, so a UPnP change
-      // made from the server-edit screen takes effect immediately instead
-      // of silently waiting for someone to also visit the network-settings
-      // page.
+      // here via applyUpnpToIni() rather than duplicated.
       if (
         Object.prototype.hasOwnProperty.call(updates, "useUpnp") &&
         server.serverConfigPath &&
@@ -1050,6 +1047,16 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
         );
         if (result.applied) {
           await setSetting("useUpnp", updates.useUpnp);
+          // PZ only reads this file at its own boot -- the .ini write above
+          // is immediate, but its EFFECT is not, whether the server is
+          // currently running (reads the old value until the next restart)
+          // or currently stopped (reads the new value on its next start
+          // either way). Saying so explicitly rather than letting "saved"
+          // imply "live", same defect class as the two silent-failure fixes
+          // earlier tonight -- a confident status the app cannot back.
+          reloadWarnings.push(
+            "UPnP setting saved and written to the server config -- takes effect the next time this server starts, not immediately.",
+          );
         } else {
           log.warn(`Could not apply UPnP setting to ini: ${result.reason}`);
           reloadWarnings.push(

@@ -45,6 +45,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useSocket } from '@/contexts/SocketContext'
 import { backupApi, serversApi, BackupStatus, BackupFile, BackupHistoryRecord, BackupSnapshot } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -119,7 +120,7 @@ export default function Backups() {
       setBackupMaxCount(status.maxBackups)
       setLoadError(null)
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : t('toasts.loadStatusFailed'))
+      setLoadError(getUserErrorMessage(error, t('toasts.loadStatusFailed')))
     }
   }, [t])
 
@@ -140,7 +141,7 @@ export default function Backups() {
         return newSelection
       })
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : t('toasts.loadBackupsFailed'))
+      setLoadError(getUserErrorMessage(error, t('toasts.loadBackupsFailed')))
     }
   }, [t])
 
@@ -233,7 +234,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.backupFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.createBackupFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.createBackupFailedFallback')),
         variant: 'destructive',
       })
       setBackupProgress({ phase: 'error', percent: 0, message: t('toasts.backupFailedMessage') })
@@ -289,7 +290,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.uploadFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.uploadFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.uploadFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -316,7 +317,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.restoreFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.restoreFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.restoreFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -332,7 +333,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.snapshotUnavailableTitle'),
-        description: error instanceof Error ? error.message : t('toasts.snapshotUnavailableFallback'),
+        description: getUserErrorMessage(error, t('toasts.snapshotUnavailableFallback')),
         variant: 'destructive',
       })
     }
@@ -376,7 +377,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.deleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.deleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.deleteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -405,7 +406,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.deleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.deleteOldFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.deleteOldFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -430,7 +431,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.planUpdateFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.planUpdateFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.planUpdateFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -450,7 +451,7 @@ export default function Backups() {
     } catch (error) {
       toast({
         title: t('toasts.autoUpdateFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.autoUpdateFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.autoUpdateFailedFallback')),
         variant: 'destructive',
       })
     }
