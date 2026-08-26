@@ -234,11 +234,18 @@ export default function Login() {
       setResetMode(true)
       return
     }
-    if (localResetSupported) {
-      void handleCreateLocalReset()
-      return
-    }
-    setShowRecoveryHelp(current => !current)
+    // Always ask the server rather than branching on this browser's own
+    // (necessarily coarse) "am I local" guess: a genuinely remote visitor
+    // and one stuck behind a reverse proxy get two DIFFERENT, more specific
+    // messages back (LOCAL_RESET_NOT_LOCAL vs LOCAL_RESET_BEHIND_PROXY,
+    // server/routes/auth.js), which never reached this screen before --
+    // the localResetSupported shortcut used to skip the request entirely
+    // for anyone it already assumed would fail, silently discarding the
+    // more useful, more specific reason before it could ever be shown. This
+    // is safe to always attempt: a rejection here makes no server-side
+    // change at all, only success does (creating the reset-token file),
+    // which is exactly the wanted behavior when it does succeed.
+    void handleCreateLocalReset()
   }
 
   const handleRecoveryCheck = async () => {
