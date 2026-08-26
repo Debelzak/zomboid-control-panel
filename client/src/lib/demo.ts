@@ -646,11 +646,12 @@ export function installDemoFetchShim(): void {
       })
     }
     if (path === '/api/mods/collection/extract-cookies' && method === 'POST') {
+      // Matches the real route's response shape: the server saves the
+      // credentials itself and reports success, it never echoes them back.
       return jsonResponse({
         ok: true,
         browser: 'firefox',
-        sessionid: 'demo-session',
-        steamLoginSecure: 'demo-secure-cookie',
+        saved: true,
         notes: ['Demo mode does not read browser cookies.'],
       })
     }

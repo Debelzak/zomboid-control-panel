@@ -1183,12 +1183,18 @@ export const modsApi = {
         detected: boolean;
       }>;
     }>,
+  // On success the server extracts AND saves the credentials in one step
+  // (2026-08-26 bug hunt: the raw values never need to cross the wire, since
+  // nothing displays them) -- `saved: true` and no sessionid/steamLoginSecure
+  // fields. On failure the shape is unchanged: no credentials were found or
+  // extractable, so there's nothing to omit.
   collectionExtractCookies: (browser: string) =>
     apiPost("/mods/collection/extract-cookies", { browser }) as Promise<{
       ok: boolean;
       browser: string;
-      sessionid: string | null;
-      steamLoginSecure: string | null;
+      saved?: boolean;
+      sessionid?: string | null;
+      steamLoginSecure?: string | null;
       missing?: string[];
       notes?: string[];
       error?: string | null;

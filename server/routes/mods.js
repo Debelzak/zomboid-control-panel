@@ -1465,7 +1465,21 @@ router.post("/collection/extract-cookies", async (req, res) => {
     if (!result.ok) {
       return res.status(200).json(result); // 200 with ok:false so the UI can render the message
     }
-    res.json(result);
+    // The extracted credentials never need to leave the server: extract
+    // and save in one step, and report only success -- sessionid/
+    // steamLoginSecure previously round-tripped to the client in this
+    // response purely so the client could immediately POST them straight
+    // back for storage (client never displayed them). A technician-tier
+    // caller (this router's own permission floor) could ask this one
+    // endpoint for the panel host's live Steam login token; now it can't
+    // (2026-08-26 bug hunt, extract-cookies response shape finding).
+    setSteamSessionCredentials(result.sessionid, result.steamLoginSecure);
+    res.json({
+      ok: true,
+      browser: result.browser,
+      saved: true,
+      notes: result.notes,
+    });
   } catch (error) {
     log.error(`Extract cookies failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

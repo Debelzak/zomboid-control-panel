@@ -100,6 +100,8 @@ import {
   PanelUpdatePreflight,
   ServerInstance,
 } from "@/lib/api";
+import { getUserErrorMessage } from "@/lib/errorMessage";
+import { resolveRegisteredTranslation } from "@/lib/paramTranslation";
 import { useSocket } from "@/contexts/SocketContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme, type ThemeName } from "@/contexts/ThemeContext";
@@ -239,6 +241,28 @@ function formatBridgeAge(seconds: number): string {
   return `${d}d`;
 }
 
+// The SFTP transport's ongoing status (not a caught request failure, so
+// getUserErrorMessage's ApiError-shaped input doesn't fit) carries its own
+// lastErrorCode alongside the pre-existing English lastError/
+// lastErrorGuidance pair -- look up the translated "{{detail}} Fix: ..."
+// sentence directly when a code is present, matching the exact classification
+// server/services/panelBridgeSftp.js's formatSftpError() already computed for
+// the English fallback so the two never disagree about what went wrong. A
+// server that hasn't restarted with the 2026-08-26 SFTP error-code work yet
+// (lastErrorCode absent from an old cached status) falls back to the
+// original two-piece English rendering.
+function getSftpStatusMessage(transport: {
+  lastError?: string | null;
+  lastErrorGuidance?: string | null;
+  lastErrorCode?: string | null;
+}): string {
+  const detail = transport.lastError || "";
+  const translated = transport.lastErrorCode
+    ? resolveRegisteredTranslation("errors", transport.lastErrorCode, { detail })
+    : null;
+  return translated ?? `${detail} Fix: ${transport.lastErrorGuidance || ""}`.trim();
+}
+
 function ThemeSelect() {
   const { theme, setTheme } = useTheme();
   const { t } = useTranslation("settings");
@@ -376,6 +400,7 @@ export default function Settings() {
       lastLatencyMs?: number | null;
       lastError?: string | null;
       lastErrorGuidance?: string | null;
+      lastErrorCode?: string | null;
     };
     config?: {
       statusStaleMs: number;
@@ -1852,7 +1877,7 @@ export default function Settings() {
         variant: "success" as const,
       });
     } catch (error) {
-      toast({ title: t("toasts.sftpTestFailed.title"), description: error instanceof Error ? error.message : t("toasts.sftpTestFailed.fallback"), variant: "destructive" });
+      toast({ title: t("toasts.sftpTestFailed.title"), description: getUserErrorMessage(error, t("toasts.sftpTestFailed.fallback")), variant: "destructive" });
     } finally {
       setTestingSftp(false);
     }
@@ -1889,7 +1914,7 @@ export default function Settings() {
           panelBridgeSftpPollIntervalSeconds: originalSettings.panelBridgeSftpPollIntervalSeconds,
         }));
       }
-      setBridgeError(error instanceof Error ? error.message : t("errors.couldNotStartSftpBridge"));
+      setBridgeError(getUserErrorMessage(error, t("errors.couldNotStartSftpBridge")));
     } finally {
       setBridgeLoading(false);
     }
@@ -4103,7 +4128,7 @@ export default function Settings() {
                         <Button type="button" variant="outline" onClick={handleTestSftp} disabled={testingSftp || bridgeLoading}>{testingSftp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link className="mr-2 h-4 w-4" />}{t("bridge.verifyAndPrepare")}</Button>
                         <Button type="button" onClick={handleConfigureSftp} disabled={bridgeLoading}>{bridgeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}{t("bridge.startSftpBridge")}</Button>
                       </div>
-                      {bridgeStatus?.transport?.type === "sftp" && <div className="space-y-1 text-xs text-muted-foreground"><p>SFTP {bridgeStatus.transport.running ? t("bridge.sftpRunning") : t("bridge.sftpStopped")}{bridgeStatus.transport.lastLatencyMs != null ? t("bridge.lastSyncSuffix", { ms: bridgeStatus.transport.lastLatencyMs }) : ""}{bridgeStatus.transport.lastError ? t("bridge.lastErrorSuffix", { error: bridgeStatus.transport.lastError }) : ""}</p>{bridgeStatus.transport.lastErrorGuidance && <p className="text-warning">{t("bridge.fixLabel", { guidance: bridgeStatus.transport.lastErrorGuidance })}</p>}</div>}
+                      {bridgeStatus?.transport?.type === "sftp" && <div className="space-y-1 text-xs text-muted-foreground"><p>SFTP {bridgeStatus.transport.running ? t("bridge.sftpRunning") : t("bridge.sftpStopped")}{bridgeStatus.transport.lastLatencyMs != null ? t("bridge.lastSyncSuffix", { ms: bridgeStatus.transport.lastLatencyMs }) : ""}</p>{bridgeStatus.transport.lastError && <p className="text-warning">{getSftpStatusMessage(bridgeStatus.transport)}</p>}</div>}
                     </div>
                   </div>
 
@@ -5982,11 +6007,20 @@ function WorkshopCollectionSyncCard({
     setExtractingFrom(browserId);
     try {
       const r = await modsApi.collectionExtractCookies(browserId);
-      if (r.ok && r.sessionid && r.steamLoginSecure) {
-        const saved = await saveExtractedCookies(r.sessionid, r.steamLoginSecure);
-        if (saved && r.notes && r.notes.length > 0) {
+      if (r.ok && r.saved) {
+        // The server already saved these -- it never sends the raw values
+        // back (2026-08-26 bug hunt). Refresh the same way every other
+        // credential-changing action on this card does, rather than
+        // reconstructing a local mask we don't have the real value for.
+        toast({
+          title: t("workshopSync.toasts.cookiesSaved.title"),
+          description: t("workshopSync.toasts.cookiesSaved.description"),
+          variant: "success" as const,
+        });
+        if (r.notes && r.notes.length > 0) {
           toast({ title: t("workshopSync.toasts.extractedFrom.title", { browser: label }), description: r.notes[0] });
         }
+        await refreshDiff();
       } else {
         toast({
           variant: "destructive",
