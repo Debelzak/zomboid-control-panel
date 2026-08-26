@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
-import { rawErrorMessageIntentional } from '../lib/errorMessage'
+import { rawErrorMessageIntentional, getUserErrorMessage } from '../lib/errorMessage'
+import { ApiError } from '../lib/api'
 import { Button, buttonVariants } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -216,7 +217,13 @@ export default function Login() {
         },
       )
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || t('errors.resetFailed'))
+      // 2026-08-26: this fetch bypasses lib/api.ts's handleResponse(), so
+      // preserving status/code here is what lets getUserErrorMessage()
+      // below translate this failure -- auth.js already ships registered
+      // codes for this exact route (RESET_TOKEN_EXPIRED, RESET_TOKEN_INVALID,
+      // RECOVERY_CODE_FIELDS_REQUIRED, RATE_LIMIT_RESET, etc.) that a plain
+      // Error would have discarded before they ever reached it.
+      if (!res.ok) throw new ApiError(data.error || t('errors.resetFailed'), { status: res.status, code: data.code })
       setResetSuccess(data.message)
       setResetToken('')
       setNewPassword('')
@@ -229,7 +236,7 @@ export default function Login() {
       }, 3000)
       resetTimerRef.current = timer
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('errors.resetFailed'))
+      setError(getUserErrorMessage(err, t('errors.resetFailed')))
     } finally {
       setLoading(false)
     }
@@ -284,7 +291,12 @@ export default function Login() {
     try {
       const res = await fetch('/api/auth/reset-token/local', { method: 'POST' })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || t('errors.couldNotCreateToken'))
+      // 2026-08-26: same reason as handleReset above -- this bypasses
+      // handleResponse(), so status/code must be preserved here for
+      // getUserErrorMessage() to translate LOCAL_RESET_NOT_LOCAL /
+      // LOCAL_RESET_BEHIND_PROXY / LOCAL_RESET_TOKEN_CREATE_FAILED instead
+      // of always showing raw English.
+      if (!res.ok) throw new ApiError(data.error || t('errors.couldNotCreateToken'), { status: res.status, code: data.code })
 
       setResetAvailable(true)
       setLocalResetSupported(true)
@@ -294,7 +306,7 @@ export default function Login() {
       setResetMode(true)
     } catch (err) {
       setShowRecoveryHelp(true)
-      setError(err instanceof Error ? err.message : t('errors.couldNotCreateToken'))
+      setError(getUserErrorMessage(err, t('errors.couldNotCreateToken')))
     } finally {
       setCreatingLocalReset(false)
     }

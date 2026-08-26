@@ -54,7 +54,6 @@ export default tseslint.config(
       'src/App.tsx',
       'src/pages/ChunkCleaner.tsx',
       'src/pages/Dashboard.tsx',
-      'src/pages/Login.tsx',
       'src/pages/Players.tsx',
       'src/pages/ServerSetup.tsx',
       'src/pages/WorldMap.tsx',
