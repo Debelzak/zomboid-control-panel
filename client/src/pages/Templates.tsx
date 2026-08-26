@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useConfirm } from '@/contexts/ConfirmContext'
 import { templatesApi, SimTemplate } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { TemplateCard } from '@/components/templates/TemplateCard'
 import { TemplatePreviewDialog } from '@/components/templates/TemplatePreviewDialog'
 import { CreateTemplateDialog } from '@/components/templates/CreateTemplateDialog'
@@ -34,7 +35,7 @@ export default function Templates() {
       setTemplates(list)
       setLoadError(null)
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : t('toasts.loadFailedFallback'))
+      setLoadError(getUserErrorMessage(error, t('toasts.loadFailedFallback')))
     } finally {
       setLoading(false)
     }
@@ -51,7 +52,7 @@ export default function Templates() {
     } catch (error) {
       toast({
         title: t('toasts.exportFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.exportFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.exportFailedFallback')),
         variant: 'destructive',
       })
     }
@@ -72,7 +73,7 @@ export default function Templates() {
     } catch (error) {
       toast({
         title: t('toasts.deleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.deleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.deleteFailedFallback')),
         variant: 'destructive',
       })
     }

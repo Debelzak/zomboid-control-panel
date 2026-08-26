@@ -26,6 +26,7 @@ import { useSocket } from '@/contexts/SocketContext'
 import { EmptyState } from '@/components/EmptyState'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 
 interface ChatMessage {
   id: string
@@ -208,7 +209,7 @@ export default function Chat() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.sendFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.sendFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -245,7 +246,7 @@ export default function Chat() {
       reportClientError('Failed to save chat presets.', error)
       toast({
         title: t('toasts.presetsSaveFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.unknownError'),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
     }
