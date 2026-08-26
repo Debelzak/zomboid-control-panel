@@ -26,6 +26,12 @@
       "description": "Si vous n'avez jamais configuré de serveur Project Zomboid, choisissez <1>Nouvelle installation</1>. Tout le nécessaire sera téléchargé automatiquement."
     }
   },
+  "resumeBanner": {
+    "title": "Une installation est peut-être encore en cours",
+    "description": "Une session précédente a commencé à installer vers {{installPath}} (il y a {{elapsed}}), et la page a été fermée ou rechargée avant la fin. Elle est peut-être toujours en cours de téléchargement en arrière-plan.",
+    "continueButton": "Continuer la configuration",
+    "dismissButton": "Ignorer"
+  },
   "stepIndicator": {
     "quick": {
       "location": "Emplacement",
@@ -263,6 +269,9 @@
     "serverStartingDesc": "Redirection vers le tableau de bord...",
     "startFailedTitle": "Échec du démarrage",
     "registerFailedTitle": "Fichiers du serveur installés, mais l'enregistrement a échoué",
-    "registerFailedDesc": "Les fichiers du jeu sont sur le disque, mais le panneau n'a pas pu ajouter ce serveur à sa base de données : il n'apparaîtra donc pas encore dans Mes serveurs. Consultez le journal ci-dessus, puis relancez l'installation — la réexécution est sans risque."
+    "registerFailedDesc": "Les fichiers du jeu sont sur le disque, mais le panneau n'a pas pu ajouter ce serveur à sa base de données : il n'apparaîtra donc pas encore dans Mes serveurs. Consultez le journal ci-dessus, puis relancez l'installation — la réexécution est sans risque.",
+    "activateFailedLog": "Avertissement : le serveur a été enregistré, mais n'a pas pu être défini comme serveur actif.",
+    "activateFailedTitle": "Serveur enregistré, mais non activé",
+    "activateFailedDesc": "Le serveur a été ajouté à Mes serveurs, mais le panneau n'a pas pu basculer automatiquement vers lui. Allez dans Mes serveurs et sélectionnez-le manuellement avant de le démarrer."
   }
 }

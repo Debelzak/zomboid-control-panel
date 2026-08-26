@@ -26,6 +26,12 @@
       "description": "Si ou pa janm konfigire yon sèvè Project Zomboid anvan, chwazi <1>Nouvèl Enstalasyon</1>. Li ap telechaje tout sa ou bezwen otomatikman."
     }
   },
+  "resumeBanner": {
+    "title": "Yon enstalasyon ka toujou ap kouri",
+    "description": "Yon sesyon anvan te kòmanse enstale nan {{installPath}} ({{elapsed}} de sa) epi paj la te fèmen oswa rechaje anvan li te fini. Li ka toujou ap telechaje an background.",
+    "continueButton": "Kontinye konfigirasyon",
+    "dismissButton": "Ignore"
+  },
   "stepIndicator": {
     "quick": {
       "location": "Kote",
@@ -235,6 +241,9 @@
     "registerFailedLog": "Avètisman: Echwe pou anrejistre sèvè nan panèl la.",
     "registerFailedTitle": "Fichye sèvè enstale, men anrejistreman echwe",
     "registerFailedDesc": "Fichye jwèt yo sou disk, men panèl la pa t kapab ajoute sèvè sa a nan baz done li, kidonk li p ap parèt nan Sèvè Mwen yo poko. Tcheke jounal anwo a, epi eseye Konfigirasyon Sèvè ankò — li san danje pou fè l ankò.",
+    "activateFailedLog": "Avètisman: Sèvè a te anrejistre, men li pa t kapab defini kòm sèvè aktif la.",
+    "activateFailedTitle": "Sèvè anrejistre, men li pa aktif",
+    "activateFailedDesc": "Sèvè a te ajoute nan Sèvè Mwen yo, men panèl la pa t kapab chanje pou li otomatikman. Ale nan Sèvè Mwen yo epi chwazi l manyèlman anvan ou demare l.",
     "steamCmdReadyTitle": "SteamCMD Pare",
     "steamCmdReadyDesc": "SteamCMD enstale epi pare pou itilize.",
     "steamCmdFailedTitle": "Konfigirasyon SteamCMD Echwe",

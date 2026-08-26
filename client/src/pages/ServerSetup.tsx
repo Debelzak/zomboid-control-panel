@@ -25,6 +25,7 @@ import {
   Check,
   Info,
   ArrowRight,
+  AlertTriangle,
 } from "lucide-react";
 import { configApi, serverApi, serversApi, debugApi, apiFetch } from "@/lib/api";
 import { HelpTip } from "@/components/HelpTip";
@@ -48,8 +49,9 @@ import { SocketContext } from "@/contexts/SocketContext";
 import { Slider } from "@/components/ui/slider";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { reportClientError } from "@/lib/client-errors";
-import { cn, copyText } from "@/lib/utils";
+import { cn, copyText, formatUptime } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -111,6 +113,63 @@ function formatPort(port: number): string {
 // NaN mid-edit too (NumberInput), and the summary screen must never render it.
 function formatMemory(gb: number): string {
   return Number.isFinite(gb) ? String(gb) : "—";
+}
+
+// POST /install returns as soon as SteamCMD is *launched*, then the real
+// outcome (success or failure) arrives minutes later over install:log /
+// install:complete -- and this component is the ONLY listener for either
+// event anywhere in the client (2026-08-26 install-failure hunt, finding
+// #7). If the tab is closed or the page reloads before that arrives, the
+// wizard forgets an install was ever attempted while SteamCMD keeps running
+// server-side regardless. This marker is the client's only memory of that:
+// written right after a real install request is accepted, cleared the
+// instant a real outcome (either one) is heard.
+export const INSTALL_INFLIGHT_KEY = "zcp-install-inflight";
+// A real SteamCMD download finishes in minutes to a couple of hours even on
+// a slow link; past this the marker is almost certainly stale (a crashed
+// panel, an abandoned attempt) rather than something still genuinely running.
+const INSTALL_INFLIGHT_STALE_MS = 6 * 60 * 60 * 1000;
+
+export interface InstallInFlightMarker {
+  installPath: string;
+  serverName: string;
+  startedAt: number;
+}
+
+export function readInstallInFlightMarker(): InstallInFlightMarker | null {
+  try {
+    const raw = localStorage.getItem(INSTALL_INFLIGHT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.installPath === "string" &&
+      typeof parsed.serverName === "string" &&
+      typeof parsed.startedAt === "number"
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeInstallInFlightMarker(marker: InstallInFlightMarker): void {
+  try {
+    localStorage.setItem(INSTALL_INFLIGHT_KEY, JSON.stringify(marker));
+  } catch {
+    // Best-effort (private browsing / storage quota) -- the wizard still
+    // works, it just can't warn about this specific install after a reload.
+  }
+}
+
+export function clearInstallInFlightMarker(): void {
+  try {
+    localStorage.removeItem(INSTALL_INFLIGHT_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 function generatePassword(length = 12): string {
@@ -212,6 +271,9 @@ export default function ServerSetup() {
   const [installing, setInstalling] = useState(false);
   const [logs, setLogs] = useState<InstallLog[]>([]);
   const [installComplete, setInstallComplete] = useState(false);
+  // A leftover marker from a PREVIOUS page load (see readInstallInFlightMarker
+  // above) -- not this session's own install, which uses `installing` above.
+  const [resumeMarker, setResumeMarker] = useState<InstallInFlightMarker | null>(null);
   const [installProgress, setInstallProgress] = useState<{
     percent: number;
     downloaded: string;
@@ -323,6 +385,19 @@ export default function ServerSetup() {
   // Auto-detect RAM on mount
   useEffect(() => {
     handleAutoDetectRam();
+  }, []);
+
+  // Was an install left running by a PREVIOUS page load? (closed tab,
+  // refresh, crash -- see readInstallInFlightMarker above.) Surfaced as a
+  // banner on the mode-select screen rather than silently discarded.
+  useEffect(() => {
+    const marker = readInstallInFlightMarker();
+    if (!marker) return;
+    if (Date.now() - marker.startedAt > INSTALL_INFLIGHT_STALE_MS) {
+      clearInstallInFlightMarker();
+      return;
+    }
+    setResumeMarker(marker);
   }, []);
 
   // Learn the panel host's actual OS on mount, so a Windows/macOS
@@ -491,6 +566,11 @@ export default function ServerSetup() {
       params?: Record<string, string | number>;
     }) => {
       setInstalling(false);
+      // The socket connection (and this handler) is the ONLY place that ever
+      // learns the true outcome -- clear the in-flight marker on both success
+      // and failure, not just success, so a reload after this point has
+      // nothing stale left to warn about.
+      clearInstallInFlightMarker();
       const displayMessage = getInstallProgressMessage(data, data.message);
       if (data.success) {
         setLogs((prev) => [
@@ -498,10 +578,11 @@ export default function ServerSetup() {
           { type: "success", message: displayMessage, timestamp: new Date() },
         ]);
 
+        const s = formStateRef.current;
+        let createResult: Awaited<ReturnType<typeof serversApi.create>>;
         try {
-          const s = formStateRef.current;
           // Use data from server response which has computed paths
-          const createResult = await serversApi.create({
+          createResult = await serversApi.create({
             name: data.serverName || s.serverName,
             serverName: data.serverName || s.serverName,
             installPath: data.installPath || s.installPath,
@@ -525,24 +606,6 @@ export default function ServerSetup() {
               timestamp: new Date(),
             },
           ]);
-
-          // Activate the newly created server so "Start Server Now" starts this one
-          if (createResult.server?.id) {
-            await serversApi.activate(createResult.server.id);
-            setLogs((prev) => [
-              ...prev,
-              {
-                type: "success",
-                message: t("toasts.activeServerSwitchedLog"),
-                timestamp: new Date(),
-              },
-            ]);
-          }
-          setInstallComplete(true);
-          toast({
-            title: t("toasts.serverInstalledTitle"),
-            description: t("toasts.serverInstalledDesc"),
-          });
         } catch (error) {
           reportClientError("Failed to create server entry.", error);
           setLogs((prev) => [
@@ -558,7 +621,54 @@ export default function ServerSetup() {
             description: t("toasts.registerFailedDesc"),
             variant: "destructive",
           });
+          return;
         }
+
+        // Activate the newly created server so "Start Server Now" starts this
+        // one. This is a SEPARATE try/catch from the create() above: the
+        // server entry above already exists at this point, so a failure here
+        // must never be reported as "failed to create server entry" (#2 in
+        // the 2026-08-26 install-failure hunt) -- that told a user the whole
+        // registration failed when only the auto-activate step had. Also
+        // deliberately skip setInstallComplete(true)/the success toast on
+        // this path: "Start Server Now" below assumes the server it just
+        // installed is the active one, and offering that shortcut here would
+        // aim it at whatever was active before (or nothing).
+        if (createResult.server?.id) {
+          try {
+            await serversApi.activate(createResult.server.id);
+            setLogs((prev) => [
+              ...prev,
+              {
+                type: "success",
+                message: t("toasts.activeServerSwitchedLog"),
+                timestamp: new Date(),
+              },
+            ]);
+          } catch (error) {
+            reportClientError("Failed to activate newly created server.", error);
+            setLogs((prev) => [
+              ...prev,
+              {
+                type: "error",
+                message: t("toasts.activateFailedLog"),
+                timestamp: new Date(),
+              },
+            ]);
+            toast({
+              title: t("toasts.activateFailedTitle"),
+              description: t("toasts.activateFailedDesc"),
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+
+        setInstallComplete(true);
+        toast({
+          title: t("toasts.serverInstalledTitle"),
+          description: t("toasts.serverInstalledDesc"),
+        });
       } else {
         setInstallComplete(false);
         setLogs((prev) => [
@@ -747,6 +857,11 @@ export default function ServerSetup() {
         rconPassword,
         rconPort,
       });
+      // The request above only confirms SteamCMD was launched -- the real
+      // outcome arrives later over the socket (see handleInstallComplete).
+      // Remember that an install is in flight so a reload before then can
+      // still tell the user something was attempted, instead of forgetting.
+      writeInstallInFlightMarker({ installPath, serverName, startedAt: Date.now() });
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : t("common.unknownError");
       const msg = installationErrorGuidance(rawMessage, t, serverPlatform);
@@ -882,6 +997,21 @@ export default function ServerSetup() {
     }
   };
 
+  // Resume-banner actions -- see resumeMarker/readInstallInFlightMarker above.
+  const handleResumeContinue = () => {
+    if (!resumeMarker) return;
+    setInstallPath(resumeMarker.installPath);
+    setServerName(resumeMarker.serverName);
+    setSetupMode("full");
+    setCurrentStep(2); // Server Config -- where installPath/serverName live
+    setResumeMarker(null);
+  };
+
+  const handleResumeDismiss = () => {
+    clearInstallInFlightMarker();
+    setResumeMarker(null);
+  };
+
   // Mode selection screen
   if (setupMode === "select") {
     return (
@@ -899,6 +1029,31 @@ export default function ServerSetup() {
             {t("modeSelect.description")}
           </p>
         </div>
+
+        {resumeMarker && (
+          <Alert variant="warning" className="text-left">
+            <AlertTriangle className="w-4 h-4" />
+            <AlertTitle>{t("resumeBanner.title")}</AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>
+                {t("resumeBanner.description", {
+                  installPath: resumeMarker.installPath,
+                  elapsed: formatUptime(
+                    Math.max(0, Math.floor((Date.now() - resumeMarker.startedAt) / 1000)),
+                  ),
+                })}
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleResumeContinue}>
+                  {t("resumeBanner.continueButton")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleResumeDismiss}>
+                  {t("resumeBanner.dismissButton")}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid gap-6 md:grid-cols-2">
           {/* Full Install Card */}

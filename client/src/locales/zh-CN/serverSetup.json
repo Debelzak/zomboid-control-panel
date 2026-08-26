@@ -26,6 +26,12 @@
       "description": "如果你从未搭建过 Project Zomboid 服务器，请选择 <1>全新安装</1>。它会自动下载所需的一切。"
     }
   },
+  "resumeBanner": {
+    "title": "可能仍有安装正在进行",
+    "description": "之前的会话开始安装到 {{installPath}}（{{elapsed}}前），但页面在完成前被关闭或刷新。它可能仍在后台下载。",
+    "continueButton": "继续设置",
+    "dismissButton": "忽略"
+  },
   "stepIndicator": {
     "quick": {
       "location": "位置",
@@ -263,6 +269,9 @@
     "serverStartingDesc": "正在跳转到仪表盘...",
     "startFailedTitle": "启动失败",
     "registerFailedTitle": "服务器文件已安装，但注册失败",
-    "registerFailedDesc": "游戏文件已写入磁盘，但面板未能将此服务器添加到数据库，因此它还不会出现在“我的服务器”中。请查看上方日志，然后重新运行服务器安装——重复运行是安全的。"
+    "registerFailedDesc": "游戏文件已写入磁盘，但面板未能将此服务器添加到数据库，因此它还不会出现在“我的服务器”中。请查看上方日志，然后重新运行服务器安装——重复运行是安全的。",
+    "activateFailedLog": "警告：服务器已注册，但未能设为活动服务器。",
+    "activateFailedTitle": "服务器已注册，但未设为活动状态",
+    "activateFailedDesc": "服务器已添加到“我的服务器”，但面板未能自动切换到它。请前往“我的服务器”手动选择它，然后再启动。"
   }
 }

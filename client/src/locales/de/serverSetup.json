@@ -26,6 +26,12 @@
       "description": "Wenn du noch nie einen Project Zomboid-Server eingerichtet hast, wähle <1>Neuinstallation</1>. Alles Nötige wird dabei automatisch heruntergeladen."
     }
   },
+  "resumeBanner": {
+    "title": "Eine Installation läuft möglicherweise noch",
+    "description": "Eine frühere Sitzung hat mit der Installation nach {{installPath}} begonnen (vor {{elapsed}}), und die Seite wurde geschlossen oder neu geladen, bevor sie abgeschlossen war. Sie läuft möglicherweise noch im Hintergrund.",
+    "continueButton": "Einrichtung fortsetzen",
+    "dismissButton": "Verwerfen"
+  },
   "stepIndicator": {
     "quick": {
       "location": "Pfad",
@@ -263,6 +269,9 @@
     "serverStartingDesc": "Weiterleitung zum Dashboard…",
     "startFailedTitle": "Start fehlgeschlagen",
     "registerFailedTitle": "Serverdateien installiert, aber die Registrierung ist fehlgeschlagen",
-    "registerFailedDesc": "Die Spieldateien liegen auf der Festplatte, aber das Panel konnte diesen Server nicht in seine Datenbank eintragen, deshalb erscheint er noch nicht unter Meine Server. Sieh dir das Log oben an und starte die Servereinrichtung erneut — ein erneuter Durchlauf ist unbedenklich."
+    "registerFailedDesc": "Die Spieldateien liegen auf der Festplatte, aber das Panel konnte diesen Server nicht in seine Datenbank eintragen, deshalb erscheint er noch nicht unter Meine Server. Sieh dir das Log oben an und starte die Servereinrichtung erneut — ein erneuter Durchlauf ist unbedenklich.",
+    "activateFailedLog": "Warnung: Server wurde registriert, konnte aber nicht als aktiver Server festgelegt werden.",
+    "activateFailedTitle": "Server registriert, aber nicht aktiv gesetzt",
+    "activateFailedDesc": "Der Server wurde zu Meine Server hinzugefügt, aber das Panel konnte nicht automatisch zu ihm wechseln. Wähle ihn manuell unter Meine Server aus, bevor du ihn startest."
   }
 }

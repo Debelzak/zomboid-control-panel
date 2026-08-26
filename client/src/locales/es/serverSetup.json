@@ -26,6 +26,12 @@
       "description": "Si nunca has configurado un servidor de Project Zomboid, elige <1>Instalación nueva</1>: descargará todo lo necesario automáticamente."
     }
   },
+  "resumeBanner": {
+    "title": "Puede que una instalación siga en curso",
+    "description": "Una sesión anterior empezó a instalar en {{installPath}} (hace {{elapsed}}) y la página se cerró o recargó antes de terminar. Puede que siga descargándose en segundo plano.",
+    "continueButton": "Continuar configuración",
+    "dismissButton": "Descartar"
+  },
   "stepIndicator": {
     "quick": {
       "location": "Ubicación",
@@ -263,6 +269,9 @@
     "serverStartingDesc": "Redirigiendo al tablero…",
     "startFailedTitle": "Error al iniciar",
     "registerFailedTitle": "Archivos del servidor instalados, pero falló el registro",
-    "registerFailedDesc": "Los archivos del juego están en el disco, pero el panel no pudo añadir este servidor a su base de datos, así que aún no aparecerá en Mis servidores. Revisa el registro de arriba y vuelve a ejecutar la instalación: repetirla es seguro."
+    "registerFailedDesc": "Los archivos del juego están en el disco, pero el panel no pudo añadir este servidor a su base de datos, así que aún no aparecerá en Mis servidores. Revisa el registro de arriba y vuelve a ejecutar la instalación: repetirla es seguro.",
+    "activateFailedLog": "Advertencia: El servidor se registró, pero no se pudo establecer como servidor activo.",
+    "activateFailedTitle": "Servidor registrado, pero no activado",
+    "activateFailedDesc": "El servidor se añadió a Mis servidores, pero el panel no pudo cambiar a él automáticamente. Ve a Mis servidores y selecciónalo manualmente antes de iniciarlo."
   }
 }
