@@ -1083,62 +1083,44 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
     // confirming the server really is stopped.
     if (!force) {
       const serverManager = req.app.get("serverManager");
-      if (
-        serverManager &&
-        typeof serverManager.getServerProcessDetails === "function"
-      ) {
-        // Fail CLOSED, not open: a scan that couldn't determine the server's
-        // state (scanFailed) or that threw outright must refuse the same way
-        // a confirmed-running server does, not be read as "confirmed
-        // stopped". checkServerRunning()'s collapse of a failed scan into a
-        // plain `false` was the exact bug fixed elsewhere (/wipe,
-        // /delete-files) via this same scanFailed flag -- this guard used
-        // getServerProcessDetails() already but never actually consulted it,
-        // and its own catch swallowed a thrown check and proceeded anyway.
-        let details;
+      // Fail CLOSED, not open: a scan that couldn't determine the server's
+      // state (scanFailed), threw outright, or has no richer check to even
+      // run must refuse the same way a confirmed-running server does, never
+      // be read as "confirmed stopped". No fallback to checkServerRunning()
+      // -- that collapses a failed scan into a plain `false`, indistinguishable
+      // from a confirmed-stopped server, which is the exact bug fixed
+      // elsewhere (/wipe, /delete-files) via this same scanFailed flag; a
+      // fallback to it here would silently reopen it the moment a lighter
+      // serverManager without getServerProcessDetails is ever wired up.
+      // Same shape as index.js's Docker-update gate (handlePanelUpdateDownload):
+      // treat "the richer check isn't available" as equivalent to scanFailed.
+      let details = null;
+      if (serverManager) {
         try {
-          details = await serverManager.getServerProcessDetails();
+          details =
+            typeof serverManager.getServerProcessDetails === "function"
+              ? await serverManager.getServerProcessDetails()
+              : null;
         } catch (e) {
           log.warn(
             `Server-running check failed, refusing to proceed: ${e.message}`,
           );
-          return res.status(503).json({
-            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
-            code: ErrorCode.SERVER_STATE_UNKNOWN,
-          });
+          details = null;
         }
-        if (details.scanFailed) {
-          return res.status(503).json({
-            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
-            code: ErrorCode.SERVER_STATE_UNKNOWN,
-          });
-        }
-        if (details.running) {
-          return res.status(400).json({
-            error:
-              "Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.",
-            code: "server_running",
-            matched: details.matched,
-          });
-        }
-      } else if (
-        serverManager &&
-        typeof serverManager.checkServerRunning === "function"
-      ) {
-        try {
-          const isRunning = await serverManager.checkServerRunning();
-          if (isRunning) {
-            return res.status(400).json({
-              error:
-                "Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.",
-              code: "server_running",
-            });
-          }
-        } catch (e) {
-          log.warn(
-            `Server-running check failed (proceeding cautiously): ${e.message}`,
-          );
-        }
+      }
+      if (!details || details.scanFailed) {
+        return res.status(503).json({
+          error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+          code: ErrorCode.SERVER_STATE_UNKNOWN,
+        });
+      }
+      if (details.running) {
+        return res.status(400).json({
+          error:
+            "Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.",
+          code: "server_running",
+          matched: details.matched,
+        });
       }
     } else {
       log.warn("delete-chunks: server-running check bypassed via force=true");
@@ -1514,56 +1496,36 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
     // hatch (issue #5: detection can false-positive on custom launchers).
     if (!force) {
       const serverManager = req.app.get("serverManager");
-      if (
-        serverManager &&
-        typeof serverManager.getServerProcessDetails === "function"
-      ) {
-        // Fail CLOSED, not open -- see the matching comment in delete-chunks
-        // above for the full rationale (this guard is identical).
-        let details;
+      // Fail CLOSED, not open -- see the matching comment in delete-chunks
+      // above for the full rationale (this guard is identical, including
+      // the "no fallback to checkServerRunning()" reasoning).
+      let details = null;
+      if (serverManager) {
         try {
-          details = await serverManager.getServerProcessDetails();
+          details =
+            typeof serverManager.getServerProcessDetails === "function"
+              ? await serverManager.getServerProcessDetails()
+              : null;
         } catch (e) {
           log.warn(
             `Server-running check failed, refusing to proceed: ${e.message}`,
           );
-          return res.status(503).json({
-            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
-            code: ErrorCode.SERVER_STATE_UNKNOWN,
-          });
+          details = null;
         }
-        if (details.scanFailed) {
-          return res.status(503).json({
-            error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
-            code: ErrorCode.SERVER_STATE_UNKNOWN,
-          });
-        }
-        if (details.running) {
-          return res.status(400).json({
-            error:
-              "Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.",
-            code: "server_running",
-            matched: details.matched,
-          });
-        }
-      } else if (
-        serverManager &&
-        typeof serverManager.checkServerRunning === "function"
-      ) {
-        try {
-          const isRunning = await serverManager.checkServerRunning();
-          if (isRunning) {
-            return res.status(400).json({
-              error:
-                "Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.",
-              code: "server_running",
-            });
-          }
-        } catch (e) {
-          log.warn(
-            `Server-running check failed (proceeding cautiously): ${e.message}`,
-          );
-        }
+      }
+      if (!details || details.scanFailed) {
+        return res.status(503).json({
+          error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+          code: ErrorCode.SERVER_STATE_UNKNOWN,
+        });
+      }
+      if (details.running) {
+        return res.status(400).json({
+          error:
+            "Stop the server before deleting chunks. Running servers hold save files open and will overwrite your changes on shutdown.",
+          code: "server_running",
+          matched: details.matched,
+        });
       }
     } else {
       log.warn("delete-region: server-running check bypassed via force=true");

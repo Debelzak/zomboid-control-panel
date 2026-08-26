@@ -683,7 +683,16 @@ describe("online player count when RCON is unavailable", () => {
 describe("backup restore guards against a running server", () => {
   it("refuses to restore while the server is running", async () => {
     const service = new BackupService();
-    service.setServerManager({ checkServerRunning: async () => true });
+    // getServerProcessDetails, not checkServerRunning: the latter is no
+    // longer consulted at all (it used to be a fallback that collapsed a
+    // failed scan into a plain `false`, indistinguishable from a
+    // confirmed-stopped server -- see the comment above the check in
+    // backupService.js). A serverManager offering only checkServerRunning
+    // now refuses with "process detection is unavailable" instead of
+    // silently trusting it either way.
+    service.setServerManager({
+      getServerProcessDetails: async () => ({ running: true, scanFailed: false }),
+    });
 
     const result = await service.restoreBackup("world.zip", {
       createPreRestoreBackup: false,

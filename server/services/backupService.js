@@ -888,11 +888,14 @@ export class BackupService {
             };
           }
           running = processDetails.running;
-        } else if (typeof this.serverManager.checkServerRunning === "function") {
-          // Compatibility for older injected managers; production uses the
-          // getServerProcessDetails() branch above.
-          running = await this.serverManager.checkServerRunning();
         } else {
+          // No fallback to checkServerRunning() here even for an older
+          // injected manager that only implements it -- that call collapses
+          // a failed scan into a plain `false`, indistinguishable from a
+          // confirmed-stopped server, which is exactly the bug this whole
+          // guard exists to avoid. Treat "the richer check isn't available"
+          // as equivalent to a failed scan and refuse, same shape as
+          // server/index.js's Docker-update gate (handlePanelUpdateDownload).
           return {
             success: false,
             message:

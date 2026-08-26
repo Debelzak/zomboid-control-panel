@@ -100,6 +100,27 @@ describe("restoreBackup archive safety", () => {
     );
   });
 
+  // Regression: a serverManager lacking getServerProcessDetails() (an older
+  // or lighter injected manager -- see the comment above the check in
+  // backupService.js) used to fall back to checkServerRunning(), which
+  // collapses a failed scan into a plain `false` indistinguishable from a
+  // confirmed-stopped server. It must refuse the same way scanFailed does,
+  // not silently restore.
+  it("refuses to restore when the injected serverManager has no process-detection method at all", async () => {
+    const service = createService();
+    service.setServerManager({});
+
+    const result = await service.restoreBackup("good.zip", {
+      createPreRestoreBackup: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/process detection is unavailable/i);
+    expect(fs.readFileSync(path.join(savesPath, "map_meta.bin"), "utf8")).toBe(
+      "LIVE",
+    );
+  });
+
   it("keeps the live save when the archive is corrupt", async () => {
     const corrupt = path.join(backupsPath, "corrupt.zip");
     // Valid zip signature, truncated body: fails partway through extraction.

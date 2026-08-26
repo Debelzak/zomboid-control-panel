@@ -544,6 +544,44 @@ describe("performRestart() Schedule History labeling", () => {
   });
 });
 
+// Regression: performRestart()'s own readProcessDetails() helper used to
+// fall back to serverManager.checkServerRunning() -- and hardcode
+// scanFailed:false alongside it -- whenever getServerProcessDetails wasn't
+// available. That collapsed a failed scan into a plain `false` AND lied
+// about a check that never ran, so a server that was actually still running
+// could get silently "auto-started" as a duplicate process. It must refuse
+// the same way a real scanFailed does when the richer check isn't there to
+// even ask, not be rescued into treating it as a confirmed stop.
+describe("performRestart(): a serverManager without process-detection must refuse, not silently start", () => {
+  it("refuses when getServerProcessDetails is unavailable and RCON cannot confirm the server either way", async () => {
+    const rconService = {
+      connected: false,
+      connect: vi.fn().mockResolvedValue(),
+      execute: vi.fn().mockResolvedValue({ success: false, error: "not connected" }),
+    };
+    const serverManager = {
+      _serverId: null,
+      // Deliberately no getServerProcessDetails -- the exact "lighter
+      // manager" shape this fix protects against. checkServerRunning must
+      // NOT be consulted as a fallback even though it's present here.
+      checkServerRunning: vi.fn().mockResolvedValue(false),
+      startServer: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const scheduler = new Scheduler(rconService, serverManager);
+
+    const result = await scheduler.performRestart();
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(
+      /could not confirm whether the server is stopped/i,
+    );
+    // The old bug's signature: silently treating "couldn't tell" as
+    // "confirmed stopped" and auto-starting a possible duplicate process.
+    expect(serverManager.startServer).not.toHaveBeenCalled();
+    expect(serverManager.checkServerRunning).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/scheduler/restart-now labels its Schedule History entry as manual", () => {
   function getRestartNowHandler() {
     const layer = router.stack.find(

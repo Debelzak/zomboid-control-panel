@@ -586,4 +586,71 @@ describe("delete-chunks/delete-region: an undetermined server state must refuse,
     expect(res.getStatusCode()).toBe(200);
     expect(fs.existsSync(chunk)).toBe(false);
   });
+
+  // Regression: a serverManager without getServerProcessDetails (an older or
+  // lighter injected manager) used to fall back to checkServerRunning(),
+  // which collapses a failed scan into a plain `false` -- indistinguishable
+  // from a confirmed-stopped server -- and one of the two fallbacks then
+  // silently swallowed even a THROWN check and proceeded anyway (the
+  // "proceeding cautiously" log line). Both routes must refuse the same way
+  // scanFailed does when the richer check isn't there to even ask.
+  it("delete-chunks refuses with SERVER_STATE_UNKNOWN when the serverManager has no process-detection method at all", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      checkServerRunning: async () => false,
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-chunks",
+      { saveName: SAVE_NAME, chunks: [{ file: "0/0.bin", x: 0, y: 0 }] },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(503);
+    expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("delete-region refuses with SERVER_STATE_UNKNOWN when the serverManager has no process-detection method at all", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      checkServerRunning: async () => false,
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-region",
+      { saveName: SAVE_NAME, minX: 0, maxX: 10, minY: 0, maxY: 10 },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(503);
+    expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("delete-chunks refuses with SERVER_STATE_UNKNOWN when checkServerRunning would have said false but process detection actually threw", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    const serverManager = {
+      // A manager with getServerProcessDetails but which throws must still
+      // refuse -- and must NOT fall back to checkServerRunning() (which
+      // here would wrongly say "not running" and let the delete through).
+      getServerProcessDetails: async () => {
+        throw new Error("boom-process-scan");
+      },
+      checkServerRunning: async () => false,
+    };
+
+    const res = await postAsWithServerManager(
+      "/delete-chunks",
+      { saveName: SAVE_NAME, chunks: [{ file: "0/0.bin", x: 0, y: 0 }] },
+      serverManager,
+    );
+
+    expect(res.getStatusCode()).toBe(503);
+    expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
 });

@@ -714,14 +714,18 @@ export class Scheduler {
     }
 
     try {
+      // No fallback to checkServerRunning() when getServerProcessDetails
+      // isn't available -- that call collapses a failed scan into a plain
+      // `false`, and hardcoding scanFailed:false here would additionally
+      // LIE about a check that never actually ran. Treat "the richer check
+      // isn't available" as equivalent to a failed scan and let the
+      // existing processScanFailed handling below refuse, same shape as
+      // server/index.js's Docker-update gate (handlePanelUpdateDownload).
       const readProcessDetails = async () => {
         if (typeof serverManager.getServerProcessDetails === "function") {
           return serverManager.getServerProcessDetails();
         }
-        return {
-          running: await serverManager.checkServerRunning(),
-          scanFailed: false,
-        };
+        return { running: false, scanFailed: true };
       };
 
       // Check if server is actually running - use multiple methods
