@@ -260,6 +260,12 @@ export default function Servers() {
   const [deleting, setDeleting] = useState(false)
   const [deleteProgress, setDeleteProgress] = useState(0)
   const deleteProgressRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Generation counter for the branch-fetch effect below -- steamcmdPath is a
+  // live-typed text input, so a keystroke can re-fire the effect before the
+  // previous fetchBranches() call resolves; without this, a slower response
+  // from an earlier keystroke can land after a newer one and overwrite the
+  // branch list / selected branch with stale data.
+  const branchFetchIdRef = useRef(0)
   const [activating, setActivating] = useState<string | number | null>(null)
 
   // Add server dialog
@@ -571,10 +577,13 @@ export default function Servers() {
   useEffect(() => {
     if (!steamOperation) return
 
+    const thisFetchId = ++branchFetchIdRef.current
+
     const fetchBranches = async () => {
       setLoadingBranches(true)
       try {
         const detection = await serverApi.detectSteamCmd()
+        if (thisFetchId !== branchFetchIdRef.current) return
         const resolvedSteamcmdPath = detection.found && detection.path ? detection.path : steamcmdPath
         if (resolvedSteamcmdPath) {
           // Detection is asynchronous. Do not replace a path the operator
@@ -582,6 +591,7 @@ export default function Servers() {
           setSteamcmdPath((currentPath) => currentPath.trim() || resolvedSteamcmdPath)
         }
         const data = await serverApi.getBranches(resolvedSteamcmdPath)
+        if (thisFetchId !== branchFetchIdRef.current) return
         if (data.branches && Array.isArray(data.branches)) {
           setAvailableBranches(() => {
             const fetched = data.branches as Array<{ name: string; description: string; buildId?: string | null }>
@@ -627,7 +637,7 @@ export default function Servers() {
         reportClientError('Failed to fetch branches.', error)
         // Keep default branches on error
       } finally {
-        setLoadingBranches(false)
+        if (thisFetchId === branchFetchIdRef.current) setLoadingBranches(false)
       }
     }
 

@@ -763,6 +763,12 @@ export default function Debug() {
   >("food");
   const [armedAction, setArmedAction] = useState<string | null>(null);
   const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Generation counters so a slower response to an earlier filter selection
+  // (activitySource / perfRange) can't land after a newer one and overwrite
+  // it with stale data -- both are dropdowns a user can click through
+  // quickly, and both fetches are also re-triggered by a poll interval.
+  const activityFetchIdRef = useRef(0);
+  const perfFetchIdRef = useRef(0);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsScrollAreaRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -1490,14 +1496,17 @@ export default function Debug() {
   };
 
   const fetchPerformanceHistory = useCallback(async () => {
+    const thisFetchId = ++perfFetchIdRef.current;
     setRefreshingPerformance(true);
     try {
       const limit = perfRange === "24h" ? 1440 : perfRange === "6h" ? 360 : 60;
       const res = await authFetch(
         `/api/debug/performance-history?limit=${limit}`,
       );
+      if (thisFetchId !== perfFetchIdRef.current) return;
       if (!res.ok) return;
       const data = await res.json();
+      if (thisFetchId !== perfFetchIdRef.current) return;
       if (data.history) {
         setPerformanceHistory(
           data.history.map((h: PerformanceSnapshot) => ({
@@ -1520,7 +1529,7 @@ export default function Debug() {
     } catch {
       // Endpoint may not exist yet
     } finally {
-      setRefreshingPerformance(false);
+      if (thisFetchId === perfFetchIdRef.current) setRefreshingPerformance(false);
     }
   }, [authFetch, perfRange]);
 
@@ -1594,13 +1603,16 @@ export default function Debug() {
 
   // Fetch activity log
   const fetchActivity = useCallback(async () => {
+    const thisFetchId = ++activityFetchIdRef.current;
     setRefreshingActivity(true);
     try {
       const res = await authFetch(
         `/api/debug/activity?limit=200&source=${activitySource}`,
       );
+      if (thisFetchId !== activityFetchIdRef.current) return;
       if (!res.ok) return;
       const data = await res.json();
+      if (thisFetchId !== activityFetchIdRef.current) return;
       if (data.entries) {
         setActivityEntries(data.entries);
         setActivityLastLoaded(new Date());
@@ -1608,7 +1620,7 @@ export default function Debug() {
     } catch {
       // Endpoint may not exist yet
     } finally {
-      setRefreshingActivity(false);
+      if (thisFetchId === activityFetchIdRef.current) setRefreshingActivity(false);
     }
   }, [authFetch, activitySource]);
 

@@ -655,11 +655,17 @@ export default function ChunkCleaner() {
 
   // Fetch vehicles + safehouses from PanelBridge, convert to chunk coords
   const fetchOverlayData = useCallback(async () => {
+    // Reuses loadChunks' own generation counter -- overlay data is only
+    // meaningful paired with a matching, still-current chunk load, and
+    // every caller of fetchOverlayData (the selectedSave effect below,
+    // and the post-delete refresh) always runs loadChunks first/around it.
+    const thisLoadId = loadIdRef.current;
     try {
       const [vRes, sRes] = await Promise.allSettled([
         panelBridgeApi.sendCommand("getVehiclesDetailed"),
         panelBridgeApi.sendCommand("getSafehouses"),
       ]);
+      if (thisLoadId !== loadIdRef.current) return;
       if (
         vRes.status === "fulfilled" &&
         vRes.value.success &&
