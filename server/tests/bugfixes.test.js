@@ -525,8 +525,11 @@ describe("conflict pair grouping", () => {
   it("never pairs a mod with itself when it ships the same path twice", () => {
     // A mod shipping both media/ and 42/media/ used to appear twice in
     // conflict.mods, producing an "A vs A" pair.
-    const pairs = groupIntoPairs([conflict(["ModA", "ModA", "ModB"])]);
+    const { pairs, truncated } = groupIntoPairs([
+      conflict(["ModA", "ModA", "ModB"]),
+    ]);
 
+    expect(truncated).toBe(false);
     expect(pairs).toHaveLength(1);
     expect(pairs[0].modA.modId).toBe("ModA");
     expect(pairs[0].modB.modId).toBe("ModB");
@@ -535,14 +538,31 @@ describe("conflict pair grouping", () => {
   });
 
   it("counts each real pair once per conflicting file", () => {
-    const pairs = groupIntoPairs([
+    const { pairs, truncated } = groupIntoPairs([
       conflict(["ModA", "ModB"]),
       conflict(["ModA", "ModB"], "medium"),
     ]);
 
+    expect(truncated).toBe(false);
     expect(pairs).toHaveLength(1);
     expect(pairs[0].highCount).toBe(1);
     expect(pairs[0].mediumCount).toBe(1);
+  });
+
+  it("caps the pair-file projection across high-fanout conflicts", () => {
+    const modIds = Array.from({ length: 20 }, (_, i) => `Mod${i}`);
+    const maxFileEntries = 50;
+
+    const { pairs, truncated, groupedFileEntries } = groupIntoPairs(
+      [conflict(modIds), conflict(modIds, "medium")],
+      maxFileEntries,
+    );
+
+    expect(truncated).toBe(true);
+    expect(groupedFileEntries).toBe(maxFileEntries);
+    expect(
+      pairs.reduce((total, pair) => total + pair.files.length, 0),
+    ).toBe(maxFileEntries);
   });
 });
 

@@ -15,6 +15,10 @@ import { sanitizeError } from "../utils/sanitize.js";
 import { captureBackupSnapshot } from "../utils/backupSnapshot.js";
 import { addBackupRecord, removeBackupRecord } from "./backupRecords.js";
 import { invalidateMapFolderScan } from "../routes/chunks.js";
+import {
+  isCronTooFrequent,
+  isSupportedFiveFieldCron,
+} from "../utils/cronValidation.js";
 
 // Dynamic import for unzipper (CommonJS module)
 let unzipper;
@@ -23,6 +27,104 @@ async function getUnzipper() {
     unzipper = await import("unzipper");
   }
   return unzipper;
+}
+
+async function* walkDirectory(rootDir) {
+  const pending = [{ dirPath: rootDir, archivePath: "", isRoot: true }];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    let directory;
+    try {
+      directory = await fs.promises.opendir(current.dirPath);
+    } catch (error) {
+      if (current.isRoot) throw error;
+      continue;
+    }
+
+    try {
+      let entry;
+      while ((entry = await directory.read()) !== null) {
+        const archivePath = current.archivePath
+          ? `${current.archivePath}/${entry.name}`
+          : entry.name;
+        const fullPath = path.join(current.dirPath, entry.name);
+
+        if (entry.isSymbolicLink()) {
+          log.warn(`Skipping symbolic link during backup: ${fullPath}`);
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          pending.push({
+            dirPath: fullPath,
+            archivePath,
+            isRoot: false,
+          });
+        }
+
+        yield { entry, fullPath, archivePath };
+      }
+    } finally {
+      await directory.close().catch(() => {});
+    }
+  }
+}
+
+async function countFiles(rootDir) {
+  let count = 0;
+  for await (const { entry } of walkDirectory(rootDir)) {
+    if (!entry.isDirectory()) count++;
+  }
+  return count;
+}
+
+function waitForArchiveEntry(archive, append) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      archive.off("entry", onEntry);
+      archive.off("error", onError);
+      archive.off("warning", onWarning);
+    };
+
+    const settle = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      handler(value);
+    };
+
+    const onEntry = () => settle(resolve);
+    const onError = (error) => settle(reject, error);
+    const onWarning = (error) => {
+      if (error.code === "ENOENT") {
+        settle(resolve);
+      } else {
+        settle(reject, error);
+      }
+    };
+
+    archive.on("entry", onEntry);
+    archive.on("error", onError);
+    archive.on("warning", onWarning);
+
+    try {
+      append();
+    } catch (error) {
+      settle(reject, error);
+    }
+  });
+}
+
+async function appendDirectoryToArchive(archive, sourceRoot, destinationRoot) {
+  for await (const { entry, fullPath, archivePath } of walkDirectory(sourceRoot)) {
+    const entryName = `${destinationRoot}/${archivePath}${entry.isDirectory() ? "/" : ""}`;
+    await waitForArchiveEntry(archive, () =>
+      archive.file(fullPath, { name: entryName }),
+    );
+  }
 }
 
 export class BackupService {
@@ -166,6 +268,35 @@ export class BackupService {
    * Update backup settings
    */
   async updateSettings(settings) {
+    if (
+      settings.enabled !== undefined &&
+      typeof settings.enabled !== "boolean"
+    ) {
+      throw new Error("enabled must be a boolean");
+    }
+    if (
+      settings.maxBackups !== undefined &&
+      (!Number.isInteger(settings.maxBackups) ||
+        settings.maxBackups < 1 ||
+        settings.maxBackups > 100)
+    ) {
+      throw new Error("maxBackups must be an integer between 1 and 100");
+    }
+    if (
+      settings.includeDb !== undefined &&
+      typeof settings.includeDb !== "boolean"
+    ) {
+      throw new Error("includeDb must be a boolean");
+    }
+    if (
+      settings.schedule !== undefined &&
+      (!isSupportedFiveFieldCron(settings.schedule) ||
+        isCronTooFrequent(settings.schedule))
+    ) {
+      throw new Error(
+        "Invalid backup schedule. Use exactly 5 cron fields and no more than one run every 5 minutes.",
+      );
+    }
     if (settings.enabled !== undefined) {
       await setSetting("backupEnabled", settings.enabled);
     }
@@ -244,11 +375,18 @@ export class BackupService {
     const timestamp = new Date()
       .toISOString()
       .replace(/[:.]/g, "-")
-      .slice(0, 19);
+      .slice(0, 23);
     const activeServer = await getActiveServer();
     const serverName = activeServer?.serverName || "server";
-    const backupName = `${serverName}_${timestamp}.zip`;
-    const backupPath = path.join(backupsPath, backupName);
+    const baseBackupName = `${serverName}_${timestamp}`;
+    let backupName = `${baseBackupName}.zip`;
+    let backupPath = path.join(backupsPath, backupName);
+    let collision = 1;
+    while (fs.existsSync(backupPath)) {
+      backupName = `${baseBackupName}-${collision}.zip`;
+      backupPath = path.join(backupsPath, backupName);
+      collision++;
+    }
     // Write under a name listBackups() won't match (it only lists *.zip), and
     // rename into place only after the archive closes successfully -- writing
     // straight to backupPath meant a process kill mid-archive left a
@@ -263,49 +401,8 @@ export class BackupService {
 
     emitProgress("preparing", 10, "Scanning files...");
 
-    // Count total files for progress (asynchronously to avoid blocking)
-    //
-    // NOTE (B28 in the backend audit): a fix was attempted here to replace
-    // this pre-count with archiver's own 'progress' event, on the theory
-    // that archiver already walks the tree internally so this walk is
-    // redundant. Live-tested against a real save and reverted: archiver's
-    // `entries.total` for a directory() source is NOT a pre-computed final
-    // count -- it grows 1:1 with `entries.processed` via lazy on-demand
-    // discovery (confirmed via raw event dumps: total===processed on every
-    // single event, all the way to completion). Using it as a percentage
-    // denominator made the progress bar jump straight from 15% to 90%
-    // instead of updating smoothly, which is a regression, not a fix. A
-    // real upfront total requires a separate walk one way or another; this
-    // one uses parallel readdir to keep it as cheap as reasonably possible.
+    // Count total files for progress without materializing directory listings.
     let totalFiles = 0;
-    // Iterative walk: recursing with Promise.all held one pending promise per
-    // entry for the whole tree at once, which on a large save is a needless
-    // heap and file-descriptor spike during an already memory-heavy operation.
-    const countFiles = async (rootDir) => {
-      let count = 0;
-      const pending = [rootDir];
-
-      while (pending.length > 0) {
-        const dir = pending.pop();
-        let entries;
-        try {
-          entries = await fs.promises.readdir(dir, { withFileTypes: true });
-        } catch {
-          // Unreadable directory (e.g. permission denied) - skip it.
-          continue;
-        }
-
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            pending.push(path.join(dir, entry.name));
-          } else {
-            count++;
-          }
-        }
-      }
-
-      return count;
-    };
 
     try {
       totalFiles = await countFiles(savesPath);
@@ -402,7 +499,13 @@ export class BackupService {
           log.warn(`Backup record could not be saved for ${backupName}: ${error.message}`);
         }
 
-        await logServerEvent("backup_created", `${backupName} (${sizeMB} MB)`);
+        try {
+          await logServerEvent("backup_created", `${backupName} (${sizeMB} MB)`);
+        } catch (error) {
+          log.warn(
+            `Backup event could not be logged for ${backupName}: ${error.message}`,
+          );
+        }
 
         // Clean up old backups
         await this.cleanupOldBackups();
@@ -468,18 +571,34 @@ export class BackupService {
 
       archive.pipe(output);
 
-      // Add the saves folder to the archive
-      archive.directory(savesPath, path.basename(savesPath));
-      archive.append(JSON.stringify(serverSnapshot, null, 2), {
-        name: "panel-server-snapshot.json",
-      });
+      const appendBackupContents = async () => {
+        try {
+          await appendDirectoryToArchive(
+            archive,
+            savesPath,
+            path.basename(savesPath),
+          );
+          await waitForArchiveEntry(archive, () =>
+            archive.append(JSON.stringify(serverSnapshot, null, 2), {
+              name: "panel-server-snapshot.json",
+            }),
+          );
 
-      // Optionally include database
-      if (dbPathToInclude) {
-        archive.file(dbPathToInclude, { name: "db.json" });
-      }
+          if (dbPathToInclude) {
+            await waitForArchiveEntry(archive, () =>
+              archive.file(dbPathToInclude, { name: "db.json" }),
+            );
+          }
 
-      archive.finalize();
+          await archive.finalize();
+        } catch (error) {
+          archive.abort();
+          cleanupTemp();
+          reject(error);
+        }
+      };
+
+      void appendBackupContents();
     });
   }
 
@@ -644,6 +763,9 @@ export class BackupService {
    * remove other backups by exact name instead of by age.
    */
   async deleteBackupsOlderThan(days) {
+    if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
+      return { success: false, message: "Invalid days parameter. Must be a number >= 1" };
+    }
     try {
       const backups = await this.listBackups();
       const cutoffDate = new Date();
@@ -749,10 +871,35 @@ export class BackupService {
 
     // Restoring under a live server destroys the save: the running process
     // holds the map files open, and writes its in-memory world back over
-    // whatever we extract.
+    // whatever we extract. Prefer the richer process-state API because the
+    // boolean helper collapses a failed scan into a confirmed stop.
     if (this.serverManager && options.force !== true) {
       try {
-        const running = await this.serverManager.checkServerRunning();
+        let running;
+        if (typeof this.serverManager.getServerProcessDetails === "function") {
+          const processDetails =
+            await this.serverManager.getServerProcessDetails();
+          if (!processDetails || processDetails.scanFailed) {
+            log.warn("Could not confirm server is stopped: process scan failed");
+            return {
+              success: false,
+              message:
+                "Could not confirm the server is stopped because process detection failed. Stop the server and try again.",
+            };
+          }
+          running = processDetails.running;
+        } else if (typeof this.serverManager.checkServerRunning === "function") {
+          // Compatibility for older injected managers; production uses the
+          // getServerProcessDetails() branch above.
+          running = await this.serverManager.checkServerRunning();
+        } else {
+          return {
+            success: false,
+            message:
+              "Could not confirm the server is stopped because process detection is unavailable. Stop the server and try again.",
+          };
+        }
+
         if (running) {
           return {
             success: false,
@@ -1021,7 +1168,13 @@ export class BackupService {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       log.info(`Restore completed in ${duration}s`);
 
-      await logServerEvent("backup_restored", `Restored from ${safeName}`);
+      try {
+        await logServerEvent("backup_restored", `Restored from ${safeName}`);
+      } catch (eventError) {
+        log.warn(
+          `Restore event could not be logged for ${safeName}: ${eventError.message}`,
+        );
+      }
       emitProgress("complete", 100, `Restored from ${safeName}`);
 
       return {
@@ -1032,7 +1185,13 @@ export class BackupService {
     } catch (error) {
       log.error(`Restore failed: ${error.message}`);
       emitProgress("error", 0, `Restore failed: ${sanitizeError(error.message)}`);
-      await logServerEvent("restore_failed", error.message);
+      try {
+        await logServerEvent("restore_failed", error.message);
+      } catch (eventError) {
+        log.warn(
+          `Restore failure event could not be logged: ${eventError.message}`,
+        );
+      }
       return { success: false, message: error.message };
     } finally {
       // try/finally (not manual resets at each return) so this always runs,

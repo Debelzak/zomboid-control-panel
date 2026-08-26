@@ -30,6 +30,14 @@ function getGate(router, routePath, method) {
   return layer.route.stack[0].handle;
 }
 
+function getFinalHandler(router, routePath, method) {
+  const layer = router.stack.find(
+    (entry) => entry.route?.path === routePath && entry.route.methods[method],
+  );
+  if (!layer) throw new Error(`No ${method.toUpperCase()} ${routePath} route registered`);
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
 async function runGate(router, routePath, method, role) {
   const res = createResponse();
   let calledNext = false;
@@ -63,6 +71,55 @@ describe("config.js: server.configure (edit .ini/RCON/paths config) -- admin+tec
     const { default: router } = await import("../routes/config.js");
     const { calledNext } = await runGate(router, routePath, method, "technician");
     expect(calledNext).toBe(true);
+  });
+});
+
+describe("config.js: PUT /rcon validates ports strictly", () => {
+  it("rejects a numeric prefix instead of passing a malformed port to RCON", async () => {
+    const { default: router } = await import("../routes/config.js");
+    const updateConfig = vi.fn();
+    const response = createResponse();
+
+    await getFinalHandler(router, "/rcon", "put")(
+      {
+        body: { port: "27015junk" },
+        app: { get: () => ({ updateConfig }) },
+      },
+      response,
+    );
+
+    expect(response.getStatusCode()).toBe(400);
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it("passes a valid port as a number", async () => {
+    const { default: router } = await import("../routes/config.js");
+    const updateConfig = vi.fn();
+    const response = createResponse();
+
+    await getFinalHandler(router, "/rcon", "put")(
+      {
+        body: { port: "27016" },
+        app: { get: () => ({ updateConfig }) },
+      },
+      response,
+    );
+
+    expect(updateConfig).toHaveBeenCalledWith(undefined, 27016, undefined);
+  });
+
+  it("returns a client error for a missing body", async () => {
+    const { default: router } = await import("../routes/config.js");
+    const updateConfig = vi.fn();
+    const response = createResponse();
+
+    await getFinalHandler(router, "/rcon", "put")(
+      { body: null, app: { get: () => ({ updateConfig }) } },
+      response,
+    );
+
+    expect(response.getStatusCode()).toBe(400);
+    expect(updateConfig).not.toHaveBeenCalled();
   });
 });
 

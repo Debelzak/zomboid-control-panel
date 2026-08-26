@@ -21,11 +21,20 @@ import { runManagedLifecycle } from "../services/managedContainer.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
 import { invalidateMapFolderScan } from "./chunks.js";
+import { parseBoundedInteger } from "../utils/queryNumbers.js";
 
 const router = express.Router();
 
 const isWindows = process.platform === "win32";
 const execAsync = promisify(exec);
+
+export async function logServerEventBestEffort(...args) {
+  try {
+    await logServerEvent(...args);
+  } catch (error) {
+    log.warn(`Could not record server event: ${error.message}`);
+  }
+}
 
 // Get the SteamCMD executable name for the current platform
 function getSteamCmdExe(steamcmdPath) {
@@ -450,8 +459,9 @@ function isValidServerName(name) {
 }
 
 // Security: Validate path is safe (no traversal, absolute path)
-function isValidPath(inputPath) {
+export function isValidPath(inputPath) {
   if (!inputPath || typeof inputPath !== "string") return false;
+  if (inputPath.includes("..")) return false;
   const normalized = path.normalize(inputPath);
   // Check for path traversal attempts
   if (normalized.includes("..")) return false;
@@ -567,6 +577,7 @@ export function formatDirectoryReadError(
 // of a grep-and-hope across both files.
 export const PORT_MIN = 1024;
 export const PORT_MAX = 65535;
+export const GAME_PORT_MAX = PORT_MAX - 1;
 export const MEMORY_GB_MIN = 1;
 export const MIN_MEMORY_GB_MAX = 64;
 export const MAX_MEMORY_GB_MAX = 128;
@@ -594,8 +605,14 @@ function coerceIntInRange(value, min, max, defaultVal) {
 // motivating case: their firewall rule and port forward end up pointing at
 // a number nothing is listening on, with nothing telling them why).
 export function requireIntInRange(value, min, max, fieldLabel) {
-  const num = parseInt(value, 10);
-  if (isNaN(num) || num < min || num > max) {
+  const textValue = typeof value === "string" ? value.trim() : null;
+  const num =
+    typeof value === "number"
+      ? value
+      : textValue && /^[+-]?\d+$/.test(textValue)
+        ? Number(textValue)
+        : Number.NaN;
+  if (!Number.isInteger(num) || num < min || num > max) {
     return {
       ok: false,
       message: `${fieldLabel} must be a whole number between ${min} and ${max}.`,
@@ -944,7 +961,31 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
       if (pollCleared) return; // Safety check
       try {
         attempts++;
-        const isRunning = await serverManager.checkServerRunning();
+        const processDetails =
+          typeof serverManager.getServerProcessDetails === "function"
+            ? await serverManager.getServerProcessDetails()
+            : {
+                running: await serverManager.checkServerRunning(),
+                scanFailed: false,
+              };
+
+        if (!processDetails || processDetails.scanFailed) {
+          if (attempts >= maxAttempts) {
+            pollCleared = true;
+            clearInterval(pollInterval);
+            if (rconService.setServerStarting) {
+              rconService.setServerStarting(false);
+            } else {
+              rconService.serverStarting = false;
+            }
+            log.warn(
+              "Server start polling timed out without confirming process state",
+            );
+          }
+          return;
+        }
+
+        const isRunning = Boolean(processDetails.running);
 
         if (isRunning) {
           pollCleared = true;
@@ -1132,14 +1173,20 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
       ? { success: true, message: managed.message || "Container stopping" }
       : await rconService.quit();
 
-    if (result?.success !== false) {
-      serverManager?.markServerStopped?.();
+    if (!result?.success || result.confirmed === false) {
+      return res.status(502).json({
+        ...result,
+        success: false,
+        error: result?.error || result?.message || "Server stop failed",
+      });
     }
+
+    serverManager?.markServerStopped?.();
 
     const io = req.app.get("io");
     if (io) io.emit("server:status", { running: false });
 
-    await logServerEvent("server_stop", "Server stopped via web UI");
+    await logServerEventBestEffort("server_stop", "Server stopped via web UI");
     req.app
       .get("discordBot")
       ?.sendEventNotification("serverStop", {})
@@ -1184,9 +1231,15 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
         }
       : await serverManager.stopServer(false);
 
-    if (result?.success !== false) {
-      serverManager?.markServerStopped?.();
+    if (!result?.success || result.confirmed === false) {
+      return res.status(502).json({
+        ...result,
+        success: false,
+        error: result?.error || result?.message || "Force stop failed",
+      });
     }
+
+    serverManager?.markServerStopped?.();
 
     const io = req.app.get("io");
     if (io) io.emit("server:status", { running: false });
@@ -1212,10 +1265,13 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
 
     const scheduler = req.app.get("scheduler");
     // Parse and clamp warningMinutes to 0-60 (matches /api/scheduler/restart-now)
-    let warningMinutes = parseInt(req.body.warningMinutes, 10);
-    if (isNaN(warningMinutes) || warningMinutes < 0) {
-      warningMinutes = 5; // Default
-    } else if (warningMinutes > 60) {
+    let warningMinutes = parseBoundedInteger(
+      req.body?.warningMinutes,
+      5,
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+    if (warningMinutes > 60) {
       warningMinutes = 60; // Cap at 60 minutes
     }
 
@@ -1258,7 +1314,7 @@ router.post("/save", requirePermission("server.control"), async (req, res) => {
 router.post("/message", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { message } = req.body;
+    const { message } = req.body || {};
 
     if (!message) {
       return res.status(400).json({ error: "Message is required", code: ErrorCode.SERVER_MESSAGE_REQUIRED });
@@ -1285,7 +1341,7 @@ router.post("/message", requirePermission("server.world_events"), async (req, re
 router.post("/weather/start-rain", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { intensity } = req.body;
+    const { intensity } = req.body || {};
     const result = await rconService.startRain(intensity);
     res.json(result);
   } catch (error) {
@@ -1306,7 +1362,7 @@ router.post("/weather/stop-rain", requirePermission("server.world_events"), asyn
 router.post("/weather/start-storm", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { duration } = req.body;
+    const { duration } = req.body || {};
     const result = await rconService.startStorm(duration);
     res.json(result);
   } catch (error) {
@@ -1348,7 +1404,7 @@ router.post("/events/gunshot", requirePermission("server.world_events"), async (
 router.post("/events/lightning", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { username } = req.body;
+    const { username } = req.body || {};
     if (username && (typeof username !== "string" || username.length > 64)) {
       return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
@@ -1362,7 +1418,7 @@ router.post("/events/lightning", requirePermission("server.world_events"), async
 router.post("/events/thunder", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { username } = req.body;
+    const { username } = req.body || {};
     if (username && (typeof username !== "string" || username.length > 64)) {
       return res.status(400).json({ error: "Invalid username", code: ErrorCode.EVENTS_INVALID_USERNAME });
     }
@@ -1376,7 +1432,7 @@ router.post("/events/thunder", requirePermission("server.world_events"), async (
 router.post("/events/horde", requirePermission("server.world_events"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { count, username } = req.body;
+    const { count, username } = req.body || {};
     // Coerced, not refused: the UI's slider already clamps to [10, 500], so
     // an out-of-range value here only reaches this route via a direct API
     // call, and a smaller-than-asked horde is not a "your setting was
@@ -1756,7 +1812,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     if (!maxMemoryCheck.ok) {
       return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
     }
-    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, PORT_MAX, "Game port");
+    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, GAME_PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
@@ -2259,7 +2315,7 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
     if (!maxMemoryCheck.ok) {
       return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
     }
-    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, PORT_MAX, "Game port");
+    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, GAME_PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
@@ -2406,7 +2462,7 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
       log.warn(`Failed to auto-install PanelBridge mod: ${modError.message}`);
     }
 
-    await logServerEvent(
+    await logServerEventBestEffort(
       "server_quick_setup",
       `Created server config for ${serverName} using existing files at ${installPath}`,
     );
@@ -2435,7 +2491,7 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
 // Configure RCON in server's .ini file
 router.post("/configure-rcon", requirePermission("server.configure"), async (req, res) => {
   try {
-    const { rconPassword, rconPort: rawRconPort = 27015 } = req.body;
+    const { rconPassword, rconPort: rawRconPort = 27015 } = req.body || {};
     // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
     const rconPortCheck = requireIntInRange(rawRconPort, PORT_MIN, PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
@@ -2513,13 +2569,18 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
 // Configure server network settings (port, UPnP) in .ini file
 router.post("/configure-network", requirePermission("server.configure"), async (req, res) => {
   try {
-    const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body;
+    const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body || {};
     // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
-    const serverPortCheck = requireIntInRange(rawServerPort, PORT_MIN, PORT_MAX, "Game port");
+    const serverPortCheck = requireIntInRange(rawServerPort, PORT_MIN, GAME_PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
     const serverPort = serverPortCheck.value;
+    if (typeof useUpnp !== "boolean") {
+      return res.status(400).json({
+        error: "useUpnp must be a boolean",
+      });
+    }
 
     // Get the server config path from active server or settings
     const serverConfigPath = await getServerConfigPath();
@@ -2602,7 +2663,7 @@ router.post("/alarm", requirePermission("server.world_events"), async (req, res)
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.alarm();
-    await logServerEvent("alarm");
+    await logServerEventBestEffort("alarm");
     res.json(result);
   } catch (error) {
     log.error(`Failed to trigger alarm: ${error.message}`);
@@ -2615,7 +2676,7 @@ router.post("/removezombies", requirePermission("server.world_events"), async (r
   try {
     const rconService = req.app.get("rconService");
     const result = await rconService.removeZombies();
-    await logServerEvent("removezombies");
+    await logServerEventBestEffort("removezombies");
     res.json(result);
   } catch (error) {
     log.error(`Failed to remove zombies: ${error.message}`);
@@ -2627,7 +2688,7 @@ router.post("/removezombies", requirePermission("server.world_events"), async (r
 router.post("/reloadlua", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { filename } = req.body;
+    const { filename } = req.body || {};
 
     if (!filename) {
       return res.status(400).json({ error: "Filename is required", code: ErrorCode.RELOAD_LUA_FILENAME_REQUIRED });
@@ -2640,7 +2701,7 @@ router.post("/reloadlua", requirePermission("server.configure"), async (req, res
     }
 
     const result = await rconService.reloadLua(filename);
-    await logServerEvent("reloadlua", filename);
+    await logServerEventBestEffort("reloadlua", filename);
     res.json(result);
   } catch (error) {
     log.error(`Failed to reload Lua: ${error.message}`);
@@ -2652,7 +2713,7 @@ router.post("/reloadlua", requirePermission("server.configure"), async (req, res
 router.post("/log", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { type, level } = req.body;
+    const { type, level } = req.body || {};
 
     if (!type || !level) {
       return res.status(400).json({ error: "Type and level are required", code: ErrorCode.LOG_TYPE_LEVEL_REQUIRED });
@@ -2719,7 +2780,7 @@ router.post("/log", requirePermission("server.configure"), async (req, res) => {
 router.post("/stats", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { mode, period } = req.body;
+    const { mode, period } = req.body || {};
 
     if (!mode) {
       return res.status(400).json({ error: "Mode is required", code: ErrorCode.STATS_MODE_REQUIRED });
@@ -3097,7 +3158,7 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
             fs.existsSync(path.join(p, "steamcmd.sh")) ||
             fs.existsSync(path.join(p, "steamcmd")),
         ) || path.join(os.homedir(), "steamcmd");
-    const { installPath = defaultPath } = req.body;
+    const { installPath = defaultPath } = req.body || {};
 
     if (!isValidPath(installPath)) {
       return res.status(400).json({ error: "Invalid installation path", code: ErrorCode.STEAMCMD_DOWNLOAD_INVALID_PATH });
@@ -3432,7 +3493,7 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
       });
     }
 
-    const { path: deletePath, confirm } = req.body;
+    const { path: deletePath, confirm } = req.body || {};
     if (confirm !== true) {
       return res.status(400).json({
         error: "Deleting these files requires confirm: true",
@@ -3493,7 +3554,7 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
 // List directory contents for the in-app folder browser
 router.post("/list-directory", requirePermission("server.install"), async (req, res) => {
   try {
-    const { dirPath } = req.body;
+    const { dirPath } = req.body || {};
 
     // If no path provided, return available drives (Windows) or root (Linux)
     if (!dirPath) {
@@ -3613,7 +3674,7 @@ router.post("/list-directory", requirePermission("server.install"), async (req, 
 // Open folder browser dialog (uses PowerShell on Windows, zenity/kdialog on Linux)
 router.post("/browse-folder", requirePermission("server.install"), async (req, res) => {
   try {
-    const { initialPath, description = "Select a folder" } = req.body;
+    const { initialPath, description = "Select a folder" } = req.body || {};
 
     // Strict validation for description — alphanumeric, spaces, and basic punctuation only
     if (
@@ -3851,7 +3912,7 @@ router.get("/console-log", requirePermission("server.world_events"), async (req,
     const filterLevel = req.query.filter || "filtered";
 
     // Read last N lines (default 500, max 2000)
-    const maxLines = Math.min(parseInt(req.query.lines, 10) || 500, 2000);
+    const maxLines = parseBoundedInteger(req.query.lines, 500, 1, 2000);
 
     // Read only the tail of the file to prevent DoS with large log files
     const stats = fs.statSync(consoleLogPath);
@@ -4009,7 +4070,12 @@ router.get("/console-log/stream", requirePermission("server.world_events"), asyn
     const filterLevel = req.query.filter || "filtered";
 
     // Get the last known position from client
-    const lastSize = Math.max(0, parseInt(req.query.lastSize, 10) || 0);
+    const lastSize = parseBoundedInteger(
+      req.query.lastSize,
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
     const stats = fs.statSync(consoleLogPath);
 
     // If file is smaller than last known size, it was likely rotated/cleared
@@ -4144,7 +4210,7 @@ router.post("/update-check/interval", requirePermission("server.configure"), asy
       return res.status(503).json({ error: "Update checker not available", code: ErrorCode.UPDATE_CHECKER_NOT_AVAILABLE });
     }
 
-    const { minutes } = req.body;
+    const { minutes } = req.body || {};
     if (!minutes || typeof minutes !== "number") {
       return res.status(400).json({ error: "minutes must be a number", code: ErrorCode.UPDATE_CHECK_INTERVAL_INVALID });
     }
@@ -4251,7 +4317,7 @@ router.post("/wipe/preview", requirePermission("server.wipe"), async (req, res) 
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
 
-    const { targets } = req.body; // e.g. ["map", "players", "world"]
+    const { targets } = req.body || {}; // e.g. ["map", "players", "world"]
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({
         error:
@@ -4518,7 +4584,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
       });
     }
 
-    const { targets, confirm } = req.body;
+    const { targets, confirm } = req.body || {};
     if (confirm !== true) {
       return res.status(400).json({ error: "Wipe requires confirm: true", code: ErrorCode.WIPE_CONFIRM_REQUIRED });
     }
@@ -4685,7 +4751,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     log.warn(
       `WIPE COMPLETE: server=${serverName}, targets=${targets.join(",")}, results=${JSON.stringify(results)}`,
     );
-    await logServerEvent("wipe", `Server wiped: ${targets.join(", ")}`, {
+    await logServerEventBestEffort("wipe", `Server wiped: ${targets.join(", ")}`, {
       targets,
       results,
     });

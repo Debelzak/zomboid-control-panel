@@ -22,10 +22,12 @@ import {
   requireIntInRange,
   PORT_MIN,
   PORT_MAX,
+  GAME_PORT_MAX,
   MEMORY_GB_MIN,
   MIN_MEMORY_GB_MAX,
   MAX_MEMORY_GB_MAX,
 } from "./server.js";
+import { parseBoundedInteger } from "../utils/queryNumbers.js";
 
 // Local to this route: autoExportMaxPerPlayer has no counterpart check in
 // server.js (or anywhere else), so unlike the port/memory constants above
@@ -34,6 +36,8 @@ import {
 // Settings.tsx's own input (min=1 max=50).
 const AUTO_EXPORT_MAX_PER_PLAYER_MIN = 1;
 const AUTO_EXPORT_MAX_PER_PLAYER_MAX = 50;
+const SFTP_POLL_INTERVAL_MIN = 2;
+const SFTP_POLL_INTERVAL_MAX = 10;
 
 // Also local: neither of these has a server.js counterpart. Ranges chased
 // from their consuming services rather than guessed -- see the comments at
@@ -189,7 +193,7 @@ router.put("/", requirePermission("server.configure"), requireStoppedForLocalCon
   try {
     log.info("PUT /config — saving server config");
     const serverManager = req.app.get("serverManager");
-    const { config } = req.body;
+    const config = req.body?.config;
 
     if (!config) {
       return res.status(400).json({ error: "Config is required" });
@@ -236,7 +240,7 @@ router.get("/options", async (req, res) => {
 router.post("/option", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
-    const { name, value } = req.body;
+    const { name, value } = req.body || {};
     log.info(`POST /option: ${name}=${value}`);
 
     if (!name || value === undefined) {
@@ -286,7 +290,7 @@ router.get("/app-settings", async (req, res) => {
 // account must not be able to write it.
 router.put("/app-settings", requirePermission("panel.settings"), async (req, res) => {
   try {
-    const { settings } = req.body;
+    const { settings } = req.body || {};
     log.info(
       `PUT /app-settings — updating ${settings ? Object.keys(settings).length : 0} keys: [${settings ? Object.keys(settings).join(", ") : ""}]`,
     );
@@ -428,8 +432,8 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       }
 
       if (key === "httpsPort") {
-        const port = Number(value);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        const port = parseBoundedInteger(value, null, 1, 65535);
+        if (port === null) {
           return res.status(400).json({
             error: "httpsPort must be a whole number from 1 to 65535",
           });
@@ -490,9 +494,33 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       }
 
       if (key === "serverPort") {
-        const serverPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "Game port");
+        const serverPortCheck = requireIntInRange(value, PORT_MIN, GAME_PORT_MAX, "Game port");
         if (!serverPortCheck.ok) {
           return res.status(400).json({ error: serverPortCheck.message });
+        }
+      }
+
+      if (key === "panelBridgeSftpPort") {
+        const sftpPortCheck = requireIntInRange(
+          value,
+          PORT_MIN,
+          PORT_MAX,
+          "SFTP port",
+        );
+        if (!sftpPortCheck.ok) {
+          return res.status(400).json({ error: sftpPortCheck.message });
+        }
+      }
+
+      if (key === "panelBridgeSftpPollIntervalSeconds") {
+        const sftpPollCheck = requireIntInRange(
+          value,
+          SFTP_POLL_INTERVAL_MIN,
+          SFTP_POLL_INTERVAL_MAX,
+          "SFTP sync interval (seconds)",
+        );
+        if (!sftpPollCheck.ok) {
+          return res.status(400).json({ error: sftpPollCheck.message });
         }
       }
 
@@ -529,8 +557,8 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // not a lockout -- worth closing anyway since it's one check in the
       // same loop, not worth its own investigation.
       if (key === "reconnectInterval") {
-        const interval = Number(value);
-        if (!Number.isInteger(interval) || interval < 1 || interval > 60) {
+        const interval = parseBoundedInteger(value, null, 1, 60);
+        if (interval === null) {
           return res.status(400).json({
             error: "reconnectInterval must be a whole number from 1 to 60",
           });
@@ -745,8 +773,9 @@ router.get("/paths", async (req, res) => {
 // whatever the panel process's cwd happens to be at wipe time instead of the
 // real Zomboid data folder. Matches server.js's own isValidPath: absolute,
 // no traversal.
-function isValidConfigPath(inputPath) {
+export function isValidConfigPath(inputPath) {
   if (typeof inputPath !== "string" || inputPath.length > 500) return false;
+  if (inputPath.includes("..")) return false;
   const normalized = path.normalize(inputPath);
   if (normalized.includes("..")) return false;
   return path.isAbsolute(normalized);
@@ -779,7 +808,7 @@ function isValidConfigPath(inputPath) {
 router.put("/paths", requirePermission("server.configure"), async (req, res) => {
   try {
     const serverManager = req.app.get("serverManager");
-    const { serverPath, savePath } = req.body;
+    const { serverPath, savePath } = req.body || {};
 
     // Validate paths
     if (serverPath !== undefined && !isValidConfigPath(serverPath)) {
@@ -829,7 +858,15 @@ const RCON_PASSWORD_MAX_LENGTH = 256;
 router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body)
+    ) {
+      return res.status(400).json({ error: "Request body must be an object" });
+    }
     const { host, port, password } = req.body;
+    let normalizedPort = port;
 
     // Validate host (if provided)
     if (host !== undefined) {
@@ -840,12 +877,13 @@ router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
 
     // Validate port (if provided)
     if (port !== undefined) {
-      const portNum = parseInt(port, 10);
-      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      const portNum = parseBoundedInteger(port, null, 1, 65535);
+      if (portNum === null) {
         return res
           .status(400)
           .json({ error: "Invalid port number (must be 1-65535)" });
       }
+      normalizedPort = portNum;
     }
 
     // Validate password length (if provided)
@@ -858,7 +896,7 @@ router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
       }
     }
 
-    rconService.updateConfig(host, port, password);
+    rconService.updateConfig(host, normalizedPort, password);
 
     res.json({ success: true, message: "RCON configuration updated" });
   } catch (error) {

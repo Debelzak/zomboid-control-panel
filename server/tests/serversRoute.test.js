@@ -25,7 +25,11 @@ vi.mock("../services/rcon.js", () => ({
   testRconConnection,
 }));
 
-const { default: router } = await import("../routes/servers.js");
+const {
+  default: router,
+  parseDiscoveredPort,
+  parseServerId,
+} = await import("../routes/servers.js");
 const { getServer, getActiveServer, deleteServer } = await import("../database/init.js");
 const {
   getSteamLoginArgs,
@@ -131,6 +135,30 @@ describe("POST /api/servers", () => {
     expect(response.status).toHaveBeenCalledWith(400);
   });
 
+  it("rejects a non-string serverName instead of converting it to text", async () => {
+    const response = createResponse();
+
+    await getUpdateHandler()(
+      { params: { id: "1" }, body: { serverName: null } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string display name instead of persisting it", async () => {
+    const response = createResponse();
+
+    await getUpdateHandler()(
+      { params: { id: "1" }, body: { name: { value: "Test Server" } } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
   it("rejects an unsafe Docker container mapping on creation", async () => {
     const response = createResponse();
 
@@ -173,6 +201,101 @@ describe("POST /api/servers", () => {
     const payload = response.json.mock.calls[0][0];
     expect(payload.server.rconPassword).not.toBe("rcon-password");
   });
+
+  it("rejects a prefixed RCON port instead of truncating it", async () => {
+    const response = createResponse();
+
+    await getCreateHandler()(
+      {
+        body: {
+          name: "Test Server",
+          installPath: "C:\\PZ",
+          rconHost: "127.0.0.1",
+          rconPort: "27015junk",
+          rconPassword: "rcon-password",
+        },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(createServer).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed RCON host instead of defaulting to localhost", async () => {
+    const response = createResponse();
+
+    await getCreateHandler()(
+      {
+        body: {
+          name: "Test Server",
+          installPath: "C:\\PZ",
+          rconHost: { host: "not-a-host" },
+          rconPort: 27015,
+          rconPassword: "rcon-password",
+        },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(createServer).not.toHaveBeenCalled();
+  });
+
+  it("rejects string booleans instead of turning false into true", async () => {
+    const response = createResponse();
+
+    await getCreateHandler()(
+      {
+        body: {
+          name: "Test Server",
+          installPath: "C:\\PZ",
+          rconHost: "127.0.0.1",
+          rconPort: 27015,
+          rconPassword: "rcon-password",
+          useDebug: "false",
+        },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(createServer).not.toHaveBeenCalled();
+  });
+
+  it("returns a client error instead of throwing on an empty request body", async () => {
+    const response = createResponse();
+
+    await getCreateHandler()({ body: null }, response);
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(createServer).not.toHaveBeenCalled();
+  });
+});
+
+describe("server discovery port parsing", () => {
+  it("uses defaults only when an INI port is absent", () => {
+    expect(parseDiscoveredPort(undefined, 27015)).toBe(27015);
+    expect(parseDiscoveredPort("  ", 16261)).toBe(16261);
+  });
+
+  it.each(["27015junk", "16261.5", "0", "65536"])(
+    "rejects malformed explicit port %s",
+    (value) => {
+      expect(parseDiscoveredPort(value, 27015)).toBeNull();
+    },
+  );
+});
+
+describe("server ID parsing", () => {
+  it("keeps opaque IDs opaque instead of truncating numeric prefixes", () => {
+    expect(parseServerId("123xyz")).toBe("123xyz");
+    expect(parseServerId("1.2")).toBeNull();
+  });
+
+  it("preserves legacy numeric IDs as numbers", () => {
+    expect(parseServerId(" 123 ")).toBe(123);
+  });
 });
 
 describe("PUT /api/servers/:id", () => {
@@ -206,6 +329,92 @@ describe("PUT /api/servers/:id", () => {
     expect(updateServer).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ serverName: "My-Server_2" }),
+    );
+  });
+
+  it("rejects a prefixed game port instead of truncating it", async () => {
+    const response = createResponse();
+
+    await getUpdateHandler()(
+      { params: { id: "1" }, body: { serverPort: "16261junk" } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string RCON password instead of persisting it", async () => {
+    const response = createResponse();
+
+    await getUpdateHandler()(
+      { params: { id: "1" }, body: { rconPassword: 12345 } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it("returns a client error instead of throwing on an empty update body", async () => {
+    const response = createResponse();
+
+    await getUpdateHandler()({ params: { id: "1" }, body: null }, response);
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(updateServer).not.toHaveBeenCalled();
+  });
+
+  it("reports when an active server profile was saved but its live manager could not reload", async () => {
+    updateServer.mockResolvedValue({ id: 1, name: "Test Server", isActive: true });
+    const response = createResponse();
+    const serverManager = {
+      reloadConfig: vi.fn(async () => {
+        throw new Error("manager unavailable");
+      }),
+    };
+
+    await getUpdateHandler()(
+      {
+        params: { id: "1" },
+        body: { serverPort: 16262 },
+        app: { get: (key) => (key === "serverManager" ? serverManager : undefined) },
+      },
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Server updated successfully",
+        warnings: [expect.stringMatching(/manager failed to reload/i)],
+      }),
+    );
+  });
+
+  it("reports when an active server profile reconnect returns false", async () => {
+    updateServer.mockResolvedValue({ id: 1, name: "Test Server", isActive: true });
+    const response = createResponse();
+    const rconService = {
+      isConnected: vi.fn(() => false),
+      reloadConfig: vi.fn(async () => {}),
+      connect: vi.fn(async () => false),
+    };
+
+    await getUpdateHandler()(
+      {
+        params: { id: "1" },
+        body: { rconPort: 27016 },
+        app: { get: (key) => (key === "rconService" ? rconService : undefined) },
+      },
+      response,
+    );
+
+    expect(rconService.connect).toHaveBeenCalled();
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Server updated successfully",
+        warnings: [expect.stringMatching(/could not reconnect/i)],
+      }),
     );
   });
 
@@ -299,6 +508,25 @@ describe("GET /api/servers/rcon-status", () => {
       ],
     });
     expect(JSON.stringify(response.json.mock.calls[0][0])).not.toMatch(/secret|other/);
+  });
+
+  it("marks a malformed persisted port unavailable without failing every server status", async () => {
+    getServers.mockResolvedValue([
+      { id: "bad", rconHost: "127.0.0.1", rconPort: "27015junk" },
+      { id: "good", rconHost: "127.0.0.1", rconPort: 27015 },
+    ]);
+    testRconConnection.mockResolvedValue({ success: true });
+    const response = createResponse();
+
+    await runRoute("/rcon-status", "get", {}, response);
+
+    expect(response.json).toHaveBeenCalledWith({
+      servers: [
+        { id: "bad", status: "unavailable" },
+        { id: "good", status: "connected" },
+      ],
+    });
+    expect(testRconConnection).toHaveBeenCalledTimes(1);
   });
 });
 

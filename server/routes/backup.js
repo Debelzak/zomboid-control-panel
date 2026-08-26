@@ -7,9 +7,33 @@ import { getActiveServer } from "../database/init.js";
 import { requirePermission } from "../services/permissions.js";
 import { listBackupRecords } from "../services/backupRecords.js";
 import { ErrorCode } from "../utils/errorCodes.js";
+import {
+  isCronTooFrequent,
+  isSupportedFiveFieldCron,
+} from "../utils/cronValidation.js";
+import { parseClampedInteger } from "../utils/queryNumbers.js";
 const log = createLogger("API:Backup");
 
 const router = express.Router();
+
+function parseBackupBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === "1" || value === "true") return true;
+  if (value === 0 || value === "0" || value === "false") return false;
+  return undefined;
+}
+
+function parseBackupMaxCount(value) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100
+    ? parsed
+    : undefined;
+}
 
 // Get backup status and settings
 router.get("/status", async (req, res) => {
@@ -49,7 +73,13 @@ router.get("/list", async (req, res) => {
 
 router.get("/history", async (req, res) => {
   try {
-    const limit = req.query.limit ? Number.parseInt(req.query.limit, 10) : undefined;
+    const limit =
+      req.query.limit === undefined
+        ? undefined
+        : parseClampedInteger(req.query.limit, null, 1, 500);
+    if (req.query.limit !== undefined && limit === null) {
+      return res.status(400).json({ error: "Invalid history limit" });
+    }
     const records = await listBackupRecords({
       serverId: req.query.serverId,
       limit: Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : undefined,
@@ -79,19 +109,58 @@ router.post("/settings", requirePermission("backups.manage"), async (req, res) =
     const backupService = req.app.get("backupService");
     const scheduler = req.app.get("scheduler");
 
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+      return res.status(400).json({
+        success: false,
+        error: "Request body must be an object",
+      });
+    }
+
     // Whitelist allowed backup settings to prevent prototype pollution
     const allowed = {};
-    if (req.body.enabled !== undefined) allowed.enabled = !!req.body.enabled;
-    if (req.body.schedule !== undefined)
-      allowed.schedule = String(req.body.schedule);
-    if (req.body.maxBackups !== undefined) {
-      const parsed = parseInt(req.body.maxBackups, 10);
-      allowed.maxBackups = isNaN(parsed)
-        ? 5
-        : Math.min(Math.max(parsed, 1), 100);
+    if (req.body.enabled !== undefined) {
+      const enabled = parseBackupBoolean(req.body.enabled);
+      if (enabled === undefined) {
+        return res.status(400).json({
+          success: false,
+          error: "enabled must be a boolean or 0/1",
+        });
+      }
+      allowed.enabled = enabled;
     }
-    if (req.body.includeDb !== undefined)
-      allowed.includeDb = !!req.body.includeDb;
+    if (req.body.schedule !== undefined) {
+      if (
+        !isSupportedFiveFieldCron(req.body.schedule) ||
+        isCronTooFrequent(req.body.schedule)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid backup schedule. Use exactly 5 cron fields and no more than one run every 5 minutes.",
+        });
+      }
+      allowed.schedule = req.body.schedule.trim();
+    }
+    if (req.body.maxBackups !== undefined) {
+      const maxBackups = parseBackupMaxCount(req.body.maxBackups);
+      if (maxBackups === undefined) {
+        return res.status(400).json({
+          success: false,
+          error: "maxBackups must be an integer between 1 and 100",
+        });
+      }
+      allowed.maxBackups = maxBackups;
+    }
+    if (req.body.includeDb !== undefined) {
+      const includeDb = parseBackupBoolean(req.body.includeDb);
+      if (includeDb === undefined) {
+        return res.status(400).json({
+          success: false,
+          error: "includeDb must be a boolean or 0/1",
+        });
+      }
+      allowed.includeDb = includeDb;
+    }
 
     const settings = await backupService.updateSettings(allowed);
 
@@ -266,9 +335,9 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
 // Delete backups older than X days
 router.post("/delete-older-than", requirePermission("backups.manage"), async (req, res) => {
   try {
-    const { days } = req.body;
+    const days = req.body?.days;
 
-    if (typeof days !== "number" || days < 1) {
+    if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
       return res
         .status(400)
         .json({ error: "Invalid days parameter. Must be a number >= 1", code: ErrorCode.BACKUP_INVALID_DAYS_PARAMETER });

@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { getDataPaths } from "../utils/paths.js";
 import { createLogger } from "../utils/logger.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
+import { parseClampedInteger } from "../utils/queryNumbers.js";
 import {
   rehydrateRconSecrets,
   redactRconSecretsForWrite,
@@ -965,7 +966,8 @@ export async function logCommand(command, response, success = true) {
 
 export async function getCommandHistory(limit = 100) {
   const db = await getDb();
-  return db.data.command_history.slice(0, limit);
+  const safeLimit = parseClampedInteger(limit, 100, 1, RETENTION.command_history);
+  return db.data.command_history.slice(0, safeLimit);
 }
 
 // ============================================
@@ -1011,7 +1013,8 @@ export async function logBridgeCommand(
 export async function getBridgeLogs(limit = 100) {
   const db = await getDb();
   if (!db.data.bridge_logs) return [];
-  return db.data.bridge_logs.slice(0, limit);
+  const safeLimit = parseClampedInteger(limit, 100, 1, RETENTION.bridge_logs);
+  return db.data.bridge_logs.slice(0, safeLimit);
 }
 
 // ============================================
@@ -1152,7 +1155,8 @@ export async function getScheduleHistory(limit = 100, taskId = null) {
   if (taskId !== null) {
     history = history.filter((h) => h.task_id === taskId);
   }
-  return history.slice(0, limit);
+  const safeLimit = parseClampedInteger(limit, 100, 1, RETENTION.schedule_history);
+  return history.slice(0, safeLimit);
 }
 
 export async function clearScheduleHistory() {
@@ -1186,7 +1190,8 @@ export async function getPlayerLogs(playerName = null, limit = 100) {
   if (playerName) {
     logs = logs.filter((l) => l.player_name === playerName);
   }
-  return logs.slice(0, limit);
+  const safeLimit = parseClampedInteger(limit, 100, 1, RETENTION.player_logs);
+  return logs.slice(0, safeLimit);
 }
 
 // ============================================
@@ -1955,7 +1960,13 @@ export async function recordPerformanceSnapshot(snapshot) {
 export async function getPerformanceHistory(limit = 60) {
   const db = await getDb();
   if (!db.data.performance_history) return [];
-  return db.data.performance_history.slice(-limit);
+  const safeLimit = parseClampedInteger(
+    limit,
+    60,
+    1,
+    RETENTION.performance_history,
+  );
+  return db.data.performance_history.slice(-safeLimit);
 }
 
 /**

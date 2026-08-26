@@ -43,6 +43,25 @@ async function runCreate(body, user = { role: "admin" }) {
   return response;
 }
 
+async function runDiscover(user = { role: "admin" }) {
+  const layer = router.stack.find(
+    (entry) =>
+      entry.route?.path === "/discover-mounts" &&
+      entry.route.methods.get,
+  );
+  const handlers = layer.route.stack.map((entry) => entry.handle);
+  const response = createResponse();
+  let index = -1;
+  const request = { user };
+  const next = async (error) => {
+    if (error) throw error;
+    index += 1;
+    if (index < handlers.length) await handlers[index](request, response, next);
+  };
+  await next();
+  return response;
+}
+
 describe("POST /api/servers/create-from-discovery", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -118,5 +137,52 @@ describe("POST /api/servers/create-from-discovery", () => {
     const payload = response.json.mock.calls[0][0];
     expect(payload.server.rconPassword).not.toBe("rcon-secret");
     expect(payload.server.adminPassword).not.toBe("admin-secret");
+  });
+
+  it("reports malformed discovered INI settings instead of blaming a missing password", async () => {
+    readServerIniSettings.mockReturnValue(null);
+
+    const response = await runCreate({
+      installPath: "/pz-server",
+      dataPath: "/zomboid",
+      serverName: "servertest",
+    });
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(response.json).toHaveBeenCalledWith({
+      error: expect.stringMatching(/valid RCON or game port settings/i),
+    });
+    expect(createServer).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-string discovery paths with a client error", async () => {
+    const response = await runCreate({
+      installPath: { path: "/pz-server" },
+      dataPath: "/zomboid",
+    });
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(discoverMounts).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/servers/discover-mounts", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("requires the servers.discover capability", async () => {
+    const response = await runDiscover({ role: "viewer" });
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(discoverMounts).not.toHaveBeenCalled();
+  });
+
+  it("returns discovered mounts to an authorized operator", async () => {
+    discoverMounts.mockReturnValue([{ installPath: "/pz-server" }]);
+
+    const response = await runDiscover();
+
+    expect(response.json).toHaveBeenCalledWith({
+      mounts: [{ installPath: "/pz-server" }],
+    });
   });
 });

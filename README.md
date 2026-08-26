@@ -234,14 +234,27 @@ Open `http://localhost:3001`. Add a local or remote PZ server through **Servers*
 
 ### Docker and Unraid
 
-For a normal Docker host:
+To let the panel install and run a new Project Zomboid server on the same
+Docker host, use the all-in-one installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker/all-in-one/bootstrap.sh | sh
+```
+
+It checks Docker, generates the secret and persistent configuration, pulls the
+prebuilt release images, installs PZ, detects the LAN address, and publishes
+the required UDP ports `16261` and `16262`. The final line prints the panel URL.
+
+If PZ already runs on the host, in another container, or on another machine,
+use the panel-only image instead:
 
 ```bash
 curl -O https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker-compose.install.yml
 docker compose -f docker-compose.install.yml up -d
 ```
 
-Open `http://localhost:3001`. This starts the panel with persistent named volumes.
+The panel-only image deliberately does not publish PZ game ports; those belong
+to the existing game-server host or container.
 
 For **Unraid**, import [`docker/unraid/zomboid-panel.xml`](docker/unraid/zomboid-panel.xml), then set the PZ install and config/save host paths to match your existing PZ container. The panel's own paths must stay `/app/data` and `/app/logs`; see [Unraid and Indifferent Broccoli](#unraid-and-indifferent-broccoli) for the four required mappings.
 

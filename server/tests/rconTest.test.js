@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import net from 'net';
 import { testRconConnection } from '../services/rcon.js';
 import router from '../routes/rcon.js';
@@ -24,6 +24,20 @@ function getTestHandler() {
   // ahead of the real handler in this route's stack (role sweep), so index
   // 0 would grab the role-gate middleware instead of the route logic this
   // test actually exercises.
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
+function getConnectHandler() {
+  const layer = router.stack.find(
+    (entry) => entry.route?.path === '/connect' && entry.route.methods.post,
+  );
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
+function getHandler(path) {
+  const layer = router.stack.find(
+    (entry) => entry.route?.path === path && entry.route.methods.post,
+  );
   return layer.route.stack[layer.route.stack.length - 1].handle;
 }
 
@@ -95,6 +109,16 @@ describe('POST /api/rcon/test route validation', () => {
     expect(res.body.detail).toBe('Invalid port (1-65535)');
   });
 
+  it('rejects a port with trailing junk instead of accepting its numeric prefix', async () => {
+    const res = createResponse();
+    await getTestHandler()(
+      { body: { host: '127.0.0.1', port: '27015junk', password: 'x' } },
+      res,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.body.detail).toBe('Invalid port (1-65535)');
+  });
+
   it('reports unreachable for a closed local port via the real handler', async () => {
     const res = createResponse();
     await getTestHandler()(
@@ -106,5 +130,63 @@ describe('POST /api/rcon/test route validation', () => {
       error: 'unreachable',
       detail: 'Unreachable: check host and port',
     });
+  });
+});
+
+describe('POST /api/rcon/connect route updates', () => {
+  it('applies an explicitly empty password instead of retaining the old one', async () => {
+    const updateConfig = vi.fn();
+    const connect = vi.fn(async () => false);
+    const res = createResponse();
+
+    await getConnectHandler()(
+      {
+        body: { password: '' },
+        app: { get: () => ({ updateConfig, connect }) },
+      },
+      res,
+    );
+
+    expect(updateConfig).toHaveBeenCalledWith(undefined, undefined, '');
+    expect(res.statusCode).toBe(503);
+  });
+
+  it('returns a client error for a missing body', async () => {
+    const updateConfig = vi.fn();
+    const res = createResponse();
+
+    await getConnectHandler()(
+      {
+        body: null,
+        app: { get: () => ({ updateConfig, connect: vi.fn() }) },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('RCON route malformed request handling', () => {
+  it('returns 400 for a missing test body', async () => {
+    const res = createResponse();
+
+    await getTestHandler()({ body: null }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.detail).toBe('Invalid host format');
+  });
+
+  it('returns 400 for a non-string execute command without throwing', async () => {
+    const res = createResponse();
+
+    await getHandler('/execute')(
+      { body: { command: 123 }, app: { get: vi.fn() } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.code).toBe('RCON_COMMAND_INVALID');
   });
 });

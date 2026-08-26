@@ -109,6 +109,11 @@ describe("PUT /app-settings -- httpsPort validation", () => {
     expect(res.getBody().error).toMatch(/httpsPort must be a whole number/);
   });
 
+  it.each(["1e2", " "])("rejects non-decimal whole-number input %j", async (value) => {
+    const res = await putAppSettings({ httpsPort: value });
+    expect(res.getStatusCode()).toBe(400);
+  });
+
   it("rejects an out-of-range value", async () => {
     const res = await putAppSettings({ httpsPort: 999999 });
     expect(res.getStatusCode()).toBe(400);
@@ -143,6 +148,11 @@ describe("PUT /app-settings -- reconnectInterval validation (same missing-range-
     expect(tooLow.getStatusCode()).toBe(400);
     const tooHigh = await putAppSettings({ reconnectInterval: 61 });
     expect(tooHigh.getStatusCode()).toBe(400);
+  });
+
+  it("rejects scientific notation instead of coercing it", async () => {
+    const res = await putAppSettings({ reconnectInterval: "1e1" });
+    expect(res.getStatusCode()).toBe(400);
   });
 
   it("accepts a valid value", async () => {
@@ -377,5 +387,25 @@ describe("PUT /app-settings -- serverAutoUpdateWarningMinutes validation (bound 
     const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 15 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
+  });
+});
+
+describe("PUT /app-settings -- SFTP numeric settings validation", () => {
+  it("rejects an explicit zero SFTP port", async () => {
+    const res = await putAppSettings({ panelBridgeSftpPort: 0 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/SFTP port must be a whole number/);
+  });
+
+  it("rejects a prefixed SFTP port instead of truncating it", async () => {
+    const res = await putAppSettings({ panelBridgeSftpPort: "22junk" });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/SFTP port must be a whole number/);
+  });
+
+  it("rejects an out-of-range SFTP polling interval", async () => {
+    const res = await putAppSettings({ panelBridgeSftpPollIntervalSeconds: 1 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/SFTP sync interval/);
   });
 });

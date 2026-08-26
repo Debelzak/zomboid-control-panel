@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **New Docker installs no longer start an unreachable Project Zomboid server.** The primary
+  Docker setup now uses a one-command all-in-one installer when the panel owns PZ. It validates
+  Docker, generates secrets and LAN access settings, pulls exact release images with a local-build
+  fallback, installs PZ, and publishes both required UDP ports automatically. The panel-only setup
+  remains available for existing servers.
+- **Conflict scans with heavily overlapping mod files no longer exhaust the panel's Node.js heap.**
+  The grouped pair output now has its own global budget, preventing a bounded file index from
+  expanding into millions of duplicate pair-file rows while building the response.
+- **Lifecycle operations now fail closed when process state is unknown.** Server start/restart,
+  backup restore, Docker panel updates, status reporting, and the Windows force-stop path no
+  longer treat a failed process scan or unconfirmed kill as a clean stop.
+- **Backup and scheduler settings reject malformed values instead of silently coercing them.**
+  Six-field cron schedules, invalid booleans/counts, malformed numeric query limits, and invalid
+  discovered ports are now refused or safely bounded.
+- **Scheduled-task mutations roll back completely when rescheduling fails, and deleting a missing
+  task no longer reports success.**
+- **Standalone and discovery metadata now stays truthful.** Linux launchers no longer promise a
+  fixed port, Steam Finder preserves false dedicated flags, and malformed discovery settings are
+  reported instead of replaced with defaults.
+- **Backup archives are safer and more reliable.** Same-millisecond filename collisions are
+  avoided, symbolic links are not followed outside the save directory, and audit-log failures no
+  longer turn completed backup/restore operations into hangs or false failures.
+- **Player toggles and RCON ports now require correctly typed input, and diagnostics preserve an
+  unknown server state instead of displaying a false stopped state.**
+- **Server Finder now handles A2S challenge responses, and PanelBridge enforces its command budget
+  for rejected or duplicate queue entries as well as successful commands.**
+- **Multi-server profiles reject malformed bodies, ports, flags, and empty updates; startup will
+  not auto-launch a duplicate server while process detection is unavailable.**
+- **Active-server RCON changes now report reconnect failures instead of silently claiming a refresh.**
+  Malformed persisted RCON ports fail closed, and per-server status keeps healthy profiles visible
+  when another profile contains invalid data.
+- **Scheduler, configuration, player, and PanelBridge endpoints now fail cleanly on malformed bodies
+  and boolean values.** Cron previews and unattended jobs share the same five-minute guard, including
+  bare minute ranges, and malformed task/profile IDs cannot be truncated into another record.
+- **Game-port guidance now matches the derived UDP-port limit.** The valid maximum is 65534, while
+  RCON retains the full 1-65535 range.
+
+## [1.2.5] - 2026-08-25
+
+### Fixed
+
+- **Standalone self-updates could apply a stale executable from a mismatched release.**
+  Updates now verify that the downloaded binary and release archive share the
+  expected version and checksum, and the release pipeline refuses to publish
+  artifacts built from a different package version.
+
+- **Fresh all-in-one installs could fail with SteamCMD's misleading "Missing file
+  permissions" error.** SteamCMD and the panel now receive an explicit writable
+  home directory instead of inheriting an invalid root home in non-interactive
+  containers.
+
+## [1.2.4] - 2026-08-25
+
+### Fixed
+
+- **Scheduled backups could exhaust the packaged panel's Node.js heap on large
+  saves.** Backup traversal now uses bounded directory handles and feeds ZIP
+  entries one at a time instead of materializing directory listings or the
+  archiver's recursive glob queue.
+
 ## [1.2.3] - 2026-08-24
 
 ### Fixed

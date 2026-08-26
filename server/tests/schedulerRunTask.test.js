@@ -28,7 +28,7 @@ vi.mock("../database/init.js", () => ({
 const { Scheduler } = await import("../services/scheduler.js");
 const { getScheduledTasks, createScheduledTask, logScheduleExecution } =
   await import("../database/init.js");
-const { default: router } = await import("../routes/scheduler.js");
+const { default: router, parseTaskId } = await import("../routes/scheduler.js");
 
 function makeScheduler() {
   const rconService = {
@@ -166,6 +166,99 @@ describe("POST /api/scheduler/tasks/:id/run", () => {
 
     expect(runTaskNow).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(404);
+  });
+
+  it("rejects a task ID with a numeric prefix instead of truncating it", async () => {
+    getScheduledTasks.mockResolvedValue([]);
+    const response = createResponse();
+    await getRunNowHandler()(
+      { app: { get: vi.fn() }, params: { id: "7junk" } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(getScheduledTasks).not.toHaveBeenCalled();
+  });
+});
+
+describe("scheduler request body validation", () => {
+  it("returns 400 for a missing create body", async () => {
+    const response = createResponse();
+
+    await getCreateHandler()(
+      { body: null, app: { get: () => ({}) } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+  });
+
+  it("returns 400 for a missing cron-preview body", async () => {
+    const layer = router.stack.find(
+      (entry) => entry.route?.path === "/validate-cron" && entry.route.methods.post,
+    );
+    const response = createResponse();
+
+    await layer.route.stack[0].handle({ body: null }, response);
+
+    expect(response.status).toHaveBeenCalledWith(400);
+  });
+});
+
+describe("scheduler task ID parsing", () => {
+  it("accepts legacy numeric IDs and rejects malformed values", () => {
+    expect(parseTaskId(" 7 ")).toBe(7);
+    expect(parseTaskId("7junk")).toBeNull();
+    expect(parseTaskId("1.5")).toBeNull();
+  });
+});
+
+describe("unattended schedule frequency validation", () => {
+  it("does not schedule a persisted every-minute task", () => {
+    const { scheduler } = makeScheduler();
+
+    expect(
+      scheduler.scheduleTask({
+        id: 10,
+        name: "Too frequent",
+        cron_expression: "* * * * *",
+        command: "save",
+      }),
+    ).toBe(false);
+    expect(scheduler.jobs.size).toBe(0);
+  });
+
+  it("does not schedule a persisted every-minute backup", async () => {
+    const { scheduler } = makeScheduler();
+    scheduler.setBackupService({
+      getSettings: vi.fn().mockResolvedValue({
+        enabled: true,
+        schedule: "* * * * *",
+        includeDb: false,
+      }),
+    });
+
+    await scheduler.setupBackupSchedule();
+
+    expect(scheduler.backupJob).toBeNull();
+  });
+
+  it("does not schedule an every-minute environment auto-restart", () => {
+    const originalEnabled = process.env.AUTO_RESTART_ENABLED;
+    const originalCron = process.env.AUTO_RESTART_CRON;
+    process.env.AUTO_RESTART_ENABLED = "true";
+    process.env.AUTO_RESTART_CRON = "* * * * *";
+
+    try {
+      const { scheduler } = makeScheduler();
+      scheduler.setupAutoRestart();
+      expect(scheduler.autoRestartJob).toBeNull();
+    } finally {
+      if (originalEnabled === undefined) delete process.env.AUTO_RESTART_ENABLED;
+      else process.env.AUTO_RESTART_ENABLED = originalEnabled;
+      if (originalCron === undefined) delete process.env.AUTO_RESTART_CRON;
+      else process.env.AUTO_RESTART_CRON = originalCron;
+    }
   });
 });
 

@@ -314,7 +314,7 @@
     "deletedFromPanel": "Server \"{{name}}\" removed from panel",
     "deleteServerFailed": "Failed to delete server",
     "rconPortRangeError": "RCON port must be between 1 and 65535",
-    "gamePortRangeError": "Game port must be between 1 and 65535",
+    "gamePortRangeError": "Game port must be between 1 and 65534",
     "savedTitle": "Saved",
     "savedDesc": "Server settings updated",
     "updateServerFailed": "Failed to update server",

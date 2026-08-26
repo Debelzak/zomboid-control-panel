@@ -1591,6 +1591,7 @@ export const serversApi = {
     apiPut(`/servers/${id}`, updates) as Promise<{
       server: ServerInstance;
       message: string;
+      warnings?: string[];
     }>,
   delete: (id: string | number) =>
     apiDelete(`/servers/${id}`) as Promise<{
