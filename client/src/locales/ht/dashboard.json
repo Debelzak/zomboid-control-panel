@@ -48,7 +48,11 @@
     "autoStartDisabledDesc": "Sèvè a pap demare otomatikman",
     "autoStartSaveFailed": "Sove paramèt demaraj otomatik la echwe",
     "errorTitle": "Erè",
-    "actionFailedFallback": "Aksyon echwe. Tanpri eseye ankò."
+    "actionFailedFallback": "Aksyon echwe. Tanpri eseye ankò.",
+    "rconAuthFailed": {
+      "openServers": "Louvri Sèvè",
+      "openServersAlt": "Louvri paj Sèvè a pou mete ajou modpas RCON la"
+    }
   },
   "actions": {
     "start": "Demare",

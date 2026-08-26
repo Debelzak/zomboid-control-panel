@@ -8,8 +8,35 @@ describe('getRecoveryUrl', () => {
     expect(getRecoveryUrl(new ApiError('Bridge not running', { data: { fixUrl: '/settings?tab=bridge' } }))).toBe('/settings?tab=bridge')
   })
 
-  it('maps established RCON failures to connection settings', () => {
-    expect(getRecoveryUrl(new Error('RCON authentication failed'))).toBe('/settings?tab=connection')
+  it('never returns a destination that is not an internal path, even if fixUrl tries to supply one', () => {
+    expect(getRecoveryUrl(new ApiError('Some unrelated failure', { data: { fixUrl: 'https://evil.example/phish' } }))).toBeNull()
+  })
+
+  // Not /settings?tab=connection: that tab's own copy (settings.json
+  // connection.cardDesc) says host/port/password are per-server fields on
+  // Servers now -- pointing there was one extra, unhelpful hop.
+  it('maps established RCON failures (by message, no code available) to Servers', () => {
+    expect(getRecoveryUrl(new Error('RCON authentication failed'))).toBe('/servers')
+  })
+
+  it('routes a code-classified RCON auth failure to Servers, where the password field lives', () => {
+    expect(getRecoveryUrl(new ApiError('Connected to the server, but authentication failed. Check the RCON password in server settings.', { code: 'RCON_CONNECT_AUTH_FAILED' }))).toBe('/servers')
+  })
+
+  it('gives no destination for a code-classified RCON unreachable failure -- no settings screen fixes a closed firewall or a stopped server', () => {
+    expect(getRecoveryUrl(new ApiError('Could not connect to RCON. Is the server running and RCON enabled?', { code: 'RCON_CONNECT_UNREACHABLE' }))).toBeNull()
+  })
+
+  it('prefers the code classification over the message even though the unreachable message also contains "RCON"', () => {
+    // Without the code check running first, this would match the same
+    // message regex the auth-failed case does and wrongly offer a fix-it
+    // link for a problem no settings page can fix.
+    const error = new ApiError('Could not connect to RCON. Is the server running and RCON enabled?', { code: 'RCON_CONNECT_UNREACHABLE' })
+    expect(getRecoveryUrl(error)).not.toBe('/servers')
+  })
+
+  it('routes a permission-denied (EACCES) failure to Servers, where per-server install/data paths live', () => {
+    expect(getRecoveryUrl(new Error('Cannot read /srv/pz (EACCES). The panel service account needs read and execute permission on this folder and every parent folder.'))).toBe('/servers')
   })
 
   it('does not create a destination for unrelated failures', () => {

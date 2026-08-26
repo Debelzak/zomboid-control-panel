@@ -48,7 +48,11 @@
     "autoStartDisabledDesc": "服务器将不会自动启动",
     "autoStartSaveFailed": "保存自动启动设置失败",
     "errorTitle": "错误",
-    "actionFailedFallback": "操作失败，请重试。"
+    "actionFailedFallback": "操作失败，请重试。",
+    "rconAuthFailed": {
+      "openServers": "打开服务器",
+      "openServersAlt": "打开服务器页面以更新 RCON 密码"
+    }
   },
   "actions": {
     "start": "启动",

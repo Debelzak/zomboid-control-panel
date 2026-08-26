@@ -48,7 +48,11 @@
     "autoStartDisabledDesc": "El servidor no se iniciará automáticamente",
     "autoStartSaveFailed": "No se pudo guardar el ajuste de inicio automático",
     "errorTitle": "Error",
-    "actionFailedFallback": "La acción falló. Intentarlo de nuevo."
+    "actionFailedFallback": "La acción falló. Intentarlo de nuevo.",
+    "rconAuthFailed": {
+      "openServers": "Abrir Servidores",
+      "openServersAlt": "Abrir la página Servidores para actualizar la contraseña de RCON"
+    }
   },
   "actions": {
     "start": "Iniciar",

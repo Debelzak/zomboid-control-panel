@@ -48,7 +48,11 @@
     "autoStartDisabledDesc": "Le serveur ne démarrera pas automatiquement",
     "autoStartSaveFailed": "Échec de l'enregistrement du paramètre de démarrage automatique",
     "errorTitle": "Erreur",
-    "actionFailedFallback": "Échec de l'action. Veuillez réessayer."
+    "actionFailedFallback": "Échec de l'action. Veuillez réessayer.",
+    "rconAuthFailed": {
+      "openServers": "Ouvrir Serveurs",
+      "openServersAlt": "Ouvrir la page Serveurs pour mettre à jour le mot de passe RCON"
+    }
   },
   "actions": {
     "start": "Démarrer",

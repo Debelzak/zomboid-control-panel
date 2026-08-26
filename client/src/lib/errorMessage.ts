@@ -97,6 +97,14 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+// HARD CONSTRAINT: every destination this function can return must be an
+// internal path (enforced below by requiring a leading "/") -- never build
+// this from anything the server sends as free text, and never loosen the
+// payload.fixUrl check. A response body is attacker-influenced in principle;
+// letting it name an external URL would let a compromised or malicious
+// server response redirect a signed-in admin's browser somewhere off this
+// origin. If a destination can't be expressed as one of the fixed literal
+// paths below, it doesn't belong in this function.
 export function getRecoveryUrl(error: unknown): string | null {
   const payload = error instanceof ApiError && error.data && typeof error.data === 'object'
     ? error.data as { fixUrl?: unknown }
@@ -105,9 +113,35 @@ export function getRecoveryUrl(error: unknown): string | null {
     return payload.fixUrl
   }
 
+  // Code-based first, and authoritative when present: these two codes come
+  // from the SAME failed RCON connect attempt (server/routes/rcon.js POST
+  // /connect and /test) and mean two different things a message-only guess
+  // below can't tell apart. Auth-failed is genuinely fixable from Servers
+  // (the RCON password field lives there). Unreachable is an install-level
+  // problem -- server not running, firewall never opened, wrong host/port
+  // -- that no in-app screen can fix by being opened, so it deliberately
+  // returns null instead of falling through to the message regex, which
+  // would otherwise match "RCON" in either message and offer a link that
+  // does nothing for the unreachable case.
+  const code = error instanceof ApiError ? error.code : undefined
+  if (code === 'RCON_CONNECT_AUTH_FAILED') return '/servers'
+  if (code === 'RCON_CONNECT_UNREACHABLE') return null
+
   const message = error instanceof Error ? error.message : String(error || '')
-  if (/rcon|connection refused|authentication failed/i.test(message)) return '/settings?tab=connection'
+  // Not /settings?tab=connection: that tab is test-and-reconnect-settings
+  // only now, and its own copy (settings.json connection.cardDesc) sends the
+  // reader straight back to Servers -- host/port/password are per-server
+  // fields there. Pointing here directly skips that dead-end hop.
+  if (/rcon|connection refused|authentication failed/i.test(message)) return '/servers'
   if (/panelbridge|bridge not running|bridge not configured/i.test(message)) return '/settings?tab=bridge'
   if (/no active server|no server configured/i.test(message)) return '/servers'
+  // EACCES/permission-denied: server/routes/server.js's formatDirectoryReadError
+  // produces "Cannot read <path> (EACCES). ..." for an unreadable configured
+  // PZ install or Zomboid data path -- both are per-server fields on Servers,
+  // same as RCON. Not every EACCES is fixable from there (the panel's own
+  // /app/data or /app/logs mount is a container-level path with no settings
+  // field at all), but a per-server install/data path is the far more common
+  // real-world trigger, and Servers is where a fixable one actually lives.
+  if (/eacces|permission denied/i.test(message)) return '/servers'
   return null
 }

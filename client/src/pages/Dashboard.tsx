@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import type { ReactElement } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
+import { ToastAction } from '@/components/ui/toast'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -26,7 +28,7 @@ import { useSocket } from '@/contexts/SocketContext'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { cn, copyText } from '@/lib/utils'
-import { getUserErrorMessage } from '@/lib/errorMessage'
+import { getUserErrorMessage, getRecoveryUrl } from '@/lib/errorMessage'
 import { VerdictBand, WorkList } from '@/components/dashboard/DashboardVerdict'
 import type { Verdict, WorkItem } from '@/components/dashboard/DashboardVerdict'
 
@@ -236,6 +238,7 @@ export default function Dashboard() {
 
   const { toast } = useToast()
   const socket = useSocket()
+  const navigate = useNavigate()
 
   /* ---------------------------- effects ----------------------------------- */
   useEffect(() => { initialLoadingRef.current = initialLoading }, [initialLoading])
@@ -522,7 +525,16 @@ export default function Dashboard() {
   }, [fetchStatus, fetchPlayers, fetchBridgeStatus, fetchPlayerActivity, fetchPerformanceHistory, showPerformanceCharts])
 
   /* ---------------------------- actions ----------------------------------- */
-  const handleAction = async (action: string, fn: () => Promise<unknown>) => {
+  // errorAction lets one call site attach a toast action button specific to
+  // the error it got back (e.g. "Open Servers" only for a fixable RCON
+  // failure) without every OTHER handleAction caller needing to know it
+  // exists -- returning undefined (the default for anyone who doesn't pass
+  // it) renders no action, identical to today's behavior.
+  const handleAction = async (
+    action: string,
+    fn: () => Promise<unknown>,
+    options?: { errorAction?: (error: unknown) => ReactElement | undefined },
+  ) => {
     setLoading(action)
     try {
       const result = await fn()
@@ -550,10 +562,34 @@ export default function Dashboard() {
         }, 2000)
       } else { fetchStatus() }
     } catch (error) {
-      toast({ title: t('toasts.errorTitle'), description: getUserErrorMessage(error, t('toasts.actionFailedFallback')), variant: 'destructive' })
+      toast({
+        title: t('toasts.errorTitle'),
+        description: getUserErrorMessage(error, t('toasts.actionFailedFallback')),
+        variant: 'destructive',
+        action: options?.errorAction?.(error),
+      })
     } finally { setLoading(null) }
   }
-  const handleConnect = async () => { await handleAction('Connect RCON', () => rconApi.connect()) }
+  const handleConnect = async () => {
+    await handleAction('Connect RCON', () => rconApi.connect(), {
+      // getRecoveryUrl (lib/errorMessage.ts) is the single place that knows
+      // RCON_CONNECT_AUTH_FAILED is fixable from Servers while
+      // RCON_CONNECT_UNREACHABLE (install-level: server not running,
+      // firewall never opened) isn't fixable from any in-app screen --
+      // reusing it here instead of re-deriving that same classification
+      // inline is what keeps the two from drifting apart the way
+      // routes/rcon.js's OWN two error-reporting paths once did tonight.
+      errorAction: (error) => {
+        const url = getRecoveryUrl(error)
+        if (url !== '/servers') return undefined
+        return (
+          <ToastAction altText={t('toasts.rconAuthFailed.openServersAlt')} onClick={() => navigate(url)}>
+            {t('toasts.rconAuthFailed.openServers')}
+          </ToastAction>
+        )
+      },
+    })
+  }
 
   /* ---------------------------- loading ----------------------------------- */
   if (initialLoading) {

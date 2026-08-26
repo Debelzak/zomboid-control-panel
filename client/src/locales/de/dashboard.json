@@ -48,7 +48,11 @@
     "autoStartDisabledDesc": "Server startet nicht automatisch",
     "autoStartSaveFailed": "Autostart-Einstellung konnte nicht gespeichert werden",
     "errorTitle": "Fehler",
-    "actionFailedFallback": "Aktion fehlgeschlagen. Bitte versuche es erneut."
+    "actionFailedFallback": "Aktion fehlgeschlagen. Bitte versuche es erneut.",
+    "rconAuthFailed": {
+      "openServers": "Server öffnen",
+      "openServersAlt": "Server-Seite öffnen, um das RCON-Passwort zu aktualisieren"
+    }
   },
   "actions": {
     "start": "Starten",
