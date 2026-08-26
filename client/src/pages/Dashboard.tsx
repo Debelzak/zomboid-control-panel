@@ -90,6 +90,19 @@ function getDashboardSuccessCopy(t: TFunction<'dashboard'>, action: string) {
   }
 }
 
+// 2026-08-26: unreachable for every current handleAction() caller (serverApi
+// .start/.save, rconApi.connect, backupApi.createBackup) -- each resolves
+// through apiPost, and lib/api.ts's handleResponse() already throws on any
+// 200 body with success: false before this function's own .then() branch
+// could ever see it (see the same note on Console.tsx/Events.tsx/etc.,
+// which document the same centralized mechanism for their own call sites).
+// Kept, and commented rather than deleted, because a check that WOULD fire
+// if a future caller ever bypassed apiPost is a trap, not a safety net: it
+// throws a bare Error with no status/code, which getUserErrorMessage()
+// cannot translate -- strictly worse than what the live apiPost path
+// already does automatically today. If this ever starts actually firing,
+// that is a sign a new handleAction() caller skipped apiPost, not that this
+// check earned its keep.
 function isFailedActionResult(value: unknown): value is { success: false; error?: string; message?: string } {
   return typeof value === 'object'
     && value !== null

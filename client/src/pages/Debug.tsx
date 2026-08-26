@@ -1206,6 +1206,15 @@ export default function Debug() {
         const r = await fn();
         // Treat explicit success:false as a probe failure so the user sees
         // the underlying error message rather than a misleading green badge.
+        // 2026-08-26: unreachable for every current probe (panelBridgeApi
+        // .getServerInfo/.sendCommand, all resolved through apiGet/apiPost)
+        // -- lib/api.ts's handleResponse() already throws on a 200 body with
+        // success: false before this .then() branch could ever see it. Kept
+        // and commented, not deleted: a future probe that bypasses apiPost
+        // would hit a bare Error with no status/code instead of the caught,
+        // fully-translatable ApiError the live path already produces, so
+        // this check firing would be a regression signal, not a working
+        // safety net.
         const res = r as {
           success?: boolean;
           error?: string;
