@@ -261,6 +261,9 @@ export default function Discord() {
   const [eventsMessage, setEventsMessage] = useState<FlashMessage | null>(null);
   const [permissionsMessage, setPermissionsMessage] =
     useState<FlashMessage | null>(null);
+  // True only while the most recent load's config fetch itself failed --
+  // distinct from "genuinely not configured yet". See showSetupWizard.
+  const [configLoadFailed, setConfigLoadFailed] = useState(false);
 
   const [setupStep, setSetupStep] = useState(0);
 
@@ -268,6 +271,8 @@ export default function Discord() {
     try {
       setLoading(true);
       let configFailed = false;
+      let eventsFailed = false;
+      let permsFailed = false;
       const [statusData, configData, eventsData, permsData] = await Promise.all(
         [
           discordApi
@@ -277,18 +282,39 @@ export default function Discord() {
             configFailed = true;
             return null;
           }),
-          discordApi.getWebhookEvents().catch(() => ({ events: {} })),
-          discordApi.getPermissions().catch(() => ({ permissions: {} })),
+          discordApi.getWebhookEvents().catch(() => {
+            eventsFailed = true;
+            return { events: {} };
+          }),
+          discordApi.getPermissions().catch(() => {
+            permsFailed = true;
+            return { permissions: {} };
+          }),
         ],
       );
 
       setStatus(statusData);
       setWebhookEvents(eventsData.events || {});
       setCommandPermissions(permsData.permissions || {});
+      if (eventsFailed) {
+        setEventsMessage({
+          type: "error",
+          text: t("toasts.eventsReadFailedInline"),
+        });
+      }
+      if (permsFailed) {
+        setPermissionsMessage({
+          type: "error",
+          text: t("toasts.permissionsReadFailedInline"),
+        });
+      }
 
       // Keep the last known config on a failed read. Clearing it made a fully
       // configured bot look like a first-time setup, inviting the user to
-      // retype everything.
+      // retype everything. configLoadFailed additionally blocks the
+      // wizard/dashboard decision below from trusting a config we couldn't
+      // actually read -- see showSetupWizard's own comment for why.
+      setConfigLoadFailed(configFailed);
       if (configFailed) {
         setConfigMessage({
           type: "error",
@@ -315,6 +341,7 @@ export default function Discord() {
         setAutoStart(configData.autoStart !== false);
       }
     } catch {
+      setConfigLoadFailed(true);
       setConfigMessage({
         type: "error",
         text: t("toasts.configLoadFailedInline"),
@@ -635,7 +662,20 @@ export default function Discord() {
 
   // ─── Determine if we should show setup wizard ───
   const isConfigured = config?.hasToken && config?.guildId;
-  const showSetupWizard = !isConfigured && !status?.running;
+  // configLoadFailed means we don't actually know isConfigured -- config
+  // stayed null (or stale-but-unconfirmed) because the read itself failed,
+  // not because there's genuinely nothing saved. Without this guard, a
+  // FULLY CONFIGURED bot that is merely stopped (a normal, common state)
+  // would show the first-time setup wizard instead of the dashboard on any
+  // transient config-fetch hiccup at page load: isConfigured falls back to
+  // false, status.running is honestly false (the bot really is stopped),
+  // and the wizard condition below was satisfied by two unrelated reasons
+  // that happened to point the same way. Falling through to the dashboard
+  // when we can't verify config is the safer wrong guess -- the worst case
+  // is a brand-new, never-configured bot briefly shows the dashboard
+  // instead of the wizard until the next successful refresh, not an
+  // already-running production bot getting told to set up from scratch.
+  const showSetupWizard = !configLoadFailed && !isConfigured && !status?.running;
 
   // How far into the wizard the operator has actually unlocked, mirroring each
   // step's own "Next" gate. Without this, the stepper let you click straight to
