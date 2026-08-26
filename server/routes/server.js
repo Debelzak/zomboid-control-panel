@@ -22,6 +22,7 @@ import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
 import { invalidateMapFolderScan } from "./chunks.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
+import { confineToRoots } from "../utils/browseRoots.js";
 
 const router = express.Router();
 
@@ -1953,6 +1954,11 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     }
     const steamcmd = spawn(steamcmdExe, steamcmdArgs, spawnOpts);
     activeSteamOperations.get(normalizedPath).pid = steamcmd.pid;
+    // A signal-killed process reports code=null to the close handler below,
+    // not the exit code INSTALL_FAILED_EXIT_CODE's message names -- tracked
+    // so that branch can say "stalled and was stopped" instead of the
+    // literal word "null" (2026-08-26 install-failure hunt finding #1).
+    let killedByWatchdog = false;
     activeSteamOperations.get(normalizedPath).watchdog = setInterval(() => {
       const activeOperation = activeSteamOperations.get(normalizedPath);
       if (!activeOperation) return;
@@ -1961,6 +1967,7 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
       log.error(
         `SteamCMD ${activeOperation.type} produced no output for ${STEAM_OPERATION_IDLE_TIMEOUT_MS / 60000} minutes; terminating the stalled process`,
       );
+      killedByWatchdog = true;
       steamcmd.kill();
     }, 30_000);
     activeSteamOperations.get(normalizedPath).watchdog.unref?.();
@@ -2022,6 +2029,15 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
 
       if (code === 0) {
         log.info("PZ server installation completed successfully");
+
+        // The game files installed -- that part is done and expensive to
+        // redo, so success:false is never used for a failure past this
+        // point (2026-08-26 install-failure hunt finding #6). A step below
+        // that fails but self-heals on the next POST /server/start (the INI
+        // pre-create, the startup script) is instead collected here and
+        // sent as a `warnings` array alongside success:true, so the
+        // operator sees it without being told to reinstall over it.
+        const warnings = [];
 
         // Auto-update settings with new paths
         await setSetting("serverPath", installPath);
@@ -2109,6 +2125,11 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
             }
           } catch (iniError) {
             log.warn(`Failed to pre-create INI: ${iniError.message}`);
+            warnings.push({
+              progressCode: ProgressCode.INSTALL_RCON_INI_PRECREATE_FAILED,
+              message: `Could not pre-write the RCON password into the server config (${sanitizeError(iniError.message)}). This is retried automatically the next time you start the server.`,
+              params: { reason: sanitizeError(iniError.message) },
+            });
           }
         }
 
@@ -2155,6 +2176,11 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           });
         } catch (batchError) {
           log.warn(`Failed to create startup scripts: ${batchError.message}`);
+          warnings.push({
+            progressCode: ProgressCode.INSTALL_STARTUP_SCRIPT_FAILED,
+            message: `Could not generate this server's custom startup script (${sanitizeError(batchError.message)}). The server can still be started -- it will use the default script until this regenerates, which also happens automatically on the next start.`,
+            params: { reason: sanitizeError(batchError.message) },
+          });
         }
 
         logServerEvent(
@@ -2221,6 +2247,19 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           minMemory: safeMinMemory,
           maxMemory: safeMaxMemory,
           progressCode: ProgressCode.INSTALL_COMPLETE_SUCCESS,
+          warnings,
+        });
+      } else if (killedByWatchdog) {
+        const idleMinutes = STEAM_OPERATION_IDLE_TIMEOUT_MS / 60000;
+        log.error(
+          `SteamCMD produced no output for ${idleMinutes} minutes and was stopped`,
+        );
+        io.emit("install:complete", {
+          success: false,
+          message: `Installation was stopped after ${idleMinutes} minutes with no output from SteamCMD -- it may have stalled or lost its connection. Try again.`,
+          output,
+          progressCode: ProgressCode.INSTALL_WATCHDOG_KILLED,
+          params: { minutes: idleMinutes },
         });
       } else {
         log.error(`SteamCMD exited with code ${code}`);
@@ -2377,6 +2416,14 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
       `Quick setup: Creating server config for ${serverName} using files from ${installPath}`,
     );
 
+    // Same reasoning as /install above (2026-08-26 install-failure hunt
+    // finding #6): the server files already exist (checked above), so a
+    // failure past this point that self-heals on the next POST
+    // /server/start (the INI pre-create) is reported as a warning, not a
+    // flat failure that would send the operator looking for a problem in
+    // files that are actually fine.
+    const warnings = [];
+
     // Update settings
     await setSetting("serverPath", installPath);
     await setSetting("serverName", serverName);
@@ -2434,6 +2481,11 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
         }
       } catch (iniError) {
         log.warn(`Failed to pre-create INI: ${iniError.message}`);
+        warnings.push({
+          progressCode: ProgressCode.INSTALL_RCON_INI_PRECREATE_FAILED,
+          message: `Could not pre-write the RCON password into the server config (${sanitizeError(iniError.message)}). This is retried automatically the next time you start the server.`,
+          params: { reason: sanitizeError(iniError.message) },
+        });
       }
     }
 
@@ -2525,6 +2577,7 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
       minMemory: safeMinMemory,
       maxMemory: safeMaxMemory,
       panelBridgeInstalled,
+      warnings,
     });
   } catch (error) {
     log.error(`Quick setup error: ${error.message}`);
@@ -3567,8 +3620,9 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
     if (confirm !== true) {
       return res.status(400).json({
         error: "Deleting these files requires confirm: true",
-        // Shared with /wipe -- see errorCodes.js for why.
-        code: ErrorCode.WIPE_CONFIRM_REQUIRED,
+        // Own code, not /wipe's -- see errorCodes.js for why this was split
+        // from the shared WIPE_CONFIRM_REQUIRED (2026-08-26 bug hunt round 2).
+        code: ErrorCode.DELETE_FILES_CONFIRM_REQUIRED,
       });
     }
 
@@ -3606,6 +3660,31 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
           "This does not appear to be a Project Zomboid server installation. Refusing to delete for safety.",
         code: ErrorCode.DELETE_FILES_NOT_PZ_INSTALL,
       });
+    }
+
+    // A default install keeps the Zomboid data folder OUTSIDE installPath
+    // (resolveZomboidPaths defaults it to a sibling `<installPath>_Data`),
+    // so deleting the install folder alone leaves Saves/Multiplayer
+    // untouched -- annoying (reinstall via the Setup Wizard) but not a
+    // world-ending loss. Nothing stops an operator from pointing
+    // zomboidDataPath INSIDE the install folder instead, though, and
+    // nothing here ever checked for it. When that's the configuration,
+    // this delete also destroys the live world save -- a different
+    // severity than "reinstall the binaries," and the UI gives no
+    // indication either way. Refuse outright rather than trying to back
+    // the data up first: the backups folder itself lives at
+    // <zomboidDataPath>/backups, which would be inside the doomed tree
+    // too, so a same-tree backup would just get deleted right alongside
+    // everything else it was meant to protect.
+    const zomboidDataPath = serverManager.savePath;
+    if (zomboidDataPath) {
+      const resolvedDeletePath = path.resolve(deletePath);
+      if (confineToRoots(zomboidDataPath, [resolvedDeletePath])) {
+        return res.status(400).json({
+          error: `Refusing to delete: this server's Zomboid data folder (${zomboidDataPath}) is inside the folder you're about to delete, so this would also permanently destroy the world save. Move the data path outside the install folder in Settings, or back it up yourself first, before deleting.`,
+          code: ErrorCode.DELETE_FILES_DATA_PATH_NESTED,
+        });
+      }
     }
 
     // Re-check immediately before the irreversible delete (2026-08-26 bug

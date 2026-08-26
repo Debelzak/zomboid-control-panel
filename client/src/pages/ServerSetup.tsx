@@ -74,7 +74,7 @@ import {
 import { FolderBrowser } from "@/components/FolderBrowser";
 
 interface InstallLog {
-  type: "info" | "success" | "error" | "command" | "stdout" | "stderr";
+  type: "info" | "success" | "error" | "warning" | "command" | "stdout" | "stderr";
   message: string;
   timestamp: Date;
 }
@@ -564,6 +564,7 @@ export default function ServerSetup() {
       maxMemory?: number;
       progressCode?: string;
       params?: Record<string, string | number>;
+      warnings?: Array<{ progressCode?: string; message: string; params?: Record<string, string | number> }>;
     }) => {
       setInstalling(false);
       // The socket connection (and this handler) is the ONLY place that ever
@@ -576,6 +577,18 @@ export default function ServerSetup() {
         setLogs((prev) => [
           ...prev,
           { type: "success", message: displayMessage, timestamp: new Date() },
+          // The game files installed -- that's success:true and stays true --
+          // but a self-healing step (RCON .ini pre-create, startup script)
+          // may still have failed underneath it (#6, 2026-08-26 install-
+          // failure hunt). Surfaced here rather than silently dropped: the
+          // operator sees exactly what didn't get written and that it's
+          // retried automatically, instead of either a false "everything is
+          // ready" or a false "the install failed".
+          ...(data.warnings ?? []).map((w) => ({
+            type: 'warning' as const,
+            message: getInstallProgressMessage({ progressCode: w.progressCode, params: w.params }, w.message),
+            timestamp: new Date(),
+          })),
         ]);
 
         const s = formStateRef.current;
@@ -915,10 +928,18 @@ export default function ServerSetup() {
 
       if (data) {
         addLog("success", t("toasts.configCreatedLog"));
+        // Same shape as #6 in handleInstallComplete above: the server files
+        // already existed (Quick Setup only registers a config for files
+        // that are verified present) and stay fine even if a self-healing
+        // step underneath failed -- surfaced, not silently dropped.
+        for (const w of (data.warnings ?? []) as Array<{ progressCode?: string; message: string; params?: Record<string, string | number> }>) {
+          addLog("warning", getInstallProgressMessage({ progressCode: w.progressCode, params: w.params }, w.message));
+        }
 
+        let createResult: Awaited<ReturnType<typeof serversApi.create>>;
         try {
           // Use data from server response which has computed paths
-          const createResult = await serversApi.create({
+          createResult = await serversApi.create({
             name: data.serverName || serverName,
             serverName: data.serverName || serverName,
             installPath: data.installPath || installPath,
@@ -935,18 +956,6 @@ export default function ServerSetup() {
             useDebug: useDebug,
           });
           addLog("success", t("toasts.serverRegisteredLog"));
-
-          // Activate the newly created server so "Start Server Now" starts this one
-          if (createResult.server?.id) {
-            await serversApi.activate(createResult.server.id);
-            addLog("success", t("toasts.activeServerSwitchedLog"));
-          }
-
-          setInstallComplete(true);
-          toast({
-            title: t("toasts.serverAddedTitle"),
-            description: t("toasts.serverAddedDesc"),
-          });
         } catch (error) {
           reportClientError("Failed to create server entry.", error);
           addLog("error", t("toasts.registerFailedLog"));
@@ -955,7 +964,36 @@ export default function ServerSetup() {
             description: t("toasts.registerFailedDesc"),
             variant: "destructive",
           });
+          return;
         }
+
+        // Separate try/catch from create() above -- same reasoning as #2 in
+        // handleInstallComplete: the server entry already exists at this
+        // point, so an activate() failure must never be reported as
+        // "failed to create server entry". "Start Server Now" is only
+        // offered once activation genuinely succeeds, since it assumes the
+        // just-configured server is the active one.
+        if (createResult.server?.id) {
+          try {
+            await serversApi.activate(createResult.server.id);
+            addLog("success", t("toasts.activeServerSwitchedLog"));
+          } catch (error) {
+            reportClientError("Failed to activate newly created server.", error);
+            addLog("error", t("toasts.activateFailedLog"));
+            toast({
+              title: t("toasts.activateFailedTitle"),
+              description: t("toasts.activateFailedDesc"),
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+
+        setInstallComplete(true);
+        toast({
+          title: t("toasts.serverAddedTitle"),
+          description: t("toasts.serverAddedDesc"),
+        });
       } else {
         addLog("error", data.error);
         toast({
@@ -2105,11 +2143,13 @@ export default function ServerSetup() {
                   className={cn(
                     log.type === "error" || log.type === "stderr"
                       ? "text-destructive"
-                      : log.type === "success"
-                        ? "text-success"
-                        : log.type === "command"
-                          ? "text-primary"
-                          : "text-foreground/80",
+                      : log.type === "warning"
+                        ? "text-warning"
+                        : log.type === "success"
+                          ? "text-success"
+                          : log.type === "command"
+                            ? "text-primary"
+                            : "text-foreground/80",
                   )}
                 >
                   {log.message}
@@ -2732,9 +2772,11 @@ export default function ServerSetup() {
                   className={cn(
                     log.type === "error"
                       ? "text-destructive"
-                      : log.type === "success"
-                        ? "text-success"
-                        : "text-foreground/80",
+                      : log.type === "warning"
+                        ? "text-warning"
+                        : log.type === "success"
+                          ? "text-success"
+                          : "text-foreground/80",
                   )}
                 >
                   {log.message}

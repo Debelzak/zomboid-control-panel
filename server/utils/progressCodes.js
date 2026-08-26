@@ -75,9 +75,33 @@ export const ProgressCode = Object.freeze({
   /** POST /api/server/install -- a minimal server .ini was pre-created so PZ
    * reads the RCON settings on first boot. No params. */
   INI_PRECREATED_WITH_RCON: "INI_PRECREATED_WITH_RCON",
+  /** Shared across 2 call sites: /install and /quick-setup, both success
+   * paths -- the INI_PRECREATED_WITH_RCON write above threw. The game files
+   * (or, for quick-setup, the already-existing server files) are fine; this
+   * only means RCON's password/port may not be in place for the very first
+   * boot. Deliberately NOT reported as success:false (2026-08-26
+   * install-failure hunt finding #6) -- ensureRconConfigured() re-runs this
+   * exact write on every POST /server/start, so this is expected to
+   * self-heal the moment the operator starts the server, and the message
+   * says so rather than implying manual repair. Travels in a `warnings`
+   * array alongside the normal success payload, not as the top-level
+   * progressCode. Params: {reason}. */
+  INSTALL_RCON_INI_PRECREATE_FAILED: "INSTALL_RCON_INI_PRECREATE_FAILED",
   /** POST /api/server/install -- custom .bat/.sh startup scripts generated.
    * Params: {scriptName} (a generated filename, not translatable prose). */
   STARTUP_SCRIPT_CREATED: "STARTUP_SCRIPT_CREATED",
+  /** POST /api/server/install only -- the STARTUP_SCRIPT_CREATED write above
+   * threw. (Quick Setup's equivalent write is NOT wrapped -- it fails the
+   * whole request instead, which is correct there: quick-setup is
+   * synchronous with the operator watching, so a hard failure costs them a
+   * retry, not a discovered-later surprise.) The game files are fine; the
+   * server can still be started, it will just use the plain default script
+   * SteamCMD ships (not this server's configured memory/ports) until this
+   * regenerates -- which POST /server/start does unconditionally on every
+   * launch, so this too is expected to self-heal on first start. Same
+   * `warnings`-array delivery as INSTALL_RCON_INI_PRECREATE_FAILED above.
+   * Params: {reason}. */
+  INSTALL_STARTUP_SCRIPT_FAILED: "INSTALL_STARTUP_SCRIPT_FAILED",
   /** POST /api/server/install -- PanelBridge.lua was copied into the fresh
    * install automatically. No params. */
   PANELBRIDGE_AUTO_INSTALLED: "PANELBRIDGE_AUTO_INSTALLED",
@@ -87,6 +111,16 @@ export const ProgressCode = Object.freeze({
   /** POST /api/server/install -- steamcmd.on("close") with a non-zero exit
    * code. Params: {code}. */
   INSTALL_FAILED_EXIT_CODE: "INSTALL_FAILED_EXIT_CODE",
+  /** POST /api/server/install -- steamcmd.on("close") after the 10-minute
+   * idle watchdog called steamcmd.kill(). Own code from
+   * INSTALL_FAILED_EXIT_CODE above, not a shared template with `code`
+   * filled in as null/undefined: a killed-by-signal process reports
+   * code=null to Node's close handler (2026-08-26 install-failure hunt
+   * finding #1), so reusing that code's "exit code {{code}}" wording would
+   * literally render the word "null" -- a different, true statement (SteamCMD
+   * stalled and was stopped) rather than a cosmetically-broken instance of
+   * the generic one. Params: {minutes}. */
+  INSTALL_WATCHDOG_KILLED: "INSTALL_WATCHDOG_KILLED",
   /** Shared across 3 call sites with identical wording: /install's
    * steamcmd.on("error"), /steam-update's steamcmd.on("error"), and POST
    * /steamcmd/download's runFirstTimeSetup() steamcmd.on("error") -- the
