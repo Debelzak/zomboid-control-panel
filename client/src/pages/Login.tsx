@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
+import { rawErrorMessageIntentional } from '../lib/errorMessage'
 import { Button, buttonVariants } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -162,7 +163,15 @@ export default function Login() {
       setDeviceFailedAttempts(0)
       try { localStorage.removeItem(LOGIN_DEVICE_FAILURE_KEY) } catch { /* ignore */ }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('errors.loginFailed'))
+      // 2026-08-26: NOT a getUserErrorMessage() site -- AuthContext's
+      // login() already resolves and translates the final message itself
+      // (see its getLoginErrorMessage(), which routes a genuine 5xx through
+      // getUserErrorMessage() before this ever sees it, and keeps the
+      // account-enumeration-safe generic text for an actual auth failure).
+      // Calling getUserErrorMessage() here too would double-process an
+      // already-translated string. rawErrorMessageIntentional() documents
+      // that this is a deliberate exception, not a missed conversion.
+      setError(rawErrorMessageIntentional(err, t('errors.loginFailed')))
       setDeviceFailedAttempts((prev) => {
         const next = prev + 1
         try { localStorage.setItem(LOGIN_DEVICE_FAILURE_KEY, String(next)) } catch { /* ignore */ }
