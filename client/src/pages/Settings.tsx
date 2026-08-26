@@ -61,6 +61,7 @@ import Users from "@/pages/Users";
 import RolesPermissions from "@/pages/RolesPermissions";
 import OidcSettings from "@/pages/OidcSettings";
 import { PasswordInput } from "@/components/PasswordInput";
+import { NumberInput } from "@/components/NumberInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -4663,15 +4664,12 @@ export default function Settings() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="backup-max">{t("backups.maxBackupsLabel")}</Label>
-                        <Input
+                        <NumberInput
                           id="backup-max"
-                          type="number"
                           min={1}
                           max={100}
                           value={backupMaxCount}
-                          onChange={(e) =>
-                            setBackupMaxCount(parseInt(e.target.value) || 10)
-                          }
+                          onChange={setBackupMaxCount}
                           onBlur={(e) => {
                             const v = parseInt(e.target.value);
                             if (!Number.isFinite(v) || v < 1)
@@ -4680,7 +4678,6 @@ export default function Settings() {
                           }}
                           onWheel={(e) => e.currentTarget.blur()}
                           className="max-w-24"
-                          inputMode="numeric"
                         />
                         <p className="text-xs text-muted-foreground">
                           {t("backups.maxBackupsHelp")}

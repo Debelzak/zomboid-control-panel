@@ -8,10 +8,10 @@ import { NumberInput } from '../NumberInput'
 // `onChange={(e) => setX(parseInt(e.target.value) || DEFAULT)}` -- clearing
 // the field snapped it back to DEFAULT under the operator's own cursor
 // instead of staying empty. This is the shared component that now backs
-// every one of those 13 sites (ServerSetup.tsx x4, Servers.tsx x7,
-// Players.tsx x1, Scheduler.tsx x1) -- Settings.tsx:4673 is a separate card,
-// not covered here. These tests exercise the component directly rather than
-// each page, since the fix lives in exactly one place now.
+// all 14 of those sites (ServerSetup.tsx x4, Servers.tsx x7, Players.tsx x1,
+// Scheduler.tsx x1, Settings.tsx's backup-max-count field). These tests
+// exercise the component directly rather than each page, since the fix
+// lives in exactly one place now.
 
 // A real call site is a controlled component: the parent's own state updates
 // from onChange and flows back down as the `value` prop on the next render.
@@ -120,5 +120,58 @@ describe('NumberInput', () => {
     const { container } = render(<NumberInput value={NaN} onChange={vi.fn()} />)
     const input = container.querySelector('input')!
     expect(input.value).toBe('')
+  })
+
+  // Settings.tsx's backup-max-count field (site 14): a bounded count, not a
+  // port -- there is no isValidInstallPort()-style submit path for it to
+  // fall through to, so god's dispatch required this component to still let
+  // the caller commit the field to a sane value itself. It does this via a
+  // plain onBlur passthrough, layered on top of (not replacing) this
+  // component's own focus bookkeeping.
+  describe('onBlur/onWheel passthrough (Settings.tsx-style commit-on-blur sites)', () => {
+    it('calls the caller-supplied onBlur with the real event after its own blur bookkeeping', () => {
+      const onBlur = vi.fn()
+      const { container } = render(<NumberInput value={10} onChange={vi.fn()} onBlur={onBlur} />)
+      const input = container.querySelector('input')!
+
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: '' } })
+      fireEvent.blur(input)
+
+      expect(onBlur).toHaveBeenCalledTimes(1)
+      expect(onBlur.mock.calls[0][0].target.value).toBe('')
+    })
+
+    it('lets a caller with no submit-time refusal path clamp an emptied field back to a sane value on blur', () => {
+      function BoundedCountHarness() {
+        const [value, setValue] = useState(10)
+        return (
+          <NumberInput
+            value={value}
+            onChange={setValue}
+            onBlur={(e) => {
+              const v = parseInt(e.target.value, 10)
+              if (!Number.isFinite(v) || v < 1) setValue(1)
+              else if (v > 100) setValue(100)
+            }}
+          />
+        )
+      }
+      const { container } = render(<BoundedCountHarness />)
+      const input = container.querySelector('input')!
+
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: '' } })
+      expect(input.value).toBe('') // stays empty mid-edit, the actual fix
+      fireEvent.blur(input)
+      expect(input.value).toBe('1') // caller's own onBlur committed a sane value, same as before this fix
+    })
+
+    it('forwards onWheel so a caller can blur-on-scroll to stop an accidental wheel from changing the value', () => {
+      const onWheel = vi.fn()
+      const { container } = render(<NumberInput value={10} onChange={vi.fn()} onWheel={onWheel} />)
+      fireEvent.wheel(container.querySelector('input')!)
+      expect(onWheel).toHaveBeenCalledTimes(1)
+    })
   })
 })

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { FocusEvent, WheelEvent } from 'react'
 import { Input } from '@/components/ui/input'
 
 interface NumberInputProps {
@@ -10,6 +11,16 @@ interface NumberInputProps {
   max?: number
   className?: string
   id?: string
+  /**
+   * For a site with no submit-time refusal path to fall through to (e.g. a
+   * bounded count, not a port) -- runs AFTER this component's own blur
+   * bookkeeping, so the caller can commit an empty/out-of-range field to a
+   * sane value itself. Receives the real DOM blur event; e.target.value is
+   * whatever the operator actually left in the field.
+   */
+  onBlur?: (e: FocusEvent<HTMLInputElement>) => void
+  /** Passed straight through -- e.g. blurring on wheel so an accidental scroll over the field can't change its value. */
+  onWheel?: (e: WheelEvent<HTMLInputElement>) => void
 }
 
 // Every plain numeric <Input> in this app used to run
@@ -29,7 +40,7 @@ interface NumberInputProps {
 // what they're typing. Once they leave the field (or something external
 // changes `value` -- RAM auto-detect, a loaded setting, a slider bound to
 // the same state), the effect below catches up `text` to match.
-export function NumberInput({ value, onChange, clamp, min, max, className, id }: NumberInputProps) {
+export function NumberInput({ value, onChange, clamp, min, max, className, id, onBlur, onWheel }: NumberInputProps) {
   const [text, setText] = useState(() => (Number.isFinite(value) ? String(value) : ''))
   const focused = useRef(false)
 
@@ -49,9 +60,11 @@ export function NumberInput({ value, onChange, clamp, min, max, className, id }:
       onFocus={() => {
         focused.current = true
       }}
-      onBlur={() => {
+      onBlur={(e) => {
         focused.current = false
+        onBlur?.(e)
       }}
+      onWheel={onWheel}
       onChange={(e) => {
         const raw = e.target.value
         setText(raw)
