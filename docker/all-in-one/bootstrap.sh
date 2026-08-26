@@ -62,4 +62,4 @@ docker run --rm \
   zomboid-panel-updater:latest \
   docker compose --env-file .env -f docker-compose.yml up -d --build
 
-echo "All-in-one panel is starting. Open the URL configured in $CONTEXT_DIR/.env after its health check passes."
+echo "All-in-one panel is starting. Open http://localhost:3001 after its health check passes (or the CORS_ORIGINS value in $CONTEXT_DIR/.env if you changed it for remote access)."
