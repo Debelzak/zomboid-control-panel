@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { discordApi } from "@/lib/api";
+import { getUserErrorMessage } from "@/lib/errorMessage";
 import { useConfirm } from "@/contexts/ConfirmContext";
 import {
   MessageSquare,
@@ -436,7 +437,7 @@ export default function Discord() {
         } catch (startError: unknown) {
           // The config did save — say so, rather than implying it was lost.
           const why =
-            startError instanceof Error ? startError.message : t("shared.unknownError");
+            getUserErrorMessage(startError, t("shared.unknownError"));
           setConfigMessage({
             type: "error",
             text: t("toasts.configSavedBotStartFailed", { reason: why }),
@@ -458,7 +459,7 @@ export default function Discord() {
       await loadData();
     } catch (error: unknown) {
       const msg =
-        error instanceof Error ? error.message : t("toasts.saveConfigFailedFallback");
+        getUserErrorMessage(error, t("toasts.saveConfigFailedFallback"));
       setConfigMessage({ type: "error", text: msg });
     } finally {
       setSaving(false);
@@ -485,7 +486,7 @@ export default function Discord() {
         text: t("toasts.tokenValidWithBot", { username: result.bot.username }),
       });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : t("toasts.invalidTokenFallback");
+      const msg = getUserErrorMessage(error, t("toasts.invalidTokenFallback"));
       setConfigMessage({ type: "error", text: msg });
     } finally {
       setTesting(false);
@@ -507,7 +508,7 @@ export default function Discord() {
       await loadData();
     } catch (error: unknown) {
       const msg =
-        error instanceof Error ? error.message : t("toasts.startBotFailedFallback");
+        getUserErrorMessage(error, t("toasts.startBotFailedFallback"));
       setConfigMessage({ type: "error", text: msg });
     } finally {
       setStarting(false);
@@ -523,7 +524,7 @@ export default function Discord() {
       setConfigMessage({ type: "success", text: t("toasts.botStopped") });
       await loadData();
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : t("toasts.stopBotFailedFallback");
+      const msg = getUserErrorMessage(error, t("toasts.stopBotFailedFallback"));
       setConfigMessage({ type: "error", text: msg });
     } finally {
       setStopping(false);
@@ -542,7 +543,7 @@ export default function Discord() {
       });
     } catch (error: unknown) {
       const msg =
-        error instanceof Error ? error.message : t("toasts.testMessageFailedFallback");
+        getUserErrorMessage(error, t("toasts.testMessageFailedFallback"));
       setConfigMessage({ type: "error", text: msg });
     } finally {
       setSendingTest(false);
@@ -585,10 +586,7 @@ export default function Discord() {
       });
       await loadData();
     } catch (error: unknown) {
-      const msg =
-        error instanceof Error
-          ? error.message
-          : t("toasts.wipeFailedFallback");
+      const msg = getUserErrorMessage(error, t("toasts.wipeFailedFallback"));
       setConfigMessage({ type: "error", text: msg });
     } finally {
       setResetting(false);
@@ -620,10 +618,7 @@ export default function Discord() {
       setEventsMessage({ type: "success", text: t("management.webhookEvents.savedMessage") });
       await loadData();
     } catch (error: unknown) {
-      const msg =
-        error instanceof Error
-          ? error.message
-          : t("management.webhookEvents.saveFailedFallback");
+      const msg = getUserErrorMessage(error, t("management.webhookEvents.saveFailedFallback"));
       setEventsMessage({ type: "error", text: msg });
     } finally {
       setSavingEvents(false);
@@ -1696,10 +1691,7 @@ export default function Discord() {
                       text: t("management.commandPermissions.savedMessage"),
                     });
                   } catch (error: unknown) {
-                    const msg =
-                      error instanceof Error
-                        ? error.message
-                        : t("management.commandPermissions.saveFailedFallback");
+                    const msg = getUserErrorMessage(error, t("management.commandPermissions.saveFailedFallback"));
                     setPermissionsMessage({ type: "error", text: msg });
                   } finally {
                     setSavingPermissions(false);
