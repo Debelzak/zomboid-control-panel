@@ -723,6 +723,14 @@ async function serveTile(req, res, url, contentType, relPath) {
           : response.status >= 500
             ? 502
             : response.status;
+      // Reaching this branch means fetchTileWithRetry actually got a response
+      // from upstream (however bad) — mark it the same as a cache miss so the
+      // client can tell "upstream answered and it was bad" apart from a local
+      // failure (a 502 from the catch block below, or a pre-validation 400)
+      // where upstream was never contacted at all. See WorldMap.tsx's
+      // loadViaProxy: it only names tiles.pzmap.org in the failure banner
+      // when this header confirms upstream actually participated.
+      res.set("X-Tile-Cache", "miss");
       return res.status(status).end();
     }
     const buffer = Buffer.from(await response.arrayBuffer());

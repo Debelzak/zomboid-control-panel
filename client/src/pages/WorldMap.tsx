@@ -992,8 +992,18 @@ export default function WorldMap() {
     // (not in a blanket .finally()) so the concurrency cap holds the slot
     // for the full lifecycle including image decode.
     const loadViaProxy = () => {
+      // 'coverage' names tiles.pzmap.org in the failure banner; 'network'
+      // does not. That distinction must track whether upstream actually
+      // participated in THIS response, not just the HTTP status shape --
+      // serveTile (mapProxy.js) can fail a request entirely from its own
+      // memory/disk cache, never touching tiles.pzmap.org at all, and the
+      // banner must not vouch for a host that was never contacted. Only
+      // X-Tile-Cache: miss confirms an upstream fetch actually happened;
+      // hit-mem/hit-disk/absent all mean "local", regardless of status.
+      let upstreamParticipated = false
       fetch(proxyUrl)
         .then((res) => {
+          upstreamParticipated = res.headers.get('X-Tile-Cache') === 'miss'
           if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
           if (res.status === 404) {
             pendingTileLoadsRef.current--
@@ -1026,17 +1036,23 @@ export default function WorldMap() {
           img.onerror = () => {
             URL.revokeObjectURL(objectUrl)
             pendingTileLoadsRef.current--
-            // Bytes arrived and only the decode failed, so the network is fine.
-            markFailed('coverage')
+            // Bytes arrived and only the decode failed. If upstream actually
+            // sent these bytes this request, naming it is earned ('coverage').
+            // If they came from our own cache (hit-mem/hit-disk), the
+            // corruption is local and upstream had no part in it.
+            markFailed(upstreamParticipated ? 'coverage' : 'network')
           }
           img.src = objectUrl
         })
         .catch((err) => {
           pendingTileLoadsRef.current--
           const status = (err as { status?: number } | undefined)?.status
-          // A readable 4xx means we reached upstream and it has no tile there;
-          // 5xx or a rejected fetch means we could not reach it at all.
-          markFailed(status && status >= 400 && status < 500 ? 'coverage' : 'network')
+          // A readable 4xx WITH upstreamParticipated means we reached
+          // upstream and it has no tile there. Anything else -- a 5xx, a
+          // rejected fetch (couldn't even reach our own proxy), or a 4xx
+          // that never got as far as the upstream fetch (local validation) --
+          // means we can't vouch for tiles.pzmap.org either way.
+          markFailed(upstreamParticipated && status && status >= 400 && status < 500 ? 'coverage' : 'network')
         })
     }
 

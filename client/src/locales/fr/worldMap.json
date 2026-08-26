@@ -38,7 +38,7 @@
     "coverageTitle": "Aucune tuile de carte à ce niveau de zoom",
     "coverageDesc": "<1>tiles.pzmap.org</1> est joignable mais n'a pas encore rendu cette zone à ce niveau de détail. Dézoomez, ou réessayez plus tard avec Actualiser.",
     "networkTitle": "Les tuiles de carte ne se chargent pas",
-    "networkDesc": "Le panneau ne peut pas joindre <1>tiles.pzmap.org</1>. Vérifiez l'accès HTTPS sortant et réessayez avec Actualiser."
+    "networkDesc": "Cette tuile n'a pas pu être chargée depuis le panneau. Vérifiez la propre connexion réseau du panneau et réessayez avec <1>Actualiser</1>."
   },
   "roster": {
     "label": "effectif",

@@ -38,7 +38,7 @@
     "coverageTitle": "此缩放级别下没有地图图块",
     "coverageDesc": "<1>tiles.pzmap.org</1> 可以访问，但尚未在此细节级别渲染此区域。请缩小视图，或稍后重试刷新。",
     "networkTitle": "地图图块无法加载",
-    "networkDesc": "面板无法访问 <1>tiles.pzmap.org</1>。请检查出站 HTTPS 访问，然后重试刷新。"
+    "networkDesc": "无法从面板加载此图块。请检查面板自身的网络连接，然后重试<1>刷新</1>。"
   },
   "roster": {
     "label": "花名册",
