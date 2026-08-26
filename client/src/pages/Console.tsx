@@ -16,6 +16,7 @@ import { useConfirm } from '@/contexts/ConfirmContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
 
 // rconService.execute() routes most connection-loss cases through
@@ -466,7 +467,7 @@ export default function Console() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.clearLogFailed'),
+        description: getUserErrorMessage(error, t('toasts.clearLogFailed')),
         variant: 'destructive',
       })
     }
@@ -574,7 +575,7 @@ export default function Console() {
       } catch (error) {
         result = {
           success: false,
-          error: error instanceof Error ? error.message : t('toasts.commandFailedFallback'),
+          error: getUserErrorMessage(error, t('toasts.commandFailedFallback')),
         }
       }
 
@@ -624,7 +625,7 @@ export default function Console() {
       setRconFailureReason(null)
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.commandFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.commandFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -687,7 +688,7 @@ export default function Console() {
       } catch (error) {
         result = {
           success: false,
-          error: error instanceof Error ? error.message : t('toasts.broadcastFailedFallback'),
+          error: getUserErrorMessage(error, t('toasts.broadcastFailedFallback')),
         }
       }
 
@@ -727,7 +728,7 @@ export default function Console() {
         })
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('toasts.broadcastFailedFallback')
+      const message = getUserErrorMessage(error, t('toasts.broadcastFailedFallback'))
       if (isRconDisconnectError(message)) {
         setRconConnected(false)
         setRconFailureReason(null)
