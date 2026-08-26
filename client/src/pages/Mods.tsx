@@ -66,6 +66,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { reportClientError, reportClientWarning } from '@/lib/client-errors'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import {
   Dialog,
   DialogContent,
@@ -571,7 +572,7 @@ export default function Mods() {
       reportClientWarning('Could not load the active server path before opening the folder browser.', error)
       toast({
         title: t('toasts.couldNotOpenBrowserTitle'),
-        description: error instanceof Error ? error.message : t('toasts.couldNotOpenBrowserFallback'),
+        description: getUserErrorMessage(error, t('toasts.couldNotOpenBrowserFallback')),
         variant: 'destructive',
       })
       return
@@ -590,7 +591,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.couldNotSaveWorkshopPathTitle'),
-        description: error instanceof Error ? error.message : t('toasts.couldNotSaveWorkshopPathFallback'),
+        description: getUserErrorMessage(error, t('toasts.couldNotSaveWorkshopPathFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -631,7 +632,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.enableFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.enableFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.enableFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -665,7 +666,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.deleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.deleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.deleteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -698,7 +699,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.bulkDeleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.bulkDeleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.bulkDeleteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -731,7 +732,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.bulkDeleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.bulkDeleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.bulkDeleteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -767,7 +768,7 @@ export default function Mods() {
         loading: false,
       })
     } catch (err: any) {
-      setCollectionStatus((s) => ({ ...s, loading: false, error: err?.message || 'Network error' }))
+      setCollectionStatus((s) => ({ ...s, loading: false, error: getUserErrorMessage(err, 'Network error') }))
     }
   }, [])
 
@@ -808,7 +809,7 @@ export default function Mods() {
       })
       fetchCollectionStatus()
     } catch (err: any) {
-      toast({ variant: 'destructive', title: t('toasts.syncFailedTitle'), description: err?.message || t('toasts.unknownError') })
+      toast({ variant: 'destructive', title: t('toasts.syncFailedTitle'), description: getUserErrorMessage(err, t('toasts.unknownError')) })
     } finally {
       setCollectionSyncing(false)
     }
@@ -897,7 +898,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.presetSaveFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.presetSaveFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.presetSaveFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -917,7 +918,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.presetApplyFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.presetApplyFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.presetApplyFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -943,7 +944,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.presetDeleteFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.presetDeleteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.presetDeleteFailedFallback')),
         variant: 'destructive',
       })
     }
@@ -1066,7 +1067,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.updateCheckFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.updateCheckFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.updateCheckFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1153,7 +1154,7 @@ export default function Mods() {
       if (error instanceof DOMException && error.name === 'AbortError') return // Superseded by newer request
       toast({
         title: t('toasts.discoveryFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.discoveryFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.discoveryFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1249,7 +1250,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.addModFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.addModFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.addModFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1284,7 +1285,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.removeFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.removeFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.removeFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1311,7 +1312,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.enableFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.enableFailedFallbackShort'),
+        description: getUserErrorMessage(error, t('toasts.enableFailedFallbackShort')),
         variant: 'destructive',
       })
     } finally {
@@ -1370,7 +1371,7 @@ export default function Mods() {
     } catch (error: any) {
       toast({
         title: t('toasts.refreshFailedTitle'),
-        description: error?.message || t('toasts.refreshFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.refreshFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1418,7 +1419,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.removeFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.removeFailedMultiFallback'),
+        description: getUserErrorMessage(error, t('toasts.removeFailedMultiFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1438,7 +1439,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.unIgnoreFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.unknownError'),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
     } finally {
@@ -1458,7 +1459,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.clearIgnoredFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.unknownError'),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
     } finally {
@@ -1480,7 +1481,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.settingUpdateFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.settingUpdateFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.settingUpdateFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1511,7 +1512,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.syncFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.syncFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.syncFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1573,7 +1574,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.collectionImportFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.collectionImportFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.collectionImportFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1652,7 +1653,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.importFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.importFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.importFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1706,7 +1707,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.writeToIniFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.writeToIniFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.writeToIniFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1740,7 +1741,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.modIdSyncFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.modIdSyncFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.modIdSyncFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1840,7 +1841,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.saveOrderFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.saveOrderFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.saveOrderFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1884,7 +1885,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.couldNotUpdateLoadOrderTitle'),
-        description: error instanceof Error ? error.message : t('toasts.saveOrderFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.saveOrderFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1946,7 +1947,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.settingsSaveFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.settingsSaveFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.settingsSaveFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -1969,7 +1970,7 @@ export default function Mods() {
     } catch (error) {
       toast({
         title: t('toasts.cancelFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.cancelFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.cancelFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -3949,7 +3950,7 @@ export default function Mods() {
                         }
                       }))
                     } catch (err: any) {
-                      setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: err?.message || 'Search failed', searchUrl: null } }))
+                      setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: getUserErrorMessage(err, 'Search failed'), searchUrl: null } }))
                     }
                   }
 
@@ -3974,11 +3975,11 @@ export default function Mods() {
                       const updated = await modsApi.getCurrentConfig()
                       setIniConfig(updated)
                       if (updated?.modIds) setOrderedModIds(updated.modIds)
-                      toast({ title: 'Dependency added', description: `${hit.modName} added to the server config.` })
+                      toast({ title: t('toasts.dependencyAddedTitle'), description: t('toasts.dependencyAddedDesc', { name: hit.modName }) })
                     } catch (err) {
                       reportClientError('Failed to add dependency from inspector.', err)
                       setDepAddResults(prev => ({ ...prev, [key]: 'error' as const }))
-                      toast({ title: 'Add failed', description: err instanceof Error ? err.message : 'Could not add dependency.', variant: 'destructive' })
+                      toast({ title: t('toasts.addFailedTitle'), description: getUserErrorMessage(err, t('toasts.addFailedFallback')), variant: 'destructive' })
                     } finally {
                       setDepAdding(prev => prev.filter(item => item !== key))
                       busyRef.current = false
@@ -4023,7 +4024,7 @@ export default function Mods() {
                                         if (updated?.modIds) setOrderedModIds(updated.modIds)
                                       }
                                     } catch (err: unknown) {
-                                      const errMsg = err instanceof Error ? err.message : 'Failed to deduplicate'
+                                      const errMsg = getUserErrorMessage(err, 'Failed to deduplicate')
                                       const msg = errMsg.includes('<')
                                         ? t('serverConfigTab.deduplicateEndpointUnavailable')
                                         : errMsg
