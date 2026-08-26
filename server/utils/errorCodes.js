@@ -1766,6 +1766,140 @@ export const ErrorCode = Object.freeze({
   /** server/routes/config.js -- PUT /rcon, `password` present but not a
    * string or exceeds 256 characters. */
   CONFIG_RCON_INVALID_PASSWORD: "CONFIG_RCON_INVALID_PASSWORD",
+
+  /** server/routes/discord.js -- GET /config, PUT /config, POST /start,
+   * POST /stop, POST /reset, POST /test-message, PUT /webhook-events, GET
+   * /permissions, PUT /permissions: req.app.get("discordBot") returned
+   * nothing, i.e. the bot was never constructed on this app instance.
+   * Identical meaning at every site (there is nothing to operate on), so
+   * one shared code despite differing HTTP status (most are 500, POST
+   * /test-message uses 400) -- the status varies, the meaning doesn't. */
+  DISCORD_BOT_NOT_INITIALIZED: "DISCORD_BOT_NOT_INITIALIZED",
+  /** server/routes/discord.js -- PUT /config, neither a token nor
+   * KEEP_EXISTING resolved to one, or guildId was missing. */
+  DISCORD_TOKEN_AND_GUILD_REQUIRED: "DISCORD_TOKEN_AND_GUILD_REQUIRED",
+  /** server/routes/discord.js -- PUT /config, `guildId` fails the Discord
+   * Snowflake format check. Kept distinct from the four sibling ID-format
+   * checks below despite an identical regex and message shape: each names
+   * a different field, so a reader learns something different from each
+   * one -- same lesson as config.js's two port-collision codes. */
+  DISCORD_INVALID_GUILD_ID: "DISCORD_INVALID_GUILD_ID",
+  /** server/routes/discord.js -- PUT /config, `adminRoleId` fails the
+   * Discord Snowflake format check. */
+  DISCORD_INVALID_ADMIN_ROLE_ID: "DISCORD_INVALID_ADMIN_ROLE_ID",
+  /** server/routes/discord.js -- PUT /config, `modRoleId` fails the
+   * Discord Snowflake format check. */
+  DISCORD_INVALID_MOD_ROLE_ID: "DISCORD_INVALID_MOD_ROLE_ID",
+  /** server/routes/discord.js -- PUT /config, `channelId` fails the
+   * Discord Snowflake format check. */
+  DISCORD_INVALID_CHANNEL_ID: "DISCORD_INVALID_CHANNEL_ID",
+  /** server/routes/discord.js -- PUT /config, `chatRelayChannelId` fails
+   * the Discord Snowflake format check. */
+  DISCORD_INVALID_CHAT_RELAY_CHANNEL_ID: "DISCORD_INVALID_CHAT_RELAY_CHANNEL_ID",
+  /** server/routes/discord.js -- PUT /config, `chatRelayScope` is present
+   * but not one of "public"/"no-yell"/"general". */
+  DISCORD_INVALID_CHAT_RELAY_SCOPE: "DISCORD_INVALID_CHAT_RELAY_SCOPE",
+  /** server/routes/discord.js -- POST /start, discordBot.start() returned
+   * false. Carries {{reason}} = describeStartFailure(discordBot.lastStartError). */
+  DISCORD_START_FAILED: "DISCORD_START_FAILED",
+  /** server/routes/discord.js -- POST /test, `token` missing, empty, or
+   * over 200 characters. */
+  DISCORD_TEST_TOKEN_INVALID_INPUT: "DISCORD_TEST_TOKEN_INVALID_INPUT",
+  /** server/routes/discord.js -- POST /test, `token` fails the
+   * URL-safe-base64-ish character check. */
+  DISCORD_TEST_TOKEN_INVALID_FORMAT: "DISCORD_TEST_TOKEN_INVALID_FORMAT",
+  /** server/routes/discord.js -- POST /test, Discord's API answered 429 to
+   * the validation request. */
+  DISCORD_TEST_RATE_LIMITED: "DISCORD_TEST_RATE_LIMITED",
+  /** server/routes/discord.js -- POST /test, Discord's API answered 5xx.
+   * Carries {{status}} = the real HTTP status Discord returned. */
+  DISCORD_TEST_API_UNAVAILABLE: "DISCORD_TEST_API_UNAVAILABLE",
+  /** server/routes/discord.js -- POST /test, Discord's API answered a
+   * non-401, non-429, non-5xx failure status. Carries {{status}}. */
+  DISCORD_TEST_REQUEST_REJECTED: "DISCORD_TEST_REQUEST_REJECTED",
+  /** server/routes/discord.js -- POST /test, Discord's API answered 401 --
+   * the token itself is wrong (not rate-limited, not down, not some other
+   * rejection). This is the one pre-existing site with test coverage
+   * (discordTestTokenErrors.test.js). */
+  DISCORD_TEST_TOKEN_INVALID: "DISCORD_TEST_TOKEN_INVALID",
+  /** server/routes/discord.js -- POST /test-message, discordBot exists but
+   * `isRunning` is false. */
+  DISCORD_BOT_NOT_RUNNING: "DISCORD_BOT_NOT_RUNNING",
+  /** server/routes/discord.js -- POST /test-message, sendNotification()
+   * returned false -- Discord accepted the request but didn't deliver
+   * (bad channel ID, bot lacks permission to post there). */
+  DISCORD_TEST_MESSAGE_REJECTED: "DISCORD_TEST_MESSAGE_REJECTED",
+  /** server/routes/discord.js -- PUT /webhook-events, `events` missing or
+   * not an object. */
+  DISCORD_EVENTS_CONFIG_REQUIRED: "DISCORD_EVENTS_CONFIG_REQUIRED",
+  /** server/routes/discord.js -- PUT /permissions, `permissions` missing
+   * or not an object. */
+  DISCORD_PERMISSIONS_OBJECT_REQUIRED: "DISCORD_PERMISSIONS_OBJECT_REQUIRED",
+
+  // --- server/routes/templates.js + server/services/templateService.js:
+  // the "simulation template" system (server/data/templates/*.json, sparse
+  // SandboxVars/ini overrides). NOT the same feature as TEMPLATE_NOT_FOUND
+  // etc. above -- those belong to serverFiles.js's own separate, simpler
+  // embedded /templates routes (a different resource, different storage,
+  // different ID space). Same English wording in places ("Template not
+  // found") is coincidence, not shared meaning -- reusing the serverFiles.js
+  // code here would make one code mean two different missing resources. ---
+  /** server/services/templateService.js (5 sites, surfaced through
+   * server/routes/templates.js's GET /:id, GET /:id/export, POST
+   * /:id/preview, POST /:id/apply, DELETE /:id) -- the template id doesn't
+   * match a built-in or a stored user template. Identical meaning all five,
+   * shared code. */
+  SIM_TEMPLATE_NOT_FOUND: "SIM_TEMPLATE_NOT_FOUND",
+  /** server/services/templateService.js (2 sites: previewTemplate,
+   * applyTemplate) -- `serverId` doesn't match a configured server. */
+  SIM_TEMPLATE_SERVER_NOT_FOUND: "SIM_TEMPLATE_SERVER_NOT_FOUND",
+  /** server/services/templateService.js (2 sites: previewTemplate,
+   * applyTemplate) -- resolveServerPaths() couldn't derive an ini/SandboxVars
+   * path (no serverConfigPath/zomboidDataPath, or serverName fails the
+   * filename-safe charset check). */
+  SIM_TEMPLATE_SERVER_NO_CONFIG_PATH: "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH",
+  /** server/services/templateService.js -- saveTemplate(), the submitted
+   * `meta.id` matches one of the built-in templates. */
+  SIM_TEMPLATE_BUILTIN_READONLY: "SIM_TEMPLATE_BUILTIN_READONLY",
+  /** server/services/templateService.js (2 sites: saveTemplate,
+   * importTemplate) -- validateTemplate() rejected the template. Carries
+   * {{errors}} = the joined validation error list; a static translation
+   * would discard the actual field-level detail. */
+  SIM_TEMPLATE_VALIDATION_FAILED: "SIM_TEMPLATE_VALIDATION_FAILED",
+  /** server/routes/templates.js (2 sites: POST /:id/preview, POST
+   * /:id/apply) -- `serverId` missing from the request body. */
+  SIM_TEMPLATE_SERVER_ID_REQUIRED: "SIM_TEMPLATE_SERVER_ID_REQUIRED",
+  /** server/routes/templates.js (3 sites, all POST /:id/apply targeting the
+   * currently active server) -- serverManager can't report process state
+   * (no getServerProcessDetails, a scan that completed with scanFailed, or
+   * the state check itself threw). Fails closed: "can't verify" is treated
+   * the same as "don't apply," not as "must be stopped." */
+  SIM_TEMPLATE_APPLY_STATE_UNKNOWN: "SIM_TEMPLATE_APPLY_STATE_UNKNOWN",
+  /** server/routes/templates.js -- POST /:id/apply, the target is the
+   * active server and it's confirmed running. */
+  SIM_TEMPLATE_APPLY_SERVER_RUNNING: "SIM_TEMPLATE_APPLY_SERVER_RUNNING",
+  /** server/routes/templates.js -- POST /:id/apply, the target is a
+   * configured-but-not-active server. serverManager only tracks the active
+   * server's process, so there's no way to check a different server's
+   * running state -- refused rather than assumed stopped. See 2026-08-24
+   * conv-template-privesc. */
+  SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE:
+    "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE",
+  /** server/services/templateService.js -- applyTemplate(), the target
+   * server has `isRemote: true`. */
+  SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED: "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED",
+  /** server/services/templateService.js -- applyTemplate(), the template
+   * has ini keys to write but the server's .ini file doesn't exist yet
+   * (server never started). Previously an uncaught throw from
+   * prepareIniChange() that fell into templates.js's generic 500 catch;
+   * now caught and returned as a normal {success:false} result like every
+   * other applyTemplate failure. Deliberately NOT matching
+   * prepareSandboxChange()'s sibling behavior (skip gracefully when
+   * SandboxVars.lua is missing) -- that's a real asymmetry worth a second
+   * look, but changing which files silently skip vs. hard-fail is a
+   * behavior change outside this registry pass's scope; flagged, not
+   * fixed, here. */
+  SIM_TEMPLATE_APPLY_INI_MISSING: "SIM_TEMPLATE_APPLY_INI_MISSING",
 });
 
 /**
