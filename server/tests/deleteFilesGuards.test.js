@@ -64,8 +64,9 @@ describe("POST /api/server/delete-files safety guards", () => {
 
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith(
-      // Same code /wipe uses for the same gap -- see errorCodes.js.
-      expect.objectContaining({ code: "WIPE_CONFIRM_REQUIRED" }),
+      // Own code as of 2026-08-26 bug hunt round 2 -- used to share
+      // WIPE_CONFIRM_REQUIRED with /wipe; split out, see errorCodes.js.
+      expect.objectContaining({ code: "DELETE_FILES_CONFIRM_REQUIRED" }),
     );
     // Refusal must be real, not just the wrong status code with the delete
     // happening anyway.
@@ -170,6 +171,84 @@ describe("POST /api/server/delete-files safety guards", () => {
         expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
       );
       expect(fs.existsSync(installDir)).toBe(true);
+    });
+  });
+
+  // 2026-08-26 bug hunt round 2 follow-up, Michelle's UX audit: "Delete
+  // Everything" in Servers.tsx uses this exact endpoint on installPath, with
+  // only a checkbox and one click -- fine for the DEFAULT layout, where
+  // resolveZomboidPaths keeps the Zomboid data folder at a sibling
+  // `<installPath>_Data`, so this delete only costs a SteamCMD reinstall.
+  // But nothing stopped an operator from pointing zomboidDataPath INSIDE the
+  // install folder, in which case this same one-click delete also destroys
+  // the world save with no separate copy -- the actual "delete that doesn't
+  // look like one." These simulate that configuration directly.
+  describe("refuses when the active server's Zomboid data folder is inside the folder being deleted", () => {
+    it("refuses when zomboidDataPath is a subfolder of the install path being deleted", async () => {
+      const dataDir = path.join(installDir, "ZomboidData");
+      fs.mkdirSync(dataDir, { recursive: true });
+      serverManager.savePath = dataDir;
+
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "DELETE_FILES_DATA_PATH_NESTED" }),
+      );
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+
+    it("refuses when zomboidDataPath equals the install path being deleted", async () => {
+      serverManager.savePath = installDir;
+
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "DELETE_FILES_DATA_PATH_NESTED" }),
+      );
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+
+    it("still deletes when zomboidDataPath is a sibling, not nested (the default layout)", async () => {
+      const siblingDataDir = `${installDir}_Data`;
+      fs.mkdirSync(siblingDataDir, { recursive: true });
+      serverManager.savePath = siblingDataDir;
+
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      try {
+        await handler(buildRequest({ confirm: true }), response);
+
+        expect(response.json).toHaveBeenCalledWith(
+          expect.objectContaining({ success: true }),
+        );
+        expect(fs.existsSync(installDir)).toBe(false);
+        expect(fs.existsSync(siblingDataDir)).toBe(true);
+      } finally {
+        fs.rmSync(siblingDataDir, { recursive: true, force: true });
+      }
+    });
+
+    it("still deletes when the active server has no savePath configured at all", async () => {
+      serverManager.savePath = null;
+
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+      expect(fs.existsSync(installDir)).toBe(false);
     });
   });
 });
