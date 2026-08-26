@@ -187,10 +187,29 @@ each `:` is a real path on this machine, not a placeholder.
     `/pz-server` and `/zomboid`), never the host paths on the left side of
     the `:`.
 11. Configure RCON (host, port, password from your server `.ini`) — see
-    [README — Setup](../../README.md#setup).
+    [README — Setup](../../README.md#setup). If Project Zomboid runs in a
+    **separate container** rather than on the host directly, don't use
+    `127.0.0.1` as the RCON host — inside the panel container that address
+    means the panel container itself, and the connection fails in a way
+    that looks like a bad RCON password or port rather than a topology
+    mistake. Put both containers on the same user-defined Docker network,
+    then enter the PZ container's Compose **service name** (for example
+    `pzserver`) as the RCON host instead.
 
 **You know it worked when:** the dashboard shows the server status card and
 RCON shows connected.
+
+### Notes specific to this path
+
+- **Published image vs. build from source:** `docker-compose.yml` already
+  has both `image:` and `build:` set — there's nothing to edit either way.
+  `docker compose up -d` tries to pull `ghcr.io/fpsacha/zomboid-panel:latest`
+  first; if that fails (no tagged release yet, or a private fork without
+  GHCR access), it builds from source automatically and tags the result the
+  same, so later `up -d` runs won't try to pull again. Each tagged release
+  also publishes a version-pinned image with a matching name (for example
+  `ghcr.io/fpsacha/zomboid-panel:v1.2.4`), if you'd rather pin a version
+  than track `:latest`.
 
 ---
 
