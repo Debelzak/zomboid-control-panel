@@ -671,6 +671,14 @@ export const ErrorCode = Object.freeze({
    * didn't pass `confirm: true`. See WIPE_SERVER_RUNNING above for why this
    * is shared rather than split per route. */
   WIPE_CONFIRM_REQUIRED: "WIPE_CONFIRM_REQUIRED",
+  /** server/routes/server.js -- POST /api/server/wipe, `createBackup` was
+   * true (the default) but the pre-wipe backup itself failed (backup
+   * service unavailable, or backupService.createBackup()/the accounts-db
+   * copy rejected). The wipe is aborted before any deletion runs -- fail
+   * closed, same reasoning as restoreBackup()'s mandatory pre-restore
+   * backup: proceeding after a failed backup is worse than not offering
+   * one, since the operator now believes an undo exists. */
+  WIPE_BACKUP_FAILED: "WIPE_BACKUP_FAILED",
 
   /** server/routes/chunks.js -- POST /save-path, no `path` string in the body. */
   CHUNKS_SAVE_PATH_MISSING: "CHUNKS_SAVE_PATH_MISSING",

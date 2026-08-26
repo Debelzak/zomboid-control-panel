@@ -534,8 +534,12 @@ export const serverApi = {
   // Wipe
   wipePreview: (targets: string[]) =>
     apiPost("/server/wipe/preview", { targets }),
-  wipe: (targets: string[]) =>
-    apiPost("/server/wipe", { targets, confirm: true }),
+  wipe: (targets: string[], createBackup: boolean = true) =>
+    apiPost("/server/wipe", { targets, confirm: true, createBackup }) as Promise<{
+      success: boolean;
+      backupCreated: boolean;
+      backupName: string | null;
+    }>,
 
   // Panel info - returns the panel's own network address
   getPanelInfo: () =>

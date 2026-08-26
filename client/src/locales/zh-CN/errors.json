@@ -181,6 +181,7 @@
   "WIPE_IN_PROGRESS": "清除操作已在进行中，请稍候。",
   "WIPE_SERVER_RUNNING": "清除前必须先停止服务器，请先停止服务器。",
   "WIPE_CONFIRM_REQUIRED": "清除操作需要 confirm: true",
+  "WIPE_BACKUP_FAILED": "清除已中止：无法先创建备份，未删除任何内容。",
   "CHUNKS_SAVE_PATH_MISSING": "缺少路径。",
   "CHUNKS_SAVE_PATH_EMPTY": "路径规范化后为空。",
   "CHUNKS_INVALID_SAVE_NAME": "存档名称无效",

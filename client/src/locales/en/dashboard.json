@@ -269,7 +269,12 @@
       "world": { "label": "World state", "desc": "World dictionary, metadata, erosion, game object states, radio." },
       "accounts": { "label": "Accounts & bans", "desc": "User accounts, passwords, roles, whitelist and ban lists. Everyone re-registers on next join." }
     },
-    "notice": "Selecting map, players and world empties the save folder completely, including anything mods left behind. Server .ini and sandbox settings are stored separately and will not be affected.",
+    "notice": "Selecting map, players or world permanently deletes that data — there is no undo unless you back it up first below. Selecting accounts permanently deletes the whitelist and ban lists; everyone re-registers on next join. Server .ini and sandbox settings are stored separately and will not be affected.",
+    "backupLabel": "Back up before wiping",
+    "backupDesc": "Creates a full backup of the current save (and the accounts database, if selected) before anything is deleted. Restore it from the Backups page.",
+    "noBackupTitle": "No backup will be made",
+    "noBackupDesc": "Whatever you wipe is gone permanently, with no way to undo it through the panel.",
+    "backupStarting": "Starting backup...",
     "noFilesFound": "No files found for the selected targets.",
     "willDelete": "This will permanently delete:",
     "categoryLabels": {
@@ -290,6 +295,7 @@
     "previewFailedFallback": "Could not scan save directory",
     "wipedTitle": "Server wiped",
     "wipedDesc": "Deleted: {{targets}}",
+    "wipedDescWithBackup": "Deleted: {{targets}}. Backed up first as {{name}}.",
     "wipeFailedTitle": "Wipe failed",
     "wipeFailedFallback": "Unknown error"
   }

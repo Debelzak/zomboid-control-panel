@@ -181,6 +181,7 @@
   "WIPE_IN_PROGRESS": "Une réinitialisation est déjà en cours. Veuillez patienter.",
   "WIPE_SERVER_RUNNING": "Le serveur doit être arrêté avant la réinitialisation. Arrêtez d'abord le serveur.",
   "WIPE_CONFIRM_REQUIRED": "La réinitialisation nécessite confirm : true",
+  "WIPE_BACKUP_FAILED": "Réinitialisation annulée : impossible de créer une sauvegarde au préalable. Rien n'a été supprimé.",
   "CHUNKS_SAVE_PATH_MISSING": "Chemin manquant.",
   "CHUNKS_SAVE_PATH_EMPTY": "Le chemin est vide après normalisation.",
   "CHUNKS_INVALID_SAVE_NAME": "Nom de sauvegarde invalide",

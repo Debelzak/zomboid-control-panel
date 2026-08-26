@@ -181,6 +181,7 @@
   "WIPE_IN_PROGRESS": "Gen yon operasyon efasman k ap fèt deja. Tanpri tann.",
   "WIPE_SERVER_RUNNING": "Sèvè a dwe sispann anvan w efase l. Sispann sèvè a dabò.",
   "WIPE_CONFIRM_REQUIRED": "Efasman bezwen confirm: true",
+  "WIPE_BACKUP_FAILED": "Efasman anile: pa t kapab fè yon kopi sovgad anvan. Pa gen anyen ki efase.",
   "CHUNKS_SAVE_PATH_MISSING": "Chemen an manke.",
   "CHUNKS_SAVE_PATH_EMPTY": "Chemen an vid apre nòmalizasyon.",
   "CHUNKS_INVALID_SAVE_NAME": "Non sovgad envalid",

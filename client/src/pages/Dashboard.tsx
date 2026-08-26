@@ -27,6 +27,8 @@ import { formatUptime } from '@/lib/utils'
 import { resolveClientProvider } from '@/lib/serverStatus'
 import { useSocket } from '@/contexts/SocketContext'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
+import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
 import { cn, copyText } from '@/lib/utils'
 import { getUserErrorMessage, getRecoveryUrl } from '@/lib/errorMessage'
@@ -236,6 +238,13 @@ export default function Dashboard() {
     truncated?: boolean
   } | null>(null)
   const [wipeLoading, setWipeLoading] = useState(false)
+  // Defaults to true, same as ChunkCleaner.tsx's chunk-delete backup switch --
+  // the panel already has one convention for "destructive delete backs up
+  // first unless you opt out," this just applies it here too.
+  const [wipeCreateBackup, setWipeCreateBackup] = useState(true)
+  const [wipeBackupProgress, setWipeBackupProgress] = useState<{
+    phase: string; percent: number; message: string
+  } | null>(null)
 
   const { toast } = useToast()
   const socket = useSocket()
@@ -278,6 +287,22 @@ export default function Dashboard() {
       socket.off('panel:updateApplied', handleApplied)
     }
   }, [socket])
+
+  // Surfaces backupService's pre-wipe backup progress inside the wipe dialog.
+  // `backup:progress` is a single global event (see Backups.tsx's identical
+  // listener) with no id tying it to a specific caller -- gating on
+  // wipeLoading is safe because backupService only ever runs one backup at a
+  // time (its own internal mutex refuses a second), so any event that lands
+  // while a wipe request is in flight is this wipe's own backup.
+  useEffect(() => {
+    if (!socket) return
+    const handleBackupProgress = (data: { phase: string; percent: number; message: string }) => {
+      if (!wipeLoading) return
+      setWipeBackupProgress(data)
+    }
+    socket.on('backup:progress', handleBackupProgress)
+    return () => { socket.off('backup:progress', handleBackupProgress) }
+  }, [socket, wipeLoading])
 
   const copyToClipboard = async (text: string, label: string) => {
     try { await copyText(text); toast({ title: t('toasts.copied'), description: t('toasts.copiedDesc', { label }), duration: 2000 }) }
@@ -1448,7 +1473,29 @@ export default function Dashboard() {
               </label>
             ))}
             <div className="px-3 pb-1 text-xs text-muted-foreground">{t('wipeDialog.notice')}</div>
+
+            <div className="flex items-center justify-between rounded-lg bg-muted p-3">
+              <div>
+                <Label>{t('wipeDialog.backupLabel')}</Label>
+                <p className="text-xs text-muted-foreground">{t('wipeDialog.backupDesc')}</p>
+              </div>
+              <Switch checked={wipeCreateBackup} disabled={wipeLoading} onCheckedChange={setWipeCreateBackup} />
+            </div>
+
+            {!wipeCreateBackup && (
+              <div className="rounded-lg border border-destructive/25 bg-destructive/8 p-3 text-sm">
+                <p className="font-medium text-destructive">{t('wipeDialog.noBackupTitle')}</p>
+                <p className="text-muted-foreground">{t('wipeDialog.noBackupDesc')}</p>
+              </div>
+            )}
           </div>
+
+          {wipeLoading && wipeBackupProgress && wipeBackupProgress.phase !== 'complete' && (
+            <div className="space-y-1.5 rounded-md border border-border/50 bg-muted/30 p-3 text-sm">
+              <div className="text-muted-foreground">{wipeBackupProgress.message}</div>
+              <Progress value={wipeBackupProgress.percent} className="h-1.5" />
+            </div>
+          )}
 
           {wipePreview && (
             <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm">
@@ -1507,14 +1554,20 @@ export default function Dashboard() {
                 onClick={async () => {
                   if (wipeLoading) return
                   setWipeLoading(true)
+                  setWipeBackupProgress(wipeCreateBackup ? { phase: 'preparing', percent: 0, message: t('wipeDialog.backupStarting') } : null)
                   try {
                     const targets = Object.entries(wipeTargets).filter(([, v]) => v).map(([k]) => k)
-                    await serverApi.wipe(targets)
-                    toast({ title: t('wipeDialog.wipedTitle'), description: t('wipeDialog.wipedDesc', { targets: targets.join(', ') }) })
+                    const result = await serverApi.wipe(targets, wipeCreateBackup)
+                    toast({
+                      title: t('wipeDialog.wipedTitle'),
+                      description: result.backupCreated
+                        ? t('wipeDialog.wipedDescWithBackup', { targets: targets.join(', '), name: result.backupName || '' })
+                        : t('wipeDialog.wipedDesc', { targets: targets.join(', ') }),
+                    })
                     setWipeDialog(false); setWipePreview(null)
                   } catch (e: unknown) {
                     toast({ title: t('wipeDialog.wipeFailedTitle'), description: e instanceof Error ? e.message : t('wipeDialog.wipeFailedFallback'), variant: 'destructive' })
-                  } finally { setWipeLoading(false) }
+                  } finally { setWipeLoading(false); setWipeBackupProgress(null) }
                 }}
               >
                 {wipeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}

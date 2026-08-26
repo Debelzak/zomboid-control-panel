@@ -269,7 +269,12 @@
       "world": { "label": "世界状态", "desc": "世界字典、元数据、侵蚀、游戏对象状态、电台。" },
       "accounts": { "label": "账号与封禁", "desc": "用户账号、密码、角色、白名单及封禁列表。所有人将在下次加入时重新注册。" }
     },
-    "notice": "选择地图、玩家和世界将彻底清空存档文件夹，包括模组留下的所有内容。服务器 .ini 与沙盒设置单独存储，不会受到影响。",
+    "notice": "选择地图、玩家或世界将永久删除相应数据——除非先在下方创建备份，否则无法撤销。选择账号将永久删除白名单和封禁列表；所有人将在下次加入时重新注册。服务器 .ini 与沙盒设置单独存储，不会受到影响。",
+    "backupLabel": "清除前先备份",
+    "backupDesc": "在删除任何内容之前，创建当前存档的完整备份（如果选择了账号，也会备份账号数据库）。可在备份页面中恢复。",
+    "noBackupTitle": "不会创建备份",
+    "noBackupDesc": "你清除的内容将永久丢失，无法通过面板撤销。",
+    "backupStarting": "正在开始备份……",
     "noFilesFound": "未找到所选目标对应的文件。",
     "willDelete": "此操作将永久删除：",
     "categoryLabels": {
@@ -290,6 +295,7 @@
     "previewFailedFallback": "无法扫描存档目录",
     "wipedTitle": "服务器已清除",
     "wipedDesc": "已删除：{{targets}}",
+    "wipedDescWithBackup": "已删除：{{targets}}。已提前备份为 {{name}}。",
     "wipeFailedTitle": "清除失败",
     "wipeFailedFallback": "未知错误"
   }

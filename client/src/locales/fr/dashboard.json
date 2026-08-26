@@ -269,7 +269,12 @@
       "world": { "label": "État du monde", "desc": "Dictionnaire du monde, métadonnées, érosion, états des objets du jeu, radio." },
       "accounts": { "label": "Comptes et bannissements", "desc": "Comptes utilisateurs, mots de passe, rôles, listes blanches et de bannissement. Tout le monde se réinscrit à la prochaine connexion." }
     },
-    "notice": "Sélectionner carte, joueurs et monde vide complètement le dossier de sauvegarde, y compris tout ce que les mods y ont laissé. Les paramètres .ini et sandbox du serveur sont stockés séparément et ne seront pas affectés.",
+    "notice": "Sélectionner carte, joueurs ou monde supprime définitivement ces données — impossible d'annuler, sauf si vous créez d'abord une sauvegarde ci-dessous. Sélectionner comptes supprime définitivement les listes blanches et de bannissement ; tout le monde devra se réinscrire à la prochaine connexion. Les paramètres .ini et sandbox du serveur sont stockés séparément et ne seront pas affectés.",
+    "backupLabel": "Sauvegarder avant d'effacer",
+    "backupDesc": "Crée une sauvegarde complète de la partie actuelle (et de la base de données des comptes, si sélectionnée) avant toute suppression. Restaurable depuis la page Sauvegardes.",
+    "noBackupTitle": "Aucune sauvegarde ne sera créée",
+    "noBackupDesc": "Ce que vous effacez disparaît définitivement, sans aucun moyen de l'annuler depuis le panneau.",
+    "backupStarting": "Démarrage de la sauvegarde…",
     "noFilesFound": "Aucun fichier trouvé pour les cibles sélectionnées.",
     "willDelete": "Ceci supprimera définitivement :",
     "categoryLabels": {
@@ -290,6 +295,7 @@
     "previewFailedFallback": "Impossible d'analyser le dossier de sauvegarde",
     "wipedTitle": "Serveur effacé",
     "wipedDesc": "Supprimé : {{targets}}",
+    "wipedDescWithBackup": "Supprimé : {{targets}}. Sauvegardé au préalable sous {{name}}.",
     "wipeFailedTitle": "Échec de l'effacement",
     "wipeFailedFallback": "Erreur inconnue"
   }

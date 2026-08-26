@@ -269,7 +269,12 @@
       "world": { "label": "Eta mond", "desc": "Diksyonè mond, metadone, erozyon, eta objè jwèt, radyo." },
       "accounts": { "label": "Kont & baniman", "desc": "Kont itilizatè, modpas, wòl, lis blan ak lis baniman. Tout moun ap kreye kont ankò pwochen fwa y antre." }
     },
-    "notice": "Chwazi kat, jwè ak mond vide dosye sovgad la nèt, ansanm ak tout sa mods yo kite dèyè. Fichye .ini sèvè a ak paramèt sandbox sere apa, yo pap afekte.",
+    "notice": "Chwazi kat, jwè oswa mond efase done sa yo pou tout tan — pa gen mwayen pou anile sof si ou fè yon kopi sovgad anba a anvan. Chwazi kont efase lis blan ak lis baniman pou tout tan; tout moun ap gen pou reenskri pwochen fwa yo antre. Fichye .ini sèvè a ak paramèt sandbox sere apa, yo pap afekte.",
+    "backupLabel": "Fè kopi sovgad anvan efase",
+    "backupDesc": "Kreye yon kopi sovgad konplè nan pati ki aktif la (ak baz done kont yo, si li chwazi) anvan anyen efase. Ou ka restore li nan paj Kopi Sovgad la.",
+    "noBackupTitle": "Pa gen kopi sovgad ki pral kreye",
+    "noBackupDesc": "Nenpòt sa ou efase disparèt pou tout tan, san okenn mwayen pou anile sa nan panel la.",
+    "backupStarting": "Ap kòmanse kopi sovgad la…",
     "noFilesFound": "Pa jwenn dosye pou sib chwazi yo.",
     "willDelete": "Sa a pral efase pou tout tan:",
     "categoryLabels": {
@@ -290,6 +295,7 @@
     "previewFailedFallback": "Pa t kapab eskane dosye sovgad la",
     "wipedTitle": "Sèvè efase",
     "wipedDesc": "Efase: {{targets}}",
+    "wipedDescWithBackup": "Efase: {{targets}}. Te fè yon kopi sovgad anvan, sove kòm {{name}}.",
     "wipeFailedTitle": "Efasman echwe",
     "wipeFailedFallback": "Erè enkoni"
   }

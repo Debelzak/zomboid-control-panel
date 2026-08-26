@@ -269,7 +269,12 @@
       "world": { "label": "Weltzustand", "desc": "Weltverzeichnis, Metadaten, Erosion, Zustände der Spielobjekte, Funk." },
       "accounts": { "label": "Konten & Banns", "desc": "Benutzerkonten, Passwörter, Rollen, Whitelist- und Bannlisten. Alle müssen sich beim nächsten Beitritt neu registrieren." }
     },
-    "notice": "Die Auswahl von Karte, Spielern und Welt leert den Speicherordner vollständig, einschließlich allem, was Mods hinterlassen haben. Server-.ini- und Sandbox-Einstellungen werden separat gespeichert und bleiben unberührt.",
+    "notice": "Die Auswahl von Karte, Spielern oder Welt löscht diese Daten endgültig — es gibt kein Rückgängigmachen, außer du sicherst sie vorher unten. Die Auswahl von Konten löscht Whitelist- und Bannlisten endgültig; alle müssen sich beim nächsten Beitritt neu registrieren. Server-.ini- und Sandbox-Einstellungen werden separat gespeichert und bleiben unberührt.",
+    "backupLabel": "Vor dem Löschen sichern",
+    "backupDesc": "Erstellt ein vollständiges Backup des aktuellen Spielstands (und der Kontodatenbank, falls ausgewählt), bevor irgendetwas gelöscht wird. Über die Backups-Seite wiederherstellbar.",
+    "noBackupTitle": "Es wird kein Backup erstellt",
+    "noBackupDesc": "Was du löschst, ist endgültig weg — es gibt keine Möglichkeit, es über das Panel wiederherzustellen.",
+    "backupStarting": "Backup wird gestartet …",
     "noFilesFound": "Keine Dateien für die ausgewählten Ziele gefunden.",
     "willDelete": "Folgendes wird unwiderruflich gelöscht:",
     "categoryLabels": {
@@ -290,6 +295,7 @@
     "previewFailedFallback": "Speicherverzeichnis konnte nicht gescannt werden",
     "wipedTitle": "Server unwiderruflich gelöscht",
     "wipedDesc": "Gelöscht: {{targets}}",
+    "wipedDescWithBackup": "Gelöscht: {{targets}}. Zuvor gesichert als {{name}}.",
     "wipeFailedTitle": "Löschen fehlgeschlagen",
     "wipeFailedFallback": "Unbekannter Fehler"
   }

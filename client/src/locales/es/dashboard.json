@@ -269,7 +269,12 @@
       "world": { "label": "Estado del mundo", "desc": "Diccionario del mundo, metadatos, erosión, estados de objetos del juego, radio." },
       "accounts": { "label": "Cuentas y baneos", "desc": "Cuentas de usuario, contraseñas, roles, lista blanca y listas de baneo. Todos deberán volver a registrarse en su próxima conexión." }
     },
-    "notice": "Seleccionar mapa, jugadores y mundo vacía por completo la carpeta de guardado, incluido cualquier resto dejado por los mods. El .ini del servidor y los ajustes de sandbox se almacenan por separado y no se verán afectados.",
+    "notice": "Seleccionar mapa, jugadores o mundo elimina esos datos de forma permanente — no hay forma de deshacerlo salvo que hagas una copia de seguridad primero, más abajo. Seleccionar cuentas elimina permanentemente la lista blanca y las listas de baneo; todos deberán volver a registrarse en su próxima conexión. El .ini del servidor y los ajustes de sandbox se almacenan por separado y no se verán afectados.",
+    "backupLabel": "Crear copia de seguridad antes de borrar",
+    "backupDesc": "Crea una copia de seguridad completa de la partida actual (y de la base de datos de cuentas, si está seleccionada) antes de eliminar nada. Restáurala desde la página de Copias de seguridad.",
+    "noBackupTitle": "No se creará ninguna copia de seguridad",
+    "noBackupDesc": "Lo que borres desaparecerá de forma permanente, sin ninguna forma de deshacerlo desde el panel.",
+    "backupStarting": "Iniciando copia de seguridad…",
     "noFilesFound": "No se encontraron archivos para los elementos seleccionados.",
     "willDelete": "Esto eliminará permanentemente:",
     "categoryLabels": {
@@ -290,6 +295,7 @@
     "previewFailedFallback": "No se pudo escanear la carpeta de guardado",
     "wipedTitle": "Servidor borrado por completo",
     "wipedDesc": "Eliminado: {{targets}}",
+    "wipedDescWithBackup": "Eliminado: {{targets}}. Se hizo una copia de seguridad antes, guardada como {{name}}.",
     "wipeFailedTitle": "Error al borrar",
     "wipeFailedFallback": "Error desconocido"
   }
