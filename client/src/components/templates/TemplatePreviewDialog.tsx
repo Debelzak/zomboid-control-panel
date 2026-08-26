@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useToast } from '@/components/ui/use-toast'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import {
   templatesApi,
   serversApi,
@@ -32,6 +33,7 @@ interface TemplatePreviewDialogProps {
 export function TemplatePreviewDialog({ template, canManage, onClose, onApplied }: TemplatePreviewDialogProps) {
   const { t } = useTranslation('templatePreviewDialog')
   const { toast } = useToast()
+  const confirm = useConfirm()
   const [server, setServer] = useState<ServerInstance | null>(null)
   const [serverLoading, setServerLoading] = useState(true)
   const [running, setRunning] = useState<boolean | null>(null)
@@ -79,6 +81,19 @@ export function TemplatePreviewDialog({ template, canManage, onClose, onApplied 
 
   const handleApply = async () => {
     if (!template || !server) return
+    // Overwrites the live server config with no undo -- but unlike a
+    // delete, it's fully reversible (apply a different template, or the
+    // same server config again) and only reaches players at the NEXT
+    // restart, not instantly. Affects-others-but-reversible tier:
+    // warning-amber, matching Mods.tsx's "Apply preset" confirm rather
+    // than either destructive-red or no confirmation at all.
+    const ok = await confirm({
+      title: t('applyConfirmTitle', { name: template.meta.name }),
+      description: t('applyConfirmDescription', { count: diff?.summary.totalChanges ?? 0 }),
+      confirmLabel: t('applyConfirmButton'),
+      variant: 'warning',
+    })
+    if (!ok) return
     setApplying(true)
     setApplyError(null)
     try {
