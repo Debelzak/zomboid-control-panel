@@ -47,6 +47,14 @@ describe('local/no-raw-error-message', () => {
       // Assigned to a plain variable, not passed directly -- the
       // documented two-step limitation.
       "const msg = error instanceof Error ? error.message : 'fallback'; toast({ description: msg })",
+
+      // Shape 2 (`x?.message || fallback`), legitimate uses: reading a
+      // normal API response/progress field, not a caught error -- real
+      // sites found for both (Backups.tsx's backupProgress, Debug.tsx's
+      // result/data). Excluded by the identifier not matching
+      // ERROR_LIKE_IDENTIFIER_RE, not by sink scoping.
+      "toast({ description: backupProgress?.message || fallbackText })",
+      "setStatus(result?.message || fallbackText)",
     ],
     invalid: [
       {
@@ -64,6 +72,31 @@ describe('local/no-raw-error-message', () => {
       {
         // Optional chaining on the member access side, same identifier.
         code: "toast({ description: error instanceof Error ? error?.message : 'fallback' })",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 2, direct toast() argument -- the exact WorkshopCollectionPanel.tsx shape.
+        code: "toast({ variant: 'destructive', title: t('title'), description: err?.message || t('fallback') })",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 2, direct set*() argument, no optional chaining -- the
+        // Settings.tsx apiErr.message shape.
+        code: "setDiffError(apiErr.message || t('failedToReadCollection'))",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 2 nested inside a functional state update -- the
+        // setCollectionStatus/setDepSearchData shape Kevin found on
+        // Mods.tsx, one Property/ObjectExpression level deep.
+        code: "setCollectionStatus((s) => ({ ...s, loading: false, error: err?.message || 'Network error' }))",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Same functional-update shape, nested TWO levels deep under a
+        // computed property key -- the ConflictsPanel.tsx setDepSearchData
+        // shape, the deepest real site found.
+        code: "setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: err?.message || t('searchFailed'), searchUrl: null } }))",
         errors: [{ messageId: 'rawMessage' }],
       },
     ],

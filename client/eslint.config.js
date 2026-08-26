@@ -79,6 +79,7 @@ export default tseslint.config(
       'src/components/templates/CreateTemplateDialog.tsx',
       'src/components/templates/ImportTemplateDialog.tsx',
       'src/components/templates/TemplatePreviewDialog.tsx',
+      'src/components/WorkshopCollectionPanel.tsx',
     ],
     rules: {
       'local/no-raw-error-message': 'warn',
