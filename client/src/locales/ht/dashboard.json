@@ -96,6 +96,7 @@
     "startServer": { "title": "Sèvè ap demare", "description": "Veye tablo a pou estati an dirèk." },
     "startServerScriptBackup": { "title": "Sèvè ap demare — script demaraj sovgade", "description": "Panèl la detekte chanjman nan script demaraj ou a e li sovgade vèsyon ou anvan li rejenere l." },
     "stopServer": { "title": "Sèvè sispann", "description": "Sesyon an fèmen san pwoblèm." },
+    "stopServerRequested": { "title": "Arè mande", "description": "Sèvè a ap sove epi fèmen an dousè — sa ka pran yon ti moman sou yon gwo mond. Badj estati a ap mete ajou yon fwa arè a konfime." },
     "forceStopServer": { "title": "Sèvè fòse sispann", "description": "Pwosesis jwèt la touye san RCON." },
     "restartServer": { "title": "Redemaraj pwograme", "description": "Sèvè a ap redemare talè." },
     "restartServerNow": { "title": "Redemaraj deklanche", "description": "Kòmand redemaraj brital voye." },

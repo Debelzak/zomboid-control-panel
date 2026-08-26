@@ -1392,18 +1392,57 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
       });
     }
 
-    serverManager?.markServerStopped?.();
-
-    const io = req.app.get("io");
-    if (io) io.emit("server:status", { running: false });
-
-    await logServerEventBestEffort("server_stop", "Server stopped via web UI");
-    req.app
-      .get("discordBot")
-      ?.sendEventNotification("serverStop", {})
-      .catch((err) =>
-        log.debug(`Discord serverStop notification failed: ${err.message}`),
+    if (managed.handled) {
+      // Docker's own stop API blocks until the container actually stops (or
+      // it force-kills after its timeout) before ever returning success --
+      // unlike RCON quit() below, "success" here already means confirmed,
+      // not just accepted, so this claim (including clearing serverManager's
+      // cached run state) is honest as-is.
+      serverManager?.markServerStopped?.();
+      const io = req.app.get("io");
+      if (io) io.emit("server:status", { running: false });
+      await logServerEventBestEffort("server_stop", "Server stopped via web UI");
+      req.app
+        .get("discordBot")
+        ?.sendEventNotification("serverStop", {})
+        .catch((err) =>
+          log.debug(`Discord serverStop notification failed: ${err.message}`),
+        );
+    } else {
+      // rconService.quit() only proves the RCON command was accepted -- a
+      // reset connection is the normal symptom of a real shutdown, but PZ's
+      // own save-and-exit can still be running for a while after (longer on
+      // a large world). Reporting this as a confirmed stop -- both over the
+      // socket and to Schedule/Discord -- is exactly the "confident label
+      // over a blind source" shape this floor has been hunting all night:
+      // an operator who reads "Stopped" and acts outside the panel (copies
+      // the save folder, edits an ini, pulls a Docker volume) may be acting
+      // against a process that is still writing.
+      //
+      // So: this only asserts the request was ACCEPTED. The real
+      // confirmation rides the status watchdog (server/index.js) once it
+      // genuinely observes the process gone -- nudged here for a faster
+      // signal than waiting out its 10s interval, but the interval is what
+      // actually guarantees this resolves even if the nudge is lost.
+      // checkServerStatusNow is the SOLE place that decides whether the
+      // observed state changed and emits server:status for it; calling it
+      // here instead of emitting our own claim is what keeps it from ever
+      // going stale the way it did before this fix (2026-08-26 bug hunt).
+      const checkServerStatusNow = req.app.get("checkServerStatusNow");
+      if (typeof checkServerStatusNow === "function") {
+        Promise.resolve(checkServerStatusNow()).catch((err) =>
+          log.debug(`Post-stop status re-check failed: ${err.message}`),
+        );
+      }
+      await logServerEventBestEffort(
+        "server_stop",
+        "Graceful shutdown requested via web UI",
       );
+      result.message =
+        result.message || result.response || "Shutdown requested";
+      result.confirmed = false;
+    }
+
     res.json(result);
   } catch (error) {
     log.error(`Failed to stop server: ${error.message}`);

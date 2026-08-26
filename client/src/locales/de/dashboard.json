@@ -96,6 +96,7 @@
     "startServer": { "title": "Server wird gestartet", "description": "Behalte das Dashboard für den Live-Status im Blick." },
     "startServerScriptBackup": { "title": "Server wird gestartet — Startskript gesichert", "description": "Der Panel hat Änderungen am Startskript erkannt und deine Version vor dem Neuerstellen gesichert." },
     "stopServer": { "title": "Server gestoppt", "description": "Sitzung sauber beendet." },
+    "stopServerRequested": { "title": "Herunterfahren angefordert", "description": "Der Server speichert und beendet sich gerade geordnet — bei einer großen Welt kann das einen Moment dauern. Das Status-Badge wird aktualisiert, sobald der Stopp bestätigt ist." },
     "forceStopServer": { "title": "Server sofort gestoppt", "description": "Der Spielprozess wurde ohne RCON beendet." },
     "restartServer": { "title": "Neustart geplant", "description": "Der Server wird in Kürze neu gestartet." },
     "restartServerNow": { "title": "Neustart ausgelöst", "description": "Befehl für harten Neustart gesendet." },

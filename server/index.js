@@ -1245,6 +1245,11 @@ app.set("io", io);
 app.set("refreshCorsConfig", refreshCorsConfig);
 app.set("getCorsDebugSnapshot", getCorsDebugSnapshot);
 app.set("clearCorsBlockedOrigins", clearCorsBlockedOrigins);
+// A route that just made an unconfirmed claim (e.g. a graceful stop request
+// accepted, not yet confirmed) can call this to ask for a prompt re-check
+// instead of emitting its own server:status claim -- see checkServerStatusNow's
+// own comment below for why that second option is the bug this exists to fix.
+app.set("checkServerStatusNow", checkServerStatusNow);
 
 // Initialize update checker (needs io for socket events)
 const updateChecker = new UpdateChecker(io, { rconService, serverManager });
@@ -2307,49 +2312,72 @@ export async function getObservedServerRunning() {
   });
 }
 
+// One watchdog cycle: observe ground truth, and if it differs from what we
+// last actually told clients, broadcast the correction. Runs on the 10s
+// interval below AND is exported/registered on `app` (see app.set below) so
+// a route that just made an unconfirmed claim -- "shutdown requested",
+// not yet "shutdown confirmed" -- can ask for a prompt re-check instead of
+// emitting its own competing server:status claim.
+//
+// 2026-08-26 bug hunt: that second option is what /stop used to do, and it
+// created exactly the desync this function exists to prevent. A route-level
+// io.emit("server:status", {running:false}) told every client the server
+// was down the instant rconService.quit() returned -- which only proves the
+// RCON command was accepted, not that PZ's save-and-exit has finished --
+// but never touched `lastKnownRunning` below, because it lived in a
+// different file and had no reason to know this variable existed. So the
+// NEXT tick here observed the process still genuinely running (correct),
+// compared it to `lastKnownRunning` which was ALSO still "true" (also
+// correct, from this function's own point of view), saw no change, and
+// said nothing -- it did not fail to notice, it correctly noticed nothing
+// had changed, while a different module had already told every client
+// something false. Routing every "did the running state actually change"
+// decision through this ONE function, and having every caller ask it to
+// re-check rather than assert its own answer, means there is no second copy
+// of `lastKnownRunning` anywhere left to drift out of sync with this one.
+export async function checkServerStatusNow() {
+  try {
+    const running = await getObservedServerRunning();
+    if (running === null) {
+      log.debug("Status watchdog: server state is unknown; skipping transition");
+      return;
+    }
+    if (lastKnownRunning !== null && running !== lastKnownRunning) {
+      log.info(
+        `Status watchdog: server state changed → ${running ? "running" : "stopped"}`,
+      );
+      io.emit("server:status", { running });
+      if (!running) {
+        logServerEvent(
+          "server_stop",
+          "Server process exited (detected by watchdog)",
+        );
+        discordBot
+          .sendEventNotification("serverStop", {})
+          .catch((err) =>
+            log.debug(
+              `Discord serverStop notification failed: ${err.message}`,
+            ),
+          );
+      } else {
+        discordBot
+          .sendEventNotification("serverStart", {})
+          .catch((err) =>
+            log.debug(
+              `Discord serverStart notification failed: ${err.message}`,
+            ),
+          );
+      }
+    }
+    lastKnownRunning = running;
+  } catch (err) {
+    log.debug(`Status watchdog error: ${err.message}`);
+  }
+}
+
 function startStatusWatchdog() {
   if (statusWatchdogInterval) clearInterval(statusWatchdogInterval);
-
-  statusWatchdogInterval = setInterval(async () => {
-    try {
-      const running = await getObservedServerRunning();
-      if (running === null) {
-        log.debug("Status watchdog: server state is unknown; skipping transition");
-        return;
-      }
-      if (lastKnownRunning !== null && running !== lastKnownRunning) {
-        log.info(
-          `Status watchdog: server state changed → ${running ? "running" : "stopped"}`,
-        );
-        io.emit("server:status", { running });
-        if (!running) {
-          logServerEvent(
-            "server_stop",
-            "Server process exited (detected by watchdog)",
-          );
-          discordBot
-            .sendEventNotification("serverStop", {})
-            .catch((err) =>
-              log.debug(
-                `Discord serverStop notification failed: ${err.message}`,
-              ),
-            );
-        } else {
-          discordBot
-            .sendEventNotification("serverStart", {})
-            .catch((err) =>
-              log.debug(
-                `Discord serverStart notification failed: ${err.message}`,
-              ),
-            );
-        }
-      }
-      lastKnownRunning = running;
-    } catch (err) {
-      log.debug(`Status watchdog error: ${err.message}`);
-    }
-  }, 10000); // check every 10 seconds
-
+  statusWatchdogInterval = setInterval(checkServerStatusNow, 10000); // check every 10 seconds
   if (statusWatchdogInterval.unref) statusWatchdogInterval.unref();
   log.info("Server status watchdog started (10s interval)");
 }

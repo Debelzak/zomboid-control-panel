@@ -589,10 +589,26 @@ export default function Dashboard() {
       const scriptWarnings = action === 'Start server' && result && typeof result === 'object'
         ? (result as { scriptWarnings?: string[] }).scriptWarnings
         : undefined
+      // 2026-08-26 bug hunt: POST /stop used to report success:true (and this
+      // toast used to say "Server stopped") the instant rconService.quit()
+      // returned -- which only proves PZ accepted the quit command, not that
+      // its save-and-exit has actually finished. Now the server marks this
+      // response confirmed:false for exactly that case, so the toast can
+      // stop claiming completion it doesn't have; the real "stopped" state
+      // still arrives over the socket (Layout.tsx's status listener) once
+      // the watchdog genuinely observes the process gone.
+      const stopUnconfirmed = action === 'Stop server' && result && typeof result === 'object'
+        && (result as { confirmed?: boolean }).confirmed === false
       if (scriptWarnings && scriptWarnings.length > 0) {
         toast({
           title: t('successCopy.startServerScriptBackup.title'),
           description: `${t('successCopy.startServerScriptBackup.description')} ${scriptWarnings.join(' ')}`,
+          variant: 'success' as const,
+        })
+      } else if (stopUnconfirmed) {
+        toast({
+          title: t('successCopy.stopServerRequested.title'),
+          description: t('successCopy.stopServerRequested.description'),
           variant: 'success' as const,
         })
       } else {

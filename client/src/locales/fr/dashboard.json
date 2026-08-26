@@ -96,6 +96,7 @@
     "startServer": { "title": "Démarrage du serveur", "description": "Surveillez le tableau de bord pour l'état en direct." },
     "startServerScriptBackup": { "title": "Démarrage du serveur — script de démarrage sauvegardé", "description": "Le panneau a détecté des modifications du script de démarrage et a sauvegardé votre version avant de le régénérer." },
     "stopServer": { "title": "Serveur arrêté", "description": "Session terminée proprement." },
+    "stopServerRequested": { "title": "Arrêt demandé", "description": "Le serveur sauvegarde et s'arrête proprement — cela peut prendre un moment sur un grand monde. Le badge de statut se mettra à jour une fois l'arrêt confirmé." },
     "forceStopServer": { "title": "Arrêt forcé du serveur", "description": "Le processus du jeu a été arrêté sans RCON." },
     "restartServer": { "title": "Redémarrage programmé", "description": "Le serveur redémarrera sous peu." },
     "restartServerNow": { "title": "Redémarrage déclenché", "description": "Commande de redémarrage forcé envoyée." },
