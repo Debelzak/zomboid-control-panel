@@ -2739,6 +2739,37 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
 });
 
 // Configure server network settings (port, UPnP) in .ini file
+// Writes just the UPnP= line into an existing server .ini. Extracted from
+// /configure-network's own UPnP handling (below) so PUT /:id (server edit,
+// servers.js) can reuse it instead of duplicating the read/replace/write
+// logic -- deliberately narrow: does NOT touch DefaultPort/UDPPort, which
+// stay /configure-network's own concern, so calling this from a second
+// site never triggers a port change as a side effect. Returns
+// {applied:false, reason} rather than throwing when the ini doesn't exist
+// yet (a server that has never booted has no ini to edit) -- the caller
+// decides whether that's worth surfacing to the operator.
+export async function applyUpnpToIni(serverConfigPath, serverName, useUpnp) {
+  const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
+  if (!fs.existsSync(iniPath)) {
+    return { applied: false, reason: `Server config not found at ${iniPath}` };
+  }
+  try {
+    await withFileLock(iniPath, async () => {
+      let content = fs.readFileSync(iniPath, "utf-8").replace(/\r\n/g, "\n");
+      const upnpValue = useUpnp ? "true" : "false";
+      if (content.includes("UPnP=")) {
+        content = content.replace(/UPnP=.*/g, `UPnP=${upnpValue}`);
+      } else {
+        content += `\nUPnP=${upnpValue}`;
+      }
+      writeFileAtomic(iniPath, content, { encoding: "utf-8", mode: 0o600 });
+    });
+    return { applied: true };
+  } catch (error) {
+    return { applied: false, reason: sanitizeError(error.message) };
+  }
+}
+
 router.post("/configure-network", requirePermission("server.configure"), async (req, res) => {
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body || {};
@@ -2796,16 +2827,16 @@ router.post("/configure-network", requirePermission("server.configure"), async (
         content += `\nUDPPort=${serverPort + 1}`;
       }
 
-      // Update UPnP
-      const upnpValue = useUpnp ? "true" : "false";
-      if (content.includes("UPnP=")) {
-        content = content.replace(/UPnP=.*/g, `UPnP=${upnpValue}`);
-      } else {
-        content += `\nUPnP=${upnpValue}`;
-      }
-
       writeFileAtomic(iniPath, content, { encoding: "utf-8", mode: 0o600 });
     });
+
+    // UPnP itself is applyUpnpToIni()'s own concern now -- shared with
+    // PUT /:id (servers.js) so a server's UPnP choice takes effect there
+    // too, not only when re-saved through this page. withFileLock's
+    // per-path promise queue (fileWriteQueue.js) serializes this against
+    // the port write above; both still land, just as two writes instead of
+    // one, and never interleaved.
+    await applyUpnpToIni(serverConfigPath, serverName, useUpnp);
 
     // Also save to app settings
     await setSetting("serverPort", serverPort);

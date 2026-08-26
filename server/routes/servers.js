@@ -19,6 +19,7 @@ import {
   deleteServer,
   setActiveServer,
   getAllSettings,
+  setSetting,
 } from "../database/init.js";
 import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
 import { requirePermission } from "../services/permissions.js";
@@ -33,7 +34,7 @@ import {
   parseClampedInteger,
 } from "../utils/queryNumbers.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
-import { GAME_PORT_MAX } from "./server.js";
+import { GAME_PORT_MAX, applyUpnpToIni } from "./server.js";
 
 const router = express.Router();
 const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
@@ -1025,6 +1026,36 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
 
       if (Object.prototype.hasOwnProperty.call(updates, "installPath")) {
         await refreshWorkshopCheckerIfAvailable(req);
+      }
+
+      // Persisting useUpnp on the server record alone changes nothing PZ
+      // actually reads (2026-08-26: adding it to ALLOWED_SERVER_UPDATE_FIELDS
+      // without this would have recreated the exact "checkbox does nothing"
+      // bug being fixed, one layer over -- found by a same-night audit
+      // before this shipped). The real toggle is the UPnP= line in the
+      // server's own .ini, the same one /configure-network writes -- reused
+      // here via applyUpnpToIni() rather than duplicated, so a UPnP change
+      // made from the server-edit screen takes effect immediately instead
+      // of silently waiting for someone to also visit the network-settings
+      // page.
+      if (
+        Object.prototype.hasOwnProperty.call(updates, "useUpnp") &&
+        server.serverConfigPath &&
+        server.serverName
+      ) {
+        const result = await applyUpnpToIni(
+          server.serverConfigPath,
+          server.serverName,
+          updates.useUpnp,
+        );
+        if (result.applied) {
+          await setSetting("useUpnp", updates.useUpnp);
+        } else {
+          log.warn(`Could not apply UPnP setting to ini: ${result.reason}`);
+          reloadWarnings.push(
+            `UPnP setting saved, but could not be applied to the server config (${result.reason}). Start the server once to generate its config file, then edit UPnP again.`,
+          );
+        }
       }
     }
 
