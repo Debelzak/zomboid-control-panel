@@ -113,6 +113,23 @@ const KNOWN_INTENTIONALLY_UNREFERENCED = new Set([
   "RCON_CONNECT_FAILED",
 ]);
 
+// The mirror image of the above: an errors.json key that exists ONLY on
+// the client, with no server-emitted `code:` value behind it at all -- so
+// it can never belong in ErrorCode, which this file's own header comment
+// scopes to codes the server actually attaches to a response. Each entry
+// here must say what synthesizes it and why it has no single emission
+// site to cite in server/routes or server/services.
+const KNOWN_CLIENT_ONLY_LOCALE_KEYS = new Set([
+  // client/src/lib/errorMessage.ts's wrapUncodedServerError() wraps ANY
+  // ApiError with status >= 500 and no code that resolves to a registered
+  // translation (2026-08-26: the panelBridge.js/server.js generic
+  // catch-all convention -- uncoded 500s stay uncoded by design). It
+  // exists for every route file's uncoded catch-all at once, so unlike
+  // every other entry in this registry it has no single server call site
+  // to point at.
+  "UNEXPECTED_SERVER_ERROR",
+]);
+
 // This is a STRUCTURE check, one level deeper than the fr/en locale parity
 // test (client/src/locales/__tests__/localeParity.test.ts), not a MEANING
 // check: it proves every code literal the server actually emits is a
@@ -229,7 +246,10 @@ describe("server error codes: registry membership (structure, not meaning)", () 
         JSON.parse(fs.readFileSync(localeEnPath, "utf8")),
       );
       const registryNames = new Set(Object.keys(ErrorCode));
-      const stale = localeKeys.filter((key) => !registryNames.has(key));
+      const stale = localeKeys.filter(
+        (key) =>
+          !registryNames.has(key) && !KNOWN_CLIENT_ONLY_LOCALE_KEYS.has(key),
+      );
 
       expect(
         stale,

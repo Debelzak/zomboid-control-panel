@@ -252,18 +252,64 @@ describe("logout and export trust boundaries", () => {
 });
 
 describe("config mutation guard", () => {
+  // requireStoppedForLocalConfigMutation's FIRST line reads the real,
+  // process-shared database via getActiveServer() -- this test used to
+  // never control it (same dynamic-import + vi.spyOn pattern already used
+  // above for getDb, chosen over a file-level vi.mock so it can't affect
+  // this file's other, unrelated describe blocks). It states its
+  // precondition explicitly now instead of silently inheriting whatever
+  // another test file left active in the shared DB: it passed in isolation
+  // and failed in the full suite specifically because a remote server left
+  // active by another test file made the isRemote short-circuit fire
+  // before the no-serverManager branch below it ever ran.
   it("fails closed when server state cannot be verified", async () => {
-    const next = vi.fn();
-    const req = { app: { get: vi.fn() } };
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const dbModule = await import("../database/init.js");
+    const getActiveServerSpy = vi
+      .spyOn(dbModule, "getActiveServer")
+      .mockResolvedValue(null);
 
-    await requireStoppedForLocalConfigMutation(req, res, next);
+    try {
+      const next = vi.fn();
+      const req = { app: { get: vi.fn() } };
+      const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
-    );
+      await requireStoppedForLocalConfigMutation(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
+      );
+    } finally {
+      getActiveServerSpy.mockRestore();
+    }
+  });
+
+  // The remote short-circuit itself was, until now, exercised only by
+  // accident -- by whichever other test file happened to leave a remote
+  // server active in the shared DB when this file's test ran after it.
+  // Pinned deliberately: a remote server's config is edited over SFTP, so
+  // local process detection must never even be attempted for it.
+  it("lets a remote server's config mutation through without probing local process state", async () => {
+    const dbModule = await import("../database/init.js");
+    const getActiveServerSpy = vi
+      .spyOn(dbModule, "getActiveServer")
+      .mockResolvedValue({ isRemote: true });
+
+    try {
+      const next = vi.fn();
+      const appGet = vi.fn();
+      const req = { app: { get: appGet } };
+      const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+
+      await requireStoppedForLocalConfigMutation(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+      expect(appGet).not.toHaveBeenCalled();
+    } finally {
+      getActiveServerSpy.mockRestore();
+    }
   });
 });
 
