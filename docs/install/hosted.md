@@ -108,10 +108,6 @@ a file channel into the game, not just RCON.
     ```ini
     DoLuaChecksum=false
     ```
-    (The panel's Settings page describes this same step as
-    "LuaChecksum=false" in a couple of places — that's the same setting;
-    `DoLuaChecksum` is the correct key that actually appears in the `.ini`
-    file and in the panel's own diagnostics.)
 12. Restart the PZ server from your **provider's dashboard** — not from the
     panel, which doesn't own this server's lifecycle (see fact 1 above).
 
@@ -144,10 +140,7 @@ error in its console.
     If you see that, drop the `/home/<user>` portion and enter the path as
     your SFTP client already shows it from its own root — for example
     `/Zomboid/Lua/panelbridge/MyServer`.
-16. Click **Verify and prepare SFTP**. (The panel's own step-by-step text
-    elsewhere still calls this button "Test SFTP" — same button, it was
-    renamed; if you're searching the UI for "Test SFTP" and can't find it,
-    this is it.)
+16. Click **Verify and prepare SFTP**.
 17. Once it succeeds, click **Start SFTP bridge**.
 
 **You know it worked when** step 16 (Verify and prepare SFTP) returns one
@@ -156,7 +149,7 @@ of:
   already exists; PanelBridge.lua loaded on a previous start. Move on to
   step 17.
 - *"Folders are ready. Start or restart the PZ server with PanelBridge.lua
-  installed and LuaChecksum=false to create status.json."* — the SFTP
+  installed and DoLuaChecksum=false to create status.json."* — the SFTP
   connection and folder itself are fine, but the game hasn't written its
   status file yet. Restart the PZ server (Phase 3, step 12) and try again.
 

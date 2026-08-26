@@ -382,7 +382,7 @@ function demoIniSettings(): Record<string, string> {
     RCONPassword: 'demo-password',
     Mods: 'DemoMod1;DemoMod2',
     WorkshopItems: '1234567890;0987654321',
-    LuaChecksum: 'false',
+    DoLuaChecksum: 'false',
   }
 }
 
