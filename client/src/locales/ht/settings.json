@@ -616,6 +616,7 @@
     "addToServerTitle": "Ajoute mod sa a nan konfigirasyon sèvè a",
     "toServer": "Nan sèvè",
     "removeFromCollectionNeedsCookies": "Bezwen cookies Steam",
+    "sessionExpiredShort": "Sesyon Steam ekspire",
     "removeFromCollectionTitle": "Retire nan koleksyon Steam",
     "fromCollection": "Nan koleksyon",
     "addToCollectionTitle": "Ajoute nan koleksyon Steam",
@@ -664,6 +665,7 @@
       "purgeUntracked": "sispann swiv epi inyore",
       "actionFailed": { "title": "Aksyon echwe", "fallback": "Steam refize chanjman an" },
       "cookiesFirstError": "Ajoute cookies Steam anvan pou ekri nan koleksyon an.",
+      "sessionExpiredError": "Sesyon Steam ekspire. Kole nouvo cookies anwo a epi eseye ankò.",
       "failedToReadCollection": "Echwe pou li koleksyon an"
     }
   },

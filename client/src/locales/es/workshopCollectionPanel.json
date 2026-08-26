@@ -25,6 +25,7 @@
   "toastRemovedEverywhereTitle": "Se eliminó {{name}} de todas partes",
   "toastRemovedEverywhereDesc": "{{parts}}. Reiniciar el servidor para aplicar los cambios.",
   "toastActionFailedTitle": "La acción falló",
+  "genericItemActionFailed": "La acción falló",
   "toastNothingToDoTitle": "Nada que hacer",
   "toastNothingToDoDesc": "Ninguna de las filas seleccionadas necesita esta acción.",
   "toastCookiesRequiredTitle": "Se requieren cookies de Steam",

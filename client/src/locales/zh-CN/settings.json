@@ -677,6 +677,7 @@
     "addToServerTitle": "将此模组添加到服务器配置",
     "toServer": "添加到服务器",
     "removeFromCollectionNeedsCookies": "需要 Steam Cookie",
+    "sessionExpiredShort": "Steam 会话已过期",
     "removeFromCollectionTitle": "从 Steam 收藏集中移除",
     "fromCollection": "从收藏集",
     "addToCollectionTitle": "添加到 Steam 收藏集",
@@ -754,6 +755,7 @@
         "fallback": "Steam 拒绝了此更改"
       },
       "cookiesFirstError": "写入收藏集前请先添加 Steam Cookie。",
+      "sessionExpiredError": "Steam 会话已过期。请在上方粘贴新的 Cookie 后重试。",
       "failedToReadCollection": "读取收藏集失败"
     }
   },

@@ -616,6 +616,7 @@
     "addToServerTitle": "Add this mod to the server configuration",
     "toServer": "To server",
     "removeFromCollectionNeedsCookies": "Need Steam cookies",
+    "sessionExpiredShort": "Steam session expired",
     "removeFromCollectionTitle": "Remove from Steam collection",
     "fromCollection": "From collection",
     "addToCollectionTitle": "Add to Steam collection",
@@ -664,6 +665,7 @@
       "purgeUntracked": "untracked and ignored",
       "actionFailed": { "title": "Action failed", "fallback": "Steam rejected the change" },
       "cookiesFirstError": "Add Steam cookies first to write to the collection.",
+      "sessionExpiredError": "Steam session expired. Paste fresh cookies above and try again.",
       "failedToReadCollection": "Failed to read collection"
     }
   },

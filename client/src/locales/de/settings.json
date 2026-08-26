@@ -677,6 +677,7 @@
     "addToServerTitle": "Diesen Mod zur Serverkonfiguration hinzufügen",
     "toServer": "Zum Server",
     "removeFromCollectionNeedsCookies": "Steam-Cookies erforderlich",
+    "sessionExpiredShort": "Steam-Sitzung abgelaufen",
     "removeFromCollectionTitle": "Aus der Steam-Sammlung entfernen",
     "fromCollection": "Aus Sammlung",
     "addToCollectionTitle": "Zur Steam-Sammlung hinzufügen",
@@ -754,6 +755,7 @@
         "fallback": "Steam hat die Änderung abgelehnt"
       },
       "cookiesFirstError": "Füge zuerst Steam-Cookies hinzu, um in die Sammlung zu schreiben.",
+      "sessionExpiredError": "Steam-Sitzung abgelaufen. Füge oben neue Cookies ein und versuche es erneut.",
       "failedToReadCollection": "Sammlung konnte nicht gelesen werden"
     }
   },

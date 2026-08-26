@@ -25,6 +25,7 @@
   "toastRemovedEverywhereTitle": "{{name}} retiré partout",
   "toastRemovedEverywhereDesc": "{{parts}}. Redémarrez le serveur pour appliquer.",
   "toastActionFailedTitle": "Échec de l'action",
+  "genericItemActionFailed": "Échec de l'action",
   "toastNothingToDoTitle": "Rien à faire",
   "toastNothingToDoDesc": "Aucune des lignes sélectionnées n'a besoin de cette action.",
   "toastCookiesRequiredTitle": "Cookies Steam requis",

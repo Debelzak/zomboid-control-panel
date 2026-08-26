@@ -25,6 +25,7 @@
   "toastRemovedEverywhereTitle": "Retire {{name}} tout kote",
   "toastRemovedEverywhereDesc": "{{parts}}. Redemare sèvè a pou aplike.",
   "toastActionFailedTitle": "Aksyon echwe",
+  "genericItemActionFailed": "Aksyon echwe",
   "toastNothingToDoTitle": "Pa gen anyen pou fè",
   "toastNothingToDoDesc": "Okenn nan liy yo chwazi pa bezwen aksyon sa a.",
   "toastCookiesRequiredTitle": "Cookies Steam obligatwa",

@@ -25,6 +25,7 @@
   "toastRemovedEverywhereTitle": "已从所有位置移除 {{name}}",
   "toastRemovedEverywhereDesc": "{{parts}}。重启服务器以生效。",
   "toastActionFailedTitle": "操作失败",
+  "genericItemActionFailed": "操作失败",
   "toastNothingToDoTitle": "无需执行任何操作",
   "toastNothingToDoDesc": "所选行均不需要此操作。",
   "toastCookiesRequiredTitle": "需要 Steam Cookie",

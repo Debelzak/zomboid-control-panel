@@ -677,6 +677,7 @@
     "addToServerTitle": "Añadir este mod a la configuración del servidor",
     "toServer": "Al servidor",
     "removeFromCollectionNeedsCookies": "Se necesitan cookies de Steam",
+    "sessionExpiredShort": "Sesión de Steam caducada",
     "removeFromCollectionTitle": "Quitar de la colección de Steam",
     "fromCollection": "De la colección",
     "addToCollectionTitle": "Añadir a la colección de Steam",
@@ -754,6 +755,7 @@
         "fallback": "Steam rechazó el cambio"
       },
       "cookiesFirstError": "Añade primero las cookies de Steam para escribir en la colección.",
+      "sessionExpiredError": "Sesión de Steam caducada. Pega cookies nuevas arriba y vuelve a intentarlo.",
       "failedToReadCollection": "No se pudo leer la colección"
     }
   },

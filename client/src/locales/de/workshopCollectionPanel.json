@@ -25,6 +25,7 @@
   "toastRemovedEverywhereTitle": "{{name}} überall entfernt",
   "toastRemovedEverywhereDesc": "{{parts}}. Starte den Server neu, um die Änderung zu übernehmen.",
   "toastActionFailedTitle": "Aktion fehlgeschlagen",
+  "genericItemActionFailed": "Aktion fehlgeschlagen",
   "toastNothingToDoTitle": "Nichts zu tun",
   "toastNothingToDoDesc": "Keine der ausgewählten Zeilen benötigt diese Aktion.",
   "toastCookiesRequiredTitle": "Steam-Cookies erforderlich",
