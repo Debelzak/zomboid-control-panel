@@ -996,13 +996,22 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
       if (pollCleared) return; // Safety check
       try {
         attempts++;
+        // checkServerRunning() collapses a failed detection scan into a
+        // bare `false`, indistinguishable from "confirmed not yet running"
+        // -- hardcoding scanFailed: false here made that same mistake one
+        // layer up, by asserting a clean result the check never actually
+        // produced. getServerProcessDetails() is unconditionally present on
+        // the real ServerManager, so this branch is currently unreachable;
+        // treat "no richer check available" as its own scan failure so a
+        // lighter serverManager wired up later still keeps polling/times
+        // out with a warning instead of the poll declaring the server never
+        // came up while it may simply be unable to tell (2026-08-26 bug
+        // hunt finding 3 -- same class already fixed at lines 2901, 3516,
+        // 4608 in this file).
         const processDetails =
           typeof serverManager.getServerProcessDetails === "function"
             ? await serverManager.getServerProcessDetails()
-            : {
-                running: await serverManager.checkServerRunning(),
-                scanFailed: false,
-              };
+            : { running: false, scanFailed: true };
 
         if (!processDetails || processDetails.scanFailed) {
           if (attempts >= maxAttempts) {

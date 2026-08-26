@@ -1441,8 +1441,23 @@ export const configApi = {
   getRconConfig: () => apiGet("/config/rcon"),
   updateRconConfig: (host: string, port: number, password: string) =>
     apiPut("/config/rcon", { host, port, password }),
-  testRcon: () => apiPost("/config/test-rcon"),
+  testRcon: () => apiPost<ConfigTestRconResult>("/config/test-rcon"),
 };
+
+// Result of testing the currently-saved RCON config (as opposed to
+// RconTestResult above, which tests arbitrary unsaved credentials). Failure
+// carries the same "unreachable" vs "auth_failed" split as RconTestResult
+// (server/routes/config.js POST /test-rcon) so callers can tell "host is
+// down" apart from "host is up, password is stale" instead of collapsing
+// both into one generic failure.
+export interface ConfigTestRconResult {
+  success: boolean;
+  connected: boolean;
+  message?: string;
+  warning?: boolean;
+  error?: "unreachable" | "auth_failed";
+  detail?: string;
+}
 
 // Discord API
 export const discordApi = {

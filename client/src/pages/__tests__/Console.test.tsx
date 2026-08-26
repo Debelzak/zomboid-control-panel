@@ -4,7 +4,7 @@ import Console from '../Console'
 import { ConfirmProvider } from '@/contexts/ConfirmContext'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/toaster'
-import { serverApi, serversApi, rconApi, type ServerInstance } from '@/lib/api'
+import { serverApi, serversApi, rconApi, configApi, ApiError, type ServerInstance } from '@/lib/api'
 import enConsole from '../../locales/en/console.json'
 
 // conv-hunt-pages-2 lens 3/4: the Server Log panel's "clear" button calls
@@ -34,6 +34,7 @@ vi.mock('@/lib/api', async () => {
     },
     serversApi: { ...actual.serversApi, getAll: vi.fn() },
     rconApi: { ...actual.rconApi, getHistory: vi.fn() },
+    configApi: { ...actual.configApi, testRcon: vi.fn() },
   }
 })
 
@@ -41,6 +42,7 @@ const getConsoleLog = vi.mocked(serverApi.getConsoleLog)
 const clearConsoleLog = vi.mocked(serverApi.clearConsoleLog)
 const getAllServers = vi.mocked(serversApi.getAll)
 const getHistory = vi.mocked(rconApi.getHistory)
+const testRcon = vi.mocked(configApi.testRcon)
 
 const activeServer: ServerInstance = {
   id: 1,
@@ -69,6 +71,7 @@ beforeEach(() => {
   getConsoleLog.mockReset().mockResolvedValue({ lines: ['boot ok'], size: 42, path: 'C:/servers/ashenwood/server-console.txt', exists: true })
   clearConsoleLog.mockReset().mockResolvedValue({ success: true })
   getHistory.mockReset().mockResolvedValue({ history: [] })
+  testRcon.mockReset()
 })
 
 describe('Console -- server log clear button', () => {
@@ -167,5 +170,85 @@ describe('Console -- server log path display', () => {
 
     const pathEl = await screen.findByText('C:/servers/ashenwood/server-console.txt')
     expect(pathEl).toHaveAttribute('title', 'C:/servers/ashenwood/server-console.txt')
+  })
+})
+
+// 2026-08-26 bug hunt finding 1: POST /config/test-rcon never received the
+// unreachable-vs-auth-failed split /rcon/test and /rcon/connect got in
+// 0714d91, so testRconConnection() here collapsed every failure to a bare
+// `false` and this banner showed "host unreachable" even for a reachable
+// host with a stale password. Locks in that a genuine unreachable host and
+// a reachable-but-wrong-password host now render distinct copy.
+describe('Console -- RCON disconnected banner reason', () => {
+  const rconReadyServer: ServerInstance = {
+    ...activeServer,
+    rconHost: '10.0.0.5',
+    rconPort: 27015,
+    rconPassword: 'hunter2',
+  }
+
+  beforeEach(() => {
+    getAllServers.mockReset().mockResolvedValue({ servers: [rconReadyServer] })
+  })
+
+  async function openRconTab() {
+    // Radix's TabsTrigger switches on mousedown, not click (see
+    // @radix-ui/react-tabs) -- fireEvent.click alone never flips the tab.
+    const tabButton = await screen.findByRole('tab', { name: /rcon console/i })
+    fireEvent.mouseDown(tabButton, { button: 0 })
+  }
+
+  it('tells a reachable host with a stale password apart from a genuinely unreachable one', async () => {
+    testRcon.mockRejectedValue(
+      new ApiError('Authentication failed: check RCON password', {
+        status: 200,
+        code: 'RCON_CONNECT_AUTH_FAILED',
+        data: {
+          success: false,
+          error: 'auth_failed',
+          detail: 'Authentication failed: check RCON password',
+        },
+      }),
+    )
+
+    render(
+      <TooltipProvider>
+        <ConfirmProvider>
+          <Console />
+        </ConfirmProvider>
+      </TooltipProvider>,
+    )
+
+    await openRconTab()
+
+    await screen.findByText(enConsole.rcon.authFailedTitle)
+    expect(screen.queryByText(enConsole.rcon.hostUnreachableTitle)).not.toBeInTheDocument()
+  })
+
+  it('shows the unreachable copy when the host itself cannot be reached', async () => {
+    testRcon.mockRejectedValue(
+      new ApiError('Unreachable: check host and port', {
+        status: 200,
+        code: 'RCON_CONNECT_UNREACHABLE',
+        data: {
+          success: false,
+          error: 'unreachable',
+          detail: 'Unreachable: check host and port',
+        },
+      }),
+    )
+
+    render(
+      <TooltipProvider>
+        <ConfirmProvider>
+          <Console />
+        </ConfirmProvider>
+      </TooltipProvider>,
+    )
+
+    await openRconTab()
+
+    await screen.findByText(enConsole.rcon.hostUnreachableTitle)
+    expect(screen.queryByText(enConsole.rcon.authFailedTitle)).not.toBeInTheDocument()
   })
 })

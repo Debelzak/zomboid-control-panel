@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/components/ui/use-toast'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { rconApi, configApi, serverApi, serversApi, type ServerInstance } from '@/lib/api'
+import { rconApi, configApi, serverApi, serversApi, ApiError, type ServerInstance } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
 import { EmptyState } from '@/components/EmptyState'
@@ -241,6 +241,11 @@ export default function Console() {
   const [commandHistoryIndex, setCommandHistoryIndex] = useState(-1)
   const [commandCache, setCommandCache] = useState<string[]>([])
   const [rconConnected, setRconConnected] = useState<boolean | null>(null)
+  // Only meaningful while rconConnected === false -- distinguishes "host
+  // never reachable" from "reachable, but the saved password is wrong" so
+  // the disconnected banner below doesn't tell a stale-password user their
+  // host is unreachable (see 2026-08-26 bug hunt finding 1).
+  const [rconFailureReason, setRconFailureReason] = useState<'unreachable' | 'auth_failed' | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [selectedChannel, setSelectedChannel] = useState('all')
@@ -361,6 +366,7 @@ export default function Console() {
   const testRconConnection = useCallback(async () => {
     if (!hasRconConfig) {
       setRconConnected(null)
+      setRconFailureReason(null)
       setTestingConnection(false)
       return
     }
@@ -369,8 +375,15 @@ export default function Console() {
     try {
       const result = await configApi.testRcon()
       setRconConnected(result.success && result.connected)
-    } catch {
+      setRconFailureReason(null)
+    } catch (err) {
       setRconConnected(false)
+      // handleResponse() (lib/api.ts) throws on a 200 `{success:false}` body
+      // too, so the unreachable/auth_failed split from the response payload
+      // survives on err.data even though this is a caught throw, not a
+      // resolved result.
+      const data = err instanceof ApiError ? (err.data as { error?: string } | undefined) : undefined
+      setRconFailureReason(data?.error === 'auth_failed' ? 'auth_failed' : 'unreachable')
     } finally {
       setTestingConnection(false)
     }
@@ -509,6 +522,7 @@ export default function Console() {
       testRconConnection()
     } else {
       setRconConnected(null)
+      setRconFailureReason(null)
     }
     // Auto-focus input on mount
     inputRef.current?.focus()
@@ -521,6 +535,7 @@ export default function Console() {
         setLiveLog(prev => [...prev, entry].slice(-100))
         // If we get a response, RCON is connected
         setRconConnected(true)
+        setRconFailureReason(null)
       }
 
       socket.on('rcon:response', handleRconResponse)
@@ -563,11 +578,17 @@ export default function Console() {
         }
       }
 
-      // Update connection status based on result.
+      // Update connection status based on result. A mid-session drop
+      // detected here is a transport-level signal, not the classified
+      // unreachable-vs-auth_failed probe testRconConnection() runs -- reset
+      // to null so the banner falls back to its unreachable copy rather
+      // than showing a stale auth_failed reason from an earlier test.
       if (isRconDisconnectError(result.error)) {
         setRconConnected(false)
+        setRconFailureReason(null)
       } else if (result.success) {
         setRconConnected(true)
+        setRconFailureReason(null)
       }
 
       if (!result.success) {
@@ -600,6 +621,7 @@ export default function Console() {
       fetchHistory()
     } catch (error) {
       setRconConnected(false)
+      setRconFailureReason(null)
       toast({
         title: t('toasts.errorTitle'),
         description: error instanceof Error ? error.message : t('toasts.commandFailedFallback'),
@@ -692,8 +714,12 @@ export default function Console() {
         })
         setAnnouncement('')
         setRconConnected(true)
+        setRconFailureReason(null)
       } else {
-        if (isRconDisconnectError(result.error)) setRconConnected(false)
+        if (isRconDisconnectError(result.error)) {
+          setRconConnected(false)
+          setRconFailureReason(null)
+        }
         toast({
           title: t('toasts.errorTitle'),
           description: result.error || t('toasts.broadcastFailedFallback'),
@@ -702,7 +728,10 @@ export default function Console() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t('toasts.broadcastFailedFallback')
-      if (isRconDisconnectError(message)) setRconConnected(false)
+      if (isRconDisconnectError(message)) {
+        setRconConnected(false)
+        setRconFailureReason(null)
+      }
       toast({
         title: t('toasts.errorTitle'),
         description: message,
@@ -999,7 +1028,9 @@ export default function Console() {
             </div>
           )}
 
-          {/* RCON Disconnected Warning */}
+          {/* RCON Disconnected Warning -- title/desc branch on WHY the test
+              failed (see rconFailureReason above) so a reachable host with a
+              stale password isn't told to go debug its network. */}
           {hasRconConfig && rconConnected === false && (
             <div
               role="alert"
@@ -1007,9 +1038,11 @@ export default function Console() {
             >
               <WifiOff className="w-4 h-4 shrink-0 text-destructive" />
               <div className="min-w-0">
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-destructive">{t('rcon.hostUnreachableTitle')}</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-destructive">
+                  {rconFailureReason === 'auth_failed' ? t('rcon.authFailedTitle') : t('rcon.hostUnreachableTitle')}
+                </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {t('rcon.hostUnreachableDesc')}
+                  {rconFailureReason === 'auth_failed' ? t('rcon.authFailedDesc') : t('rcon.hostUnreachableDesc')}
                 </p>
               </div>
             </div>

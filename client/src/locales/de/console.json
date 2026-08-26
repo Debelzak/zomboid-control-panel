@@ -76,6 +76,8 @@
     "notConfiguredDesc": "Lege Host, Port und Passwort in Meine Server fest, bevor du Live-Befehle verwendest.",
     "hostUnreachableTitle": "Host nicht erreichbar",
     "hostUnreachableDesc": "Starte den Server und überprüfe anschließend RCON-Host, -Port und -Passwort in den Panel-Einstellungen.",
+    "authFailedTitle": "Authentifizierung fehlgeschlagen",
+    "authFailedDesc": "Der Host ist erreichbar – überprüfe das RCON-Passwort unter Meine Server.",
     "outputLabel": "RCON-Ausgabe",
     "entries_one": "{{count}} Eintrag",
     "entries_other": "{{count}} Einträge",

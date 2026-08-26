@@ -76,6 +76,8 @@
     "notConfiguredDesc": "Set the host, port, and password in My Servers before using live commands.",
     "hostUnreachableTitle": "host unreachable",
     "hostUnreachableDesc": "Start the server, then confirm RCON host, port, and password in Panel Settings.",
+    "authFailedTitle": "authentication failed",
+    "authFailedDesc": "The host is reachable — confirm the RCON password on My Servers.",
     "outputLabel": "rcon output",
     "entries_one": "{{count}} entry",
     "entries_other": "{{count}} entries",

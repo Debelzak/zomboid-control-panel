@@ -398,12 +398,15 @@ export const ErrorCode = Object.freeze({
   /** server/routes/rcon.js -- POST /api/rcon/connect, rconService.connect()
    * failed and a follow-up TCP probe confirms host:port is unreachable --
    * same classification /api/rcon/test uses (RCON_UNREACHABLE_DETAIL in
-   * services/rcon.js). */
+   * services/rcon.js). Also emitted by server/routes/config.js -- POST
+   * /api/config/test-rcon (added 2026-08-26), same probe and same detail
+   * string, reused rather than a third independently-drifting mapping. */
   RCON_CONNECT_UNREACHABLE: "RCON_CONNECT_UNREACHABLE",
   /** server/routes/rcon.js -- POST /api/rcon/connect, rconService.connect()
    * failed but host:port IS reachable -- treated as a failed authentication,
    * same classification /api/rcon/test uses (RCON_AUTH_FAILED_DETAIL in
-   * services/rcon.js). */
+   * services/rcon.js). Also emitted by server/routes/config.js -- POST
+   * /api/config/test-rcon (added 2026-08-26), same reasoning. */
   RCON_CONNECT_AUTH_FAILED: "RCON_CONNECT_AUTH_FAILED",
 
   /** server/routes/backup.js -- POST /api/backup/create, active server is

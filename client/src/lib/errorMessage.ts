@@ -114,8 +114,9 @@ export function getRecoveryUrl(error: unknown): string | null {
   }
 
   // Code-based first, and authoritative when present: these two codes come
-  // from the SAME failed RCON connect attempt (server/routes/rcon.js POST
-  // /connect and /test) and mean two different things a message-only guess
+  // from the SAME failed RCON handshake (server/routes/rcon.js POST
+  // /connect and /test, and server/routes/config.js POST /test-rcon) and
+  // mean two different things a message-only guess
   // below can't tell apart. Auth-failed is genuinely fixable from Servers
   // (the RCON password field lives there). Unreachable is an install-level
   // problem -- server not running, firewall never opened, wrong host/port

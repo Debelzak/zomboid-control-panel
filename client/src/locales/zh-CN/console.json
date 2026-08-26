@@ -76,6 +76,8 @@
     "notConfiguredDesc": "使用实时命令前，先在「我的服务器」中设置主机、端口和密码。",
     "hostUnreachableTitle": "主机不可达",
     "hostUnreachableDesc": "启动服务器，然后在面板设置中确认 RCON 主机、端口和密码。",
+    "authFailedTitle": "身份验证失败",
+    "authFailedDesc": "主机可达——请在「我的服务器」中确认 RCON 密码。",
     "outputLabel": "RCON 输出",
     "entries_one": "{{count}} 条记录",
     "entries_other": "{{count}} 条记录",

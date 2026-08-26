@@ -76,6 +76,8 @@
     "notConfiguredDesc": "Configurar el host, el puerto y la contraseña en Mis servidores antes de usar comandos en vivo.",
     "hostUnreachableTitle": "host inaccesible",
     "hostUnreachableDesc": "Iniciar el servidor y luego confirmar el host, el puerto y la contraseña de RCON en Ajustes del panel.",
+    "authFailedTitle": "error de autenticación",
+    "authFailedDesc": "El host es accesible; confirma la contraseña de RCON en Mis servidores.",
     "outputLabel": "salida de rcon",
     "entries_one": "{{count}} entrada",
     "entries_other": "{{count}} entradas",

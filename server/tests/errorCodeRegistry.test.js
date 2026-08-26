@@ -94,7 +94,11 @@ function findMemberReferences() {
 // / RCON_CONNECT_AUTH_FAILED (server/routes/rcon.js POST /connect) because
 // it collapsed "host never reachable" and "reachable, but the password is
 // wrong" into one generic message, while POST /rcon/test already told the
-// two apart -- see conv install-idiot-proofing-2026-08. All three splits
+// two apart -- see conv install-idiot-proofing-2026-08. The same day,
+// server/routes/config.js POST /test-rcon picked up the identical split
+// (it had the exact same collapsed-message bug and was never migrated when
+// /connect was) and now emits the same two codes as a third call site.
+// All three splits
 // were additive-only: the original code stays registered, with its own
 // explanatory comment at the registry entry (see server/utils/errorCodes.js)
 // and its own client/src/locales/en/errors.json key, on purpose -- "kept

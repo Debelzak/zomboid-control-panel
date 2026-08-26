@@ -76,6 +76,8 @@
     "notConfiguredDesc": "Defini lame a, pò a, ak modpas la nan Sèvè m yo anvan w itilize kòmand an dirèk.",
     "hostUnreachableTitle": "lame pa reyachab",
     "hostUnreachableDesc": "Demare sèvè a, epi konfime lame, pò, ak modpas RCON nan Paramèt Panèl.",
+    "authFailedTitle": "otantifikasyon echwe",
+    "authFailedDesc": "Lame a reyachab — konfime modpas RCON nan Sèvè m yo.",
     "outputLabel": "rezilta rcon",
     "entries_one": "{{count}} antre",
     "entries_other": "{{count}} antre",

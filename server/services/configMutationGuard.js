@@ -77,15 +77,25 @@ export async function warnRunningForLocalConfigEdit(req, res, next) {
     if (activeServer?.isRemote) return next();
 
     const serverManager = req.app?.get?.("serverManager");
-    if (typeof serverManager?.checkServerRunning !== "function") {
+    // getServerProcessDetails(), not checkServerRunning() -- same reason as
+    // this file's sibling guard above. checkServerRunning() discards the
+    // scan's own scanFailed flag and collapses a failed scan straight to
+    // `running: false`, so `running !== false` below was false on a scan
+    // failure and NO warning was shown -- the exact opposite of this
+    // function's own documented policy ("cannot verify is treated the same
+    // as running... defaulting to warn is the harmless direction"). Found
+    // in the 2026-08-26 bug hunt: two functions in this one file, one
+    // hardened to getServerProcessDetails() and one never migrated.
+    if (typeof serverManager?.getServerProcessDetails !== "function") {
       req.configEditRestartWarning = true;
       return next();
     }
 
-    const running = await serverManager
-      .checkServerRunning()
-      .catch(() => true);
-    req.configEditRestartWarning = running !== false;
+    const processDetails = await serverManager
+      .getServerProcessDetails()
+      .catch(() => ({ running: true, scanFailed: true }));
+    req.configEditRestartWarning =
+      processDetails.scanFailed || processDetails.running !== false;
     return next();
   } catch (error) {
     log.warn(

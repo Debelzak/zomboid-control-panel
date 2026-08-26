@@ -76,6 +76,8 @@
     "notConfiguredDesc": "Définissez l'hôte, le port et le mot de passe dans Mes serveurs avant d'utiliser les commandes en direct.",
     "hostUnreachableTitle": "hôte injoignable",
     "hostUnreachableDesc": "Démarrez le serveur, puis vérifiez l'hôte, le port et le mot de passe RCON dans Paramètres du panneau.",
+    "authFailedTitle": "échec de l'authentification",
+    "authFailedDesc": "L'hôte est joignable — vérifiez le mot de passe RCON dans Mes serveurs.",
     "outputLabel": "sortie rcon",
     "entries_one": "{{count}} entrée",
     "entries_other": "{{count}} entrées",
