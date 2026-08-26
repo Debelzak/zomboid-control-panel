@@ -111,7 +111,10 @@ describe("scheduled-task update rollback", () => {
     );
 
     expect(response.status).toHaveBeenCalledWith(404);
-    expect(response.json).toHaveBeenCalledWith({ error: "Task not found" });
+    expect(response.json).toHaveBeenCalledWith({
+      error: "Task not found",
+      code: "SCHEDULER_TASK_NOT_FOUND",
+    });
     expect(cancelTask).not.toHaveBeenCalled();
   });
 });

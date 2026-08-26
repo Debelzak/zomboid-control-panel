@@ -2,7 +2,8 @@ import express from 'express';
 import cron from 'node-cron';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Scheduler');
-import { sanitizeError } from '../utils/sanitize.js';
+import { sanitizeError, sanitizeErrorParams } from '../utils/sanitize.js';
+import { ErrorCode } from '../utils/errorCodes.js';
 import {
   getScheduledTasks,
   createScheduledTask,
@@ -147,24 +148,24 @@ router.post('/tasks', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-      return res.status(400).json({ error: 'Request body must be an object' });
+      return res.status(400).json({ error: 'Request body must be an object', code: ErrorCode.SCHEDULER_REQUEST_BODY_INVALID });
     }
     const { name, cronExpression, command, serverId } = req.body;
     log.info(`POST /tasks: name=${name}, cron=${cronExpression}, command=${typeof command === 'string' ? command.substring(0, 80) : ''}, serverId=${serverId}`);
 
     if (!name || !cronExpression || !command) {
-      return res.status(400).json({ error: 'Name, cronExpression, and command are required' });
+      return res.status(400).json({ error: 'Name, cronExpression, and command are required', code: ErrorCode.SCHEDULER_TASK_FIELDS_REQUIRED });
     }
 
     // Validate input types and lengths
     if (typeof name !== 'string' || name.length > 100) {
-      return res.status(400).json({ error: 'Invalid task name (max 100 chars)' });
+      return res.status(400).json({ error: 'Invalid task name (max 100 chars)', code: ErrorCode.SCHEDULER_INVALID_TASK_NAME });
     }
     if (typeof command !== 'string' || command.length > 2000) {
-      return res.status(400).json({ error: 'Invalid command (max 2000 chars)' });
+      return res.status(400).json({ error: 'Invalid command (max 2000 chars)', code: ErrorCode.SCHEDULER_INVALID_COMMAND });
     }
     if (typeof cronExpression !== 'string' || cronExpression.length > 100) {
-      return res.status(400).json({ error: 'Invalid cron expression format' });
+      return res.status(400).json({ error: 'Invalid cron expression format', code: ErrorCode.SCHEDULER_INVALID_CRON_FORMAT });
     }
 
     // A raw (non restart/save/servermsg/bridge:) command reaches RCON with
@@ -177,19 +178,19 @@ router.post('/tasks', async (req, res) => {
 
     // Validate cron expression before saving
     if (!cron.validate(cronExpression)) {
-      return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
+      return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)', code: ErrorCode.SCHEDULER_INVALID_CRON_EXPRESSION });
     }
 
     // The panel does not support seconds-precision (6-field) schedules --
     // see hasUnsupportedCronFieldCount()'s comment for why this must be
     // checked before isCronTooFrequent, not folded into it.
     if (hasUnsupportedCronFieldCount(cronExpression)) {
-      return res.status(400).json({ error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday (e.g., "0 */6 * * *").' });
+      return res.status(400).json({ error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday (e.g., "0 */6 * * *").', code: ErrorCode.SCHEDULER_CRON_SECONDS_UNSUPPORTED });
     }
 
     // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
     if (isCronTooFrequent(cronExpression)) {
-      return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes' });
+      return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes', code: ErrorCode.SCHEDULER_CRON_TOO_FREQUENT });
     }
 
     // Validate the target server exists, if one was explicitly given —
@@ -198,7 +199,7 @@ router.post('/tasks', async (req, res) => {
     if (resolvedServerId) {
       const target = await getServer(resolvedServerId);
       if (!target) {
-        return res.status(400).json({ error: 'Target server not found' });
+        return res.status(400).json({ error: 'Target server not found', code: ErrorCode.SCHEDULER_TARGET_SERVER_NOT_FOUND });
       }
     } else {
       const active = await getActiveServer();
@@ -223,7 +224,11 @@ router.post('/tasks', async (req, res) => {
     } catch (schedErr) {
       log.error(`Failed to schedule task, rolling back DB entry: ${schedErr.message}`);
       await deleteScheduledTask(result.id);
-      return res.status(500).json({ error: 'Failed to schedule task: ' + sanitizeError(schedErr.message) });
+      return res.status(500).json({
+        error: 'Failed to schedule task: ' + sanitizeError(schedErr.message),
+        code: ErrorCode.SCHEDULER_TASK_SCHEDULING_FAILED,
+        params: sanitizeErrorParams({ reason: schedErr.message }),
+      });
     }
 
     res.json({ success: true, task });
@@ -239,22 +244,22 @@ router.put('/tasks/:id', async (req, res) => {
     const scheduler = req.app.get('scheduler');
     const { id } = req.params;
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-      return res.status(400).json({ error: 'Request body must be an object' });
+      return res.status(400).json({ error: 'Request body must be an object', code: ErrorCode.SCHEDULER_REQUEST_BODY_INVALID });
     }
     const { name, cronExpression, command, enabled, serverId } = req.body;
     log.info(`PUT /tasks/${id}: name=${name}, cron=${cronExpression}, enabled=${enabled}, serverId=${serverId}`);
 
     const taskId = parseTaskId(id);
     if (taskId === null) {
-      return res.status(400).json({ error: 'Invalid task ID' });
+      return res.status(400).json({ error: 'Invalid task ID', code: ErrorCode.SCHEDULER_INVALID_TASK_ID });
     }
 
     // Validate name and command length
     if (name !== undefined && (typeof name !== 'string' || name.length > 100)) {
-      return res.status(400).json({ error: 'Invalid task name (max 100 characters)' });
+      return res.status(400).json({ error: 'Invalid task name (max 100 characters)', code: ErrorCode.SCHEDULER_INVALID_TASK_NAME });
     }
     if (command !== undefined && (typeof command !== 'string' || command.length > 2000)) {
-      return res.status(400).json({ error: 'Invalid command (max 2000 characters)' });
+      return res.status(400).json({ error: 'Invalid command (max 2000 characters)', code: ErrorCode.SCHEDULER_INVALID_COMMAND });
     }
     // Only gate on rcon.execute when THIS request is actually setting the
     // command to something raw -- a caller who only toggles enabled/name/
@@ -269,33 +274,33 @@ router.put('/tasks/:id', async (req, res) => {
       enabled !== undefined &&
       ![true, false, 0, 1].includes(enabled)
     ) {
-      return res.status(400).json({ error: 'enabled must be a boolean or 0/1' });
+      return res.status(400).json({ error: 'enabled must be a boolean or 0/1', code: ErrorCode.SCHEDULER_INVALID_ENABLED_VALUE });
     }
     const normalizedEnabled =
       enabled === undefined ? undefined : (enabled === true || enabled === 1 ? 1 : 0);
 
     // Validate cron expression before saving to prevent DB/scheduler inconsistency
     if (cronExpression && !cron.validate(cronExpression)) {
-      return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)' });
+      return res.status(400).json({ error: 'Invalid cron expression. Use format: minute hour day month weekday (e.g., "0 */6 * * *" for every 6 hours)', code: ErrorCode.SCHEDULER_INVALID_CRON_EXPRESSION });
     }
 
     // The panel does not support seconds-precision (6-field) schedules --
     // see hasUnsupportedCronFieldCount()'s comment for why this must be
     // checked before isCronTooFrequent, not folded into it.
     if (cronExpression && hasUnsupportedCronFieldCount(cronExpression)) {
-      return res.status(400).json({ error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday (e.g., "0 */6 * * *").' });
+      return res.status(400).json({ error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday (e.g., "0 */6 * * *").', code: ErrorCode.SCHEDULER_CRON_SECONDS_UNSUPPORTED });
     }
 
     // Security: Reject tasks that run more frequently than every 5 minutes to prevent DoS
     if (cronExpression && isCronTooFrequent(cronExpression)) {
-      return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes' });
+      return res.status(400).json({ error: 'Tasks cannot run more frequently than every 5 minutes', code: ErrorCode.SCHEDULER_CRON_TOO_FREQUENT });
     }
 
     // Validate the target server, if reassignment was requested
     if (serverId !== undefined && serverId !== null) {
       const target = await getServer(serverId);
       if (!target) {
-        return res.status(400).json({ error: 'Target server not found' });
+        return res.status(400).json({ error: 'Target server not found', code: ErrorCode.SCHEDULER_TARGET_SERVER_NOT_FOUND });
       }
     }
 
@@ -309,7 +314,7 @@ router.put('/tasks/:id', async (req, res) => {
 
     const updated = await updateScheduledTask(taskId, name, cronExpression, command, normalizedEnabled, serverId);
     if (!updated) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Task not found', code: ErrorCode.SCHEDULER_TASK_NOT_FOUND });
     }
 
     // Reschedule from the merged record, not the request body: a partial update
@@ -353,7 +358,11 @@ router.put('/tasks/:id', async (req, res) => {
         } else {
           log.warn(`Could not restore scheduled task ${taskId}: previous record was unavailable`);
         }
-        return res.status(500).json({ error: 'Failed to reschedule task: ' + sanitizeError(schedErr.message) });
+        return res.status(500).json({
+          error: 'Failed to reschedule task: ' + sanitizeError(schedErr.message),
+          code: ErrorCode.SCHEDULER_TASK_RESCHEDULE_FAILED,
+          params: sanitizeErrorParams({ reason: schedErr.message }),
+        });
       }
     } else {
       scheduler.cancelTask(taskId);
@@ -375,12 +384,12 @@ router.delete('/tasks/:id', async (req, res) => {
 
     const taskId = parseTaskId(id);
     if (taskId === null) {
-      return res.status(400).json({ error: 'Invalid task ID' });
+      return res.status(400).json({ error: 'Invalid task ID', code: ErrorCode.SCHEDULER_INVALID_TASK_ID });
     }
 
     const deleted = await deleteScheduledTask(taskId);
     if (!deleted) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Task not found', code: ErrorCode.SCHEDULER_TASK_NOT_FOUND });
     }
     scheduler.cancelTask(taskId);
 
@@ -403,13 +412,13 @@ router.post('/tasks/:id/run', async (req, res) => {
     const { id } = req.params;
     const taskId = parseTaskId(id);
     if (taskId === null) {
-      return res.status(400).json({ error: 'Invalid task ID' });
+      return res.status(400).json({ error: 'Invalid task ID', code: ErrorCode.SCHEDULER_INVALID_TASK_ID });
     }
 
     const tasks = await getScheduledTasks();
     const task = tasks.find(t => t.id === taskId);
     if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
+      return res.status(404).json({ error: 'Task not found', code: ErrorCode.SCHEDULER_TASK_NOT_FOUND });
     }
 
     // Unlike a cron fire, "Run now" IS a live request with a real req.user
@@ -460,7 +469,7 @@ router.post('/restart-now', async (req, res) => {
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
-      return res.status(400).json({ error: 'Cannot restart a remote server. The process is not managed by this panel.' });
+      return res.status(400).json({ error: 'Cannot restart a remote server. The process is not managed by this panel.', code: ErrorCode.SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED });
     }
 
     const scheduler = req.app.get('scheduler');
@@ -546,7 +555,7 @@ router.get('/history', async (req, res) => {
         ? null
         : parseBoundedInteger(req.query.taskId, null, 1, Number.MAX_SAFE_INTEGER);
     if (req.query.taskId !== undefined && taskId === null) {
-      return res.status(400).json({ error: 'Invalid task ID' });
+      return res.status(400).json({ error: 'Invalid task ID', code: ErrorCode.SCHEDULER_INVALID_TASK_ID });
     }
     const history = await getScheduleHistory(limit, taskId);
     res.json({ history });
