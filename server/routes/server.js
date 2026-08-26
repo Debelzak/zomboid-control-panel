@@ -278,6 +278,33 @@ export function isSteamOperationIdle(operation, now = Date.now()) {
   );
 }
 
+// True only for the exact shape that crashes PZ on first boot: no admin
+// password configured AND this server has never actually started (its
+// world-save directory doesn't exist yet, so PZ has no admin account and
+// would fall back to an interactive stdin prompt the panel can't answer).
+// Deliberately narrower than "no admin password" alone -- an
+// already-booted server has an admin account regardless of what's
+// currently configured, and refusing to start THAT server over an empty
+// field would be a new, unrelated regression, not a fix.
+export function isFirstBootMissingAdminPassword(activeServer) {
+  if (
+    !activeServer ||
+    activeServer.isRemote ||
+    !activeServer.serverName ||
+    !activeServer.zomboidDataPath ||
+    activeServer.adminPassword
+  ) {
+    return false;
+  }
+  const saveDir = path.join(
+    activeServer.zomboidDataPath,
+    "Saves",
+    "Multiplayer",
+    activeServer.serverName,
+  );
+  return !fs.existsSync(saveDir);
+}
+
 function clearActiveSteamOperation(normalizedPath) {
   const operation = activeSteamOperations.get(normalizedPath);
   if (operation?.watchdog) clearInterval(operation.watchdog);
@@ -691,7 +718,7 @@ function buildClasspathEntries(installPath) {
 
 // Generate a custom startup script with configured options
 // Returns { bat: string, sh: string } with both Windows and Linux scripts
-function generateStartupScripts(options) {
+export function generateStartupScripts(options) {
   const {
     installPath,
     serverName,
@@ -916,6 +943,30 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
     const managed = await runManagedLifecycle("start");
     if (managed.handled && !managed.success) {
       return res.status(502).json({ error: sanitizeError(managed.error) });
+    }
+
+    // A server that has never booted has no world database and no admin
+    // account yet -- PZ creates the admin account interactively on exactly
+    // that first boot, prompting on stdin if -adminpassword isn't set. The
+    // panel spawns it with no interactive stdin, so it hangs on
+    // Scanner.nextLine() and dies with an unreadable
+    // java.util.NoSuchElementException, well after this response is long
+    // gone (2026-08-26, two independent real-user reports: a server created
+    // through the setup wizard could not start at all, because
+    // createServer() silently dropped adminPassword on create -- fixed
+    // separately in database/init.js -- and nothing here ever refused to
+    // launch a server it knew was about to hit this). Scoped to first boot
+    // specifically (world save directory absent), not every start with an
+    // empty admin password: an already-booted server already has an admin
+    // account and genuinely doesn't need this flag to start cleanly.
+    if (!managed.handled && isFirstBootMissingAdminPassword(activeServer)) {
+      return res.status(400).json({
+        error:
+          `${activeServer.name || activeServer.serverName} has never started before and has no admin password set. ` +
+          `Project Zomboid needs one to create the admin account on first boot, or the server process hangs waiting ` +
+          `for console input that will never come and crashes. Set an admin password for this server (My Servers → ` +
+          `${activeServer.name || activeServer.serverName} → Admin Password), then try starting again.`,
+      });
     }
 
     // Pre-configure RCON in the INI BEFORE starting the server process.

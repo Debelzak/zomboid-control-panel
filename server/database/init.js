@@ -1597,6 +1597,17 @@ export async function createServer(serverConfig) {
     useDebug: serverConfig.useDebug || false,
     isRemote: serverConfig.isRemote || false,
     startCommand: serverConfig.startCommand || "",
+    // 2026-08-26, two real users: this field-by-field literal never named
+    // adminPassword, so servers.js's POST / forwarding it correctly made no
+    // difference -- it was dropped right here, on every single server ever
+    // created through the panel. A brand-new server's admin account never
+    // gets created because PZ never receives -adminpassword on first boot,
+    // it falls back to prompting on a stdin the panel doesn't provide, and
+    // the process dies before the world exists. updateServer() below never
+    // had this bug (it spreads `updates` generically instead of naming
+    // fields), which is why re-saving the admin password after the fact was
+    // the only thing that ever worked.
+    adminPassword: serverConfig.adminPassword || "",
     isActive: isFirst,
     createdAt: new Date().toISOString(),
   };
