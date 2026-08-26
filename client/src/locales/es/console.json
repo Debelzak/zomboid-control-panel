@@ -166,6 +166,7 @@
     "toggleLabel": "historial",
     "entries_one": "{{count}} entrada",
     "entries_other": "{{count}} entradas",
+    "truncatedHint": "(más recientes -- es posible que no se muestren comandos anteriores)",
     "searchPlaceholder": "buscar en el historial de comandos…",
     "searchAria": "Buscar en el historial de comandos",
     "emptyTitle": "Sin historial de comandos",

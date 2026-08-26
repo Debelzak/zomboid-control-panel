@@ -133,6 +133,7 @@
     "toggleLabel": "history",
     "entries_one": "{{count}} entry",
     "entries_other": "{{count}} entries",
+    "truncatedHint": "(most recent -- older commands may not be shown)",
     "searchPlaceholder": "Search command history...",
     "searchAria": "Search command history",
     "emptyTitle": "No command history",

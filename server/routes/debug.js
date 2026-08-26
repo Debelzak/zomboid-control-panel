@@ -5490,7 +5490,11 @@ router.get("/crash-logs", requirePermission("diagnostics.manage"), async (req, r
     // Sort by modified date, newest first
     crashLogs.sort((a, b) => new Date(b.modified) - new Date(a.modified));
 
-    res.json({ crashLogs: crashLogs.slice(0, 20) });
+    // totalCount is the real count before the cap -- the client showed the
+    // capped array's length as if it were the total, so a server with more
+    // than 20 crash dumps (common with mod incompatibilities) displayed a
+    // stuck "20" that masked how many actually exist.
+    res.json({ crashLogs: crashLogs.slice(0, 20), totalCount: crashLogs.length });
   } catch (error) {
     log.error(`Failed to get crash logs: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

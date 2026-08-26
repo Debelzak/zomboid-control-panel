@@ -1310,6 +1310,7 @@
   },
   "crashesTab": {
     "crashLogsTitle": "Crash Logs",
+    "crashLogsCountTruncated": "{{shown}} of {{total}}",
     "crashLogsDesc": "Java crash dumps and error logs.",
     "refreshCrashLogsAria": "Refresh crash logs",
     "noCrashLogsTitle": "No crash logs found",

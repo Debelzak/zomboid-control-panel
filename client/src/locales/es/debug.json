@@ -1310,6 +1310,7 @@
   },
   "crashesTab": {
     "crashLogsTitle": "Registros de fallos",
+    "crashLogsCountTruncated": "{{shown}} de {{total}}",
     "crashLogsDesc": "Volcados de fallos de Java y registros de errores.",
     "refreshCrashLogsAria": "Actualizar registros de fallos",
     "noCrashLogsTitle": "No se encontraron registros de fallos",

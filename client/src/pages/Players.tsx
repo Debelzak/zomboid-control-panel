@@ -134,6 +134,14 @@ export function sanitizeSteamId(value: string): string {
   return value.replace(/\D/g, '').slice(0, 17);
 }
 
+// The activity log table has no pagination -- when a fetch returns exactly
+// this many rows, older entries may exist and be silently excluded (the
+// server retains up to 1000, see server/database/init.js). Shown as a hint
+// rather than a hard truth ("logs.length === LIMIT" could also mean the
+// real total happens to equal the limit) because there's no cheap way to
+// distinguish the two without a separate total-count query.
+const ACTIVITY_LOG_FETCH_LIMIT = 200
+
 function getAccessLevelLabels(t: TFunction): Record<string, string> {
   return {
     admin: t('accessLevels.admin'),
@@ -487,7 +495,7 @@ export default function Players() {
   const fetchActivityLogs = useCallback(async (playerFilter?: string) => {
     setLogsLoading(true)
     try {
-      const data = await playersApi.getActivityLogs(playerFilter, 200)
+      const data = await playersApi.getActivityLogs(playerFilter, ACTIVITY_LOG_FETCH_LIMIT)
       if (data.logs) {
         setActivityLogs(data.logs)
       }
@@ -2784,6 +2792,11 @@ export default function Players() {
                       </tbody>
                     </table>
                   </div>
+                  {activityLogs.length >= ACTIVITY_LOG_FETCH_LIMIT && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('notes.activityLogTruncatedHint', { count: activityLogs.length })}
+                    </p>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>

@@ -133,6 +133,7 @@
     "toggleLabel": "istwa",
     "entries_one": "{{count}} antre",
     "entries_other": "{{count}} antre",
+    "truncatedHint": "(pi resan yo -- kòmand ki pi ansyen ka pa parèt)",
     "searchPlaceholder": "Chèche istwa kòmand yo...",
     "searchAria": "Chèche istwa kòmand",
     "emptyTitle": "Pa gen istwa kòmand",

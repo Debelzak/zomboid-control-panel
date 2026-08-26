@@ -284,6 +284,7 @@
     "deleteButton": "删除",
     "saveButton": "保存备注",
     "activityLogTitle": "活动日志",
+    "activityLogTruncatedHint": "正在显示最近 {{count}} 条记录——更早的活动可能未显示。",
     "logsErrorTitle": "活动日志不可用",
     "filterPlaceholder": "按玩家名称筛选…",
     "filterAria": "按玩家名称筛选活动日志",

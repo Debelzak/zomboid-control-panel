@@ -284,6 +284,7 @@
     "deleteButton": "Eliminar",
     "saveButton": "Guardar nota",
     "activityLogTitle": "Registro de actividad",
+    "activityLogTruncatedHint": "Mostrando las {{count}} entradas más recientes -- es posible que no se muestre actividad más antigua.",
     "logsErrorTitle": "Registro de actividad no disponible",
     "filterPlaceholder": "Filtrar por nombre de jugador...",
     "filterAria": "Filtrar el registro de actividad por nombre de jugador",

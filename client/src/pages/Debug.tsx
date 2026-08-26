@@ -675,6 +675,10 @@ export default function Debug() {
   const [perfRange, setPerfRange] = useState<"1h" | "6h" | "24h">("1h");
   const [refreshingPerformance, setRefreshingPerformance] = useState(false);
   const [crashLogs, setCrashLogs] = useState<CrashLog[]>([]);
+  // The route caps the returned list at 20; totalCount is the real count
+  // before that cap, so the badges below can say "showing 20 of 47" instead
+  // of just "20" once there are more crash dumps than the cap.
+  const [crashLogsTotalCount, setCrashLogsTotalCount] = useState(0);
   const [selectedCrashLog, setSelectedCrashLog] = useState<string | null>(null);
   const [crashLogContent, setCrashLogContent] = useState<string>("");
   const [loadingCrashLog, setLoadingCrashLog] = useState(false);
@@ -1510,6 +1514,9 @@ export default function Debug() {
       const data = await res.json();
       if (data.crashLogs) {
         setCrashLogs(data.crashLogs);
+        setCrashLogsTotalCount(
+          typeof data.totalCount === "number" ? data.totalCount : data.crashLogs.length,
+        );
       }
     } catch {
       // Endpoint may not exist yet
@@ -2317,7 +2324,7 @@ export default function Debug() {
             {t("tabs.crashes")}
             {crashLogs.length > 0 && (
               <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">
-                {crashLogs.length}
+                {crashLogsTotalCount > crashLogs.length ? `${crashLogs.length}+` : crashLogs.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -4968,7 +4975,12 @@ export default function Debug() {
                       {t("crashesTab.crashLogsTitle")}
                       {crashLogs.length > 0 && (
                         <Badge variant="destructive" className="ml-1">
-                          {crashLogs.length}
+                          {crashLogsTotalCount > crashLogs.length
+                            ? t("crashesTab.crashLogsCountTruncated", {
+                                shown: crashLogs.length,
+                                total: crashLogsTotalCount,
+                              })
+                            : crashLogs.length}
                         </Badge>
                       )}
                     </CardTitle>

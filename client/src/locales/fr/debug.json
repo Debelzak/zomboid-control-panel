@@ -1310,6 +1310,7 @@
   },
   "crashesTab": {
     "crashLogsTitle": "Journaux de plantage",
+    "crashLogsCountTruncated": "{{shown}} sur {{total}}",
     "crashLogsDesc": "Dumps de plantage Java et journaux d'erreurs.",
     "refreshCrashLogsAria": "Actualiser les journaux de plantage",
     "noCrashLogsTitle": "Aucun journal de plantage trouvé",

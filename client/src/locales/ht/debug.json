@@ -1310,6 +1310,7 @@
   },
   "crashesTab": {
     "crashLogsTitle": "Jounal Kraze",
+    "crashLogsCountTruncated": "{{shown}} sou {{total}}",
     "crashLogsDesc": "Dump kraze Java ak jounal erè.",
     "refreshCrashLogsAria": "Aktyalize jounal kraze",
     "noCrashLogsTitle": "Pa gen jounal kraze jwenn",

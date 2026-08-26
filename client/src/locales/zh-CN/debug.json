@@ -1310,6 +1310,7 @@
   },
   "crashesTab": {
     "crashLogsTitle": "崩溃日志",
+    "crashLogsCountTruncated": "{{shown}} / {{total}}",
     "crashLogsDesc": "Java 崩溃转储和错误日志。",
     "refreshCrashLogsAria": "刷新崩溃日志",
     "noCrashLogsTitle": "未找到崩溃日志",

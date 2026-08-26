@@ -1310,6 +1310,7 @@
   },
   "crashesTab": {
     "crashLogsTitle": "Absturzprotokolle",
+    "crashLogsCountTruncated": "{{shown}} von {{total}}",
     "crashLogsDesc": "Java-Absturzdumps und Fehlerprotokolle.",
     "refreshCrashLogsAria": "Absturzprotokolle aktualisieren",
     "noCrashLogsTitle": "Keine Absturzprotokolle gefunden",

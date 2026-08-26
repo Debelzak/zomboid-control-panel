@@ -111,6 +111,12 @@ function getCommonCommands(t: TFunction) {
   ]
 }
 
+// No pagination on this panel -- when a fetch returns exactly this many
+// rows, older executions may exist and be silently excluded (server
+// retains up to 500, see server/database/init.js). A hint, not a hard
+// truth: hitting the limit exactly by coincidence is possible too.
+const EXECUTION_HISTORY_FETCH_LIMIT = 50
+
 export default function Scheduler() {
   const { t } = useTranslation('scheduler')
   const weekDays = useMemo(() => getWeekDays(t), [t])
@@ -164,7 +170,7 @@ export default function Scheduler() {
         schedulerApi.getTasks(),
         schedulerApi.getCronPresets().catch(() => ({ presets: [] as CronPreset[] })),
         schedulerApi.getStatus().catch(() => null),
-        schedulerApi.getHistory(50).catch(() => ({ history: [] as ScheduleHistoryEntry[] })),
+        schedulerApi.getHistory(EXECUTION_HISTORY_FETCH_LIMIT).catch(() => ({ history: [] as ScheduleHistoryEntry[] })),
         serversApi.getAll().catch(() => ({ servers: [] as ServerInstance[] })),
       ])
       setTasks(tasksData.tasks || [])
@@ -1165,6 +1171,11 @@ export default function Scheduler() {
               </CardTitle>
               <CardDescription>
                 {t('executionHistory.description')}
+                {history.length >= EXECUTION_HISTORY_FETCH_LIMIT && (
+                  <span className="block text-xs text-muted-foreground/80">
+                    {t('executionHistory.truncatedHint', { count: history.length })}
+                  </span>
+                )}
               </CardDescription>
             </div>
             <div className="flex gap-2">

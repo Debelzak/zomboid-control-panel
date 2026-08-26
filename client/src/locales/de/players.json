@@ -284,6 +284,7 @@
     "deleteButton": "Löschen",
     "saveButton": "Notiz speichern",
     "activityLogTitle": "Aktivitätsprotokoll",
+    "activityLogTruncatedHint": "Die neuesten {{count}} Einträge werden angezeigt -- ältere Aktivitäten werden möglicherweise nicht angezeigt.",
     "logsErrorTitle": "Aktivitätsprotokoll nicht verfügbar",
     "filterPlaceholder": "Nach Spielername filtern...",
     "filterAria": "Aktivitätsprotokoll nach Spielername filtern",

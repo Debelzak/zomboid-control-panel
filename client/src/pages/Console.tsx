@@ -228,6 +228,12 @@ function getQuickBroadcasts(t: TFunction<'console'>) {
   }))
 }
 
+// No pagination on this panel -- when a fetch returns exactly this many
+// rows, older commands may exist and be silently excluded (server allows
+// up to 1000, see server/routes/rcon.js). Hint, not a hard truth: hitting
+// the limit exactly by coincidence is possible too.
+const COMMAND_HISTORY_FETCH_LIMIT = 50
+
 export default function Console() {
   const { t } = useTranslation('console')
   const chatChannels = useMemo(() => getChatChannels(t), [t])
@@ -352,7 +358,7 @@ export default function Console() {
     }
 
     try {
-      const data = await rconApi.getHistory(50)
+      const data = await rconApi.getHistory(COMMAND_HISTORY_FETCH_LIMIT)
       setHistory(data.history || [])
       setCommandCache(data.history?.map((h: CommandEntry) => h.command).reverse() || [])
     } catch {
@@ -1258,6 +1264,9 @@ export default function Console() {
                   <>
                     <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
                     <span className="text-muted-foreground/70 normal-case tracking-normal tabular-nums">{t('history.entries', { count: history.length })}</span>
+                    {history.length >= COMMAND_HISTORY_FETCH_LIMIT && (
+                      <span className="text-muted-foreground/50 normal-case tracking-normal">{t('history.truncatedHint')}</span>
+                    )}
                   </>
                 )}
               </span>

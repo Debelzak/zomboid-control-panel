@@ -166,6 +166,7 @@
     "toggleLabel": "历史记录",
     "entries_one": "{{count}} 条记录",
     "entries_other": "{{count}} 条记录",
+    "truncatedHint": "（最近的——更早的命令可能未显示）",
     "searchPlaceholder": "搜索命令历史…",
     "searchAria": "搜索命令历史",
     "emptyTitle": "无命令历史",

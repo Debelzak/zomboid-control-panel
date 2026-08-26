@@ -166,6 +166,7 @@
     "toggleLabel": "Verlauf",
     "entries_one": "{{count}} Eintrag",
     "entries_other": "{{count}} Einträge",
+    "truncatedHint": "(neueste -- ältere Befehle werden möglicherweise nicht angezeigt)",
     "searchPlaceholder": "Befehlsverlauf durchsuchen…",
     "searchAria": "Befehlsverlauf durchsuchen",
     "emptyTitle": "Kein Befehlsverlauf",
