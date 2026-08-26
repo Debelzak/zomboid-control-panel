@@ -324,6 +324,16 @@ export class PanelBridgeSftpTransport {
     return `${this.config.bridgePath}/${relativeName}`;
   }
 
+  // Mirrors remote()'s validation rather than relying on copyRemote() having
+  // already called remote() earlier in the same function -- that ordering
+  // was the only thing keeping relativeName out of this join, and nothing
+  // enforced it (2026-08-26 injection-sink sweep). Re-validating here means
+  // a future reorder can't silently drop the guard.
+  local(relativeName) {
+    if (!relativeName || relativeName.includes('..') || relativeName.includes('\\')) throw new Error('Invalid remote bridge file path');
+    return path.join(this.cachePath, relativeName);
+  }
+
   async copyRemote(relativeName) {
     const client = await this.connect();
     const remotePath = this.remote(relativeName);
@@ -340,7 +350,7 @@ export class PanelBridgeSftpTransport {
     if (size > MAX_BRIDGE_FILE_BYTES) {
       throw new Error(`Remote bridge file ${remotePath} exceeds the ${MAX_BRIDGE_FILE_BYTES / (1024 * 1024)} MB download limit`);
     }
-    const localPath = path.join(this.cachePath, relativeName);
+    const localPath = this.local(relativeName);
     fs.mkdirSync(path.dirname(localPath), { recursive: true, mode: 0o700 });
     const temporaryPath = `${localPath}.${this.transferId}.download`;
     await client.fastGet(remotePath, temporaryPath);

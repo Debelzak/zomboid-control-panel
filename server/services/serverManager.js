@@ -109,11 +109,18 @@ function validateStartCommand(cmd) {
     return { valid: false, reason: "Command exceeds 1024 characters" };
   // Block obvious shell metacharacters that enable chaining/injection
   // Allow quotes, spaces, hyphens, equals, slashes, dots, colons (drive letters)
-  if (/[&|;<>`${}()!\[\]\n\r]/.test(cmd)) {
+  // `$` (POSIX variable expansion) was already blocked here; `%` is its
+  // cmd.exe equivalent and was missing -- on the one spawn target this
+  // guard actually protects (Windows .bat/.cmd via cmd.exe /c), an
+  // unblocked `%VAR%` still expands into the resolved command line, which
+  // is then visible in a process listing. Not chaining on its own (that
+  // still needs & | ; or a newline, all blocked below), but the same
+  // author-intent that blocked `$` clearly meant to block this too.
+  if (/[&|;<>`${}()!%\[\]\n\r]/.test(cmd)) {
     return {
       valid: false,
       reason:
-        "Command contains disallowed shell characters: & | ; < > ` $ { } ( ) ! [ ]",
+        "Command contains disallowed shell characters: & | ; < > ` $ { } ( ) ! % [ ]",
     };
   }
   return { valid: true };
