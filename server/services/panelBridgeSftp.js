@@ -46,7 +46,7 @@ export function getSftpErrorGuidance(error) {
   if (/econnrefused|etimedout|timeout|enotfound|ehostunreach|network/i.test(message)) {
     return 'Check the SFTP host, port, firewall, and that the hosting provider allows SFTP from this panel computer.';
   }
-  return 'Run Test SFTP again. If it still fails, download a support bundle and include sftp-diagnostics.json.';
+  return 'Run Verify and prepare SFTP again. If it still fails, download a support bundle and include sftp-diagnostics.json.';
 }
 
 export function formatSftpError(error) {
