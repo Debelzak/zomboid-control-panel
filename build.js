@@ -78,7 +78,7 @@ function resolveBuiltBinaryPath(target) {
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
-function writeReleaseReadme() {
+export function writeReleaseReadme() {
   const readme = `# Zomboid Control Panel
 
 ## First 10 Minutes
@@ -117,16 +117,18 @@ Three things stop most first launches:
   (Ubuntu 20.04+, Debian 10+, CentOS Stream 8+, Rocky 8+). CentOS 7 (glibc
   2.17) is not supported — use Docker instead.
 
-More symptoms and fixes, organized by what's actually on your screen:
-docs/install/troubleshooting.md in the GitHub repository below.
+More symptoms and fixes, organized by what's actually on your screen: see
+docs/install/troubleshooting.md — it's in this same folder, no internet
+needed. (Path below.)
 
 ## Where To Go Next
 
-This file only covers the first ten minutes. The fuller guides live in the
-project's GitHub repository, under docs/install/ — open these on GitHub if
-you have internet access:
+This file only covers the first ten minutes. The fuller guides are right
+here in this folder, so they work with no internet — and also live on
+GitHub if you'd rather read them there or check for updates to them:
 
-  https://github.com/fpsacha/zomboid-control-panel
+  docs/install/                                    (this folder, offline)
+  https://github.com/fpsacha/zomboid-control-panel  (same guides, online)
 
 - docs/install/windows.md         Windows: running at startup / as a service, firewall.
 - docs/install/linux.md           Linux: the bundled systemd service, a non-root
@@ -136,19 +138,24 @@ you have internet access:
                                    where Project Zomboid itself runs. Not needed
                                    for this package; only relevant if you'd
                                    rather switch to Docker instead.
+- docs/install/hosted.md          Renting a PZ server from a host (Indifferent
+                                   Broccoli and similar) instead of running it
+                                   yourself.
 - docs/install/troubleshooting.md Symptom-first fixes, organized by what's on
                                    your screen, not by subsystem.
 
 For everything else — PanelBridge, updates, remote access, the full feature
-list — see README.md in the same repository.
+list — see README.md in the GitHub repository (not shipped in this archive,
+needs internet).
 
 ## Folder Structure
 - ZomboidControlPanel.exe - Windows standalone binary
 - ZomboidControlPanel      - Linux standalone binary
 - Start.bat                - Windows launch script
 - start.sh                 - Linux launch script
-- zomboid-panel.service    - systemd unit file (Linux) — see docs/install/linux.md
+- zomboid-panel.service    - systemd unit file (Linux) — see docs/install/linux.md, in this folder
 - docker-compose.install.yml - Docker Compose installer (published panel image)
+- docs/install/            - Install guides for every platform (see Where To Go Next, above)
 - client/dist/             - Web interface (required, must stay alongside binary)
 - data/db.json             - Configuration database (created on first run; NEVER overwrite when upgrading — see data/README.txt)
 - data/db.example.json     - Reference db structure (safe to delete)
@@ -566,6 +573,31 @@ async function main() {
     process.exit(1);
   }
 
+  // Ship the install guides IN the archive, not just as GitHub pointers.
+  // README.txt's own "Where To Go Next" section names these paths -- on a
+  // LAN-only box with no outbound internet, a github.com link is dead
+  // weight, so the files themselves have to be sitting right here for that
+  // section to be true. release.ps1 zips release/* as-is, so anything
+  // copied into release/ ships automatically with no workflow change.
+  const installDocsSrc = "./docs/install";
+  const installDocsDest = "./release/docs/install";
+  if (fs.existsSync(installDocsSrc)) {
+    fs.mkdirSync(installDocsDest, { recursive: true });
+    const guideFiles = fs
+      .readdirSync(installDocsSrc)
+      .filter((file) => file.endsWith(".md"));
+    for (const file of guideFiles) {
+      fs.copyFileSync(
+        path.join(installDocsSrc, file),
+        path.join(installDocsDest, file),
+      );
+    }
+  } else {
+    console.warn(
+      "docs/install not found -- release will ship without install guides",
+    );
+  }
+
   // IMPORTANT: do NOT ship a real `data/db.json` in the release tarball.
   //
   // Users who extract a new release over an existing install (e.g. `tar xzf`
@@ -787,6 +819,9 @@ fi
   console.log("  - data/");
   console.log("  - logs/");
   console.log("  - pz-mod/");
+  if (fs.existsSync("./release/docs/install")) {
+    console.log("  - docs/install/");
+  }
   if (fs.existsSync("./release/zomboid-panel.service")) {
     console.log("  - zomboid-panel.service");
   }
