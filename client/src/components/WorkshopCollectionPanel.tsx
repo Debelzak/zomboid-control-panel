@@ -73,9 +73,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { modsApi } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 
 type DiffResponse = Awaited<ReturnType<typeof modsApi.collectionDiff>>
 type DiffItem = DiffResponse['items'][number]
@@ -123,6 +124,7 @@ function parseSteamCookieBlob(raw: string, t: TFn): { sessionid?: string; steamL
 export function WorkshopCollectionPanel() {
   const { t, i18n } = useTranslation('workshopCollectionPanel')
   const { toast } = useToast()
+  const confirm = useConfirm()
   const [diff, setDiff] = useState<DiffResponse | null>(null)
   const [diffError, setDiffError] = useState<string | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
@@ -348,6 +350,15 @@ export function WorkshopCollectionPanel() {
     if ((action === 'add' || action === 'remove') && tokenExpired) {
       toast({ variant: 'destructive', title: t('toastSessionExpiredTitle'), description: t('toastSessionExpiredDesc') })
       return
+    }
+    if (action === 'untrack') {
+      const ok = await confirm({
+        title: t('untrackBulkConfirmTitle', { count: targets.length }),
+        description: t('untrackConfirmDescription'),
+        variant: 'warning',
+        confirmLabel: t('untrackAndUnsync'),
+      })
+      if (!ok) return
     }
     if (action === 'remove-server') {
       setBulkBusy(action)
@@ -782,6 +793,24 @@ export function WorkshopCollectionPanel() {
                           setPurgeTarget(it)
                           return
                         }
+                        if (action === 'untrack') {
+                          // Unlike Settings.tsx's plain untrack (local tracking
+                          // only), this one also writes an ignore-list entry AND
+                          // mirrors the removal into the user's real Steam
+                          // Workshop collection -- an effect outside the panel
+                          // entirely, on an account we do not own. Untiered in
+                          // Pam's 52-action destructive audit (only "Remove
+                          // everywhere" was), so it never got a confirm at all.
+                          confirm({
+                            title: t('untrackConfirmTitle'),
+                            description: t('untrackConfirmDescription'),
+                            variant: 'warning',
+                            confirmLabel: t('untrackAndUnsync'),
+                          }).then((ok) => {
+                            if (ok) runRowAction(it.workshopId, action)
+                          })
+                          return
+                        }
                         runRowAction(it.workshopId, action)
                       }}
                     />
@@ -1024,7 +1053,7 @@ function Row({
               className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
               onClick={() => onAction('untrack')}
               disabled={!!busy}
-              title={t('untrackLocallyTitle')}
+              title={t('untrackAndUnsyncTitle')}
             >
               {busy === 'untrack' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
               <span className="ml-1 hidden sm:inline">{t('untrack')}</span>
@@ -1063,7 +1092,17 @@ function Row({
                 </a>
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => { navigator.clipboard.writeText(item.workshopId).catch(() => {}) }}
+                onClick={() => {
+                  // copyText, not the raw clipboard API directly, so this
+                  // still works over a plain-HTTP LAN deployment --
+                  // navigator.clipboard requires a secure context and is
+                  // unavailable there; copyText falls back to execCommand.
+                  copyText(item.workshopId).then((ok) => {
+                    toast(ok
+                      ? { title: t('copiedTitle'), description: item.workshopId }
+                      : { title: t('copyFailedTitle'), variant: 'destructive' })
+                  })
+                }}
               >
                 <Library className="w-3.5 h-3.5 mr-2" />
                 {t('copyWorkshopId')}

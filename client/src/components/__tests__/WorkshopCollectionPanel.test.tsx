@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { WorkshopCollectionPanel } from '../WorkshopCollectionPanel'
+import { ConfirmProvider } from '@/contexts/ConfirmContext'
 import { modsApi } from '@/lib/api'
 
 vi.mock('@/lib/api', async () => {
@@ -53,7 +54,9 @@ async function renderPanel(items: any[]) {
   collectionDiff.mockResolvedValue(baseDiff(items) as any)
   render(
     <MemoryRouter>
-      <WorkshopCollectionPanel />
+      <ConfirmProvider>
+        <WorkshopCollectionPanel />
+      </ConfirmProvider>
     </MemoryRouter>
   )
   await waitFor(() => expect(collectionDiff).toHaveBeenCalled())
@@ -163,10 +166,60 @@ describe('WorkshopCollectionPanel', () => {
     await screen.findByText(ACCENTED_NAME)
 
     fireEvent.click(screen.getByRole('button', { name: 'Untrack' }))
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Untrack & remove from Steam' }))
+
     await waitFor(() => expect(collectionUntrack).toHaveBeenCalledWith('333'))
     // Refresh isn't called on failure, and the button returns to its idle (non-busy) state
     // rather than getting stuck -- proving the failure path doesn't leave the row lying about status.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Untrack' })).toBeEnabled())
+  })
+
+  // bug-hunt-2026-08-26: unlike Settings.tsx's plain untrack (local tracking
+  // only), this untrack also writes an ignore-list entry and mirrors the
+  // removal into the user's real Steam Workshop collection -- untiered in
+  // Pam's 52-action destructive audit and previously fired on a single
+  // click with zero confirmation.
+  it('does NOT untrack on a single click -- it only opens a confirmation naming the Steam-collection side effect', async () => {
+    await renderPanel([
+      { workshopId: '333', name: ACCENTED_NAME, status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+    ])
+    await screen.findByText(ACCENTED_NAME)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Untrack' }))
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByText('Untrack this mod?')).toBeInTheDocument()
+    expect(collectionUntrack).not.toHaveBeenCalled()
+  })
+
+  it('Cancel on the untrack dialog leaves the mod tracked', async () => {
+    await renderPanel([
+      { workshopId: '333', name: ACCENTED_NAME, status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+    ])
+    await screen.findByText(ACCENTED_NAME)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Untrack' }))
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(collectionUntrack).not.toHaveBeenCalled()
+  })
+
+  it('confirming the untrack dialog calls collectionUntrack exactly once', async () => {
+    collectionUntrack.mockResolvedValue({ ok: true, workshopId: '333', removed: true, message: 'ok' } as any)
+    await renderPanel([
+      { workshopId: '333', name: ACCENTED_NAME, status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+    ])
+    await screen.findByText(ACCENTED_NAME)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Untrack' }))
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Untrack & remove from Steam' }))
+
+    await waitFor(() => expect(collectionUntrack).toHaveBeenCalledTimes(1))
+    expect(collectionUntrack).toHaveBeenCalledWith('333')
   })
 
   it('exposes the Add-to-collection disabled reason as an accessible name, not just a hover title', async () => {
