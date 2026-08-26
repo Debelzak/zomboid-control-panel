@@ -340,7 +340,33 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
     if (result.success) {
       res.json(result);
     } else {
-      res.status(400).json(result);
+      // restoreBackup()'s failure messages are almost all short and
+      // pathless -- but the outer catch's own error.message is NOT: an
+      // unexpected raw fs exception (ENOENT/EACCES) carries Node's default
+      // message, which includes a full absolute path, and every other
+      // error site in this codebase redacts that via sanitizeError()
+      // (see the catch three lines below). This route was the one
+      // exception, passing `result` straight through unsanitized.
+      //
+      // A blanket sanitizeError() here would fix that leak but ALSO
+      // redact the one message that deliberately needs its path visible:
+      // the rollback-failure branch, which names the exact path the
+      // preserved original save is sitting at -- the single most
+      // important string in the whole restore flow when it fires, and
+      // the operator's only way to find their data back. So this is
+      // surgical, not blanket: sanitize everything except that one
+      // deliberately-informative message. 2026-08-26 partial-failure-
+      // state hunt.
+      const isRollbackFailureMessage =
+        typeof result.message === "string" &&
+        result.message.startsWith(
+          "Restore failed and the previous save could not be put back automatically.",
+        );
+      res.status(400).json(
+        isRollbackFailureMessage
+          ? result
+          : { ...result, message: sanitizeError(result.message) },
+      );
     }
   } catch (error) {
     log.error(`Failed to restore backup: ${error.message}`);
