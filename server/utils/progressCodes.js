@@ -221,4 +221,15 @@ export const ProgressCode = Object.freeze({
   /** POST /api/server/steamcmd/download -- runFirstTimeSetup()'s
    * steamcmd.on("close") with a non-zero, non-7 exit code. Params: {code}. */
   STEAMCMD_SETUP_FAILED: "STEAMCMD_SETUP_FAILED",
+  /** POST /api/server/steamcmd/download, Windows branch -- extractAndSetup()
+   * already has its own full internal try/catch and reports its own
+   * failures via STEAMCMD_EXTRACTION_FAILED, so this cannot fire today.
+   * It exists because the call site -- file.on("close", async () => {
+   * await extractAndSetup(zipPath) }) -- was an unguarded await in an
+   * EventEmitter listener with nothing to catch a future rejection: same
+   * unhandledRejection -> fatalExit() panel-kill shape as the
+   * INSTALL_SETTINGS_SAVE_FAILED fix, just currently inert because the
+   * callee happens to guard itself. This is the caller's OWN backstop, not
+   * coupled to that staying true. Params: {reason}. */
+  STEAMCMD_SELF_SETUP_UNEXPECTED_ERROR: "STEAMCMD_SELF_SETUP_UNEXPECTED_ERROR",
 });

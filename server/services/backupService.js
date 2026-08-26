@@ -534,8 +534,22 @@ export class BackupService {
           );
         }
 
-        // Clean up old backups
-        await this.cleanupOldBackups();
+        // Clean up old backups. cleanupOldBackups() already has its own
+        // full internal try/catch and cannot reject today -- but this
+        // caller must not depend on that staying true forever: this runs
+        // at the end of EVERY successful backup, including the mandatory
+        // pre-wipe and pre-restore ones, so an unguarded reject here would
+        // be an unhandledRejection -> fatalExit() panel kill sitting
+        // directly downstream of every destructive operation in the app
+        // (2026-08-26, same class as the install setSetting crash).
+        // Retention housekeeping failing does NOT mean the backup failed
+        // -- log and continue, never flip the backup result or abort
+        // whatever destructive step is waiting on it.
+        try {
+          await this.cleanupOldBackups();
+        } catch (cleanupError) {
+          log.warn(`Backup retention cleanup failed for ${backupName}: ${cleanupError.message}`);
+        }
 
         emitProgress(
           "complete",

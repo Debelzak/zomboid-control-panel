@@ -3659,7 +3659,26 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
             }
             response.pipe(file);
             file.on("close", async () => {
-              await extractAndSetup(zipPath);
+              // extractAndSetup() already fully guards itself and reports
+              // its own failures via steamcmd:status -- this try/catch is
+              // the CALLER'S OWN backstop, not a duplicate of that. An
+              // EventEmitter listener whose returned promise nothing
+              // awaits or .catches is exactly the shape that turns a
+              // future change to extractAndSetup's internals into an
+              // unhandledRejection -> fatalExit() panel kill (2026-08-26,
+              // same class as the install setSetting crash). Latent, not
+              // live: extractAndSetup cannot reject today.
+              try {
+                await extractAndSetup(zipPath);
+              } catch (unexpectedError) {
+                log.error(`SteamCMD self-setup failed unexpectedly: ${unexpectedError.message}`);
+                io.emit("steamcmd:status", {
+                  status: "error",
+                  message: `SteamCMD setup failed unexpectedly: ${sanitizeError(unexpectedError.message)}`,
+                  progressCode: ProgressCode.STEAMCMD_SELF_SETUP_UNEXPECTED_ERROR,
+                  params: { reason: sanitizeError(unexpectedError.message) },
+                });
+              }
             });
           })
           .on("error", handleDownloadError);

@@ -341,6 +341,28 @@ describe("createBackup archive safety", () => {
     expect(service.backupInProgress).toBe(false);
   });
 
+  // 2026-08-26 partial-failure-state/fatalExit hunt: cleanupOldBackups()
+  // runs inside output.on("close", async () => {...}) -- an EventEmitter
+  // listener whose returned promise nothing awaits or .catches. Before
+  // this test existed, an uncaught throw here would have been an
+  // unhandledRejection -> fatalExit() panel kill sitting directly
+  // downstream of every successful backup, including the mandatory
+  // pre-wipe and pre-restore ones. Same shape as the sibling test above
+  // for logServerEvent, and it must resolve the same way: retention
+  // housekeeping failing does not mean the backup failed.
+  it("still resolves successfully when cleaning up old backups fails, instead of crashing the process", async () => {
+    const service = createService();
+    service.cleanupOldBackups = async () => {
+      throw new Error("EACCES: permission denied");
+    };
+
+    const result = await service.createBackup({});
+
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(result.backup.path)).toBe(true);
+    expect(service.backupInProgress).toBe(false);
+  });
+
   it("leaves no .tmp file behind after a successful backup, and lists a real .zip", async () => {
     const service = createService();
 
