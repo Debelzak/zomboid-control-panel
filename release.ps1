@@ -148,6 +148,26 @@ if ($untrackedFiles.Count -gt 0) {
     throw "Untracked files detected. Stage intentional new source files before releasing; refusing to stage runtime state automatically."
 }
 
+# v1.2.6 shipped with its changelog entries still sitting under [Unreleased] --
+# nothing in this script or in CI ever promoted them to a numbered heading, and
+# the one thing that looked like a check (release-artifacts.yml's CHANGELOG
+# read) sits in a code path this script's own STEP 6 makes unreachable in the
+# normal flow. This is the fix: block here, before any work happens, rather
+# than auto-writing a heading -- the heading's PRESENCE is mechanical to check,
+# but what goes under it is prose with one writer, not this script's to author.
+$changelogFile = Join-Path $RepoDir "CHANGELOG.md"
+if (Test-Path $changelogFile) {
+    $changelogContent = Get-Content $changelogFile -Raw
+    $headingPattern = "(?m)^## \[$([regex]::Escape($Version))\]"
+    if ($changelogContent -notmatch $headingPattern) {
+        throw "CHANGELOG.md has no '## [$Version]' section. Promote the [Unreleased] entries to '## [$Version] - $(Get-Date -Format yyyy-MM-dd)' and open a fresh [Unreleased] section before releasing."
+    } else {
+        Write-Ok "CHANGELOG.md has a '## [$Version]' section"
+    }
+} else {
+    Write-Warning "CHANGELOG.md not found -- skipping changelog heading check"
+}
+
 # ============================================
 # STEP 1: Bump version in package.json
 # ============================================
