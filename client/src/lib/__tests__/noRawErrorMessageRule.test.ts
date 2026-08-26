@@ -8,12 +8,13 @@ const ruleTester = new RuleTester({
 })
 
 // eslint-rules/no-raw-error-message.js: the structural half of the
-// 2026-08-26 errorMessage.ts coverage audit -- forbids writing a NEW
-// `x instanceof Error ? x.message : fallback` toast/error-state site,
-// scoped narrowly to the two shapes every real site in the audit actually
-// used (a toast() call, a set*() state setter) so it doesn't also flag
-// errorMessage.ts's own internal use of the same shape or client-errors.ts's
-// diagnostic-payload use, neither of which displays the raw text to a user.
+// 2026-08-26 errorMessage.ts coverage audit -- forbids writing a NEW raw
+// caught-error-message toast/error-state site, in any of the three shapes
+// found so far (ternary, `|| fallback`, bare access with no fallback),
+// scoped narrowly to two real sinks (a toast() call, a set*() state setter)
+// so it doesn't also flag errorMessage.ts's own internal use of the ternary
+// shape or client-errors.ts's diagnostic-payload use, neither of which
+// displays the raw text to a user.
 describe('local/no-raw-error-message', () => {
   ruleTester.run('no-raw-error-message', rule, {
     valid: [
@@ -55,6 +56,12 @@ describe('local/no-raw-error-message', () => {
       // ERROR_LIKE_IDENTIFIER_RE, not by sink scoping.
       "toast({ description: backupProgress?.message || fallbackText })",
       "setStatus(result?.message || fallbackText)",
+
+      // Shape 3 (bare `x.message`, no fallback), legitimate use: a normal
+      // API response field, not a caught error -- excluded by identifier,
+      // same as shape 2's equivalents.
+      "toast({ description: result.message })",
+      "setStatus(data?.message)",
     ],
     invalid: [
       {
@@ -97,6 +104,17 @@ describe('local/no-raw-error-message', () => {
         // computed property key -- the ConflictsPanel.tsx setDepSearchData
         // shape, the deepest real site found.
         code: "setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: err?.message || t('searchFailed'), searchUrl: null } }))",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 3 -- the exact ChunkCleaner.tsx site: no fallback at all,
+        // so an empty/undefined .message shows nothing.
+        code: "toast({ title: t('toasts.serverRunningTitle'), description: err.message, variant: 'destructive' })",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 3 with optional chaining, direct set*() argument.
+        code: 'setDetectError(error?.message)',
         errors: [{ messageId: 'rawMessage' }],
       },
     ],

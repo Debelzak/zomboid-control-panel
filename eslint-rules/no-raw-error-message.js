@@ -7,34 +7,40 @@
  * the existing sites doesn't stop the 101st one someone writes next week;
  * this rule is the structural half.
  *
- * TWO SYNTAXES, NOT ONE, both found from real sites (the second reported by
- * Kevin converting Mods.tsx, hours after the first shape alone had already
- * been treated as the count -- his find is why both are here instead of
- * one):
+ * THREE SYNTAXES FOUND SO FAR, NOT ONE -- each found from a real site, each
+ * time after the previous count had already been treated as complete:
  *   1. `x instanceof Error ? x.message : fallback` (isSameErrorMessageTernary)
- *   2. `x?.message || fallback` / `x.message || fallback` (isRawMessageLogicalOr)
- * A rule matching only the first would have DECLARED A FILE CLEAN while the
- * second kept getting written -- worse than no rule, since a green lint gate
+ *   2. `x?.message || fallback` / `x.message || fallback` (isRawMessageLogicalOr,
+ *      found by Kevin converting Mods.tsx -- the ternary-only count from the
+ *      original audit was correct for shape 1 and silent about this one)
+ *   3. a bare `x.message` / `x?.message` with NO fallback at all
+ *      (isBareErrorMessageAccess, found sweeping ChunkCleaner.tsx for a third
+ *      shape after god asked whether one existed -- worse than shapes 1/2
+ *      since an empty/undefined .message shows nothing at all, not even a
+ *      generic fallback)
+ * A rule matching only a subset would have DECLARED A FILE CLEAN while the
+ * others kept getting written -- worse than no rule, since a green lint gate
  * is a positive claim the pattern is gone. Treat the true population of
  * "a caught error's raw message reaches the user outside getUserErrorMessage()"
- * as LARGER than either shape catches, not as fully enumerated by these two --
- * this is the two syntaxes found so far, not a closed set.
+ * as LARGER than these three shapes catch, not as fully enumerated by them --
+ * this is what's been found so far, not a closed set. If a fourth turns up,
+ * add it here rather than assuming three is now complete either.
  *
- * Both are flagged ONLY when feeding a value a user will actually see: the
- * direct argument to `toast(...)`, or the direct argument to a `set...(...)`
- * state-setter call (including the `setX(prev => ({ ...prev, error: <node>
- * }))` functional-update shape real sites used). This is deliberately
- * narrower than "either shape anywhere" -- the audit's own findings
- * ("bucket C") show some uses are legitimate (errorMessage.ts's own
- * getRecoveryUrl() builds the ternary shape to pattern-match against, not to
- * display; client-errors.ts builds it for a diagnostic payload sent to the
- * server, where the raw text is exactly what you want; `result.message` /
- * `data.message` read a normal API response field, not a caught error, and
- * are common enough that shape 2 restricts its left-hand identifier to
- * common error-variable names below rather than matching any `.message`).
- * Scoping to the two real sinks catches every genuine display site while
- * leaving the legitimate uses alone with no file-level exemption needed --
- * none of them is a toast()/set*() argument.
+ * All three are flagged ONLY when feeding a value a user will actually see:
+ * the direct argument to `toast(...)`, or the direct argument to a
+ * `set...(...)` state-setter call (including the `setX(prev => ({ ...prev,
+ * error: <node> }))` functional-update shape real sites used). This is
+ * deliberately narrower than "any of these shapes anywhere" -- the audit's
+ * own findings ("bucket C") show some uses are legitimate (errorMessage.ts's
+ * own getRecoveryUrl() builds the ternary shape to pattern-match against,
+ * not to display; client-errors.ts builds it for a diagnostic payload sent
+ * to the server, where the raw text is exactly what you want; `result.message`
+ * / `data.message` read a normal API response field, not a caught error, and
+ * are common enough that shapes 2 and 3 restrict their identifier to common
+ * error-variable names below rather than matching any `.message`). Scoping
+ * to the two real sinks catches every genuine display site while leaving the
+ * legitimate uses alone with no file-level exemption needed -- none of them
+ * is a toast()/set*() argument.
  *
  * Known limitation, accepted rather than chased: a two-step
  * `const msg = x instanceof Error ? x.message : y; toast({ description: msg
@@ -43,18 +49,18 @@
  * covers the shapes that actually appear, not a theoretical superset.
  *
  * THE FIX IS THE SAME CALL EVERYWHERE, INCLUDING "BUCKET C" SITES: replace
- * either shape with `getUserErrorMessage(error, fallback)`. That function
- * already falls through to the identical raw message when no error code
- * matches (see its own body), so a self-contained-validation-text site with
- * no code and no sensible recovery link (the audit's "bucket C") shows
- * byte-identical text either way -- there is no real site found where either
+ * any of the three shapes with `getUserErrorMessage(error, fallback)`. That
+ * function already falls through to the identical raw message when no error
+ * code matches (see its own body), so a self-contained-validation-text site
+ * with no code and no sensible recovery link (the audit's "bucket C") shows
+ * byte-identical text either way -- there is no real site found where any
  * raw shape is actually better. A genuinely exceptional site that needs the
  * old raw behavior on purpose should call errorMessage.ts's
  * `rawErrorMessageIntentional(error, fallback)` instead of eslint-disabling
  * this rule -- same behavior, but the exemption is a named, greppable
- * function call in the diff, not a comment that hides the decision. Neither
- * call matches either shape below, so this rule's selectors don't match
- * either one -- no separate file-level exemption is needed for them.
+ * function call in the diff, not a comment that hides the decision. That
+ * call doesn't match any of the three shapes below, so this rule's selectors
+ * don't match it -- no separate file-level exemption is needed for it.
  */
 
 // Real error-catch variable names seen across this codebase for shape 2
@@ -108,6 +114,21 @@ function isRawMessageLogicalOr(node) {
   }
   if (member.object.type !== "Identifier") return false;
   return ERROR_LIKE_IDENTIFIER_RE.test(member.object.name);
+}
+
+// Shape 3: a bare `x.message` / `x?.message` with no fallback at all --
+// worse than shapes 1/2 (an empty or undefined .message shows nothing,
+// not even a generic string), same identifier restriction as shape 2.
+// Visited directly as MemberExpression: espree/typescript-eslint parse
+// `x?.message` as ChainExpression > MemberExpression, so the traversal
+// reaches this exact node either way, optional or not.
+function isBareErrorMessageAccess(node) {
+  if (node.type !== "MemberExpression") return false;
+  if (node.property.type !== "Identifier" || node.property.name !== "message") {
+    return false;
+  }
+  if (node.object.type !== "Identifier") return false;
+  return ERROR_LIKE_IDENTIFIER_RE.test(node.object.name);
 }
 
 // True when `node` (the ternary or the logical-OR expression) is the value
@@ -182,6 +203,11 @@ export default {
       },
       LogicalExpression(node) {
         if (!isRawMessageLogicalOr(node)) return;
+        if (!isFeedingUserVisibleSink(node)) return;
+        context.report({ node, messageId: "rawMessage" });
+      },
+      MemberExpression(node) {
+        if (!isBareErrorMessageAccess(node)) return;
         if (!isFeedingUserVisibleSink(node)) return;
         context.report({ node, messageId: "rawMessage" });
       },
