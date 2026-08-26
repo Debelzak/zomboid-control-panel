@@ -5750,6 +5750,11 @@ function WorkshopCollectionSyncCard({
       (b.startsWith("•") || b.length >= 16)
     );
   })();
+  // diff already carries this -- WorkshopCollectionPanel.tsx (the other,
+  // independent implementation of these same row actions) reads it to
+  // refuse add/remove early with a clear reason; this page fetches the
+  // identical collectionDiff() response but never read the field.
+  const tokenExpired = !!diff?.tokenExpired;
 
   const collectionId = (settings.workshopCollectionId || "").trim();
   const collectionIdValid = /^\d{1,15}$/.test(collectionId);
@@ -6064,12 +6069,16 @@ function WorkshopCollectionSyncCard({
           throw new Error(
             t("workshopSync.toasts.cookiesFirstError"),
           );
+        if (tokenExpired)
+          throw new Error(t("workshopSync.toasts.sessionExpiredError"));
         await modsApi.collectionAddItem(workshopId);
       } else if (action === "remove") {
         if (!credsConfigured)
           throw new Error(
             t("workshopSync.toasts.cookiesFirstError"),
           );
+        if (tokenExpired)
+          throw new Error(t("workshopSync.toasts.sessionExpiredError"));
         await modsApi.collectionRemoveItem(workshopId);
       } else if (action === "track") {
         await modsApi.trackMod(workshopId);
@@ -6751,11 +6760,13 @@ function WorkshopCollectionSyncCard({
                                     onClick={() =>
                                       runRowAction(it.workshopId, "remove")
                                     }
-                                    disabled={!!busy || !credsConfigured}
+                                    disabled={!!busy || !credsConfigured || tokenExpired}
                                     title={
-                                      !credsConfigured
-                                        ? t("workshopSync.removeFromCollectionNeedsCookies")
-                                        : t("workshopSync.removeFromCollectionTitle")
+                                      tokenExpired
+                                        ? t("workshopSync.sessionExpiredShort")
+                                        : !credsConfigured
+                                          ? t("workshopSync.removeFromCollectionNeedsCookies")
+                                          : t("workshopSync.removeFromCollectionTitle")
                                     }
                                   >
                                     {busy === "remove" ? (
@@ -6775,11 +6786,13 @@ function WorkshopCollectionSyncCard({
                                     onClick={() =>
                                       runRowAction(it.workshopId, "add")
                                     }
-                                    disabled={!!busy || !credsConfigured}
+                                    disabled={!!busy || !credsConfigured || tokenExpired}
                                     title={
-                                      !credsConfigured
-                                        ? t("workshopSync.removeFromCollectionNeedsCookies")
-                                        : t("workshopSync.addToCollectionTitle")
+                                      tokenExpired
+                                        ? t("workshopSync.sessionExpiredShort")
+                                        : !credsConfigured
+                                          ? t("workshopSync.removeFromCollectionNeedsCookies")
+                                          : t("workshopSync.addToCollectionTitle")
                                     }
                                   >
                                     {busy === "add" ? (
