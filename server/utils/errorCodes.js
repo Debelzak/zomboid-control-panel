@@ -1655,6 +1655,117 @@ export const ErrorCode = Object.freeze({
   /** server/routes/scheduler.js -- POST /restart-now, the active server is
    * remote (this panel doesn't manage its process). */
   SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED: "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED",
+
+  /** server/routes/config.js -- PUT /, `config` missing from the body. */
+  CONFIG_REQUIRED: "CONFIG_REQUIRED",
+  /** server/routes/config.js -- PUT /, serverManager.saveServerConfig()
+   * reported failure. Carries the underlying reason as the `reason` param
+   * -- the specific cause is more useful here than a generic message,
+   * unlike the file's catch-all 500s. */
+  CONFIG_SAVE_FAILED: "CONFIG_SAVE_FAILED",
+  /** server/routes/config.js -- POST /option, `name` or `value` missing. */
+  CONFIG_OPTION_FIELDS_REQUIRED: "CONFIG_OPTION_FIELDS_REQUIRED",
+  /** server/routes/config.js -- POST /option, `name` fails
+   * isValidOptionName() (command-injection guard on the RCON option name). */
+  CONFIG_OPTION_NAME_INVALID: "CONFIG_OPTION_NAME_INVALID",
+  /** server/routes/config.js -- POST /option, `value` fails
+   * isValidOptionValue(). */
+  CONFIG_OPTION_VALUE_INVALID: "CONFIG_OPTION_VALUE_INVALID",
+  /** server/routes/config.js -- PUT /app-settings, `settings` missing or not
+   * an object. */
+  CONFIG_APP_SETTINGS_REQUIRED: "CONFIG_APP_SETTINGS_REQUIRED",
+  /** server/routes/config.js -- PUT /app-settings, corsAllowedOrigins fails
+   * validateCorsAllowedOrigins() (too long, too many origins, an origin too
+   * long, or an invalid URL/protocol). Carries that function's own specific
+   * message as the `reason` param rather than flattening five distinct
+   * failure shapes into one generic sentence. */
+  CONFIG_INVALID_CORS_ORIGINS: "CONFIG_INVALID_CORS_ORIGINS",
+  /** server/routes/config.js -- PUT /app-settings, `serverName` fails the
+   * filesystem-safe name regex (interpolated into `${serverName}.ini` and
+   * the launch script name downstream). */
+  CONFIG_INVALID_SERVER_NAME: "CONFIG_INVALID_SERVER_NAME",
+  /** server/routes/config.js -- PUT /app-settings, `modCheckInterval` fails
+   * minutesToCheckIntervalMs(). */
+  CONFIG_INVALID_MOD_CHECK_INTERVAL: "CONFIG_INVALID_MOD_CHECK_INTERVAL",
+  /** server/routes/config.js (12 sites: modRestartDelay,
+   * serverAutoUpdateWarningMinutes, httpsPort, panelPort, rconPort,
+   * serverPort, panelBridgeSftpPort, panelBridgeSftpPollIntervalSeconds,
+   * minMemory, maxMemory, autoExportMaxPerPlayer, reconnectInterval) -- a
+   * numeric app-setting fails its requireIntInRange()/parseBoundedInteger()
+   * range check. Every site already produces a fully-formed, field-specific
+   * message ("X must be a whole number between/from A and B") from those
+   * two shared helpers -- carried as the `message` param rather than
+   * inventing 12 near-duplicate codes/locale entries for the same shape. */
+  CONFIG_INVALID_NUMERIC_FIELD: "CONFIG_INVALID_NUMERIC_FIELD",
+  /** server/routes/config.js -- PUT /app-settings, `lanIpAddress` is
+   * non-empty and not a valid IPv4 address. */
+  CONFIG_INVALID_LAN_IP: "CONFIG_INVALID_LAN_IP",
+  /** server/routes/config.js -- PUT /app-settings (14 boolean-shaped keys,
+   * one shared check) -- a key that must be strictly true/false received a
+   * non-boolean value. Carries the offending key name as the `field` param. */
+  CONFIG_INVALID_BOOLEAN_FIELD: "CONFIG_INVALID_BOOLEAN_FIELD",
+  /** server/routes/config.js -- PUT /app-settings, httpsCertPath/
+   * httpsKeyPath given a non-string, non-empty value. Carries the field
+   * name as the `field` param. */
+  CONFIG_HTTPS_PATH_NOT_STRING: "CONFIG_HTTPS_PATH_NOT_STRING",
+  /** server/routes/config.js -- PUT /app-settings, httpsCertPath/
+   * httpsKeyPath points at a path that doesn't exist. Carries `field` and
+   * `value` params. */
+  CONFIG_HTTPS_PATH_NOT_FOUND: "CONFIG_HTTPS_PATH_NOT_FOUND",
+  /** server/routes/config.js -- PUT /app-settings, httpsCertPath/
+   * httpsKeyPath points at a directory, not a file. Carries `field` and
+   * `value` params. */
+  CONFIG_HTTPS_PATH_NOT_A_FILE: "CONFIG_HTTPS_PATH_NOT_A_FILE",
+  /** server/routes/config.js -- PUT /app-settings, httpsCertPath/
+   * httpsKeyPath exists but isn't readable by the panel process. Carries
+   * `field` and `value` params. */
+  CONFIG_HTTPS_PATH_NOT_READABLE: "CONFIG_HTTPS_PATH_NOT_READABLE",
+  /** server/routes/config.js -- PUT /app-settings, `httpsPort` would collide
+   * with the stored `panelPort`. Carries the conflicting port as the
+   * `panelPort` param. */
+  CONFIG_HTTPS_PORT_MATCHES_PANEL_PORT: "CONFIG_HTTPS_PORT_MATCHES_PANEL_PORT",
+  /** server/routes/config.js -- PUT /app-settings, `panelPort` would
+   * collide with the stored `httpsPort` -- the reverse direction of the
+   * check above, kept as its own code rather than shared: the two
+   * messages name different fields and read as different sentences, not
+   * one meaning at two sites. Carries the conflicting port as the
+   * `httpsPort` param. */
+  CONFIG_PANEL_PORT_MATCHES_HTTPS_PORT: "CONFIG_PANEL_PORT_MATCHES_HTTPS_PORT",
+  /** server/routes/config.js -- PUT /app-settings, `chatPresets` present
+   * but not an array. */
+  CONFIG_CHAT_PRESETS_NOT_ARRAY: "CONFIG_CHAT_PRESETS_NOT_ARRAY",
+  /** server/routes/config.js -- PUT /app-settings, `chatPresets` exceeds 50
+   * entries. */
+  CONFIG_CHAT_PRESETS_TOO_MANY: "CONFIG_CHAT_PRESETS_TOO_MANY",
+  /** server/routes/config.js -- PUT /app-settings, a `chatPresets` entry
+   * isn't a string or exceeds 500 characters. */
+  CONFIG_CHAT_PRESETS_INVALID_ENTRY: "CONFIG_CHAT_PRESETS_INVALID_ENTRY",
+  /** server/routes/config.js (2 sites: GET /cors-debug, DELETE
+   * /cors-debug/blocked) -- the CORS diagnostics hooks were never
+   * registered on the app (req.app.get returns a non-function). Identical
+   * wording/meaning both sites, shared code. */
+  CONFIG_CORS_DIAGNOSTICS_UNAVAILABLE: "CONFIG_CORS_DIAGNOSTICS_UNAVAILABLE",
+  /** server/routes/config.js -- POST /cors-debug/reload, the CORS config
+   * reload hook was never registered on the app. */
+  CONFIG_CORS_RELOAD_UNAVAILABLE: "CONFIG_CORS_RELOAD_UNAVAILABLE",
+  /** server/routes/config.js -- PUT /paths, `serverPath` fails
+   * isValidConfigPath() (must be absolute, no traversal). */
+  CONFIG_INVALID_SERVER_PATH: "CONFIG_INVALID_SERVER_PATH",
+  /** server/routes/config.js -- PUT /paths, `savePath` fails
+   * isValidConfigPath(). */
+  CONFIG_INVALID_SAVE_PATH: "CONFIG_INVALID_SAVE_PATH",
+  /** server/routes/config.js -- PUT /rcon, request body missing/not an
+   * object/an array. */
+  CONFIG_RCON_REQUEST_BODY_INVALID: "CONFIG_RCON_REQUEST_BODY_INVALID",
+  /** server/routes/config.js -- PUT /rcon, `host` fails the hostname-safe
+   * format check. */
+  CONFIG_RCON_INVALID_HOST: "CONFIG_RCON_INVALID_HOST",
+  /** server/routes/config.js -- PUT /rcon, `port` fails the 1-65535 bounded
+   * check. */
+  CONFIG_RCON_INVALID_PORT: "CONFIG_RCON_INVALID_PORT",
+  /** server/routes/config.js -- PUT /rcon, `password` present but not a
+   * string or exceeds 256 characters. */
+  CONFIG_RCON_INVALID_PASSWORD: "CONFIG_RCON_INVALID_PASSWORD",
 });
 
 /**
