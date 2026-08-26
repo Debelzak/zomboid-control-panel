@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { reportClientError } from '@/lib/client-errors'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import {
   Users,
   UserX,
@@ -558,7 +559,7 @@ export default function Players() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.saveNoteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.saveNoteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -587,7 +588,7 @@ export default function Players() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.deleteNoteFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.deleteNoteFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -743,7 +744,7 @@ export default function Players() {
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
-        description: error instanceof Error ? error.message : t('toasts.actionFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.actionFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -918,7 +919,7 @@ export default function Players() {
     } catch (error) {
       toast({
         title: t('toasts.giveItemFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.giveItemFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.giveItemFailedFallback')),
         variant: 'destructive',
       })
       throw error
@@ -943,7 +944,7 @@ export default function Players() {
     } catch (error) {
       toast({
         title: t('toasts.vehicleSpawnFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.vehicleSpawnFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.vehicleSpawnFailedFallback')),
         variant: 'destructive',
       })
       throw error

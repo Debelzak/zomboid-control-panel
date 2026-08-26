@@ -161,6 +161,8 @@ describe("DELETE /api/players/notes/:playerName", () => {
     expect(response.json).toHaveBeenCalledWith({
       success: false,
       error: "Player note not found",
+      // 2026-08-26 bug hunt round 2: players.js adopted the ErrorCode registry.
+      code: "PLAYERS_NOTE_NOT_FOUND",
     });
   });
 });
