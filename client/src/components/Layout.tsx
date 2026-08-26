@@ -305,6 +305,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const { t } = useTranslation('shell')
+  const { t: tScheduler } = useTranslation('scheduler')
   const [activeServer, setActiveServer] = useState<ServerInstance | null>(null)
 
   const isBlockedByRemote = (item: NavItem) =>
@@ -353,6 +354,37 @@ export default function Layout({ children }: LayoutProps) {
       socket.off('players:update', handlePlayersUpdate)
     }
   }, [socket])
+
+  // Surface the REAL outcome of a manual restart or "Run now" task, from
+  // wherever the user happens to be -- not just on the Scheduler page.
+  // POST /restart-now and /tasks/:id/run only ever confirmed the action was
+  // ACCEPTED (both run in the background and used to report success:true
+  // unconditionally); this is the one place the actual result reaches the
+  // client at all instead of only being discoverable by someone who thinks
+  // to go check Schedule History (2026-08-26 bug hunt, scheduler
+  // blind-success family). Global, not page-scoped, because a restart's
+  // countdown + graceful shutdown can run long enough that the user has
+  // already navigated elsewhere by the time it resolves.
+  useEffect(() => {
+    if (!socket) return
+    const onActionResult = (data?: { kind?: 'restart' | 'task'; taskName?: string; success?: boolean; message?: string }) => {
+      if (!data) return
+      const isRestart = data.kind === 'restart'
+      const title = data.success
+        ? (isRestart ? tScheduler('toasts.restartSucceededTitle') : tScheduler('toasts.taskSucceededTitle', { name: data.taskName }))
+        : (isRestart ? tScheduler('toasts.restartResultFailedTitle') : tScheduler('toasts.taskResultFailedTitle', { name: data.taskName }))
+      toast({
+        title,
+        description: data.message,
+        variant: data.success ? ('success' as const) : 'destructive',
+      })
+    }
+    socket.on('scheduler:action_result', onActionResult)
+    return () => {
+      socket.off('scheduler:action_result', onActionResult)
+    }
+  }, [socket, tScheduler, toast])
+
   const navigate = useNavigate()
   const location = useLocation()
   const playerCountLabel = playerCount > 99 ? '99+' : String(playerCount)

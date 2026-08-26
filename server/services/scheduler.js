@@ -145,12 +145,19 @@ export class Scheduler {
   // servermsg/bridge: special-casing in executeTask), so a manual "run now"
   // behaves identically to the scheduled fire instead of shelling the raw
   // command string straight to RCON.
+  // Returns {success, message} -- previously implicit `undefined` on every
+  // path, including failure (this method already caught and logged its own
+  // errors to Schedule History, so nothing rethrew and a caller had no way
+  // to learn the outcome without a second, separate history query). The
+  // route now uses this to report the real result over the socket instead
+  // of a blind "Task triggered" (2026-08-26 bug hunt, scheduler
+  // blind-success family).
   async runTaskNow(task) {
     if (this.runningTasks.has(task.id)) {
       log.debug(
         `Skipping duplicate execution of task ${task.name} (already running)`,
       );
-      return;
+      return { success: false, message: "Already running" };
     }
 
     this.runningTasks.add(task.id);
@@ -160,15 +167,17 @@ export class Scheduler {
       await this.executeTask(task);
       const duration = Date.now() - startTime;
       await updateTaskLastRun(task.id);
+      const message = "Completed successfully";
       await logScheduleExecution(
         task.id,
         task.name,
         task.command,
         true,
-        "Completed successfully",
+        message,
         duration,
       );
       await logServerEvent("scheduled_task", `Executed: ${task.name}`);
+      return { success: true, message };
     } catch (error) {
       const duration = Date.now() - startTime;
       log.error(`Scheduled task failed ${task.name}: ${error.message}`);
@@ -184,6 +193,7 @@ export class Scheduler {
         "scheduled_task_error",
         `${task.name}: ${error.message}`,
       );
+      return { success: false, message: error.message };
     } finally {
       this.runningTasks.delete(task.id);
     }

@@ -204,6 +204,10 @@
     "broadcastSentTitle": "Difusión enviada",
     "broadcastFailedFallback": "No se pudo difundir",
     "historyClearedDesc": "Historial borrado",
-    "historyClearFailedFallback": "No se pudo borrar el historial"
+    "historyClearFailedFallback": "No se pudo borrar el historial",
+    "restartSucceededTitle": "Reinicio completado",
+    "restartResultFailedTitle": "Error al reiniciar",
+    "taskSucceededTitle": "\"{{name}}\" completada",
+    "taskResultFailedTitle": "\"{{name}}\" fallida"
   }
 }

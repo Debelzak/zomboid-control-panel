@@ -204,6 +204,10 @@
     "broadcastSentTitle": "Broadcast Sent",
     "broadcastFailedFallback": "Failed to broadcast",
     "historyClearedDesc": "History cleared",
-    "historyClearFailedFallback": "Failed to clear history"
+    "historyClearFailedFallback": "Failed to clear history",
+    "restartSucceededTitle": "Restart completed",
+    "restartResultFailedTitle": "Restart failed",
+    "taskSucceededTitle": "\"{{name}}\" completed",
+    "taskResultFailedTitle": "\"{{name}}\" failed"
   }
 }

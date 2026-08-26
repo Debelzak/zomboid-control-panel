@@ -27,6 +27,15 @@ export function parseTaskId(value) {
   return parseBoundedInteger(value, null, 1, Number.MAX_SAFE_INTEGER);
 }
 
+// Guards against a test double or a partial app.get() mock that returns
+// something truthy but not a real Socket.IO server for other keys -- a
+// bare truthy check on `io` isn't enough (2026-08-26 bug hunt, scheduler
+// blind-success family: added after this exact shape broke an existing
+// req.app mock that returns the same object for any key).
+function emitActionResult(io, payload) {
+  if (typeof io?.emit === 'function') io.emit('scheduler:action_result', payload);
+}
+
 const router = express.Router();
 
 // Task automation (create/edit/delete/run scheduled commands, trigger an
@@ -410,9 +419,29 @@ router.post('/tasks/:id/run', async (req, res) => {
     }
 
     log.info(`POST /tasks/${taskId}/run: ${task.name}`);
-    scheduler.runTaskNow(task).catch(err => {
-      log.error(`Manual run of task ${taskId} failed: ${err.message}`);
-    });
+    const io = req.app.get('io');
+    // Same rationale as /restart-now just below in this file: the response
+    // only confirms the task was accepted, runTaskNow() runs in the
+    // background and reports its real outcome here once it resolves
+    // (2026-08-26 bug hunt, scheduler blind-success family).
+    scheduler.runTaskNow(task)
+      .then((result) => {
+        emitActionResult(io, {
+          kind: 'task',
+          taskName: task.name,
+          success: !!result?.success,
+          message: result?.message || (result?.success ? 'Task completed' : 'Task failed'),
+        });
+      })
+      .catch(err => {
+        log.error(`Manual run of task ${taskId} failed: ${err.message}`);
+        emitActionResult(io, {
+          kind: 'task',
+          taskName: task.name,
+          success: false,
+          message: err.message,
+        });
+      });
 
     res.json({ success: true, message: 'Task triggered' });
   } catch (error) {
@@ -430,6 +459,7 @@ router.post('/restart-now', async (req, res) => {
     }
 
     const scheduler = req.app.get('scheduler');
+    const io = req.app.get('io');
     const warningMinutes = req.body?.warningMinutes;
 
     // Parse and validate warningMinutes (0-60 range)
@@ -449,9 +479,32 @@ router.post('/restart-now', async (req, res) => {
     // "Auto Restart" default -- this IS a human clicking Restart Now, and
     // the history record should say so if it later fails. See
     // docs/qa/kevin-adversarial-findings.md Finding 3.
-    scheduler.performRestart(parsedWarningMinutes, { label: 'Manual restart' }).catch(err => {
-      log.error(`Restart failed: ${err.message}`);
-    });
+    //
+    // The HTTP response below only confirms the restart was ACCEPTED --
+    // performRestart() runs in the background (the countdown + graceful
+    // shutdown can take minutes) and already computes a real {success,
+    // message} on every path, already logged to Schedule History. This is
+    // the one place that outcome can reach the client in real time instead
+    // of only being discoverable by someone who thinks to go check history
+    // (2026-08-26 bug hunt, scheduler blind-success family -- restart-now
+    // used to report success:true unconditionally regardless of what
+    // actually happened).
+    scheduler.performRestart(parsedWarningMinutes, { label: 'Manual restart' })
+      .then((result) => {
+        emitActionResult(io, {
+          kind: 'restart',
+          success: !!result?.success,
+          message: result?.message || (result?.success ? 'Restart completed' : 'Restart failed'),
+        });
+      })
+      .catch(err => {
+        log.error(`Restart failed: ${err.message}`);
+        emitActionResult(io, {
+          kind: 'restart',
+          success: false,
+          message: err.message,
+        });
+      });
 
     res.json({ success: true, message: 'Restart initiated' });
   } catch (error) {

@@ -204,6 +204,10 @@
     "broadcastSentTitle": "Diffusion envoyée",
     "broadcastFailedFallback": "Échec de la diffusion",
     "historyClearedDesc": "Historique effacé",
-    "historyClearFailedFallback": "Échec de l'effacement de l'historique"
+    "historyClearFailedFallback": "Échec de l'effacement de l'historique",
+    "restartSucceededTitle": "Redémarrage terminé",
+    "restartResultFailedTitle": "Échec du redémarrage",
+    "taskSucceededTitle": "\"{{name}}\" terminée",
+    "taskResultFailedTitle": "\"{{name}}\" échouée"
   }
 }
