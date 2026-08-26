@@ -385,6 +385,8 @@
     "invalidJsonDesc": "The character data is not valid JSON format",
     "characterImportedTitle": "Character Imported",
     "characterImportedDesc": "Applied {{perks}} skills and {{items}} items to {{player}}",
+    "characterImportedTitleNoneApplied": "Import Applied Nothing",
+    "characterImportedDescNoneApplied": "None of the submitted skills or items were applied to {{player}}. The data may not match this server's mods or item definitions.",
     "importFailedTitle": "Import Failed",
     "importFailedFallback": "Failed to import character",
     "fileTooLargeTitle": "File Too Large",

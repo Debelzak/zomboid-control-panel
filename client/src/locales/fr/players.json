@@ -385,6 +385,8 @@
     "invalidJsonDesc": "Les données du personnage ne sont pas un JSON valide",
     "characterImportedTitle": "Personnage importé",
     "characterImportedDesc": "{{perks}} compétences et {{items}} objets appliqués à {{player}}",
+    "characterImportedTitleNoneApplied": "L'import n'a rien appliqué",
+    "characterImportedDescNoneApplied": "Aucune des compétences ou objets soumis n'a été appliqué à {{player}}. Les données ne correspondent peut-être pas aux mods ou aux définitions d'objets de ce serveur.",
     "importFailedTitle": "Échec de l'import",
     "importFailedFallback": "Échec de l'import du personnage",
     "fileTooLargeTitle": "Fichier trop volumineux",

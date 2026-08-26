@@ -385,6 +385,8 @@
     "invalidJsonDesc": "Done pèsonaj yo se pa yon fòma JSON valid",
     "characterImportedTitle": "Pèsonaj Enpòte",
     "characterImportedDesc": "Aplike {{perks}} konpetans ak {{items}} atik pou {{player}}",
+    "characterImportedTitleNoneApplied": "Enpòtasyon an pa aplike anyen",
+    "characterImportedDescNoneApplied": "Okenn nan konpetans oswa atik yo soumèt yo pa t aplike sou {{player}}. Done yo ka pa koresponn ak mod oswa definisyon atik sèvè sa a.",
     "importFailedTitle": "Enpòtasyon Echwe",
     "importFailedFallback": "Enpòte pèsonaj la echwe",
     "fileTooLargeTitle": "Dosye Twò Gwo",

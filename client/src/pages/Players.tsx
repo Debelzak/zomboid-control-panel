@@ -2953,9 +2953,19 @@ export default function Players() {
                       const { panelBridgeApi } = await import('@/lib/api')
                       const response = await panelBridgeApi.importCharacter(selectedPlayer, data)
                       const restored = response.data?.restored
+                      // Submitted a non-empty perks/inventory section but restored
+                      // nothing from it: the Lua side counts honestly (see
+                      // PanelBridge.lua importPlayerData) but a caller that only
+                      // reads the counts from the description, not the title,
+                      // would still see an unconditionally success-styled toast.
+                      const submittedPerks = data && typeof data.perks === 'object' && data.perks !== null && Object.keys(data.perks).length > 0
+                      const submittedItems = Array.isArray(data?.inventory) && data.inventory.length > 0
+                      const noneApplied = (restored?.perks ?? 0) === 0 && (restored?.items ?? 0) === 0 && (submittedPerks || submittedItems)
                       toast({
-                        title: t('toasts.characterImportedTitle'),
-                        description: t('toasts.characterImportedDesc', { perks: restored?.perks ?? 0, items: restored?.items ?? 0, player: selectedPlayer }),
+                        title: t(noneApplied ? 'toasts.characterImportedTitleNoneApplied' : 'toasts.characterImportedTitle'),
+                        description: noneApplied
+                          ? t('toasts.characterImportedDescNoneApplied', { player: selectedPlayer })
+                          : t('toasts.characterImportedDesc', { perks: restored?.perks ?? 0, items: restored?.items ?? 0, player: selectedPlayer }),
                       })
                       setImportCharacterData('')
                     } catch (error) {

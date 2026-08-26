@@ -385,6 +385,8 @@
     "invalidJsonDesc": "角色数据不是有效的 JSON 格式",
     "characterImportedTitle": "角色已导入",
     "characterImportedDesc": "已为 {{player}} 应用 {{perks}} 项技能与 {{items}} 件物品",
+    "characterImportedTitleNoneApplied": "导入未应用任何内容",
+    "characterImportedDescNoneApplied": "提交的技能或物品均未应用到 {{player}}。数据可能与此服务器的模组或物品定义不匹配。",
     "importFailedTitle": "导入失败",
     "importFailedFallback": "导入角色失败",
     "fileTooLargeTitle": "文件过大",

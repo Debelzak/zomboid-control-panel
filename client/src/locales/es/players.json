@@ -385,6 +385,8 @@
     "invalidJsonDesc": "Los datos del personaje no tienen un formato JSON válido",
     "characterImportedTitle": "Personaje importado",
     "characterImportedDesc": "Se aplicaron {{perks}} habilidades y {{items}} objetos a {{player}}",
+    "characterImportedTitleNoneApplied": "La importación no aplicó nada",
+    "characterImportedDescNoneApplied": "No se aplicó ninguna de las habilidades u objetos enviados a {{player}}. Es posible que los datos no coincidan con los mods o las definiciones de objetos de este servidor.",
     "importFailedTitle": "Error de importación",
     "importFailedFallback": "No se pudo importar el personaje",
     "fileTooLargeTitle": "Archivo demasiado grande",
