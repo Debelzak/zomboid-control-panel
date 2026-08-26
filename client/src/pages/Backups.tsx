@@ -852,7 +852,7 @@ export default function Backups() {
                 </Button>
               )}
               <Button
-                variant="outline"
+                variant="destructive"
                 size="sm"
                 onClick={() => setDeleteOlderDialog(true)}
                 disabled={deletingOlder || backups.length === 0}
@@ -1140,11 +1140,15 @@ export default function Backups() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Older Than Dialog */}
+      {/* Delete Older Than Dialog -- same permanent-data-loss severity as
+          the single/bulk delete dialog above (deleteDialog), just a
+          different entry point. Styled destructive-red to match rather
+          than the amber it had before, which understated a no-undo bulk
+          delete relative to its sibling action. */}
       <AlertDialog open={deleteOlderDialog} onOpenChange={setDeleteOlderDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-warning">
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <Clock className="w-5 h-5" />
               {t('deleteOlderDialog.title')}
             </AlertDialogTitle>
@@ -1179,7 +1183,7 @@ export default function Backups() {
             <AlertDialogCancel>{t('deleteOlderDialog.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteOlderThan}
-              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t('deleteOlderDialog.confirm')}
             </AlertDialogAction>
