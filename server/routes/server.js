@@ -39,6 +39,24 @@ export async function logServerEventBestEffort(...args) {
   }
 }
 
+// Files that only exist in a real PZ server install -- used both to guard
+// against deleting the wrong folder (DELETE /delete-files) and, since
+// 2026-08-26, to confirm SteamCMD's app_update actually produced a usable
+// install rather than just exiting 0 (POST /install). Shared so the two
+// checks can't drift apart into two different ideas of "this looks like a
+// PZ server."
+const PZ_INSTALL_MARKERS = [
+  "ProjectZomboid64.json",
+  "ProjectZomboid32.json",
+  "StartServer64.bat",
+  "StartServer32.bat",
+  "start-server.sh",
+];
+
+function hasPzInstallMarker(dirPath) {
+  return PZ_INSTALL_MARKERS.some((marker) => fs.existsSync(path.join(dirPath, marker)));
+}
+
 // Get the SteamCMD executable name for the current platform
 function getSteamCmdExe(steamcmdPath) {
   const primary = path.join(
@@ -2439,6 +2457,27 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           `Installed PZ server to ${installPath} (${selectedBranch} branch)`,
         );
 
+        // 2026-08-26 bug hunt: exit code 0 was trusted as sufficient proof
+        // the game files were actually installed -- SteamCMD can exit 0
+        // after a rate-limited, interrupted, or otherwise incomplete
+        // download. The self-install-steamcmd-itself step above already
+        // does an existsSync check on its own output for exactly this
+        // reason; this carries that same habit to the install that
+        // actually matters. Same PZ_INSTALL_MARKERS list DELETE
+        // /delete-files uses to confirm a folder is a real PZ install --
+        // one marker present is enough to call this usable, not a deep
+        // validation.
+        if (!hasPzInstallMarker(installPath)) {
+          log.warn(
+            `SteamCMD exited 0 but no recognizable PZ server files were found at ${installPath}`,
+          );
+          warnings.push({
+            progressCode: ProgressCode.INSTALL_MISSING_GAME_FILES,
+            message:
+              "SteamCMD reported success, but no recognizable game files were found at the install path. Check the SteamCMD log above for a hidden error (a rate limit or an interrupted download can still exit 0), and verify the install path before starting this server.",
+          });
+        }
+
         // Auto-install PanelBridge mod to the server
         try {
           const possibleModPaths = [
@@ -3919,16 +3958,7 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
 
     // Check for known PZ server markers to prevent accidental deletion of wrong folders
     // Require one of the PZ-specific files (not just generic dirs like 'java')
-    const pzSpecificMarkers = [
-      "ProjectZomboid64.json",
-      "ProjectZomboid32.json",
-      "StartServer64.bat",
-      "StartServer32.bat",
-      "start-server.sh",
-    ];
-    const hasPzFiles = pzSpecificMarkers.some((marker) =>
-      fs.existsSync(path.join(deletePath, marker)),
-    );
+    const hasPzFiles = hasPzInstallMarker(deletePath);
 
     // Also reject paths containing '..' after normalization
     const normalizedDelete = path.normalize(deletePath);

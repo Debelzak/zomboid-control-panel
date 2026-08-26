@@ -12,6 +12,7 @@
   "INI_PRECREATED_WITH_UPNP": "INI sèvè a pre-kreye ak paramèt UPnP",
   "STARTUP_SCRIPT_CREATED": "Script demaraj pèsonalize kreye: {{scriptName}}",
   "INSTALL_STARTUP_SCRIPT_FAILED": "Pa t kapab jenere script demaraj pèsonalize sèvè sa a ({{reason}}). Sèvè a ka toujou demare — l ap itilize script pa defo a jiskaske sa a rejenere, ki rive tou otomatikman pwochen fwa ou demare l.",
+  "INSTALL_MISSING_GAME_FILES": "SteamCMD rapòte siksè, men pa gen okenn fichye jwèt rekonètab ki jwenn nan chemen enstalasyon an. Tcheke jounal SteamCMD anwo a pou yon erè kache (yon limit vitès oswa yon telechajman entèwonp ka toujou fini ak kòd 0), epi verifye chemen enstalasyon an anvan ou demare sèvè sa a.",
   "PANELBRIDGE_AUTO_INSTALLED": "Mod PanelBridge enstale otomatikman",
   "INSTALL_COMPLETE_SUCCESS": "Sèvè a enstale avèk siksè",
   "INSTALL_FAILED_EXIT_CODE": "Enstalasyon echwe ak kòd sòti {{code}}",

@@ -109,6 +109,17 @@ export const ProgressCode = Object.freeze({
    * `warnings`-array delivery as INSTALL_RCON_INI_PRECREATE_FAILED above.
    * Params: {reason}. */
   INSTALL_STARTUP_SCRIPT_FAILED: "INSTALL_STARTUP_SCRIPT_FAILED",
+  /** POST /api/server/install -- 2026-08-26 bug hunt: steamcmd.on("close")
+   * exiting 0 was treated as sufficient proof the game files were actually
+   * installed, with nothing checking they were really there -- SteamCMD can
+   * exit 0 while a download was rate-limited, interrupted, or otherwise
+   * incomplete. Same PZ_INSTALL_MARKERS list DELETE /delete-files already
+   * uses to confirm a folder is a real PZ install, checked here for parity
+   * with that sibling check, not a new verification layer -- a marker
+   * present is enough to call the install usable; this doesn't inspect file
+   * contents or sizes. Same `warnings`-array delivery as
+   * INSTALL_RCON_INI_PRECREATE_FAILED above. No params. */
+  INSTALL_MISSING_GAME_FILES: "INSTALL_MISSING_GAME_FILES",
   /** POST /api/server/install -- PanelBridge.lua was copied into the fresh
    * install automatically. No params. */
   PANELBRIDGE_AUTO_INSTALLED: "PANELBRIDGE_AUTO_INSTALLED",

@@ -108,6 +108,15 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
     // needs real fs behavior against the real temp dirs above).
     const steamcmdExeName = process.platform === "win32" ? "steamcmd.exe" : "steamcmd.sh";
     fs.writeFileSync(path.join(steamcmdPath, steamcmdExeName), "");
+    // spawnMock below fakes a successful SteamCMD run by firing close(0)
+    // directly -- it never actually writes game files into installPath the
+    // way a real steamcmd process would. Since 2026-08-26's
+    // INSTALL_MISSING_GAME_FILES check, a "successful" install with none of
+    // the real PZ markers present would otherwise (correctly) collect that
+    // warning in every test in this file, including the ones deliberately
+    // testing a DIFFERENT warning. Writing one marker here is what a real
+    // install would have left behind at this point.
+    fs.writeFileSync(path.join(installPath, "ProjectZomboid64.json"), "{}");
 
     spawnMock.mockReset();
     writeFileAtomicMock.mockReset();
@@ -220,6 +229,67 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
       progressCode: "INSTALL_STARTUP_SCRIPT_FAILED",
       params: { reason: expect.stringContaining("no space left") },
     });
+  });
+
+  // 2026-08-26 bug hunt: SteamCMD exiting 0 was trusted as sufficient proof
+  // the game files were actually installed -- it can exit 0 after a
+  // rate-limited, interrupted, or otherwise incomplete download. This test
+  // removes the marker beforeEach wrote (simulating exactly that: SteamCMD
+  // "succeeded" but the install directory has no real PZ files in it) and
+  // proves the gap that report was about no longer exists.
+  it("collects an INSTALL_MISSING_GAME_FILES warning when SteamCMD exits 0 but no PZ marker file exists at the install path", async () => {
+    fs.rmSync(path.join(installPath, "ProjectZomboid64.json"));
+
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+
+    const { default: router } = await import("../routes/server.js");
+    const { io, completePromise } = fakeIoCapturingComplete();
+    const res = createResponse();
+    await getRouteHandler(router, "/install", "post")(
+      { body: baseBody(), app: { get: (k) => (k === "io" ? io : undefined) } },
+      res,
+    );
+
+    const payload = await completePromise;
+    // Still success:true -- the marker check is a warning, not a hard
+    // failure, matching the sibling INI/startup-script checks above rather
+    // than inventing a new, harsher failure mode for this one.
+    expect(payload.success).toBe(true);
+    expect(payload.warnings).toHaveLength(1);
+    expect(payload.warnings[0]).toMatchObject({
+      progressCode: "INSTALL_MISSING_GAME_FILES",
+    });
+  });
+
+  it("does NOT warn when a different PZ marker (not ProjectZomboid64.json) is what's actually present -- any one marker is enough", async () => {
+    fs.rmSync(path.join(installPath, "ProjectZomboid64.json"));
+    fs.writeFileSync(path.join(installPath, "StartServer64.bat"), "");
+
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+
+    const { default: router } = await import("../routes/server.js");
+    const { io, completePromise } = fakeIoCapturingComplete();
+    const res = createResponse();
+    await getRouteHandler(router, "/install", "post")(
+      { body: baseBody(), app: { get: (k) => (k === "io" ? io : undefined) } },
+      res,
+    );
+
+    const payload = await completePromise;
+    expect(payload.success).toBe(true);
+    expect(payload.warnings).toEqual([]);
   });
 
   it("a watchdog-killed process reports INSTALL_WATCHDOG_KILLED with a real minute count, never the literal word \"null\"", async () => {

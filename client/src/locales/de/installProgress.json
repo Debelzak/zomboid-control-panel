@@ -12,6 +12,7 @@
   "INI_PRECREATED_WITH_UPNP": "Server-INI mit UPnP-Einstellung vorab erstellt",
   "STARTUP_SCRIPT_CREATED": "Benutzerdefiniertes Startskript erstellt: {{scriptName}}",
   "INSTALL_STARTUP_SCRIPT_FAILED": "Das benutzerdefinierte Startskript für diesen Server konnte nicht erstellt werden ({{reason}}). Der Server kann trotzdem gestartet werden — er verwendet bis zur Neuerstellung das Standardskript, was ebenfalls automatisch beim nächsten Start geschieht.",
+  "INSTALL_MISSING_GAME_FILES": "SteamCMD hat Erfolg gemeldet, aber am Installationspfad wurden keine erkennbaren Spieldateien gefunden. Prüfe das SteamCMD-Protokoll oben auf einen versteckten Fehler (ein Rate-Limit oder ein unterbrochener Download können trotzdem mit Code 0 enden) und überprüfe den Installationspfad, bevor du diesen Server startest.",
   "PANELBRIDGE_AUTO_INSTALLED": "PanelBridge-Mod automatisch installiert",
   "INSTALL_COMPLETE_SUCCESS": "Server erfolgreich installiert",
   "INSTALL_FAILED_EXIT_CODE": "Installation fehlgeschlagen, Exit-Code {{code}}",
