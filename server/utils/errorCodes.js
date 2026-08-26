@@ -1588,6 +1588,73 @@ export const ErrorCode = Object.freeze({
    * DELETE /exports/:username/:filename) -- resolved export file doesn't
    * exist on disk. Identical wording/meaning both sites, shared code. */
   PLAYERS_EXPORT_NOT_FOUND: "PLAYERS_EXPORT_NOT_FOUND",
+
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * request body missing/not an object/an array. Identical wording/meaning
+   * both sites, shared code. */
+  SCHEDULER_REQUEST_BODY_INVALID: "SCHEDULER_REQUEST_BODY_INVALID",
+  /** server/routes/scheduler.js -- POST /tasks, name/cronExpression/command
+   * missing. PUT /tasks/:id has no equivalent (all fields optional there,
+   * a partial update), so this is not shared. */
+  SCHEDULER_TASK_FIELDS_REQUIRED: "SCHEDULER_TASK_FIELDS_REQUIRED",
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * `name` present but not a string or exceeds 100 characters. Identical
+   * wording/meaning both sites, shared code. */
+  SCHEDULER_INVALID_TASK_NAME: "SCHEDULER_INVALID_TASK_NAME",
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * `command` present but not a string or exceeds 2000 characters.
+   * Identical wording/meaning both sites, shared code. */
+  SCHEDULER_INVALID_COMMAND: "SCHEDULER_INVALID_COMMAND",
+  /** server/routes/scheduler.js -- POST /tasks, `cronExpression` present
+   * but not a string or exceeds 100 characters (a type/length check, not
+   * node-cron's own validator -- see SCHEDULER_INVALID_CRON_EXPRESSION for
+   * that one). PUT /tasks/:id has no equivalent standalone check. */
+  SCHEDULER_INVALID_CRON_FORMAT: "SCHEDULER_INVALID_CRON_FORMAT",
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * node-cron's own cron.validate() rejects the expression. Identical
+   * wording/meaning both sites, shared code. */
+  SCHEDULER_INVALID_CRON_EXPRESSION: "SCHEDULER_INVALID_CRON_EXPRESSION",
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * a 6-field (seconds-precision) cron expression; the panel only supports
+   * the standard 5-field form. Identical wording/meaning both sites,
+   * shared code. */
+  SCHEDULER_CRON_SECONDS_UNSUPPORTED: "SCHEDULER_CRON_SECONDS_UNSUPPORTED",
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * isCronTooFrequent() rejects a schedule firing more than once every 5
+   * minutes (DoS guard). Identical wording/meaning both sites, shared
+   * code. */
+  SCHEDULER_CRON_TOO_FREQUENT: "SCHEDULER_CRON_TOO_FREQUENT",
+  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
+   * an explicitly given `serverId` doesn't match any known server.
+   * Identical wording/meaning both sites, shared code. */
+  SCHEDULER_TARGET_SERVER_NOT_FOUND: "SCHEDULER_TARGET_SERVER_NOT_FOUND",
+  /** server/routes/scheduler.js -- POST /tasks, scheduler.scheduleTask()
+   * rejected the task after the DB row was already created (row is rolled
+   * back before this responds). Carries the underlying reason as the
+   * `reason` param -- the specific cause (e.g. a scheduler-internal
+   * rejection) is more useful here than a generic message, unlike the
+   * file's catch-all 500s. */
+  SCHEDULER_TASK_SCHEDULING_FAILED: "SCHEDULER_TASK_SCHEDULING_FAILED",
+  /** server/routes/scheduler.js (4 sites: PUT /tasks/:id, DELETE
+   * /tasks/:id, POST /tasks/:id/run, GET /history) -- the `:id`/`taskId`
+   * param fails parseTaskId()'s bounded-integer check. Identical
+   * wording/meaning at every site, shared code. */
+  SCHEDULER_INVALID_TASK_ID: "SCHEDULER_INVALID_TASK_ID",
+  /** server/routes/scheduler.js -- PUT /tasks/:id, `enabled` present but
+   * not one of true/false/0/1. */
+  SCHEDULER_INVALID_ENABLED_VALUE: "SCHEDULER_INVALID_ENABLED_VALUE",
+  /** server/routes/scheduler.js (3 sites: PUT /tasks/:id, DELETE
+   * /tasks/:id, POST /tasks/:id/run) -- no scheduled task exists for the
+   * given ID. Identical wording/meaning at every site, shared code. */
+  SCHEDULER_TASK_NOT_FOUND: "SCHEDULER_TASK_NOT_FOUND",
+  /** server/routes/scheduler.js -- PUT /tasks/:id, scheduler.scheduleTask()
+   * rejected the updated task; the previous DB record is restored before
+   * this responds. Carries the underlying reason as the `reason` param,
+   * same rationale as SCHEDULER_TASK_SCHEDULING_FAILED above. */
+  SCHEDULER_TASK_RESCHEDULE_FAILED: "SCHEDULER_TASK_RESCHEDULE_FAILED",
+  /** server/routes/scheduler.js -- POST /restart-now, the active server is
+   * remote (this panel doesn't manage its process). */
+  SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED: "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED",
 });
 
 /**
