@@ -81,7 +81,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { serversApi, serversDetectApi, dockerApi, DockerContainerStats, DockerContainerSummary, ServerInstance, configApi, serverApi, updateApi, UpdateStatus, DiscoveredMount, ComposedServerStatus } from '@/lib/api'
-import { waitForServerState } from '@/lib/serverStatus'
+import { resolveClientProvider, waitForServerState } from '@/lib/serverStatus'
 import { getInstallProgressMessage } from '@/lib/installProgressMessage'
 import { ServerStatusBadge } from '@/components/ServerStatusBadge'
 import { SocketContext } from '@/contexts/SocketContext'
@@ -197,6 +197,20 @@ export function isValidGamePort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65534
 }
 
+// Host status for a non-active docker-mapped server's card, from the
+// already-fetched managed-container list -- never from the local process
+// scan (serverStatuses), which can't see a process in a DIFFERENT container
+// (GH#114). Mirrors server/utils/serverStatusModel.js's buildHostSignal
+// fail-closed pattern: no container found, or Docker control itself
+// unavailable, degrades to 'unknown', never a confident 'stopped'.
+export function resolveDockerCardHostStatus(
+  dockerAvailable: boolean,
+  container: { state: string } | undefined,
+): 'running' | 'stopped' | 'unknown' {
+  if (!dockerAvailable || !container) return 'unknown'
+  return container.state === 'running' ? 'running' : 'stopped'
+}
+
 export default function Servers() {
   const { t } = useTranslation('servers')
   const [servers, setServers] = useState<ServerInstance[]>([])
@@ -206,8 +220,16 @@ export default function Servers() {
   const [dockerContainers, setDockerContainers] = useState<DockerContainerSummary[]>([])
   const [dockerStats, setDockerStats] = useState<Record<string, DockerContainerStats>>({})
   const [dockerActionPending, setDockerActionPending] = useState<string | null>(null)
-  // Full 3-signal status (host/RCON/bridge) for the active server only — the
-  // other servers' cards fall back to the host-only signal in serverStatuses.
+  // Full 3-signal status (host/RCON/bridge) for the active server only. Every
+  // other card gets a host-only signal instead, sourced per provider: a
+  // native server's card reads serverStatuses (the raw local process scan);
+  // a docker-mapped server's card reads dockerContainers/dockerAvailable
+  // (the managed-container list fetchDockerState() already fetches once for
+  // every card on this page, not a per-card lookup) -- the scan can never
+  // see a process in a DIFFERENT container, so it must never be the source
+  // for those (GH#114). A remote-sftp card gets no host signal at all
+  // (nothing here can verify it without SFTP access). There is no bridge
+  // signal on any non-active card, docker or otherwise.
   const [activeStatus, setActiveStatus] = useState<ComposedServerStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingServer, setEditingServer] = useState<ServerInstance | null>(null)
@@ -1392,7 +1414,8 @@ export default function Servers() {
                       {(() => {
                         // The selected server has real RCON/bridge signals from the
                         // composed status endpoint; every other card only knows
-                        // whatever the host-process scan found for it.
+                        // whatever its own provider-appropriate source found for it
+                        // (see the comment on serverStatuses above this component).
                         if (server.isActive && activeStatus) {
                           return (
                             <ServerStatusBadge
@@ -1403,12 +1426,29 @@ export default function Servers() {
                             />
                           )
                         }
-                        const status = serverStatuses[String(server.id)]
-                        const host = server.isRemote
-                          ? { status: 'unknown', label: t('card.statusHost') }
-                          : status
+                        const provider = resolveClientProvider(server)
+                        let host
+                        if (server.isRemote) {
+                          host = { status: 'unknown', label: t('card.statusHost') }
+                        } else if (provider === 'docker-local') {
+                          // GH#114: never read serverStatuses (the local process
+                          // scan) for a docker-mapped server -- it can't see a
+                          // process in a different container. dockerContainers is
+                          // already fetched in bulk for the whole page, so this is
+                          // a lookup against existing state, not a per-card fetch.
+                          const container = dockerContainers.find(
+                            (item) => item.name === server.dockerContainerName || item.id === server.dockerContainerName,
+                          )
+                          const dockerHostStatus = resolveDockerCardHostStatus(dockerAvailable, container)
+                          host = dockerHostStatus === 'unknown'
+                            ? { status: 'unknown', label: t('card.statusContainer'), detail: t('card.statusUnavailable') }
+                            : { status: dockerHostStatus, label: t('card.statusContainer') }
+                        } else {
+                          const status = serverStatuses[String(server.id)]
+                          host = status
                             ? { status: status.running ? 'running' : 'stopped', label: t('card.statusProcess') }
                             : undefined
+                        }
                         const rconStatus = rconStatuses[String(server.id)]
                         const rcon = rconStatus
                           ? rconStatus === 'connected'

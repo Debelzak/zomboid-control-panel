@@ -54,6 +54,7 @@
     "memory": "Arbeitsspeicher",
     "statusHost": "Host",
     "statusProcess": "Prozess",
+    "statusContainer": "Container",
     "statusNotConfigured": "Nicht konfiguriert",
     "statusAuthFailed": "Authentifizierung fehlgeschlagen",
     "statusUnavailable": "Nicht verfügbar",

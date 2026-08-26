@@ -54,6 +54,7 @@
     "memory": "Memoria",
     "statusHost": "Host",
     "statusProcess": "Proceso",
+    "statusContainer": "Contenedor",
     "statusNotConfigured": "Sin configurar",
     "statusAuthFailed": "Error de autenticación",
     "statusUnavailable": "No disponible",

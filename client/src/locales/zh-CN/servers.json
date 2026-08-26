@@ -54,6 +54,7 @@
     "memory": "内存",
     "statusHost": "主机",
     "statusProcess": "进程",
+    "statusContainer": "容器",
     "statusNotConfigured": "未配置",
     "statusAuthFailed": "身份验证失败",
     "statusUnavailable": "不可用",

@@ -55,6 +55,7 @@
     "memory": "Memwa",
     "statusHost": "Lame",
     "statusProcess": "Pwosesis",
+    "statusContainer": "Kontenè",
     "statusNotConfigured": "Pa konfigire",
     "statusAuthFailed": "Otantifikasyon echwe",
     "statusUnavailable": "Pa disponib",
