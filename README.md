@@ -216,12 +216,7 @@ There's no native macOS binary. Run the panel with Docker Desktop or OrbStack �
 
 ### Docker and Unraid
 
-See [docs/install/docker.md](docs/install/docker.md) — it covers four configurations (a single all-in-one container, a panel bound to an existing PZ install, a panel-only container talking to a remote server, or Unraid specifically) depending on where Project Zomboid itself already runs.
-
-Two things from here that aren't in that guide yet:
-
-- **Separate PZ and panel containers** — put both containers on the same Docker network and set `RCON_HOST` to the PZ service name, not `127.0.0.1` (inside the panel container, `127.0.0.1` means the panel itself). For PanelBridge file access without a shared bind mount, use SFTP — the SFTP bridge setup in [docs/install/hosted.md](docs/install/hosted.md) is written for rented hosts, but the same flow applies to any remote PZ server, containers included.
-- Prebuilt images are published to GHCR: `ghcr.io/fpsacha/zomboid-panel:latest` and `:vX.Y.Z`. To build from source instead of pulling the image, comment out `image:` in [docker-compose.yml](docker-compose.yml) and uncomment the `build:` block.
+See [docs/install/docker.md](docs/install/docker.md) — it covers four configurations (a single all-in-one container, a panel bound to an existing PZ install, a panel-only container talking to a remote server, or Unraid specifically) depending on where Project Zomboid itself already runs, including running PZ in a separate container from the panel and choosing between the published image and building from source.
 
 ---
 
