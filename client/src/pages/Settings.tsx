@@ -1122,9 +1122,9 @@ export default function Settings() {
         title: isDockerPanelUpdate ? t("toasts.dockerUpdateStarted.title") : t("toasts.updateDownloaded.title"),
         description:
           result.message ||
-          isDockerPanelUpdate
+          (isDockerPanelUpdate
             ? t("toasts.updateDownloadedDescDocker")
-            : t("toasts.updateDownloadedDescBinary"),
+            : t("toasts.updateDownloadedDescBinary")),
         variant: "success" as const,
       });
       await fetchPanelUpdateStatus();
