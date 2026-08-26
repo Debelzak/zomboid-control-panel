@@ -306,6 +306,7 @@ export default function ServerSetup() {
     maxMemory,
     useNoSteam,
     useDebug,
+    useUpnp,
   });
   useEffect(() => {
     formStateRef.current = {
@@ -321,6 +322,7 @@ export default function ServerSetup() {
       maxMemory,
       useNoSteam,
       useDebug,
+      useUpnp,
     };
   }, [
     serverName,
@@ -335,6 +337,7 @@ export default function ServerSetup() {
     maxMemory,
     useNoSteam,
     useDebug,
+    useUpnp,
   ]);
 
   // Clean up navigate timer on unmount
@@ -557,6 +560,7 @@ export default function ServerSetup() {
       serverName?: string;
       zomboidDataPath?: string;
       serverConfigPath?: string;
+      branch?: string;
       rconPort?: number;
       rconPassword?: string;
       serverPort?: number;
@@ -601,6 +605,7 @@ export default function ServerSetup() {
             installPath: data.installPath || s.installPath,
             zomboidDataPath: data.zomboidDataPath || null,
             serverConfigPath: data.serverConfigPath || null,
+            branch: data.branch,
             rconHost: "127.0.0.1",
             rconPort: data.rconPort || s.rconPort,
             rconPassword: data.rconPassword || s.rconPassword,
@@ -610,6 +615,7 @@ export default function ServerSetup() {
             maxMemory: (data.maxMemory || s.maxMemory) * 1024,
             useNoSteam: s.useNoSteam,
             useDebug: s.useDebug,
+            useUpnp: s.useUpnp,
           });
           setLogs((prev) => [
             ...prev,
@@ -954,6 +960,7 @@ export default function ServerSetup() {
             maxMemory: (data.maxMemory || maxMemory) * 1024,
             useNoSteam: useNoSteam,
             useDebug: useDebug,
+            useUpnp: useUpnp,
           });
           addLog("success", t("toasts.serverRegisteredLog"));
         } catch (error) {

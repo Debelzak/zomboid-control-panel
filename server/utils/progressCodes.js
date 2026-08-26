@@ -87,6 +87,13 @@ export const ProgressCode = Object.freeze({
    * array alongside the normal success payload, not as the top-level
    * progressCode. Params: {reason}. */
   INSTALL_RCON_INI_PRECREATE_FAILED: "INSTALL_RCON_INI_PRECREATE_FAILED",
+  /** POST /api/server/install -- the pre-created INI carried only the UPnP
+   * setting (no rconPassword was given, so INI_PRECREATED_WITH_RCON's
+   * wording -- which specifically names RCON credentials -- would be wrong
+   * here). Own code rather than a shared template: "with RCON credentials"
+   * vs "with UPnP setting" is a structural sentence difference (what the
+   * file actually contains), not a value to interpolate. No params. */
+  INI_PRECREATED_WITH_UPNP: "INI_PRECREATED_WITH_UPNP",
   /** POST /api/server/install -- custom .bat/.sh startup scripts generated.
    * Params: {scriptName} (a generated filename, not translatable prose). */
   STARTUP_SCRIPT_CREATED: "STARTUP_SCRIPT_CREATED",

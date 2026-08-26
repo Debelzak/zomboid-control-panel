@@ -746,7 +746,7 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       }
     }
 
-    for (const key of ["useNoSteam", "useDebug"]) {
+    for (const key of ["useNoSteam", "useDebug", "useUpnp"]) {
       if (config[key] !== undefined && typeof config[key] !== "boolean") {
         return res.status(400).json({ error: `${key} must be a boolean` });
       }
@@ -769,6 +769,7 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       maxMemory: normalizeMemoryGb(config.maxMemory, 8),
       useNoSteam: config.useNoSteam === true,
       useDebug: config.useDebug === true,
+      useUpnp: config.useUpnp !== false,
       isRemote: isRemote,
     });
 
@@ -801,6 +802,11 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   "maxMemory",
   "useNoSteam",
   "useDebug",
+  // Was absent from this list entirely (2026-08-26 same-night audit) --
+  // there was no edit-screen path to fix a missing/wrong UPnP setting the
+  // way adminPassword had one, because there was no per-server column for
+  // it to update in the first place.
+  "useUpnp",
   "isRemote",
   "startCommand",
   "startBat",
@@ -929,7 +935,7 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     }
 
     // Parse boolean fields
-    for (const key of ["useNoSteam", "useDebug", "isRemote"]) {
+    for (const key of ["useNoSteam", "useDebug", "isRemote", "useUpnp"]) {
       if (updates[key] !== undefined) {
         if (typeof updates[key] !== "boolean") {
           return res.status(400).json({ error: `${key} must be a boolean` });

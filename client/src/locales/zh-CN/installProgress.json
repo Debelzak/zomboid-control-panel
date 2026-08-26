@@ -9,6 +9,7 @@
   "RCON_SETTINGS_SAVED": "RCON 设置已保存（端口：{{port}}）",
   "INI_PRECREATED_WITH_RCON": "已预先创建包含 RCON 凭据的服务器 INI 文件",
   "INSTALL_RCON_INI_PRECREATE_FAILED": "无法将 RCON 密码预先写入服务器配置（{{reason}}）。下次启动服务器时会自动重试，除非再次发生，否则无需采取任何操作。",
+  "INI_PRECREATED_WITH_UPNP": "已预先创建包含 UPnP 设置的服务器 INI 文件",
   "STARTUP_SCRIPT_CREATED": "已创建自定义启动脚本：{{scriptName}}",
   "INSTALL_STARTUP_SCRIPT_FAILED": "无法生成此服务器的自定义启动脚本（{{reason}}）。服务器仍可启动——在重新生成之前将使用默认脚本，下次启动时也会自动重新生成。",
   "PANELBRIDGE_AUTO_INSTALLED": "已自动安装 PanelBridge 模组",

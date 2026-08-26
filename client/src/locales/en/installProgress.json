@@ -9,6 +9,7 @@
   "RCON_SETTINGS_SAVED": "RCON settings saved (port: {{port}})",
   "INI_PRECREATED_WITH_RCON": "Pre-created server INI with RCON credentials",
   "INSTALL_RCON_INI_PRECREATE_FAILED": "Could not pre-write the RCON password into the server config ({{reason}}). This is retried automatically the next time you start the server, so no action is needed unless it happens again.",
+  "INI_PRECREATED_WITH_UPNP": "Pre-created server INI with UPnP setting",
   "STARTUP_SCRIPT_CREATED": "Created custom startup script: {{scriptName}}",
   "INSTALL_STARTUP_SCRIPT_FAILED": "Could not generate this server's custom startup script ({{reason}}). The server can still be started — it will use the default script until this regenerates, which also happens automatically the next time you start it.",
   "PANELBRIDGE_AUTO_INSTALLED": "PanelBridge mod installed automatically",

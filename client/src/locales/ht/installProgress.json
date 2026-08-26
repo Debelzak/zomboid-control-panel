@@ -9,6 +9,7 @@
   "RCON_SETTINGS_SAVED": "Paramèt RCON sove (pò: {{port}})",
   "INI_PRECREATED_WITH_RCON": "INI sèvè a pre-kreye ak idantifyan RCON",
   "INSTALL_RCON_INI_PRECREATE_FAILED": "Pa t kapab ekri modpas RCON la davans nan konfigirasyon sèvè a ({{reason}}). Sa a eseye ankò otomatikman pwochen fwa ou demare sèvè a, pa gen aksyon ki nesesè sof si sa rive ankò.",
+  "INI_PRECREATED_WITH_UPNP": "INI sèvè a pre-kreye ak paramèt UPnP",
   "STARTUP_SCRIPT_CREATED": "Script demaraj pèsonalize kreye: {{scriptName}}",
   "INSTALL_STARTUP_SCRIPT_FAILED": "Pa t kapab jenere script demaraj pèsonalize sèvè sa a ({{reason}}). Sèvè a ka toujou demare — l ap itilize script pa defo a jiskaske sa a rejenere, ki rive tou otomatikman pwochen fwa ou demare l.",
   "PANELBRIDGE_AUTO_INSTALLED": "Mod PanelBridge enstale otomatikman",

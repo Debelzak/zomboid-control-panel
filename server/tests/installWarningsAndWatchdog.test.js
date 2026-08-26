@@ -255,3 +255,108 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
     expect(payload.params).toEqual({ minutes: 10 });
   });
 });
+
+// 2026-08-26, same-night follow-up: the wizard's UPnP checkbox saved a
+// global legacy setting (setSetting("useUpnp", ...)) that nothing ever
+// read -- the actual mechanism, a real UPnP= line in the server's own
+// .ini, only ever got written by the separate /configure-network endpoint,
+// which /install never called. Fixed by decoupling the ini pre-create from
+// rconPassword (previously the whole block, ini included, was gated on a
+// password being set) so a server's UPnP choice reaches its .ini
+// regardless of whether RCON was configured at install time.
+describe("POST /api/server/install -- UPnP reaches the server's own .ini, not just a global setting nothing reads", () => {
+  let tmpRoot;
+  let installPath;
+  let zomboidDataPath;
+  let steamcmdPath;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-install-upnp-test-"));
+    installPath = path.join(tmpRoot, "server");
+    zomboidDataPath = path.join(tmpRoot, "data");
+    steamcmdPath = path.join(tmpRoot, "steamcmd");
+    fs.mkdirSync(installPath, { recursive: true });
+    fs.mkdirSync(zomboidDataPath, { recursive: true });
+    fs.mkdirSync(steamcmdPath, { recursive: true });
+    const steamcmdExeName = process.platform === "win32" ? "steamcmd.exe" : "steamcmd.sh";
+    fs.writeFileSync(path.join(steamcmdPath, steamcmdExeName), "");
+
+    spawnMock.mockReset();
+    writeFileAtomicMock.mockReset();
+    writeFileAtomicMock.mockImplementation((...args) => realHolder.fn(...args));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  function baseBody(overrides = {}) {
+    return {
+      steamcmdPath,
+      installPath,
+      serverName: "UpnpTestServer",
+      branch: "public",
+      zomboidDataPath,
+      serverPort: 16261,
+      minMemory: 2,
+      maxMemory: 4,
+      ...overrides,
+    };
+  }
+
+  function iniPath() {
+    return path.join(zomboidDataPath, "Server", "UpnpTestServer.ini");
+  }
+
+  it("writes UPnP=false into the pre-created ini even with NO rcon password given -- previously the whole ini pre-create was skipped in this case", async () => {
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+
+    const { default: router } = await import("../routes/server.js");
+    const { io, completePromise } = fakeIoCapturingComplete();
+    const res = createResponse();
+    await getRouteHandler(router, "/install", "post")(
+      { body: baseBody({ useUpnp: false }), app: { get: (k) => (k === "io" ? io : undefined) } },
+      res,
+    );
+
+    const payload = await completePromise;
+    expect(payload.success).toBe(true);
+    const content = fs.readFileSync(iniPath(), "utf-8");
+    expect(content).toContain("UPnP=false");
+    expect(content).not.toContain("RCONPassword=");
+  });
+
+  it("writes UPnP=true and the RCON credentials together into the SAME pre-created ini when both are given", async () => {
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+
+    const { default: router } = await import("../routes/server.js");
+    const { io, completePromise } = fakeIoCapturingComplete();
+    const res = createResponse();
+    await getRouteHandler(router, "/install", "post")(
+      {
+        body: baseBody({ useUpnp: true, rconPassword: "rconpw123", rconPort: 27015 }),
+        app: { get: (k) => (k === "io" ? io : undefined) },
+      },
+      res,
+    );
+
+    const payload = await completePromise;
+    expect(payload.success).toBe(true);
+    const content = fs.readFileSync(iniPath(), "utf-8");
+    expect(content).toContain("UPnP=true");
+    expect(content).toContain("RCONPassword=rconpw123");
+    expect(content).toContain("RCONPort=27015");
+  });
+});

@@ -1586,6 +1586,15 @@ export async function createServer(serverConfig) {
     installPath: serverConfig.installPath || "",
     zomboidDataPath: serverConfig.zomboidDataPath || null,
     serverConfigPath: serverConfig.serverConfigPath || null,
+    // Same class as adminPassword below, caught in the same pass: this
+    // literal is missing anything not on its hardcoded list, silently, with
+    // no error to notice by. servers.js's POST / forwards this correctly
+    // (from the Add/Register Server dialog, not the SteamCMD wizard) -- a
+    // Docker-managed server created that way never got its container name
+    // persisted, which would have made every provider-aware fix elsewhere
+    // in the app (the status badge, dashboard headline, sidebar dot) read a
+    // container name that was never there.
+    dockerContainerName: serverConfig.dockerContainerName || null,
     branch: serverConfig.branch || "stable",
     rconHost: serverConfig.rconHost || "127.0.0.1",
     rconPort: serverConfig.rconPort || 27015,
@@ -1595,6 +1604,17 @@ export async function createServer(serverConfig) {
     maxMemory: normalizeMemoryGb(serverConfig.maxMemory, 8),
     useNoSteam: serverConfig.useNoSteam || false,
     useDebug: serverConfig.useDebug || false,
+    // Same shape again: never on this list at all, and (per a same-night
+    // audit of every wizard field) not even in ALLOWED_SERVER_UPDATE_FIELDS
+    // or read anywhere server-side -- unlike adminPassword, there was no
+    // edit-screen workaround for this one either, because there was no edit
+    // path and no read path, only a write to a global legacy setting that
+    // nothing consulted. Both closed together: this field now exists on the
+    // record, servers.js's create/update routes both accept it, and
+    // /install writes the actual UPnP= line into the server's own .ini
+    // (what PZ itself reads), matching what /configure-network already did
+    // for an existing server.
+    useUpnp: serverConfig.useUpnp !== false,
     isRemote: serverConfig.isRemote || false,
     startCommand: serverConfig.startCommand || "",
     // 2026-08-26, two real users: this field-by-field literal never named

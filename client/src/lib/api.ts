@@ -1533,6 +1533,7 @@ export interface ServerInstance {
   maxMemory: number;
   useNoSteam: boolean;
   useDebug: boolean;
+  useUpnp?: boolean;
   isRemote: boolean;
   // Only set on /servers/active: the remote Server folder is reachable over SFTP.
   remoteConfigConfigured?: boolean;
