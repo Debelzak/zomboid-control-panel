@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useState, useContext } from 'react'
+import { useCallback, useEffect, useState, useContext } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils'
 import { ConnectionStatus } from './ConnectionStatus'
 import { SystemHealthBanner } from './SystemHealthBanner'
 import { serversApi, ServerInstance, updateApi, UpdateStatus, serverApi, modsApi, panelUpdateApi } from '@/lib/api'
+import { resolveClientProvider } from '@/lib/serverStatus'
 import { SocketContext } from '@/contexts/SocketContext'
 
 import { useAuth } from '@/contexts/AuthContext'
@@ -310,6 +311,7 @@ export default function Layout({ children }: LayoutProps) {
     !!item.requiresLocal &&
     !!activeServer?.isRemote &&
     !(item.allowRemoteConfigMirror && activeServer.remoteConfigConfigured)
+  const provider = resolveClientProvider(activeServer)
   const [servers, setServers] = useState<ServerInstance[]>([])
   const hasServer = servers.length > 0
   const isBlockedByNoServer = (section: NavSection) => !!section.requiresServer && !hasServer
@@ -364,34 +366,71 @@ export default function Layout({ children }: LayoutProps) {
     })
   }
 
-  // Track server run state for status dot on Active Server card
-  useEffect(() => {
-    let cancelled = false
-    const apply = (data: { running?: boolean; isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | null) => {
-      if (cancelled || !data) return
-      if (data.isStarting || data.isStopping) setServerRunState('transitioning')
-      else {
-        const running = typeof data.running === 'boolean' ? data.running : data.isRunning
-        if (typeof running === 'boolean') setServerRunState(running ? 'running' : 'stopped')
-      }
+  // Track server run state for the status dot on the Active Server card.
+  //
+  // GH#114: status.running (from serverApi.getStatus(), and the raw payload
+  // pushed on the 'server:status' socket event) is a LOCAL process scan --
+  // it can only ever see a process on/in this host/container. That's a
+  // trustworthy, freshest signal for a native server, but a docker-managed
+  // server's PZ process runs in a *different* container the scan can't see
+  // at all, and a remote-sftp server isn't on this host to begin with. This
+  // dot used to trust the raw scan unconditionally for every provider (not
+  // even gated on isRemote, unlike the Dashboard's equivalent bug) -- a
+  // Docker container correctly shown running by the Docker panel could
+  // still read "stopped" here, in the sidebar, on every single page.
+  // Non-native providers now read the provider-aware composed status
+  // instead (server/utils/serverStatusModel.js's 3-signal model), the same
+  // source Dashboard.tsx and Servers.tsx's active-server card already use.
+  const refreshServerRunState = useCallback(async () => {
+    if (provider === 'native') {
+      try {
+        const data = await serverApi.getStatus()
+        if (typeof data?.running === 'boolean') setServerRunState(data.running ? 'running' : 'stopped')
+      } catch { /* transient fetch failure -- keep the last known state */ }
+      return
     }
-    serverApi.getStatus().then(apply).catch(() => { /* ignore — keep 'unknown' */ })
-    return () => { cancelled = true }
-  }, [activeServer?.id])
+    if (provider == null) { setServerRunState('unknown'); return }
+    try {
+      const composed = await serversApi.getComposedStatus()
+      const hostRunning = composed.host.status === 'running'
+      const rconConnected = composed.server.status === 'connected'
+      const bridgeActive = composed.bridge.status === 'active'
+      const hostUnknown = ['unknown', 'not-applicable'].includes(composed.host.status)
+      setServerRunState(
+        hostRunning || rconConnected || bridgeActive ? 'running' : hostUnknown ? 'unknown' : 'stopped',
+      )
+    } catch {
+      setServerRunState('unknown')
+    }
+  }, [provider])
+
+  useEffect(() => {
+    // Depends on activeServer?.id (not just refreshServerRunState) so
+    // switching between two servers with the SAME provider -- native to
+    // native, say -- still refetches; provider alone wouldn't change in
+    // that case. No stale-response guard: a slower in-flight request
+    // landing after a newer one could briefly overwrite it with an older
+    // value, the same tolerance the previous version of this effect had.
+    // Acceptable for a sidebar dot that self-corrects on the next
+    // poll/socket event.
+    void refreshServerRunState()
+  }, [activeServer?.id, refreshServerRunState])
 
   useEffect(() => {
     if (!socket) return
-    const onStatus = (data: { running?: boolean; isRunning?: boolean; isStarting?: boolean; isStopping?: boolean } | undefined) => {
-      if (!data) return
-      if (data.isStarting || data.isStopping) setServerRunState('transitioning')
-      else {
-        const running = typeof data.running === 'boolean' ? data.running : data.isRunning
-        if (typeof running === 'boolean') setServerRunState(running ? 'running' : 'stopped')
+    const onStatus = (data?: { running?: boolean; isRunning?: boolean }) => {
+      // Fast path: for a native server, a pushed boolean is as trustworthy
+      // as a fresh fetch and avoids a round trip. Everything else needs the
+      // composed status to know what the push actually means.
+      if (provider === 'native') {
+        const running = typeof data?.running === 'boolean' ? data.running : data?.isRunning
+        if (typeof running === 'boolean') { setServerRunState(running ? 'running' : 'stopped'); return }
       }
+      void refreshServerRunState()
     }
     socket.on('server:status', onStatus)
     return () => { socket.off('server:status', onStatus) }
-  }, [socket])
+  }, [socket, provider, refreshServerRunState])
 
   // Track mod updates available count for Mod Manager nav badge
   useEffect(() => {

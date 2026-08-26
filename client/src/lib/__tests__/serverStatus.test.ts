@@ -1,5 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
-import { waitForServerState } from '../serverStatus'
+import { resolveClientProvider, waitForServerState } from '../serverStatus'
+
+describe('resolveClientProvider', () => {
+  it('returns null for no server', () => {
+    expect(resolveClientProvider(null)).toBeNull()
+    expect(resolveClientProvider(undefined)).toBeNull()
+  })
+
+  it('maps isRemote to remote-sftp regardless of any docker fields', () => {
+    expect(resolveClientProvider({ isRemote: true })).toBe('remote-sftp')
+    expect(resolveClientProvider({ isRemote: true, dockerContainerName: 'pz' })).toBe('remote-sftp')
+  })
+
+  // GH#114: isRemote === false does NOT mean "the local process scan can see
+  // this server" -- a docker-managed server's process runs in a different
+  // container. dockerContainerName must be checked before defaulting to
+  // native, or a Docker provider gets misread as a locally-scannable one.
+  it('maps a dockerContainerName mapping to docker-local, not native', () => {
+    expect(resolveClientProvider({ isRemote: false, dockerContainerName: 'pz-server' })).toBe(
+      'docker-local',
+    )
+  })
+
+  it('defaults to native only when neither isRemote nor dockerContainerName is set', () => {
+    expect(resolveClientProvider({ isRemote: false })).toBe('native')
+    expect(resolveClientProvider({})).toBe('native')
+  })
+})
 
 describe('waitForServerState', () => {
   it('waits until the requested server state is observed', async () => {

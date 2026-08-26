@@ -24,6 +24,7 @@ import {
   panelUpdateApi, modsApi, schedulerApi, ServerInstance, PanelUpdateStatus, ComposedServerStatus,
 } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
+import { resolveClientProvider } from '@/lib/serverStatus'
 import { useSocket } from '@/contexts/SocketContext'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -605,7 +606,18 @@ export default function Dashboard() {
 
   /* ---------------------------- derived ----------------------------------- */
   const hasServer = !!activeServer
-  const localProcessStatus = !activeServer?.isRemote && typeof status?.running === 'boolean'
+  // GH#114: status.running is a local process scan -- it can only ever see a
+  // process in *this* container/host. That's a valid, freshest signal for a
+  // native server, but for docker-local/docker-managed the mapped process
+  // runs in a DIFFERENT container, so the scan always finds nothing and
+  // (because isRemote is false for a Docker provider too, not just native)
+  // used to win the ?? chain below over the provider-aware composedStatus --
+  // a Docker container correctly shown running in the Docker panel could
+  // still read "down" on this exact same page. isRemote only distinguishes
+  // remote-SFTP from everything else; it was never a "this process is local
+  // to this container" proxy, which is what this check actually needs.
+  const provider = composedStatus?.provider ?? resolveClientProvider(activeServer)
+  const localProcessStatus = provider === 'native' && typeof status?.running === 'boolean'
     ? status.running
     : null
   const hostRunning = hasServer && (localProcessStatus ?? (composedStatus ? composedStatus.host.status === 'running' : !!status?.running))
