@@ -3510,31 +3510,57 @@ router.get("/steamcmd/check", requirePermission("server.install"), async (req, r
   }
 });
 
+// Fail-closed "is the server confirmed stopped" check, shared by both call
+// sites in /delete-files below -- factored out instead of a second
+// copy-pasted copy of the same ~15-line getServerProcessDetails/scanFailed
+// block. Returns null when confirmed stopped and safe to proceed; otherwise
+// the {status, body} to send back verbatim. checkServerRunning() would
+// collapse a failed scan into a bare `false` (see d85fd42) and let a
+// destructive action proceed against a server we simply failed to see was
+// running -- getServerProcessDetails() exposes scanFailed so that case can
+// be refused instead.
+//
+// NOT wired into /wipe, which has its own identical inline copy: that route
+// is out of scope for this pass (2026-08-26 bug hunt round 2, Pam's
+// asset-destruction hunt finding 2 -- TOCTOU on /delete-files specifically).
+// A natural follow-up for whoever next touches /wipe.
+async function checkServerConfirmedStopped(serverManager, actionLabel) {
+  const processDetails = await serverManager.getServerProcessDetails();
+  if (processDetails.scanFailed) {
+    return {
+      status: 503,
+      body: {
+        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
+        code: ErrorCode.SERVER_STATE_UNKNOWN,
+      },
+    };
+  }
+  if (processDetails.running) {
+    return {
+      status: 400,
+      body: {
+        error: `Server must be stopped before ${actionLabel}. Stop the server first.`,
+        // Shared with /wipe -- see errorCodes.js for why.
+        code: ErrorCode.WIPE_SERVER_RUNNING,
+      },
+    };
+  }
+  return null;
+}
+
 // Delete server files (used when removing a server from panel with file deletion)
 router.post("/delete-files", requirePermission("server.wipe"), async (req, res) => {
   try {
     // Same rails POST /wipe already has: refuse without confirm, refuse
     // while the server is running, and fail CLOSED (not open) when
-    // detection itself can't tell -- getServerProcessDetails() exposes that
-    // as scanFailed; checkServerRunning() would collapse it into a bare
-    // `false` (see d85fd42). Mirrors /wipe's exact order: state check, then
-    // confirm, then this route's own path/PZ-install validation below.
+    // detection itself can't tell. Mirrors /wipe's exact order: state check,
+    // then confirm, then this route's own path/PZ-install validation below.
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
 
-    const processDetails = await serverManager.getServerProcessDetails();
-    if (processDetails.scanFailed) {
-      return res.status(503).json({
-        error: "Can't verify whether the server is actually stopped — the process-detection scan itself failed, not the server. Check the panel's log for the error. If this keeps happening, something on this host (antivirus, a full disk, or a missing system tool) may be blocking detection.",
-        code: ErrorCode.SERVER_STATE_UNKNOWN,
-      });
-    }
-    if (processDetails.running) {
-      return res.status(400).json({
-        error: "Server must be stopped before deleting its files. Stop the server first.",
-        // Shared with /wipe -- see errorCodes.js for why.
-        code: ErrorCode.WIPE_SERVER_RUNNING,
-      });
+    const notStoppedError = await checkServerConfirmedStopped(serverManager, "deleting its files");
+    if (notStoppedError) {
+      return res.status(notStoppedError.status).json(notStoppedError.body);
     }
 
     const { path: deletePath, confirm } = req.body || {};
@@ -3580,6 +3606,24 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
           "This does not appear to be a Project Zomboid server installation. Refusing to delete for safety.",
         code: ErrorCode.DELETE_FILES_NOT_PZ_INSTALL,
       });
+    }
+
+    // Re-check immediately before the irreversible delete (2026-08-26 bug
+    // hunt round 2, Pam's finding 2): the FIRST check above is stale by the
+    // time we get here -- getServerProcessDetails() takes real wall-clock
+    // time (OS process enumeration), and everything between that await
+    // resolving and this point is synchronous path/marker validation with
+    // no further awaits, so a second admin session, a scheduler task, or a
+    // supervisor auto-restart starting the server DURING that first scan
+    // would sail through undetected. This doesn't make the check-then-act
+    // atomic in a formal sense -- true atomicity would need the /start path
+    // to participate in a shared lock too, out of scope here -- but it
+    // narrows the exploitable window from "however long the first scan
+    // took" down to just this second scan's own duration, immediately
+    // before the act it guards, using the exact same fail-closed check.
+    const stillNotStoppedError = await checkServerConfirmedStopped(serverManager, "deleting its files");
+    if (stillNotStoppedError) {
+      return res.status(stillNotStoppedError.status).json(stillNotStoppedError.body);
     }
 
     log.warn(`Deleting server files at: ${deletePath}`);
@@ -4628,7 +4672,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
       });
     }
 
-    const { targets, confirm } = req.body || {};
+    const { targets, confirm, createBackup = true } = req.body || {};
     if (confirm !== true) {
       return res.status(400).json({ error: "Wipe requires confirm: true", code: ErrorCode.WIPE_CONFIRM_REQUIRED });
     }
@@ -4670,6 +4714,72 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     const normalizedSaveDir = path.normalize(saveDir);
     if (normalizedSaveDir.includes("..")) {
       return res.status(400).json({ error: "Invalid path", code: ErrorCode.INVALID_PATH });
+    }
+
+    // Back up before wiping, fail CLOSED if the backup itself fails -- a wipe
+    // that proceeds after a failed backup is strictly worse than no backup
+    // option at all, because the operator now believes an undo exists. This
+    // mirrors chunks.js's delete-chunks/delete-region convention (backup
+    // first, propagate failure, never reach the deletion code below) but
+    // uses backupService's streaming zip archiver rather than chunks.js's
+    // per-file copy loop: a full world save can be many GB, and copying it
+    // file-by-file the way chunks.js backs up a hand-picked chunk selection
+    // has no place to report progress and no bound on how long the request
+    // blocks. backupService.createBackup() already solves exactly this --
+    // it's the same mechanism restoreBackup() uses for its own mandatory
+    // pre-restore backup, streams to a .zip instead of materializing a
+    // second copy of the save tree, reports progress over `io` the same way,
+    // and is exempt from ad-hoc invention: it's the codebase's one existing
+    // answer to "back up the whole world safely."
+    let backupResult = null;
+    if (createBackup) {
+      const backupService = req.app.get("backupService");
+      if (!backupService) {
+        return res.status(500).json({
+          error: "Backup service unavailable — refusing to wipe without a backup. Nothing was deleted.",
+          code: ErrorCode.WIPE_BACKUP_FAILED,
+        });
+      }
+      const io = req.app.get("io");
+      backupResult = await backupService.createBackup({ isPreWipe: true, io });
+      if (!backupResult.success) {
+        return res.status(500).json({
+          error: `Wipe aborted: could not create a backup first (${backupResult.message}). Nothing was deleted.`,
+          code: ErrorCode.WIPE_BACKUP_FAILED,
+        });
+      }
+
+      // The account/whitelist database lives at <zomboidDataPath>/db/, a
+      // sibling of Saves/Multiplayer -- outside the tree backupService just
+      // zipped. When "accounts" is one of the selected targets, the backup
+      // above does not actually cover what's about to be deleted unless we
+      // also copy it. These files are small (a sqlite whitelist db, not
+      // world data), so a direct copy -- the same shape chunks.js uses for
+      // its own per-file backups -- is the right tool here, unlike the
+      // world save above.
+      if (targets.includes("accounts")) {
+        try {
+          const accountsBackupDir = path.join(
+            await backupService.getBackupsPath(),
+            `${serverName}_accounts_${Date.now()}`,
+          );
+          await fs.promises.mkdir(accountsBackupDir, { recursive: true });
+          for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+            const dbFile = path.join(savePath, "db", `${serverName}.db${suffix}`);
+            if (fs.existsSync(dbFile)) {
+              await fs.promises.copyFile(
+                dbFile,
+                path.join(accountsBackupDir, `${serverName}.db${suffix}`),
+              );
+            }
+          }
+        } catch (e) {
+          return res.status(500).json({
+            error: `Wipe aborted: could not back up the accounts database (${e.message}). Nothing was deleted.`,
+            code: ErrorCode.WIPE_BACKUP_FAILED,
+          });
+        }
+      }
     }
 
     const results = {};
@@ -4805,6 +4915,8 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
       serverName,
       targets,
       results,
+      backupCreated: !!backupResult?.success,
+      backupName: backupResult?.backup?.name || null,
       message: `Server "${serverName}" wiped: ${targets.join(", ")}`,
     });
   } catch (error) {

@@ -119,4 +119,57 @@ describe("POST /api/server/delete-files safety guards", () => {
     );
     expect(fs.existsSync(installDir)).toBe(false);
   });
+
+  // 2026-08-26 bug hunt round 2, Pam's finding 2: the entry check happens
+  // once, but everything after it (path/marker validation) is synchronous --
+  // getServerProcessDetails() itself is the only part of this route that
+  // yields, so a server that starts DURING that scan (a second admin
+  // session, a scheduler task, a supervisor auto-restart) would previously
+  // sail through undetected. These simulate exactly that: the first check
+  // (at route entry) sees a stopped server, but the server has started by
+  // the time the SECOND check (immediately before the actual delete) runs.
+  describe("re-checks immediately before the delete, not just at entry", () => {
+    it("refuses when the server starts between the entry check and the delete", async () => {
+      let calls = 0;
+      serverManager.getServerProcessDetails = async () => {
+        calls += 1;
+        return calls === 1
+          ? { running: false, scanFailed: false }
+          : { running: true, scanFailed: false };
+      };
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "WIPE_SERVER_RUNNING" }),
+      );
+      // The whole point: refusal must be real, the install must survive.
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+
+    it("fails closed when the second scan itself can't tell, even though the first scan could", async () => {
+      let calls = 0;
+      serverManager.getServerProcessDetails = async () => {
+        calls += 1;
+        return calls === 1
+          ? { running: false, scanFailed: false }
+          : { running: false, scanFailed: true };
+      };
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(response.status).toHaveBeenCalledWith(503);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
+      );
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+  });
 });
