@@ -297,7 +297,7 @@
     "tableAction": "Aksyon",
     "tableDetails": "Detay",
     "loadingRow": "N ap chaje...",
-    "noLogsRow": "Pa gen jounal aktivite",
+    "noLogsRow": "Poko gen jounal aktivite — aksyon moderasyon ki fèt sou jwè sa a (ban, kick, chanjman whitelist) ap parèt isit la.",
     "detailsFallback": "-"
   },
   "importExport": {

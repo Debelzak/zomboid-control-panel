@@ -86,7 +86,7 @@
     "scanningChunks": "Escaneando mapa… {{count}} chunks",
     "loadingChunks": "Cargando chunks…",
     "noChunksTitle": "No se encontraron chunks",
-    "noChunksDesc": "La carpeta del mapa puede estar vacía o la ruta necesita ajustarse.",
+    "noChunksDesc": "La carpeta del mapa de esta partida puede estar vacía, o la ruta configurada necesita ajustarse. Prueba con otra partida de la lista de arriba, o revisa la ruta en Configuración.",
     "ariaLabel": "Mapa de chunks — seleccionar áreas para limpiar"
   },
   "help": {

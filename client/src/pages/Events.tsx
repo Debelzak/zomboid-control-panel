@@ -1893,9 +1893,9 @@ export default function Events() {
             )}
           </nav>
 
-          {activity.length > 0 && (
-            <div className="rounded-md border border-border/60 bg-card">
-              <p className="border-b border-border/60 px-3 py-2 text-xs font-semibold text-foreground">{t('sidebar.recentActions')}</p>
+          <div className="rounded-md border border-border/60 bg-card">
+            <p className="border-b border-border/60 px-3 py-2 text-xs font-semibold text-foreground">{t('sidebar.recentActions')}</p>
+            {activity.length > 0 ? (
               <ul className="divide-y divide-border/40">
                 {activity.map((entry) => (
                   <li key={entry.key} className="flex items-start gap-2 px-3 py-2">
@@ -1907,8 +1907,10 @@ export default function Events() {
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
+            ) : (
+              <p className="px-3 py-3 text-xs text-muted-foreground">{t('sidebar.noRecentActions')}</p>
+            )}
+          </div>
         </aside>
 
         <div className="space-y-4">

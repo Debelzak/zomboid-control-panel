@@ -25,7 +25,8 @@
     "noMatches": "No control matches that search.",
     "bridgeBadge": "bridge",
     "bridgeBadgeTitle": "Needs PanelBridge",
-    "recentActions": "Recent actions"
+    "recentActions": "Recent actions",
+    "noRecentActions": "No recent actions — actions triggered from this page will be logged here."
   },
   "bridgeOfflineAlert": {
     "title": "PanelBridge is offline",

@@ -297,7 +297,7 @@
     "tableAction": "Action",
     "tableDetails": "Details",
     "loadingRow": "Loading...",
-    "noLogsRow": "No activity logs",
+    "noLogsRow": "No activity logs yet — moderation actions taken on this player (bans, kicks, whitelist changes) will appear here.",
     "detailsFallback": "-"
   },
   "importExport": {

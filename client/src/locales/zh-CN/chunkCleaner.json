@@ -86,7 +86,7 @@
     "scanningChunks": "正在扫描地图…… {{count}} 个区块",
     "loadingChunks": "正在加载区块……",
     "noChunksTitle": "未找到区块",
-    "noChunksDesc": "地图文件夹可能为空，或路径需要调整。",
+    "noChunksDesc": "此存档的地图文件夹可能为空，或配置的路径需要调整。请从上方列表中尝试其他存档，或在设置中检查路径。",
     "ariaLabel": "区块地图——选择要清理的区域"
   },
   "help": {

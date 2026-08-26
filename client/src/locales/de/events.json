@@ -25,7 +25,8 @@
     "noMatches": "Keine Steuerung entspricht dieser Suche.",
     "bridgeBadge": "Brücke",
     "bridgeBadgeTitle": "Benötigt PanelBridge",
-    "recentActions": "Letzte Aktionen"
+    "recentActions": "Letzte Aktionen",
+    "noRecentActions": "Keine letzten Aktionen — Aktionen, die von dieser Seite ausgelöst werden, werden hier protokolliert."
   },
   "bridgeOfflineAlert": {
     "title": "PanelBridge ist offline",

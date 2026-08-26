@@ -25,7 +25,8 @@
     "noMatches": "Ningún control coincide con esa búsqueda.",
     "bridgeBadge": "puente",
     "bridgeBadgeTitle": "Necesita PanelBridge",
-    "recentActions": "Acciones recientes"
+    "recentActions": "Acciones recientes",
+    "noRecentActions": "Sin acciones recientes — las acciones activadas desde esta página se registrarán aquí."
   },
   "bridgeOfflineAlert": {
     "title": "PanelBridge está fuera de línea",

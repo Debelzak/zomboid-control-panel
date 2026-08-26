@@ -25,7 +25,8 @@
     "noMatches": "没有匹配该搜索的控制项。",
     "bridgeBadge": "桥接",
     "bridgeBadgeTitle": "需要 PanelBridge",
-    "recentActions": "最近操作"
+    "recentActions": "最近操作",
+    "noRecentActions": "暂无最近操作——从此页面触发的操作将记录在此处。"
   },
   "bridgeOfflineAlert": {
     "title": "PanelBridge 已离线",

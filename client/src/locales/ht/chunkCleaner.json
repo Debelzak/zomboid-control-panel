@@ -86,7 +86,7 @@
     "scanningChunks": "Ap eskane kat la… {{count}} chunk",
     "loadingChunks": "Ap chaje chunk yo…",
     "noChunksTitle": "Pa gen chunk jwenn",
-    "noChunksDesc": "Dosye kat la ka vid oswa chemen an bezwen ajiste.",
+    "noChunksDesc": "Dosye kat pou sovgad sa a ka vid, oswa chemen konfigire a bezwen ajiste. Eseye yon lòt sovgad nan lis anwo a, oswa tcheke chemen an nan Paramèt.",
     "ariaLabel": "Kat chunk — chwazi zòn pou netwaye"
   },
   "help": {

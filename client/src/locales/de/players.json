@@ -293,7 +293,7 @@
     "tableAction": "Aktion",
     "tableDetails": "Details",
     "loadingRow": "Lädt...",
-    "noLogsRow": "Keine Aktivitätsprotokolle",
+    "noLogsRow": "Noch keine Aktivitätsprotokolle — Moderationsaktionen für diesen Spieler (Sperren, Kicks, Whitelist-Änderungen) werden hier angezeigt.",
     "detailsFallback": "-",
     "deleteConfirmTitle": "Diese Notiz löschen?",
     "deleteConfirmDesc": "Die Admin-Notiz und die Tags für {{player}} werden endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.",

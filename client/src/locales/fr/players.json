@@ -293,7 +293,7 @@
     "tableAction": "Action",
     "tableDetails": "Détails",
     "loadingRow": "Chargement...",
-    "noLogsRow": "Aucun journal d'activité",
+    "noLogsRow": "Aucun journal d'activité pour l'instant — les actions de modération sur ce joueur (bannissements, expulsions, modifications de la liste blanche) apparaîtront ici.",
     "detailsFallback": "-",
     "deleteConfirmTitle": "Supprimer cette note ?",
     "deleteConfirmDesc": "La note admin et les tags enregistrés pour {{player}} seront définitivement supprimés. Cette action est irréversible.",

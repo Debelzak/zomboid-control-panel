@@ -25,7 +25,8 @@
     "noMatches": "Pa gen kontwòl ki koresponn ak rechèch sa a.",
     "bridgeBadge": "bridge",
     "bridgeBadgeTitle": "Bezwen PanelBridge",
-    "recentActions": "Aksyon resan"
+    "recentActions": "Aksyon resan",
+    "noRecentActions": "Pa gen aksyon resan — aksyon ki deklanche nan paj sa a ap anrejistre isit la."
   },
   "bridgeOfflineAlert": {
     "title": "PanelBridge òfliy",

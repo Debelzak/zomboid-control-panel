@@ -951,6 +951,13 @@ export default function Console() {
                           {t('serverLog.showAll')}
                         </button>
                       </span>
+                    ) : serverLogError ? (
+                      // Distinct from the genuinely-quiet case below: the error
+                      // banner right above already explains the stream is down,
+                      // so this must not also claim anything about the server
+                      // itself -- an empty body here is caused by OUR broken
+                      // connection, not by the server having nothing to say.
+                      <span>{t('serverLog.noOutputStreamDown')}</span>
                     ) : (
                       <span>{t('serverLog.noStreamOutput')}</span>
                     )}

@@ -86,7 +86,7 @@
     "scanningChunks": "Karte wird gescannt… {{count}} Chunks",
     "loadingChunks": "Chunks werden geladen…",
     "noChunksTitle": "Keine Chunks gefunden",
-    "noChunksDesc": "Der Kartenordner ist möglicherweise leer, oder der Pfad muss angepasst werden.",
+    "noChunksDesc": "Der Kartenordner dieses Spielstands ist möglicherweise leer, oder der konfigurierte Pfad muss angepasst werden. Wähle oben einen anderen Spielstand aus, oder überprüfe den Pfad in den Einstellungen.",
     "ariaLabel": "Chunk-Karte — Bereiche zur Bereinigung auswählen"
   },
   "help": {

@@ -293,7 +293,7 @@
     "tableAction": "操作",
     "tableDetails": "详情",
     "loadingRow": "加载中…",
-    "noLogsRow": "暂无活动日志",
+    "noLogsRow": "暂无活动日志——对该玩家执行的管理操作（封禁、踢出、白名单变更）将显示在此处。",
     "detailsFallback": "-",
     "deleteConfirmTitle": "删除这条备注？",
     "deleteConfirmDesc": "为 {{player}} 保存的管理员备注和标签将被永久删除。此操作无法撤销。",

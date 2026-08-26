@@ -86,7 +86,7 @@
     "scanningChunks": "Scanning map… {{count}} chunks",
     "loadingChunks": "Loading chunks…",
     "noChunksTitle": "No chunks found",
-    "noChunksDesc": "Map folder may be empty or the path needs adjusting.",
+    "noChunksDesc": "This save's map folder may be empty, or the configured path needs adjusting. Try a different save from the list above, or check the path in Settings.",
     "ariaLabel": "Chunk map — select areas to clean up"
   },
   "help": {
