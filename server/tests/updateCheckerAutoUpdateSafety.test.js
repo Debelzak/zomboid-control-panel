@@ -145,6 +145,17 @@ describe("UpdateChecker persists lastAutoUpdateResult so it survives past the li
     });
   });
 
+  it("does NOT attempt the finally-block restart for a before-stop failure -- the server was never actually stopped, so a restart is not just unneeded but guaranteed to throw", async () => {
+    const { checker, serverManager } = buildChecker({
+      getServerProcessDetails: vi.fn(async () => ({ running: true, scanFailed: false })),
+      rconOverrides: { connected: false },
+    });
+
+    await expect(checker.runAutoUpdate({ installed: { branch: "stable" } })).rejects.toThrow();
+
+    expect(serverManager.startServer).not.toHaveBeenCalled();
+  });
+
   it("carries the world-save failure's own detail as a translatable param, not a raw message baked into `reason`", async () => {
     const { checker } = buildChecker({
       getServerProcessDetails: vi.fn(async () => ({ running: true, scanFailed: false })),

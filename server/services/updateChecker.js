@@ -596,7 +596,21 @@ export class UpdateChecker {
       throw error;
     } finally {
       this.autoUpdateRunning = false;
-      if (shouldRestart) {
+      // shouldRestart alone is not enough: it is set true the moment the
+      // server is found running AT THE START, before anything has
+      // attempted to stop it. Every failure in the "before-stop" phase
+      // (RCON not connected, world save failed, quit/stop never confirmed)
+      // means the server was NEVER ACTUALLY STOPPED -- so this call would
+      // be guaranteed to throw "Server is already running" (harmless,
+      // since startServer()'s own guard refuses rather than double-launch —
+      // see the class comment above runAutoUpdate for the trace), but its
+      // log line ("could not restart the server: Server is already
+      // running") reads as a failed restart that was never actually
+      // needed, the same wrong-attribution shape as the banner this
+      // feature exists to fix, just one layer down in a log file. phase
+      // having advanced past "before-stop" IS "the stop-confirmation loop
+      // completed" -- the same predicate, no new state.
+      if (shouldRestart && phase !== "before-stop") {
         try {
           const started = await this.serverManager.startServer();
           if (started?.success) {
