@@ -606,6 +606,21 @@ export default function WorldMap() {
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
+  // Not a Radix primitive, so closing it doesn't automatically restore
+  // focus. The menu itself auto-focuses its first item on open (see the
+  // ref callback below); this half handles the close side, for any of the
+  // ~20 call sites that dismiss the menu (Escape, item selection, an
+  // action completing, clicking elsewhere) without each needing its own
+  // focus() call.
+  const contextMenuWasOpenRef = useRef(false)
+  useEffect(() => {
+    if (contextMenu) {
+      contextMenuWasOpenRef.current = true
+    } else if (contextMenuWasOpenRef.current) {
+      contextMenuWasOpenRef.current = false
+      canvasRef.current?.focus()
+    }
+  }, [contextMenu])
   const [selectedPlayer, setSelectedPlayer] = useState<MapPlayer | null>(null)
   const [bridgeConnected, setBridgeConnected] = useState(false)
   const [bridgeLoading, setBridgeLoading] = useState(false)

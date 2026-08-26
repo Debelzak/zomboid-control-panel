@@ -88,6 +88,9 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
   const [highlightIndex, setHighlightIndex] = useState(-1)
   const [scannedAt, setScannedAt] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Not a Radix primitive, so closing the dropdown doesn't automatically
+  // restore focus to the trigger the way a Radix Popover/Select would.
+  const triggerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [dropUp, setDropUp] = useState(false)
@@ -188,6 +191,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
     setOpen(false)
     setSearch('')
     setHighlightIndex(-1)
+    triggerRef.current?.focus()
   }
 
   const handleClear = () => {
@@ -224,6 +228,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
         e.preventDefault()
         setOpen(false)
         setHighlightIndex(-1)
+        triggerRef.current?.focus()
         break
     }
   }
@@ -284,6 +289,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
     <div ref={containerRef} className="relative" onKeyDown={handleKeyDown}>
       {/* Trigger */}
       <div
+        ref={triggerRef}
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"

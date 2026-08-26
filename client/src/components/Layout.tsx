@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useCallback, useEffect, useState, useContext } from 'react'
+import { useCallback, useEffect, useRef, useState, useContext } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
@@ -317,6 +317,10 @@ export default function Layout({ children }: LayoutProps) {
   const hasServer = servers.length > 0
   const isBlockedByNoServer = (section: NavSection) => !!section.requiresServer && !hasServer
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  // Not a Radix primitive, so it gets none of Radix's automatic focus
+  // trap/restore -- handled manually below.
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const mobileMenuAsideRef = useRef<HTMLElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === 'true')
   const [updateInfo, setUpdateInfo] = useState<UpdateStatus | null>(null)
   // Persist dismissal across reloads, but key it by build IDs so a NEW update
@@ -506,18 +510,34 @@ export default function Layout({ children }: LayoutProps) {
     setMobileMenuOpen(false)
   }, [location.pathname])
 
-  // Close mobile menu with Escape for keyboard users
+  // Close mobile menu with Escape for keyboard users, restoring focus to
+  // the trigger button -- an explicit dismissal, unlike the route-change
+  // effect above (there, focus should follow the navigation, not jump
+  // backwards to a button on the page the user just left).
   useEffect(() => {
     if (!mobileMenuOpen) return
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMobileMenuOpen(false)
+        mobileMenuButtonRef.current?.focus()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileMenuOpen])
+
+  // Move focus into the drawer when it opens -- this is a hand-rolled
+  // overlay (not a Radix Dialog), so it gets none of Radix's automatic
+  // focus trap. Without this, opening the menu leaves keyboard focus on
+  // the trigger button, behind the now-open drawer.
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const firstFocusable = mobileMenuAsideRef.current?.querySelector<HTMLElement>(
+      'a[href], button:not([disabled])'
+    )
+    firstFocusable?.focus()
   }, [mobileMenuOpen])
 
   // Prevent background scroll while mobile menu is open
@@ -636,6 +656,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="flex items-center justify-between p-3">
           <PanelBrand compact />
           <Button
+            ref={mobileMenuButtonRef}
             variant="ghost"
             size="icon"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -651,13 +672,14 @@ export default function Layout({ children }: LayoutProps) {
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-background/50 backdrop-blur-[1px] lg:hidden"
-          onClick={() => setMobileMenuOpen(false)}
+          onClick={() => { setMobileMenuOpen(false); mobileMenuButtonRef.current?.focus() }}
           aria-hidden="true"
         />
       )}
 
       {/* Sidebar - Desktop always visible, Mobile as slide-out */}
       <aside
+        ref={mobileMenuAsideRef}
         aria-label={t('nav.sidebarAriaLabel')}
         className={cn(
         "fixed inset-y-0 left-0 z-40 flex flex-col border-r bg-card transform transition-all duration-300 ease-out will-change-[width,transform] motion-reduce:transition-none lg:relative",
