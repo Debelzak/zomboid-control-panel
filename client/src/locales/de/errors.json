@@ -406,5 +406,20 @@
   "PLAYERS_NOTE_INVALID_TAGS": "Tags müssen Zeichenfolgen sein (maximal 50 Zeichen je Tag)",
   "PLAYERS_NOTE_NOT_FOUND": "Spielernotiz nicht gefunden",
   "PLAYERS_EXPORT_INVALID_PARAMETERS": "Ungültige Parameter",
-  "PLAYERS_EXPORT_NOT_FOUND": "Export nicht gefunden"
+  "PLAYERS_EXPORT_NOT_FOUND": "Export nicht gefunden",
+  "SCHEDULER_REQUEST_BODY_INVALID": "Der Request-Body muss ein Objekt sein",
+  "SCHEDULER_TASK_FIELDS_REQUIRED": "Name, Cron-Ausdruck und Befehl sind erforderlich",
+  "SCHEDULER_INVALID_TASK_NAME": "Ungültiger Aufgabenname (max. 100 Zeichen)",
+  "SCHEDULER_INVALID_COMMAND": "Ungültiger Befehl (max. 2000 Zeichen)",
+  "SCHEDULER_INVALID_CRON_FORMAT": "Ungültiges Cron-Ausdrucksformat",
+  "SCHEDULER_INVALID_CRON_EXPRESSION": "Ungültiger Cron-Ausdruck. Verwenden Sie das Format: Minute Stunde Tag Monat Wochentag (z. B. \"0 */6 * * *\" für alle 6 Stunden)",
+  "SCHEDULER_CRON_SECONDS_UNSUPPORTED": "Das Panel unterstützt keine sekundengenauen Zeitpläne. Verwenden Sie genau 5 Felder: Minute Stunde Tag Monat Wochentag",
+  "SCHEDULER_CRON_TOO_FREQUENT": "Aufgaben dürfen nicht öfter als alle 5 Minuten ausgeführt werden",
+  "SCHEDULER_TARGET_SERVER_NOT_FOUND": "Zielserver nicht gefunden",
+  "SCHEDULER_TASK_SCHEDULING_FAILED": "Aufgabe konnte nicht geplant werden: {{reason}}",
+  "SCHEDULER_INVALID_TASK_ID": "Ungültige Aufgaben-ID",
+  "SCHEDULER_INVALID_ENABLED_VALUE": "Das Feld \"enabled\" muss ein Boolean oder 0/1 sein",
+  "SCHEDULER_TASK_NOT_FOUND": "Aufgabe nicht gefunden",
+  "SCHEDULER_TASK_RESCHEDULE_FAILED": "Aufgabe konnte nicht neu geplant werden: {{reason}}",
+  "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Ein Remote-Server kann nicht neu gestartet werden. Der Prozess wird nicht von diesem Panel verwaltet"
 }

@@ -406,5 +406,20 @@
   "PLAYERS_NOTE_INVALID_TAGS": "Les tags doivent être des chaînes de caractères (50 caractères maximum chacun)",
   "PLAYERS_NOTE_NOT_FOUND": "Note du joueur introuvable",
   "PLAYERS_EXPORT_INVALID_PARAMETERS": "Paramètres invalides",
-  "PLAYERS_EXPORT_NOT_FOUND": "Export introuvable"
+  "PLAYERS_EXPORT_NOT_FOUND": "Export introuvable",
+  "SCHEDULER_REQUEST_BODY_INVALID": "Le corps de la requête doit être un objet",
+  "SCHEDULER_TASK_FIELDS_REQUIRED": "Le nom, l'expression cron et la commande sont requis",
+  "SCHEDULER_INVALID_TASK_NAME": "Nom de tâche invalide (100 caractères max.)",
+  "SCHEDULER_INVALID_COMMAND": "Commande invalide (2000 caractères max.)",
+  "SCHEDULER_INVALID_CRON_FORMAT": "Format d'expression cron invalide",
+  "SCHEDULER_INVALID_CRON_EXPRESSION": "Expression cron invalide. Utilisez le format : minute heure jour mois jour_semaine (ex. : \"0 */6 * * *\" toutes les 6 heures)",
+  "SCHEDULER_CRON_SECONDS_UNSUPPORTED": "Le panneau ne prend pas en charge les planifications à la seconde près. Utilisez exactement 5 champs : minute heure jour mois jour_semaine",
+  "SCHEDULER_CRON_TOO_FREQUENT": "Les tâches ne peuvent pas s'exécuter plus d'une fois toutes les 5 minutes",
+  "SCHEDULER_TARGET_SERVER_NOT_FOUND": "Serveur cible introuvable",
+  "SCHEDULER_TASK_SCHEDULING_FAILED": "Impossible de planifier la tâche : {{reason}}",
+  "SCHEDULER_INVALID_TASK_ID": "ID de tâche invalide",
+  "SCHEDULER_INVALID_ENABLED_VALUE": "Le champ \"enabled\" doit être un booléen ou 0/1",
+  "SCHEDULER_TASK_NOT_FOUND": "Tâche introuvable",
+  "SCHEDULER_TASK_RESCHEDULE_FAILED": "Impossible de replanifier la tâche : {{reason}}",
+  "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Impossible de redémarrer un serveur distant. Le processus n'est pas géré par ce panneau"
 }

@@ -406,5 +406,20 @@
   "PLAYERS_NOTE_INVALID_TAGS": "Tags yo dwe tèks (maksimòm 50 karaktè chak)",
   "PLAYERS_NOTE_NOT_FOUND": "Nòt jwè a pa jwenn",
   "PLAYERS_EXPORT_INVALID_PARAMETERS": "Paramèt envalid",
-  "PLAYERS_EXPORT_NOT_FOUND": "Ekspòte a pa jwenn"
+  "PLAYERS_EXPORT_NOT_FOUND": "Ekspòte a pa jwenn",
+  "SCHEDULER_REQUEST_BODY_INVALID": "Kò demand lan dwe yon objè",
+  "SCHEDULER_TASK_FIELDS_REQUIRED": "Non, ekspresyon cron, ak kòmand obligatwa",
+  "SCHEDULER_INVALID_TASK_NAME": "Non tach envalid (maks 100 karaktè)",
+  "SCHEDULER_INVALID_COMMAND": "Kòmand envalid (maks 2000 karaktè)",
+  "SCHEDULER_INVALID_CRON_FORMAT": "Fòma ekspresyon cron envalid",
+  "SCHEDULER_INVALID_CRON_EXPRESSION": "Ekspresyon cron envalid. Itilize fòma a: minit lè jou mwa jou_semèn (pa egzanp, \"0 */6 * * *\" chak 6 è)",
+  "SCHEDULER_CRON_SECONDS_UNSUPPORTED": "Panel la pa sipòte orè ki gen presizyon segond. Itilize egzakteman 5 chan: minit lè jou mwa jou_semèn",
+  "SCHEDULER_CRON_TOO_FREQUENT": "Tach yo pa ka kouri pi souvan pase chak 5 minit",
+  "SCHEDULER_TARGET_SERVER_NOT_FOUND": "Sèvè sib la pa jwenn",
+  "SCHEDULER_TASK_SCHEDULING_FAILED": "Pa t kapab pwograme tach la: {{reason}}",
+  "SCHEDULER_INVALID_TASK_ID": "ID tach envalid",
+  "SCHEDULER_INVALID_ENABLED_VALUE": "Chan \"enabled\" la dwe yon boolean oswa 0/1",
+  "SCHEDULER_TASK_NOT_FOUND": "Tach la pa jwenn",
+  "SCHEDULER_TASK_RESCHEDULE_FAILED": "Pa t kapab repwograme tach la: {{reason}}",
+  "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Pa ka fè yon sèvè adistans redemare. Panel sa a pa jere pwosesis la"
 }
