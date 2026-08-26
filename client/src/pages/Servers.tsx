@@ -1612,8 +1612,24 @@ export default function Servers() {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button size="iconDense" variant="ghost" disabled={pending || !isRunning} onClick={() => handleDockerAction(container, 'stop')} aria-label={t('card.stopContainerAria', { name: container.name })}>
-                                {dockerActionPending === `stop-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+                              <Button size="iconDense" variant="ghost" disabled={pending || !isRunning} onClick={async () => {
+                                // Traced via Dwight: this route saves via RCON first and
+                                // refuses outright if that save fails (stricter than plain
+                                // process Stop), but the actual termination is Docker
+                                // SIGTERM-then-SIGKILL, not RCON's own graceful quit -- so
+                                // unlike plain Stop, it CAN end in a forced kill. Closer to
+                                // Force Stop's tier than plain Stop's, hence red + confirm
+                                // here despite the ghost/icon-only styling everywhere else
+                                // on this row.
+                                const ok = await confirm({
+                                  title: t('card.stopContainerConfirmTitle'),
+                                  description: t('card.stopContainerConfirmDescription', { name: container.name }),
+                                  confirmLabel: t('card.stopContainer'),
+                                })
+                                if (!ok) return
+                                handleDockerAction(container, 'stop')
+                              }} aria-label={t('card.stopContainerAria', { name: container.name })}>
+                                {dockerActionPending === `stop-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4 text-destructive" />}
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>{t('card.stopContainer')}</TooltipContent>

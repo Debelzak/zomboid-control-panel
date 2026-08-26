@@ -40,6 +40,8 @@
     "dataPath": "数据路径",
     "startContainer": "启动容器",
     "stopContainer": "停止容器",
+    "stopContainerConfirmTitle": "停止此容器？",
+    "stopContainerConfirmDescription": "{{name}} 会先通过 RCON 保存，但容器本身是由 Docker 停止的——如果未能及时退出，Docker 会强制终止它。与常规的停止按钮不同，这可能会以非正常终止结束。",
     "restartContainer": "重启容器",
     "startContainerAria": "启动 {{name}}",
     "stopContainerAria": "停止 {{name}}",

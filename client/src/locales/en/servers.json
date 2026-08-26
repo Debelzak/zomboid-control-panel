@@ -40,6 +40,8 @@
     "dataPath": "Data Path",
     "startContainer": "Start container",
     "stopContainer": "Stop container",
+    "stopContainerConfirmTitle": "Stop this container?",
+    "stopContainerConfirmDescription": "{{name}} saves through RCON first, but the container itself is stopped by Docker -- if it doesn't exit in time, Docker force-kills it. This can end in an ungraceful termination, unlike the regular Stop button.",
     "restartContainer": "Restart container",
     "startContainerAria": "Start {{name}}",
     "stopContainerAria": "Stop {{name}}",

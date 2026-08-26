@@ -260,10 +260,15 @@ type TimeFormat = "relative" | "time" | "datetime";
 type DiagnosticsFixAction = {
   label: string;
   automated: boolean;
-  /** When true, ask the user before applying (used for bulk destructive operations). */
+  /** When true, ask the user before applying (used for bulk operations, not all of them destructive). */
   requiresConfirm?: boolean;
   /** Confirmation text shown in the native confirm dialog. */
   confirmMessage?: string;
+  /** Styles the confirm button red when true. Explicit per action rather than
+   *  defaulting to red for every requiresConfirm action -- a bounded, reversible
+   *  INI toggle and an actual file deletion aren't the same severity, and
+   *  rendering both the same color flattens that distinction for the operator. */
+  destructive?: boolean;
   openServerConfig?: boolean;
   openMods?: boolean;
   /** Extra navigation buttons rendered next to the primary action. */
@@ -324,6 +329,9 @@ export function getDiagnosticsFixAction(
         automated: true,
         requiresConfirm: count > 10,
         confirmMessage: t("fixActions.modsNumericInMods.confirmMessage", { count }),
+        // Disables INI entries, doesn't delete anything -- re-enabling is a
+        // toggle, not a rebuild. Bounded/reversible, not red.
+        destructive: false,
         openServerConfig: true,
         note:
           count > 0
@@ -360,6 +368,8 @@ export function getDiagnosticsFixAction(
         automated: true,
         requiresConfirm: count > 10,
         confirmMessage: t("fixActions.modsOrphanWorkshop.confirmMessage", { count }),
+        // Same class as numericInMods above -- an INI toggle, not a deletion.
+        destructive: false,
         openServerConfig: true,
         openMods: true,
         note:
@@ -474,6 +484,9 @@ export function getDiagnosticsFixAction(
         automated: true,
         requiresConfirm: true,
         confirmMessage: t("fixActions.serverStaleLocks.confirmMessage"),
+        // Actually deletes files in the save-adjacent lock directory, unlike
+        // the two INI-toggle fixes above -- stays red deliberately.
+        destructive: true,
         links: [{ to: "/chunks", label: L("openChunkCleaner") }],
         note: t("fixActions.serverStaleLocks.note"),
       };
@@ -912,6 +925,10 @@ export default function Debug() {
             title: t("diagnostics.applyFixTitle"),
             description: message,
             confirmLabel: t("diagnostics.applyButton"),
+            // Deliberate per action (see DiagnosticsFixAction.destructive) --
+            // defaults to true only when an action doesn't set it, same as
+            // useConfirm's own default, not a silent downgrade.
+            destructive: action.destructive !== false,
           });
           if (!ok) {
             return;

@@ -40,6 +40,8 @@
     "dataPath": "Chemin des données",
     "startContainer": "Démarrer le conteneur",
     "stopContainer": "Arrêter le conteneur",
+    "stopContainerConfirmTitle": "Arrêter ce conteneur ?",
+    "stopContainerConfirmDescription": "{{name}} sauvegarde d'abord via RCON, mais le conteneur lui-même est arrêté par Docker -- s'il ne s'arrête pas à temps, Docker le force à s'arrêter. Cela peut se terminer par un arrêt brutal, contrairement au bouton Arrêter habituel.",
     "restartContainer": "Redémarrer le conteneur",
     "startContainerAria": "Démarrer {{name}}",
     "stopContainerAria": "Arrêter {{name}}",

@@ -40,6 +40,8 @@
     "dataPath": "Chemen Done",
     "startContainer": "Demare kontenè",
     "stopContainer": "Sispann kontenè",
+    "stopContainerConfirmTitle": "Sispann kontenè sa a?",
+    "stopContainerConfirmDescription": "{{name}} sovgade atravè RCON anvan, men se Docker ki sispann kontenè a limenm -- si li pa soti atan, Docker fòse l fèmen. Sa ka fini ak yon fèmti brital, kontrèman ak bouton Sispann nòmal la.",
     "restartContainer": "Redemare kontenè",
     "startContainerAria": "Demare {{name}}",
     "stopContainerAria": "Sispann {{name}}",

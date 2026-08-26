@@ -40,6 +40,8 @@
     "dataPath": "Datenpfad",
     "startContainer": "Container starten",
     "stopContainer": "Container stoppen",
+    "stopContainerConfirmTitle": "Diesen Container stoppen?",
+    "stopContainerConfirmDescription": "{{name}} speichert zuerst über RCON, aber der Container selbst wird von Docker gestoppt -- beendet er sich nicht rechtzeitig, erzwingt Docker das Beenden. Das kann anders als beim normalen Stopp-Button in einer nicht sauberen Beendigung enden.",
     "restartContainer": "Container neu starten",
     "startContainerAria": "{{name}} starten",
     "stopContainerAria": "{{name}} stoppen",
