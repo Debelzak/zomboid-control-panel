@@ -64,6 +64,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { reportClientError } from "@/lib/client-errors";
+import { getUserErrorMessage } from "@/lib/errorMessage";
 import { translateDiagnosticCheck } from "@/lib/diagnosticsTranslation";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -830,7 +831,7 @@ export default function Debug() {
         setHealthError(t("worldMapTab.unexpectedResponse"));
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : t("worldMapTab.networkError");
+      const msg = getUserErrorMessage(error, t("worldMapTab.networkError"));
       setHealthError(msg);
       reportClientError("Failed to fetch health status.", error);
     } finally {
@@ -867,7 +868,7 @@ export default function Debug() {
         setDiagnosticsError(t("worldMapTab.unexpectedResponse"));
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : t("worldMapTab.networkError");
+      const msg = getUserErrorMessage(error, t("worldMapTab.networkError"));
       setDiagnosticsError(msg);
       reportClientError("Failed to fetch diagnostics.", error);
     } finally {
@@ -1131,10 +1132,7 @@ export default function Debug() {
         await fetchDiagnostics();
       } catch (error) {
         reportClientError("Diagnostics auto-fix failed.", error);
-        const message =
-          error instanceof Error
-            ? error.message
-            : t("diagnostics.fixFailedFallback");
+        const message = getUserErrorMessage(error, t("diagnostics.fixFailedFallback"));
         toast({
           title: t("diagnostics.fixFailedTitle"),
           description: message,
@@ -1165,7 +1163,7 @@ export default function Debug() {
         setWorldMapError(t("worldMapTab.unexpectedResponse"));
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : t("worldMapTab.networkError");
+      const msg = getUserErrorMessage(error, t("worldMapTab.networkError"));
       setWorldMapError(msg);
       reportClientError("Failed to fetch World Map diagnostics.", error);
     } finally {
@@ -1219,7 +1217,7 @@ export default function Debug() {
           },
         }));
       } catch (error) {
-        const msg = error instanceof Error ? error.message : t("worldMapTab.requestFailed");
+        const msg = getUserErrorMessage(error, t("worldMapTab.requestFailed"));
         setProbeResults((prev) => ({
           ...prev,
           [id]: {
@@ -1425,7 +1423,7 @@ export default function Debug() {
         toast({ title: successTitle, description: successDesc });
       } catch (error) {
         const msg =
-          error instanceof Error ? error.message : t("common.actionFailedFallback");
+          getUserErrorMessage(error, t("common.actionFailedFallback"));
         toast({
           title: t("common.actionFailedTitle"),
           description: msg,
@@ -1518,7 +1516,7 @@ export default function Debug() {
         setCrashLogContent(t("crashesTab.loadFailed"));
       }
     } catch (error) {
-      setCrashLogContent(error instanceof Error ? error.message : t("crashesTab.loadFailed"));
+      setCrashLogContent(getUserErrorMessage(error, t("crashesTab.loadFailed")));
     } finally {
       setLoadingCrashLog(false);
     }
@@ -1791,7 +1789,7 @@ export default function Debug() {
     } catch (error) {
       toast({
         title: t("logsTab.downloadFailedTitle"),
-        description: error instanceof Error ? error.message : t("logsTab.downloadFailedDesc"),
+        description: getUserErrorMessage(error, t("logsTab.downloadFailedDesc")),
         variant: "destructive",
       });
     } finally {
@@ -1820,7 +1818,7 @@ export default function Debug() {
       } catch (error) {
         toast({
           title: t("logsTab.downloadFailedTitle"),
-          description: error instanceof Error ? error.message : t("logsTab.downloadFileFailedDesc", { name: filename }),
+          description: getUserErrorMessage(error, t("logsTab.downloadFileFailedDesc", { name: filename })),
           variant: "destructive",
         });
       } finally {
@@ -1854,7 +1852,7 @@ export default function Debug() {
     } catch (error) {
       toast({
         title: t("logsTab.downloadFailedTitle"),
-        description: error instanceof Error ? error.message : t("logsTab.downloadArchiveFailedDesc"),
+        description: getUserErrorMessage(error, t("logsTab.downloadArchiveFailedDesc")),
         variant: "destructive",
       });
     } finally {
@@ -1962,10 +1960,7 @@ export default function Debug() {
     } catch (error) {
       toast({
         title: t("common.errorTitle"),
-        description:
-          error instanceof Error
-            ? error.message
-            : t("systemTab.updatePathsFailedFallback"),
+        description: getUserErrorMessage(error, t("systemTab.updatePathsFailedFallback")),
         variant: "destructive",
       });
     } finally {
