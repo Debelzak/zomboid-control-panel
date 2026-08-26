@@ -235,3 +235,49 @@ describe('getUserErrorMessage — structured params interpolation', () => {
     )
   })
 })
+
+// 2026-08-26: panelBridge.js's 76-of-88 generic catch-all shape (server.js
+// has the same convention: 500s stay uncoded by design, only explicit
+// validation branches get a code). api.ts synthesizes `code: HTTP_<status>`
+// for any response missing one, so these exercise via a real fetched shape
+// (status set, no *registered* translation resolves) rather than a bare
+// `code: undefined` a real network response would never actually produce.
+describe('getUserErrorMessage — generic wrapper for an uncoded 5xx', () => {
+  beforeEach(() => {
+    void i18n.changeLanguage('fr')
+  })
+
+  afterEach(() => {
+    void i18n.changeLanguage('en')
+  })
+
+  it('wraps a 500 with no registered code translation, preserving the raw detail', () => {
+    const error = new ApiError('EACCES: permission denied, open [path]', { status: 500, code: 'HTTP_500' })
+    expect(getUserErrorMessage(error, 'fallback')).toBe(
+      "EACCES: permission denied, open [path] Ce n'était pas attendu — si cela persiste, téléchargez un pack de support afin qu'il puisse être examiné.",
+    )
+  })
+
+  it('also wraps other 5xx statuses (e.g. 503, 504), not just 500', () => {
+    const error = new ApiError('upstream timed out', { status: 504, code: 'HTTP_504' })
+    expect(getUserErrorMessage(error, 'fallback')).toContain("n'était pas attendu")
+  })
+
+  it('does NOT wrap a 4xx with no registered code -- deliberate validation text stays untouched', () => {
+    const error = new ApiError('Username is required', { status: 400, code: 'HTTP_400' })
+    expect(getUserErrorMessage(error, 'fallback')).toBe('Username is required')
+  })
+
+  it('does not wrap when a real code already resolves a translation, even at 5xx', () => {
+    const error = new ApiError('Update checker not available', { status: 503, code: 'UPDATE_CHECKER_NOT_AVAILABLE' })
+    expect(getUserErrorMessage(error, 'fallback')).toBe("Le vérificateur de mises à jour n'est pas disponible")
+  })
+
+  it('is a no-op in English (the wrapper text would be identical to a hand-written one, so assert it is present rather than absent)', () => {
+    void i18n.changeLanguage('en')
+    const error = new ApiError('ECONNREFUSED', { status: 500, code: 'HTTP_500' })
+    expect(getUserErrorMessage(error, 'fallback')).toBe(
+      "ECONNREFUSED This wasn't expected — if it keeps happening, download a support bundle so it can be investigated.",
+    )
+  })
+})

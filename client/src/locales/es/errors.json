@@ -370,6 +370,7 @@
   "SFTP_PATH_OCCUPIED": "{{detail}} Solución: Elimina o renombra el directorio que ocupa esa ruta de archivo del puente y vuelve a ejecutar «Verificar y preparar SFTP».",
   "SFTP_UNREACHABLE": "{{detail}} Solución: Comprueba el host y el puerto SFTP, el cortafuegos, y que el proveedor de alojamiento permita SFTP desde este equipo del panel.",
   "SFTP_UNKNOWN": "{{detail}} Solución: Vuelve a ejecutar «Verificar y preparar SFTP». Si sigue fallando, descarga un paquete de soporte e incluye sftp-diagnostics.json.",
+  "UNEXPECTED_SERVER_ERROR": "{{detail}} Esto no se esperaba; si sigue ocurriendo, descarga un paquete de soporte para que pueda investigarse.",
   "OIDC_CREDENTIALS_REJECTED": "El proveedor ha rechazado el ID de cliente o el secreto de cliente. Compruebe ambos en la pantalla de administración de su proveedor de identidad.",
   "OIDC_TEST_UNDETERMINED": "Se puede acceder al emisor, pero esto no ha confirmado si las credenciales son válidas: {{reason}}. Inicie sesión para obtener una respuesta definitiva.",
   "PLAYERS_USERNAME_REQUIRED": "Se requiere el nombre de usuario",

@@ -370,6 +370,7 @@
   "SFTP_PATH_OCCUPIED": "{{detail}} 修复方法：请删除或重命名占用该桥接文件路径的目录，然后重新运行“校验并准备 SFTP”。",
   "SFTP_UNREACHABLE": "{{detail}} 修复方法：请检查 SFTP 主机、端口、防火墙设置，并确认托管服务商允许从此面板所在计算机访问 SFTP。",
   "SFTP_UNKNOWN": "{{detail}} 修复方法：请重新运行“校验并准备 SFTP”。如果仍然失败，请下载支持包并附上 sftp-diagnostics.json。",
+  "UNEXPECTED_SERVER_ERROR": "{{detail}} 这是意外情况——如果问题持续出现，请下载支持包以便排查。",
   "OIDC_CREDENTIALS_REJECTED": "提供商拒绝了客户端 ID 或客户端密钥。请在身份提供商的管理界面中核对这两项。",
   "OIDC_TEST_UNDETERMINED": "颁发者可以访问，但本次检测无法确认凭据是否有效：{{reason}}。请尝试登录以获得确定的结果。",
   "PLAYERS_USERNAME_REQUIRED": "用户名为必填项",

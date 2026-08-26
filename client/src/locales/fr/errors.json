@@ -370,6 +370,7 @@
   "SFTP_PATH_OCCUPIED": "{{detail}} Correction : Supprimez ou renommez le répertoire qui occupe ce chemin de fichier bridge, puis relancez « Vérifier et préparer SFTP ».",
   "SFTP_UNREACHABLE": "{{detail}} Correction : Vérifiez l'hôte SFTP, le port, le pare-feu, et que l'hébergeur autorise le SFTP depuis cet ordinateur du panneau.",
   "SFTP_UNKNOWN": "{{detail}} Correction : Relancez « Vérifier et préparer SFTP ». Si le problème persiste, téléchargez un pack de support et incluez sftp-diagnostics.json.",
+  "UNEXPECTED_SERVER_ERROR": "{{detail}} Ce n'était pas attendu — si cela persiste, téléchargez un pack de support afin qu'il puisse être examiné.",
   "OIDC_CREDENTIALS_REJECTED": "Le fournisseur a rejeté l'identifiant client ou le secret client. Vérifiez les deux dans l'interface d'administration de votre fournisseur d'identité.",
   "OIDC_TEST_UNDETERMINED": "L'émetteur est joignable, mais ceci n'a pas permis de confirmer si les identifiants sont valides : {{reason}}. Essayez de vous connecter pour obtenir une réponse définitive.",
   "PLAYERS_USERNAME_REQUIRED": "Le nom d'utilisateur est requis",

@@ -370,6 +370,7 @@
   "SFTP_PATH_OCCUPIED": "{{detail}} Lösung: Entferne oder benenne das Verzeichnis um, das diesen Brückendateipfad belegt, und führe „SFTP überprüfen und vorbereiten“ erneut aus.",
   "SFTP_UNREACHABLE": "{{detail}} Lösung: Überprüfe SFTP-Host, Port und Firewall und stelle sicher, dass der Hosting-Anbieter SFTP von diesem Panel-Computer aus zulässt.",
   "SFTP_UNKNOWN": "{{detail}} Lösung: Führe „SFTP überprüfen und vorbereiten“ erneut aus. Schlägt es weiterhin fehl, lade ein Support-Paket herunter und füge sftp-diagnostics.json bei.",
+  "UNEXPECTED_SERVER_ERROR": "{{detail}} Das war nicht vorgesehen – tritt es weiterhin auf, lade ein Support-Paket herunter, damit es untersucht werden kann.",
   "OIDC_CREDENTIALS_REJECTED": "Der Anbieter hat die Client-ID oder das Client-Secret abgelehnt. Prüfen Sie beide in der Administrationsoberfläche Ihres Identitätsanbieters.",
   "OIDC_TEST_UNDETERMINED": "Der Aussteller ist erreichbar, aber damit konnte nicht bestätigt werden, ob die Zugangsdaten gültig sind: {{reason}}. Melden Sie sich an, um eine eindeutige Antwort zu erhalten.",
   "PLAYERS_USERNAME_REQUIRED": "Benutzername ist erforderlich",

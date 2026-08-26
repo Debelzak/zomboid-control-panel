@@ -65,6 +65,27 @@ function getRegisteredTranslation(code: string, params: TranslationParams | unde
   return resolveRegisteredTranslation('errors', key, params, resolveParamValue)
 }
 
+// api.ts synthesizes `code: HTTP_${status}` whenever a failed response omits
+// one, so `code` above is essentially never falsy for a real fetch — the
+// `!code` case below only fires for hand-built Error/plain-object inputs.
+// That means the real signal that a 5xx response is an uncoded catch-all
+// (server.js/panelBridge.js's dominant shape — see the 2026-08-26 hunt
+// this key came out of) isn't "no code", it's "no CODE THAT TRANSLATES":
+// `translated` is still null whether the wire code was absent, unregistered,
+// or registered but missing required params. A ≥500 status with a raw
+// message and no translation is presumed to be that shape and gets this
+// generic wrapper around the preserved detail; a 4xx (validation text
+// authored deliberately, no code by design — the "bucket C" convention) is
+// left exactly as it was, untouched. If a real code for this response DOES
+// resolve later (translated non-null above), this branch is never reached.
+const GENERIC_SERVER_ERROR_KEY = 'UNEXPECTED_SERVER_ERROR'
+const GENERIC_SERVER_ERROR_STATUS_FLOOR = 500
+
+function wrapUncodedServerError(status: number | undefined, message: string): string | null {
+  if (typeof status !== 'number' || status < GENERIC_SERVER_ERROR_STATUS_FLOOR) return null
+  return resolveRegisteredTranslation('errors', GENERIC_SERVER_ERROR_KEY, { detail: message })
+}
+
 export function getUserErrorMessage(error: unknown, fallback: string): string {
   const code = extractErrorCode(error)
   const params = extractErrorParams(error)
@@ -74,7 +95,7 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     const message = error.message?.trim()
     if (message && message.toLowerCase() !== 'unknown error') {
-      return message
+      return wrapUncodedServerError(error.status, message) ?? message
     }
     return fallback
   }

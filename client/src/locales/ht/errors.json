@@ -370,6 +370,7 @@
   "SFTP_PATH_OCCUPIED": "{{detail}} Ranje: Retire oswa chanje non dosye k ap okipe chemen fichye pon sa a, epi kouri “Verifye epi prepare SFTP” ankò.",
   "SFTP_UNREACHABLE": "{{detail}} Ranje: Tcheke lame SFTP la, pò a, firewall la, epi konfime founisè èbèjman an pèmèt SFTP soti nan òdinatè panèl sa a.",
   "SFTP_UNKNOWN": "{{detail}} Ranje: Kouri “Verifye epi prepare SFTP” ankò. Si li kontinye echwe, telechaje yon pakè sipò epi enkli sftp-diagnostics.json.",
+  "UNEXPECTED_SERVER_ERROR": "{{detail}} Sa a pa t atann — si li kontinye rive, telechaje yon pakè sipò pou yo ka egzamine li.",
   "OIDC_CREDENTIALS_REJECTED": "Founisè a refize client ID a oswa client secret la. Tcheke tou de kont ekran administrasyon founisè idantite a.",
   "OIDC_TEST_UNDETERMINED": "Issuer a reyachab, men sa pa konfime si idantifyan yo valid: {{reason}}. Eseye konekte pou yon repons definitif.",
   "PLAYERS_USERNAME_REQUIRED": "Non itilizatè obligatwa",
