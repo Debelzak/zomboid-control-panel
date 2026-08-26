@@ -1488,8 +1488,19 @@ export default function Dashboard() {
           <AlertDialogFooter className="gap-2 sm:gap-2">
             <AlertDialogCancel className="mt-0">{t('confirm.cancel')}</AlertDialogCancel>
             <AlertDialogAction
+              disabled={loading !== null}
               className={cn(buttonVariants({ variant: confirmAction?.variant === 'destructive' ? 'destructive' : 'warning' }))}
-              onClick={async () => { if (confirmAction) { await handleAction(confirmAction.actionId, confirmAction.action); setConfirmAction(null) } }}
+              onClick={async (e) => {
+                // AlertDialogAction is Radix's own Close primitive -- it
+                // auto-closes the dialog on click unless preventDefault()
+                // is called, which otherwise leaves a narrow window (the
+                // CSS exit-animation) where a second click can still land
+                // and fire Stop/Force Stop a second time before the first
+                // resolves (Stop/Force Stop have no server-side mutex,
+                // unlike Restart's restartInProgress flag).
+                e.preventDefault()
+                if (confirmAction) { await handleAction(confirmAction.actionId, confirmAction.action); setConfirmAction(null) }
+              }}
             >
               {confirmAction?.title}
             </AlertDialogAction>

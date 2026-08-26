@@ -1859,7 +1859,8 @@ export default function Players() {
                       <AlertDialogFooter>
                         <AlertDialogCancel>{t('banConfirm.cancel')}</AlertDialogCancel>
                         <AlertDialogAction
-                          onClick={handleBan}
+                          disabled={loading}
+                          onClick={(e) => { e.preventDefault(); handleBan() }}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
