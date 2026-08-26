@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
 import { modsApi } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { cn } from '@/lib/utils'
 
 type DiffResponse = Awaited<ReturnType<typeof modsApi.collectionDiff>>
@@ -151,7 +152,7 @@ export function WorkshopCollectionPanel() {
       if (!r.ok && r.error) setDiffError(r.error)
     } catch (err: any) {
       if (seq !== refreshSeqRef.current) return
-      setDiffError(err?.message || t('failedToReadCollection'))
+      setDiffError(getUserErrorMessage(err, t('failedToReadCollection')))
     } finally {
       if (seq === refreshSeqRef.current) setDiffLoading(false)
     }
@@ -254,7 +255,7 @@ export function WorkshopCollectionPanel() {
       toast({ title: t('toastCookiesSaved') })
       await refresh()
     } catch (err: any) {
-      setCookieError(err?.message || t('couldNotSaveCookies'))
+      setCookieError(getUserErrorMessage(err, t('couldNotSaveCookies')))
     } finally {
       setCookieSaving(false)
     }
@@ -311,7 +312,7 @@ export function WorkshopCollectionPanel() {
       }
       await refresh()
     } catch (err: any) {
-      toast({ variant: 'destructive', title: t('toastActionFailedTitle'), description: err?.message || t('purgeSteamRejected') })
+      toast({ variant: 'destructive', title: t('toastActionFailedTitle'), description: getUserErrorMessage(err, t('purgeSteamRejected')) })
     } finally {
       setRowBusy((prev) => {
         const next = { ...prev }
@@ -360,7 +361,7 @@ export function WorkshopCollectionPanel() {
             : t('removedServerBulkNoAutoSyncDesc', { count: targets.length }),
         })
       } catch (err: any) {
-        toast({ variant: 'destructive', title: t('toastServerRemovalFailedTitle'), description: err?.message || t('toastServerRemovalFailedDesc') })
+        toast({ variant: 'destructive', title: t('toastServerRemovalFailedTitle'), description: getUserErrorMessage(err, t('toastServerRemovalFailedDesc')) })
       } finally {
         setBulkBusy(null)
         setRowBusy({})
@@ -381,7 +382,7 @@ export function WorkshopCollectionPanel() {
         else if (action === 'untrack') await modsApi.collectionUntrack(it.workshopId)
         ok++
       } catch (err: any) {
-        errors.push({ id: it.workshopId, error: err?.message || 'failed' })
+        errors.push({ id: it.workshopId, error: getUserErrorMessage(err, t('genericItemActionFailed')) })
       } finally {
         setRowBusy((prev) => {
           const next = { ...prev }

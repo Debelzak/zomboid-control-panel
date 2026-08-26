@@ -59,7 +59,6 @@ export default tseslint.config(
       'src/pages/WorldMap.tsx',
       'src/components/DiscoverySetup.tsx',
       'src/components/FolderBrowser.tsx',
-      'src/components/WorkshopCollectionPanel.tsx',
       'src/components/mods/ConflictsPanel.tsx',
       'src/components/templates/CreateTemplateDialog.tsx',
       'src/components/templates/TemplatePreviewDialog.tsx',
