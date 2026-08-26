@@ -20,6 +20,7 @@ import {
   SimTemplateApplyResult,
   ServerInstance,
 } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { TemplateDiffList } from './TemplateDiffList'
 import { TemplateApplyPanel } from './TemplateApplyPanel'
 
@@ -69,7 +70,7 @@ export function TemplatePreviewDialog({ template, canManage, onClose, onApplied 
         if (result.success && result.diff) setDiff(result.diff)
         else setDiffError(result.error || t('failedToPreview'))
       } catch (error) {
-        setDiffError(error instanceof Error ? error.message : t('failedToPreview'))
+        setDiffError(getUserErrorMessage(error, t('failedToPreview')))
       }
     }
     setServerLoading(false)
@@ -106,7 +107,7 @@ export function TemplatePreviewDialog({ template, canManage, onClose, onApplied 
       toast({ title: t('toastAppliedTitle'), description: t('toastAppliedDesc', { name: template.meta.name }), variant: 'success' as const })
       onApplied()
     } catch (error) {
-      setApplyError(error instanceof Error ? error.message : t('failedToApply'))
+      setApplyError(getUserErrorMessage(error, t('failedToApply')))
     } finally {
       setApplying(false)
     }
