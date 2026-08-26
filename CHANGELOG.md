@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The panel handed out a live Steam login token over its own API.** Extracting Steam credentials
+  from a browser profile returned the session cookie and login token in the response body, so an
+  account with mod-management permission - which includes the technician role, below administrator -
+  could ask one endpoint for the panel host's live Steam session. The extraction now saves the
+  credentials on the server and returns only whether it worked; the token never crosses the wire.
+
 - **A server name could be made to point somewhere it should not.** The panel validates server
   names carefully everywhere it manages several servers, but one older settings screen accepted the
   name without checking it, and that value was used to build a file path. A name containing path
@@ -21,6 +27,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step. It is ignored rather than used, and the panel behaves as though no name were set.
 
 ### Fixed
+
+- **A server created by the setup wizard could not start at all.** The admin password you typed was
+  never saved with the server, so the panel launched Project Zomboid without it - and on a brand new
+  server, where the game has to create the admin account, it stopped and asked for the password on a
+  console that was not there, then exited. The logs showed only a Java error. Reported by two people
+  on Discord, whose workaround - setting the password again on the server's own screen - was itself
+  the clue: that was the only path that ever saved it. The wizard now saves it, and if a first start
+  would fail for this reason the panel refuses and tells you where to set it instead of launching a
+  server it knows will die. Three other settings were being dropped the same way, including the
+  Docker container name, and a test now fails the moment a fourth one is.
+
+- **Starting a stopped server quietly overwrote your startup script.** Every start rewrote
+  `StartServer.bat` and its Linux twin with the panel's own generated version, so any Java or JVM
+  flags you had added by hand disappeared with no warning - and the only nearby explanation said the
+  panel would "detect" the file, which is the opposite of what it did. The panel now notices when the
+  file is not the one it last wrote, keeps a timestamped copy beside it, and tells you where that
+  copy is. Your configuration changes still take effect every time.
+
+- **The UPnP tick box did nothing.** It was saved in two places and read in none; the setting that
+  actually matters lives in the server's own configuration file, which only one screen ever wrote.
+  Setting it in the wizard, or later on the server's own page, now reaches that file - and the panel
+  says plainly that the change applies the next time the server starts, because that is when the game
+  reads it.
+
+- **"Restart initiated" was all you ever got.** Starting a restart or running a scheduled task by
+  hand reported success immediately - meaning the request was accepted, not that it worked - and a
+  genuine failure was written only to a log file you would never see. The real outcome now reaches
+  you when it happens, wherever you are in the panel.
+
+- **A badge could say three mods needed updating long after they were updated.** The count was only
+  ever sent when it went up, never when it went down, so it could be wrong in one direction for the
+  rest of the session. And the OIDC "Discovery succeeded" panel stayed on screen after you edited the
+  client secret, implying credentials had been verified when they had not - so a broken login could
+  be saved with a green tick in front of it.
 
 - **Wiping a server destroyed the whole world with no way back.** Deleting the map, players or
   accounts had no backup step at all, while the equivalent chunk-deletion tools have offered one
@@ -84,6 +124,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so rather than reporting zero.
 
 ### Changed
+
+- **Error messages now speak your language, and say what to do about it.** The panel already
+  translated most of its failures, and then showed you the raw English one anyway, because the screen
+  read the wrong half of the reply - so a French user saw an English sentence that had been sitting
+  translated in the same file all along. Roughly a hundred and thirty places across every page now
+  use the translated message, and point at the screen that fixes the problem where one exists. SFTP
+  and player-moderation failures gained proper translated messages of their own, keeping the specific
+  detail - the path, the error code - rather than replacing it with something vaguer.
+
+- **Warnings now match what is actually at stake.** Stopping a server looked as alarming as deleting
+  one, on one page but not another; kicking or banning a player from the moderation tools happened on
+  a single click with no confirmation at all, while the same action elsewhere asked first. Fifty-two
+  confirmation and warning styles were reviewed against a single rule - how recoverable is it, and
+  does it affect anyone but you - so that the serious ones stand out instead of blending into the
+  routine ones.
 
 - **Installation guides for every setup**, in `docs/install/`: Windows, Linux, Docker and Unraid,
   rented/managed servers, and a symptom-first troubleshooting guide. They ship inside the release
