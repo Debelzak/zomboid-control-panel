@@ -387,8 +387,6 @@
     "sftpRunning": "运行中",
     "sftpStopped": "已停止",
     "lastSyncSuffix": "，上次同步耗时 {{ms}} 毫秒",
-    "lastErrorSuffix": "，上次错误：{{error}}",
-    "fixLabel": "修复方法：{{guidance}}",
     "serverLogsNote": "<b>服务器日志：</b>只读。面板会列出远程日志文件夹，并按需获取文件末尾内容。不会向远程主机写入任何内容，也绝不会将整个文件镜像到磁盘。",
     "remoteConfigTitle": "远程服务器配置",
     "remoteConfigDesc": "远程主机上 <code>Server</code> 文件夹的绝对路径。设置此项将为远程服务器解锁「服务器配置」页面：面板通过 SFTP 镜像 <code>.ini</code> 和 <code>SandboxVars.lua</code>，编辑其副本，然后写回。",

@@ -208,4 +208,30 @@ describe('getUserErrorMessage — structured params interpolation', () => {
     })
     expect(getUserErrorMessage(error, 'fallback')).toBe('A role named "Moderator" already exists')
   })
+
+  // 2026-08-26: panelBridgeSftp.js's formatSftpError() built its "{{detail}}
+  // Fix: ..." classification as a parallel, English-only system that never
+  // fed into this registry. These lock in that the move preserved the exact
+  // dynamic detail the English version carried (the raw SFTP client error
+  // text) via {{detail}}, and that a response which forgets to send it degrades
+  // to the untranslated server text rather than a broken "{{detail}}" literal --
+  // same guarantee ROLE_NAME_TAKEN's tests above prove for {{name}}.
+  it('interpolates the original SFTP error text into the translated classification', () => {
+    const error = new ApiError('Permission denied (publickey). Fix: Verify the SFTP username and password, then confirm the account can log in over port 22.', {
+      code: 'SFTP_AUTH_FAILED',
+      data: { params: { detail: 'Permission denied (publickey).' } },
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe(
+      "Permission denied (publickey). Correction : Vérifiez le nom d'utilisateur et le mot de passe SFTP, puis confirmez que le compte peut se connecter sur le port 22.",
+    )
+  })
+
+  it('falls through to the raw English text when an SFTP response omits params.detail', () => {
+    const error = new ApiError('Permission denied (publickey). Fix: Verify the SFTP username and password, then confirm the account can log in over port 22.', {
+      code: 'SFTP_AUTH_FAILED',
+    })
+    expect(getUserErrorMessage(error, 'fallback')).toBe(
+      'Permission denied (publickey). Fix: Verify the SFTP username and password, then confirm the account can log in over port 22.',
+    )
+  })
 })

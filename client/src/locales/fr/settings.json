@@ -387,8 +387,6 @@
     "sftpRunning": "en cours d'exécution",
     "sftpStopped": "arrêté",
     "lastSyncSuffix": ", dernière synchro {{ms}} ms",
-    "lastErrorSuffix": ", dernière erreur : {{error}}",
-    "fixLabel": "Correction : {{guidance}}",
     "serverLogsNote": "<b>Journaux du serveur :</b> lecture seule. Le panneau liste le dossier de journaux distant et récupère la fin d'un fichier à la demande. Rien n'est écrit sur l'hôte distant et les fichiers complets ne sont jamais mis en miroir sur le disque.",
     "remoteConfigTitle": "Configuration du serveur distant",
     "remoteConfigDesc": "Chemin absolu vers le dossier <code>Server</code> sur l'hôte distant. Définir ceci débloque la page de configuration du serveur pour un serveur distant : le panneau met en miroir les fichiers <code>.ini</code> et <code>SandboxVars.lua</code> via SFTP, édite la copie, puis la réécrit.",

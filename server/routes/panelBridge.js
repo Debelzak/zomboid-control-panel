@@ -38,6 +38,7 @@ import {
   getSftpCachePath,
   testSftpBridge,
   formatSftpError,
+  classifySftpErrorCode,
   validateSftpBridgeConfig,
   listSftpLogs,
   readSftpLogTail,
@@ -885,7 +886,16 @@ router.post("/sftp/test", requirePermission("bridge.setup"), async (req, res) =>
     const result = await testSftpBridge(config);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ error: sanitizeError(formatSftpError(error)) });
+    // error (English, unchanged) is the pre-2026-08-26-classification fallback
+    // for any client that doesn't read `code` -- code + params.detail let an
+    // updated client show the exact same classification, translated, with
+    // the original error text preserved as {{detail}} rather than replaced
+    // by a vaguer generic sentence (see errorCodes.js's SFTP_* entries).
+    res.status(400).json({
+      error: sanitizeError(formatSftpError(error)),
+      code: classifySftpErrorCode(error),
+      params: sanitizeErrorParams({ detail: error?.message || String(error) }),
+    });
   }
 });
 
@@ -900,7 +910,11 @@ router.post("/sftp/configure", requirePermission("bridge.setup"), async (req, re
     }
     res.json({ success: true, bridgePath: cachePath, transport: bridge.getStatus().transport });
   } catch (error) {
-    res.status(400).json({ error: sanitizeError(formatSftpError(error)) });
+    res.status(400).json({
+      error: sanitizeError(formatSftpError(error)),
+      code: classifySftpErrorCode(error),
+      params: sanitizeErrorParams({ detail: error?.message || String(error) }),
+    });
   }
 });
 

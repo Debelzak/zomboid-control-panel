@@ -387,8 +387,6 @@
     "sftpRunning": "läuft",
     "sftpStopped": "gestoppt",
     "lastSyncSuffix": ", letzter Sync {{ms}} ms",
-    "lastErrorSuffix": ", letzter Fehler: {{error}}",
-    "fixLabel": "Lösung: {{guidance}}",
     "serverLogsNote": "<b>Serverprotokolle:</b> nur lesend. Das Panel listet den Remote-Protokollordner auf und ruft bei Bedarf das Ende einer Datei ab. Es wird nichts auf den Remote-Host geschrieben, und ganze Dateien werden nie auf die Festplatte gespiegelt.",
     "remoteConfigTitle": "Remote-Serverkonfiguration",
     "remoteConfigDesc": "Absoluter Pfad zum Ordner <code>Server</code> auf dem Remote-Host. Wenn du das festlegst, wird die Seite Serverkonfiguration für einen Remote-Server freigeschaltet: Das Panel spiegelt <code>.ini</code>- und <code>SandboxVars.lua</code>-Dateien per SFTP, bearbeitet die Kopie und schreibt sie anschließend zurück.",

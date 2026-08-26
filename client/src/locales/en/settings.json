@@ -336,8 +336,6 @@
     "sftpRunning": "running",
     "sftpStopped": "stopped",
     "lastSyncSuffix": ", last sync {{ms}} ms",
-    "lastErrorSuffix": ", last error: {{error}}",
-    "fixLabel": "Fix: {{guidance}}",
     "serverLogsNote": "<b>Server logs:</b> read-only. The panel lists the remote log folder and fetches the tail of a file on demand. Nothing is written to the remote host and whole files are never mirrored to disk.",
     "remoteConfigTitle": "Remote server config",
     "remoteConfigDesc": "Absolute path to the <code>Server</code> folder on the remote host. Setting this unlocks the Server Config page for a remote server: the panel mirrors <code>.ini</code> and <code>SandboxVars.lua</code> over SFTP, edits the copy, then writes it back.",
