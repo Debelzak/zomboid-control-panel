@@ -40,6 +40,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { reportClientError, reportClientWarning } from '@/lib/client-errors'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -347,7 +348,7 @@ export default function Servers() {
       setServers(data.servers || [])
     } catch (error) {
       reportClientError('Failed to fetch servers.', error)
-      toast({ title: t('toasts.error'), description: error instanceof Error ? error.message : t('toasts.loadServersFailed'), variant: 'destructive' })
+      toast({ title: t('toasts.error'), description: getUserErrorMessage(error, t('toasts.loadServersFailed')), variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -418,7 +419,7 @@ export default function Servers() {
       const actionLabel = t(`toasts.dockerAction${action.charAt(0).toUpperCase()}${action.slice(1)}`)
       toast({
         title: t('toasts.containerActionFailedTitle', { action: actionLabel }),
-        description: error instanceof Error ? error.message : t('toasts.containerActionFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.containerActionFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -436,7 +437,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.couldNotSelectRemoteTitle'),
-        description: error instanceof Error ? error.message : t('toasts.serverActivationFailed'),
+        description: getUserErrorMessage(error, t('toasts.serverActivationFailed')),
         variant: 'destructive',
       })
     }
@@ -537,7 +538,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.scanFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.mountDiscoveryFailed'),
+        description: getUserErrorMessage(error, t('toasts.mountDiscoveryFailed')),
         variant: 'destructive'
       })
     } finally {
@@ -723,7 +724,7 @@ export default function Servers() {
       }
 
     } catch (error) {
-      setDetectError(error instanceof Error ? error.message : t('toasts.detectionFailed'))
+      setDetectError(getUserErrorMessage(error, t('toasts.detectionFailed')))
     } finally {
       setDetecting(false)
     }
@@ -764,7 +765,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.scanFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.autoScanFailed'),
+        description: getUserErrorMessage(error, t('toasts.autoScanFailed')),
         variant: 'destructive'
       })
     } finally {
@@ -848,7 +849,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.error'),
-        description: error instanceof Error ? error.message : t('toasts.activateFailed'),
+        description: getUserErrorMessage(error, t('toasts.activateFailed')),
         variant: 'destructive'
       })
     } finally {
@@ -895,7 +896,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.startFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.unknownError'),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
     } finally {
@@ -923,7 +924,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.stopFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.unknownError'),
+        description: getUserErrorMessage(error, t('toasts.unknownError')),
         variant: 'destructive',
       })
     } finally {
@@ -998,7 +999,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.error'),
-        description: error instanceof Error ? error.message : t('toasts.deleteServerFailed'),
+        description: getUserErrorMessage(error, t('toasts.deleteServerFailed')),
         variant: 'destructive'
       })
     } finally {
@@ -1050,7 +1051,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.error'),
-        description: error instanceof Error ? error.message : t('toasts.updateServerFailed'),
+        description: getUserErrorMessage(error, t('toasts.updateServerFailed')),
         variant: 'destructive'
       })
     } finally {
@@ -1092,7 +1093,7 @@ export default function Servers() {
       setSteamRunning(false)
       toast({
         title: t('toasts.error'),
-        description: error instanceof Error ? error.message : t('toasts.startOperationFailed'),
+        description: getUserErrorMessage(error, t('toasts.startOperationFailed')),
         variant: 'destructive'
       })
     }
@@ -1128,7 +1129,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.error'),
-        description: error instanceof Error ? error.message : t('toasts.clearFolderFailed'),
+        description: getUserErrorMessage(error, t('toasts.clearFolderFailed')),
         variant: 'destructive',
       })
     } finally {
@@ -1250,7 +1251,7 @@ export default function Servers() {
     } catch (error) {
       toast({
         title: t('toasts.error'),
-        description: error instanceof Error ? error.message : t('toasts.addServerFailed'),
+        description: getUserErrorMessage(error, t('toasts.addServerFailed')),
         variant: 'destructive'
       })
     } finally {
