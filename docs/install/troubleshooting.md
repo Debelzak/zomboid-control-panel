@@ -152,7 +152,7 @@ actually running on, or use a recovery code / `--reset-password`.
 causes look similar from the outside.
 
 **What to do:** either the dashboard's reconnect action or **Servers → Test
-connection** now tells the two failure modes apart the same way:
+Connection** now tells the two failure modes apart the same way:
 
 - `Unreachable` / `Could not connect to RCON. Is the server running and RCON
   enabled?` — the panel couldn't even open a TCP connection. This means the
@@ -275,10 +275,10 @@ folder permissions to) an account that can read the path.
    from PanelBridge, and check the panel's log for whether it's still
    watching for the mod's status file at all.
 5. For a remote server without a shared filesystem, confirm **Settings →
-   PanelBridge → Remote connection** has a working SFTP connection ("Test
-   SFTP" succeeds) and that **Start SFTP bridge** has actually been clicked
-   — the badge stays offline until that bridge is running, even with valid
-   credentials saved.
+   PanelBridge → Remote connection** has a working SFTP connection
+   ("Verify and prepare SFTP" succeeds) and that **Start SFTP bridge** has
+   actually been clicked — the badge stays offline until that bridge is
+   running, even with valid credentials saved.
 
 ---
 
