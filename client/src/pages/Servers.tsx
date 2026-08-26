@@ -88,6 +88,7 @@ import { SocketContext } from '@/contexts/SocketContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { PasswordInput } from '@/components/PasswordInput'
+import { NumberInput } from '@/components/NumberInput'
 import { RconTestConnection } from '@/components/RconTestConnection'
 import { MountDiscoveryBanner } from '@/components/MountDiscoveryBanner'
 import { DiscoverySetup } from '@/components/DiscoverySetup'
@@ -963,6 +964,10 @@ export default function Servers() {
       toast({ title: t('toasts.error'), description: t('toasts.gamePortRangeError'), variant: 'destructive' })
       return
     }
+    if (!Number.isFinite(editingServer.minMemory) || !Number.isFinite(editingServer.maxMemory)) {
+      toast({ title: t('toasts.error'), description: t('toasts.memoryRequiredError'), variant: 'destructive' })
+      return
+    }
 
     // The dialog already shows this as a red warning under the field (see
     // customStartCommandDisallowed below) but was never wired to block Save --
@@ -1142,6 +1147,10 @@ export default function Servers() {
     }
     if (!isValidPort(newServer.serverPort)) {
       toast({ title: t('toasts.error'), description: t('toasts.gamePortRangeError'), variant: 'destructive' })
+      return
+    }
+    if (!Number.isFinite(newServer.minMemory) || !Number.isFinite(newServer.maxMemory)) {
+      toast({ title: t('toasts.error'), description: t('toasts.memoryRequiredError'), variant: 'destructive' })
       return
     }
 
@@ -1799,10 +1808,9 @@ export default function Servers() {
                   </div>
                   <div className="space-y-2">
                     <Label>{t('remoteForm.rconPortLabel')}</Label>
-                    <Input
-                      type="number"
+                    <NumberInput
                       value={newServer.rconPort}
-                      onChange={e => setNewServer({ ...newServer, rconPort: parseInt(e.target.value) || 27015 })}
+                      onChange={rconPort => setNewServer({ ...newServer, rconPort })}
                     />
                   </div>
                 </div>
@@ -1824,10 +1832,9 @@ export default function Servers() {
 
                 <div className="space-y-2">
                   <Label>{t('remoteForm.gamePortLabel')}</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     value={newServer.serverPort}
-                    onChange={e => setNewServer({ ...newServer, serverPort: parseInt(e.target.value) || 16261 })}
+                    onChange={serverPort => setNewServer({ ...newServer, serverPort })}
                   />
                   <p className="text-xs text-muted-foreground">{t('remoteForm.gamePortHint')}</p>
                 </div>
@@ -2097,24 +2104,24 @@ export default function Servers() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                           <div className="space-y-2">
                             <Label>{t('localForm.minMemoryLabel')}</Label>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={1}
                               max={64}
                               value={newServer.minMemory}
                               className="bg-background"
-                              onChange={e => setNewServer({ ...newServer, minMemory: Math.max(1, parseInt(e.target.value) || 2) })}
+                              clamp={n => Math.max(1, n)}
+                              onChange={minMemory => setNewServer({ ...newServer, minMemory })}
                             />
                           </div>
                           <div className="space-y-2">
                             <Label>{t('localForm.maxMemoryLabel')}</Label>
-                            <Input
-                              type="number"
+                            <NumberInput
                               min={1}
                               max={64}
                               value={newServer.maxMemory}
                               className="bg-background"
-                              onChange={e => setNewServer({ ...newServer, maxMemory: Math.max(1, parseInt(e.target.value) || 4) })}
+                              clamp={n => Math.max(1, n)}
+                              onChange={maxMemory => setNewServer({ ...newServer, maxMemory })}
                             />
                           </div>
                         </div>
@@ -2333,32 +2340,31 @@ export default function Servers() {
               <div className={editingServer.isRemote ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 sm:grid-cols-3 gap-4"}>
                 <div className="space-y-2">
                   <Label>{t('editDialog.gamePortLabel')}</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     value={editingServer.serverPort}
-                    onChange={e => setEditingServer({ ...editingServer, serverPort: parseInt(e.target.value) || 16261 })}
+                    onChange={serverPort => setEditingServer({ ...editingServer, serverPort })}
                   />
                 </div>
                 {!editingServer.isRemote && (
                 <>
                 <div className="space-y-2">
                   <Label>{t('editDialog.minMemoryLabel')}</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={1}
                     max={64}
                     value={editingServer.minMemory}
-                    onChange={e => setEditingServer({ ...editingServer, minMemory: Math.max(1, parseInt(e.target.value) || 2) })}
+                    clamp={n => Math.max(1, n)}
+                    onChange={minMemory => setEditingServer({ ...editingServer, minMemory })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>{t('editDialog.maxMemoryLabel')}</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={1}
                     max={64}
                     value={editingServer.maxMemory}
-                    onChange={e => setEditingServer({ ...editingServer, maxMemory: Math.max(1, parseInt(e.target.value) || 4) })}
+                    clamp={n => Math.max(1, n)}
+                    onChange={maxMemory => setEditingServer({ ...editingServer, maxMemory })}
                   />
                 </div>
                 </>

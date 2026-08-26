@@ -315,6 +315,7 @@
     "deleteServerFailed": "Échec de la suppression du serveur",
     "rconPortRangeError": "Le port RCON doit être compris entre 1 et 65535",
     "gamePortRangeError": "Le port du jeu doit être compris entre 1 et 65535",
+    "memoryRequiredError": "Indiquez une mémoire minimale et maximale",
     "savedTitle": "Enregistré",
     "savedDesc": "Paramètres du serveur mis à jour",
     "updateServerFailed": "Échec de la mise à jour du serveur",

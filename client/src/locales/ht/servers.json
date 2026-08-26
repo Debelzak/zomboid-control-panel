@@ -315,6 +315,7 @@
     "deleteServerFailed": "Efase sèvè a echwe",
     "rconPortRangeError": "Pò RCON dwe ant 1 ak 65535",
     "gamePortRangeError": "Pò Jwèt la dwe ant 1 ak 65535",
+    "memoryRequiredError": "Antre yon valè memwa minimòm ak maksimòm",
     "savedTitle": "Sove",
     "savedDesc": "Paramèt sèvè mete ajou",
     "updateServerFailed": "Mete sèvè a ajou echwe",

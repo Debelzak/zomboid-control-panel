@@ -58,6 +58,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { schedulerApi, rconApi, serverApi, serversApi, ScheduleHistoryEntry, ServerInstance } from '@/lib/api'
 import { EmptyState } from '@/components/EmptyState'
+import { NumberInput } from '@/components/NumberInput'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface ScheduledTask {
@@ -921,10 +922,9 @@ export default function Scheduler() {
           <div className="flex items-end gap-4">
             <div className="flex-1 max-w-xs">
               <Label>{t('manualRestart.customCountdownLabel')}</Label>
-              <Input
-                type="number"
+              <NumberInput
                 value={restartMinutes}
-                onChange={(e) => setRestartMinutes(parseInt(e.target.value) || 5)}
+                onChange={setRestartMinutes}
                 min={1}
                 max={30}
               />
@@ -932,7 +932,7 @@ export default function Scheduler() {
             {restartMinutes < 5 ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button disabled={loading || !serverRunning} variant="warning">
+                  <Button disabled={loading || !serverRunning || !Number.isFinite(restartMinutes)} variant="warning">
                     <RotateCcw className="w-4 h-4 mr-2" />
                     {t('manualRestart.restartNow')}
                   </Button>
@@ -955,7 +955,7 @@ export default function Scheduler() {
             ) : (
               <Button
                 onClick={handleRestartNow}
-                disabled={loading || !serverRunning}
+                disabled={loading || !serverRunning || !Number.isFinite(restartMinutes)}
                 variant="warning"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />

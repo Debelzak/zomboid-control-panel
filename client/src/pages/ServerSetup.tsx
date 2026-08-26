@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { configApi, serverApi, serversApi, debugApi, apiFetch } from "@/lib/api";
 import { HelpTip } from "@/components/HelpTip";
+import { NumberInput } from "@/components/NumberInput";
 import { getInstallProgressMessage } from "@/lib/installProgressMessage";
 import { useNavigate } from "react-router-dom";
 import {
@@ -96,6 +97,13 @@ function handleCardKeyDown(
 // it before the round trip too.
 export function isValidInstallPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1024 && port <= 65535;
+}
+
+// A port field can now genuinely be NaN mid-edit (see NumberInput) -- a
+// summary/review screen must never render the literal text "NaN"; show the
+// same "—" placeholder this app already uses elsewhere for an unset value.
+function formatPort(port: number): string {
+  return Number.isFinite(port) ? String(port) : "—";
 }
 
 function generatePassword(length = 12): string {
@@ -1586,10 +1594,9 @@ export default function ServerSetup() {
                 <Label>{t("common.rconPortLabel")}</Label>
                 <HelpTip label={t("common.rconPortLabel")}>{t("common.rconPortHelp")}</HelpTip>
               </div>
-              <Input
-                type="number"
+              <NumberInput
                 value={rconPort}
-                onChange={(e) => setRconPort(parseInt(e.target.value) || 27015)}
+                onChange={setRconPort}
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">
@@ -1747,12 +1754,9 @@ export default function ServerSetup() {
                   <Label>{t("common.gamePortLabel")}</Label>
                   <HelpTip label={t("common.gamePortLabel")}>{t("common.gamePortHelp")}</HelpTip>
                 </div>
-                <Input
-                  type="number"
+                <NumberInput
                   value={serverPort}
-                  onChange={(e) =>
-                    setServerPort(parseInt(e.target.value) || 16261)
-                  }
+                  onChange={setServerPort}
                   className="font-mono"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -1846,11 +1850,11 @@ export default function ServerSetup() {
             </div>
             <div className="flex justify-between py-2 border-b">
               <span className="text-muted-foreground">{t("common.summaryGamePort")}</span>
-              <span className="font-mono">{serverPort}</span>
+              <span className="font-mono">{formatPort(serverPort)}</span>
             </div>
             <div className="flex justify-between py-2">
               <span className="text-muted-foreground">{t("common.summaryRconPort")}</span>
-              <span className="font-mono">{rconPort}</span>
+              <span className="font-mono">{formatPort(rconPort)}</span>
             </div>
           </div>
         </CardContent>
@@ -1867,10 +1871,10 @@ export default function ServerSetup() {
         </p>
         <ul className="mt-2 space-y-1 text-muted-foreground">
           <li>
-            • <code className="bg-muted px-1 rounded">{serverPort}</code> {t("full.step4.portInfoGame")}
+            • <code className="bg-muted px-1 rounded">{formatPort(serverPort)}</code> {t("full.step4.portInfoGame")}
           </li>
           <li>
-            • <code className="bg-muted px-1 rounded">{serverPort + 1}</code>{" "}
+            • <code className="bg-muted px-1 rounded">{formatPort(serverPort + 1)}</code>{" "}
             {t("full.step4.portInfoDirect")}
           </li>
         </ul>
@@ -2219,12 +2223,9 @@ export default function ServerSetup() {
                   <Label>{t("common.rconPortLabel")}</Label>
                   <HelpTip label={t("common.rconPortLabel")}>{t("common.rconPortHelp")}</HelpTip>
                 </div>
-                <Input
-                  type="number"
+                <NumberInput
                   value={rconPort}
-                  onChange={(e) =>
-                    setRconPort(parseInt(e.target.value) || 27015)
-                  }
+                  onChange={setRconPort}
                   className="font-mono"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -2423,12 +2424,9 @@ export default function ServerSetup() {
                     <Label>{t("common.gamePortLabel")}</Label>
                     <HelpTip label={t("common.gamePortLabel")}>{t("common.gamePortHelp")}</HelpTip>
                   </div>
-                  <Input
-                    type="number"
+                  <NumberInput
                     value={serverPort}
-                    onChange={(e) =>
-                      setServerPort(parseInt(e.target.value) || 16261)
-                    }
+                    onChange={setServerPort}
                     className="font-mono"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2517,11 +2515,11 @@ export default function ServerSetup() {
             </div>
             <div className="flex justify-between py-2 border-b">
               <span className="text-muted-foreground">{t("common.summaryGamePort")}</span>
-              <span className="font-mono">{serverPort}</span>
+              <span className="font-mono">{formatPort(serverPort)}</span>
             </div>
             <div className="flex justify-between py-2">
               <span className="text-muted-foreground">{t("common.summaryRconPort")}</span>
-              <span className="font-mono">{rconPort}</span>
+              <span className="font-mono">{formatPort(rconPort)}</span>
             </div>
           </div>
         </CardContent>

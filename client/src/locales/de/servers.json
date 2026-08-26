@@ -315,6 +315,7 @@
     "deleteServerFailed": "Server konnte nicht gelöscht werden",
     "rconPortRangeError": "Der RCON-Port muss zwischen 1 und 65535 liegen",
     "gamePortRangeError": "Der Spielport muss zwischen 1 und 65535 liegen",
+    "memoryRequiredError": "Gib einen Mindest- und einen Höchstwert für den Arbeitsspeicher ein",
     "savedTitle": "Gespeichert",
     "savedDesc": "Servereinstellungen aktualisiert",
     "updateServerFailed": "Server konnte nicht aktualisiert werden",

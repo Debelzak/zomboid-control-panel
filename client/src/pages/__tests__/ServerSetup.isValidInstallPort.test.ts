@@ -28,3 +28,23 @@ describe('ServerSetup -- isValidInstallPort', () => {
     expect(isValidInstallPort(65535)).toBe(true)
   })
 })
+
+// FOLLOW-UP (god's review of f1ce821): the bare `parseInt(e.target.value) ||
+// default` onChange this file's own header comment described was still live
+// on all four of this page's port fields, plus 9 more across
+// Servers.tsx/Players.tsx/Scheduler.tsx -- clearing the field snapped it
+// straight back to the hardcoded default under the operator's cursor. Fixed
+// by routing every one of those sites through one shared component,
+// NumberInput (client/src/components/NumberInput.tsx, tests in
+// client/src/components/__tests__/NumberInput.test.tsx) -- it lets the field
+// go empty and reports NaN upward instead of substituting a default.
+// isValidInstallPort(NaN) === false above is exactly the mechanism that
+// makes that safe: an empty rconPort/serverPort field is refused at submit
+// time by the SAME check that already refused an out-of-range one, with no
+// second validation path invented for the empty case.
+describe('isValidInstallPort composes with NumberInput leaving a cleared field as NaN', () => {
+  it('a field the operator emptied is indistinguishable, to this check, from any other invalid port', () => {
+    const clearedField = NaN // what NumberInput reports for an empty/unparseable field
+    expect(isValidInstallPort(clearedField)).toBe(isValidInstallPort(999999)) // both false, same refusal path
+  })
+})

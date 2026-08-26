@@ -86,6 +86,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
 import { SpawnBrowser } from '@/components/SpawnBrowser'
+import { NumberInput } from '@/components/NumberInput'
 import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { PageHeader } from '@/components/PageHeader'
@@ -2387,17 +2388,16 @@ export default function Players() {
                     </div>
                     <div className="w-full sm:w-24 shrink-0">
                       <Label className="text-xs text-muted-foreground">{t('spawn.amountLabel')}</Label>
-                      <Input
-                        type="number"
+                      <NumberInput
                         value={xpAmount}
-                        onChange={(e) => setXpAmount(parseInt(e.target.value) || 0)}
+                        onChange={setXpAmount}
                         min={1}
                         max={10000}
                       />
                     </div>
                     <Button
                       onClick={handleAddXp}
-                      disabled={loading || !selectedPlayer || !selectedPerk}
+                      disabled={loading || !selectedPlayer || !selectedPerk || !Number.isFinite(xpAmount)}
                       size="sm"
                       className="shrink-0 sm:min-w-[100px]"
                     >
