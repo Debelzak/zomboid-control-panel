@@ -197,6 +197,24 @@ export function isValidGamePort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65534
 }
 
+// Client-side mirror of server.js's /delete-files nested-path check (via
+// confineToRoots) -- informational only, so the delete dialog can warn
+// BEFORE the request round-trips instead of the operator only finding out
+// from a refusal after clicking. The server re-checks authoritatively on
+// every call; this can't be trusted as the actual safety boundary on its
+// own (no attempt at symlink resolution, case-folding is a Windows-only
+// approximation of what the OS actually does).
+export function isZomboidDataNestedInInstall(
+  zomboidDataPath: string | null | undefined,
+  installPath: string | null | undefined,
+): boolean {
+  if (!zomboidDataPath || !installPath) return false
+  const normalize = (p: string) => p.replace(/[/\\]+$/, '').toLowerCase()
+  const data = normalize(zomboidDataPath)
+  const install = normalize(installPath)
+  return data === install || data.startsWith(`${install}/`) || data.startsWith(`${install}\\`)
+}
+
 // Host status for a non-active docker-mapped server's card, from the
 // already-fetched managed-container list -- never from the local process
 // scan (serverStatuses), which can't see a process in a DIFFERENT container
@@ -927,6 +945,16 @@ export default function Servers() {
       setDeleteProgress(prog)
     }, 200)
 
+    // Whether the files were ACTUALLY deleted, not just requested -- a
+    // refusal (wrong folder, or the new nested-data-path guard) or a
+    // thrown network error both leave the files untouched even though the
+    // panel record removal below still proceeds either way (existing
+    // behavior, unchanged: the "removingFromPanelAnyway" copy already says
+    // so explicitly for the thrown-error case). The final toast must not
+    // claim files were deleted when they were not -- that was true even
+    // before the nested-path guard existed, just less likely to fire.
+    let filesActuallyDeleted = false
+
     try {
       // If deleteFiles is checked and server has an installPath, delete the files first
       if (deleteFiles && deleteServer.installPath) {
@@ -938,6 +966,8 @@ export default function Servers() {
               description: result.error,
               variant: 'destructive'
             })
+          } else {
+            filesActuallyDeleted = true
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : t('toasts.couldNotDeleteFiles')
@@ -958,7 +988,7 @@ export default function Servers() {
 
       toast({
         title: t('toasts.deletedTitle'),
-        description: deleteFiles
+        description: filesActuallyDeleted
           ? t('toasts.deletedWithFiles', { name: deleteServer.name })
           : t('toasts.deletedFromPanel', { name: deleteServer.name })
       })
@@ -2463,6 +2493,26 @@ export default function Servers() {
                         <code className="text-xs bg-background px-1 rounded">{deleteServer?.installPath}</code>
                       </p>
                     </label>
+                  </div>
+                )}
+
+                {/* Most installs keep the Zomboid data folder (world save)
+                    separate from the install folder above, so checking the
+                    box only means "reinstall via the Setup Wizard later" --
+                    annoying, not catastrophic. When the data path is nested
+                    inside the install path instead, this same delete also
+                    destroys the world save with no separate copy, and the
+                    panel will refuse to run it (see server.js's
+                    DELETE_FILES_DATA_PATH_NESTED check) until the data path
+                    is moved or backed up by hand. Surfaced here so that
+                    refusal isn't the first the operator hears of it. */}
+                {deleteFiles && isZomboidDataNestedInInstall(deleteServer?.zomboidDataPath, deleteServer?.installPath) && (
+                  <div className="rounded-lg border border-destructive/25 bg-destructive/8 p-3 text-sm">
+                    <p className="font-medium text-destructive">{t('deleteDialog.dataPathNestedWarningTitle')}</p>
+                    <p className="text-muted-foreground">
+                      {t('deleteDialog.dataPathNestedWarningDesc')}
+                    </p>
+                    <code className="text-xs bg-background px-1 rounded">{deleteServer?.zomboidDataPath}</code>
                   </div>
                 )}
 

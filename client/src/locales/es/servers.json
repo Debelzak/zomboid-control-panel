@@ -214,6 +214,8 @@
     "description": "Esto quitará «{{name}}» de la gestión del panel.",
     "alsoDeleteFilesLabel": "También eliminar los archivos del servidor",
     "alsoDeleteFilesDesc": "Esto eliminará permanentemente todos los archivos en:",
+    "dataPathNestedWarningTitle": "Esto también eliminará la partida guardada del mundo",
+    "dataPathNestedWarningDesc": "La carpeta de datos de Zomboid de este servidor está dentro de la carpeta de instalación de arriba, así que no hay una copia separada — eliminarla destruye también la partida guardada del mundo. El panel se negará a hacerlo hasta que muevas la ruta de datos en Ajustes o hagas tú mismo una copia de seguridad:",
     "filesNotDeleted": "Los archivos del servidor NO se eliminarán; puedes volver a añadir este servidor más adelante.",
     "deletingFiles": "Eliminando archivos del servidor…",
     "removingServer": "Quitando servidor…",

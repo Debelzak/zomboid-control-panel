@@ -214,6 +214,8 @@
     "description": "This will remove \"{{name}}\" from the panel management.",
     "alsoDeleteFilesLabel": "Also delete server files",
     "alsoDeleteFilesDesc": "This will permanently delete all files in:",
+    "dataPathNestedWarningTitle": "This will also delete the world save",
+    "dataPathNestedWarningDesc": "This server's Zomboid data folder is inside the install folder above, so there's no separate copy — deleting it destroys the world save too. The panel refuses this until you move the data path in Settings or back it up yourself:",
     "filesNotDeleted": "Server files will NOT be deleted - you can add this server back later.",
     "deletingFiles": "Deleting server files...",
     "removingServer": "Removing server...",

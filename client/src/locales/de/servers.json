@@ -214,6 +214,8 @@
     "description": "Dies entfernt „{{name}}“ aus der Panelverwaltung.",
     "alsoDeleteFilesLabel": "Auch Serverdateien löschen",
     "alsoDeleteFilesDesc": "Dies löscht endgültig alle Dateien in:",
+    "dataPathNestedWarningTitle": "Dadurch wird auch der Welt-Spielstand gelöscht",
+    "dataPathNestedWarningDesc": "Der Zomboid-Datenordner dieses Servers liegt innerhalb des oben genannten Installationsordners, es gibt also keine separate Kopie — das Löschen zerstört auch den Welt-Spielstand. Das Panel verweigert dies, bis du den Datenpfad in den Einstellungen verschiebst oder ihn selbst sicherst:",
     "filesNotDeleted": "Serverdateien werden NICHT gelöscht – du kannst diesen Server später wieder hinzufügen.",
     "deletingFiles": "Serverdateien werden gelöscht...",
     "removingServer": "Server wird entfernt...",

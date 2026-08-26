@@ -214,6 +214,8 @@
     "description": "Ceci retirera « {{name}} » de la gestion du panneau.",
     "alsoDeleteFilesLabel": "Supprimer aussi les fichiers du serveur",
     "alsoDeleteFilesDesc": "Ceci supprimera définitivement tous les fichiers dans :",
+    "dataPathNestedWarningTitle": "Ceci supprimera aussi la sauvegarde du monde",
+    "dataPathNestedWarningDesc": "Le dossier de données Zomboid de ce serveur se trouve à l'intérieur du dossier d'installation ci-dessus, il n'y a donc pas de copie séparée — le supprimer détruit aussi la sauvegarde du monde. Le panneau refusera cette opération tant que vous n'aurez pas déplacé le chemin des données dans Paramètres ou fait vous-même une sauvegarde :",
     "filesNotDeleted": "Les fichiers du serveur ne seront PAS supprimés - vous pourrez ajouter ce serveur à nouveau plus tard.",
     "deletingFiles": "Suppression des fichiers du serveur...",
     "removingServer": "Retrait du serveur...",

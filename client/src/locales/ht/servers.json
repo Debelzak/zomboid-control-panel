@@ -214,6 +214,8 @@
     "description": "Sa a ap retire \"{{name}}\" nan jesyon panèl la.",
     "alsoDeleteFilesLabel": "Efase dosye sèvè yo tou",
     "alsoDeleteFilesDesc": "Sa a ap efase pou tout tan tout dosye nan:",
+    "dataPathNestedWarningTitle": "Sa a ap efase sovgad mond lan tou",
+    "dataPathNestedWarningDesc": "Dosye done Zomboid sèvè sa a nan anndan dosye enstalasyon anwo a, kidonk pa gen okenn kopi apa — efase l ap detwi sovgad mond lan tou. Panel la ap refize sa jiskaske ou deplase chemen done a nan Paramèt oswa fè pwòp kopi sovgad ou:",
     "filesNotDeleted": "Dosye sèvè yo PAP efase - ou ka ajoute sèvè sa a ankò pita.",
     "deletingFiles": "N ap efase dosye sèvè yo...",
     "removingServer": "N ap retire sèvè a...",

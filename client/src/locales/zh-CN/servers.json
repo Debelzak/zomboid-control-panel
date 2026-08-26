@@ -214,6 +214,8 @@
     "description": "这将把「{{name}}」从面板管理中移除。",
     "alsoDeleteFilesLabel": "同时删除服务器文件",
     "alsoDeleteFilesDesc": "这将永久删除以下位置的所有文件：",
+    "dataPathNestedWarningTitle": "这也会删除世界存档",
+    "dataPathNestedWarningDesc": "此服务器的 Zomboid 数据文件夹位于上方安装文件夹内部，因此没有单独的副本——删除它也会毁掉世界存档。除非你在设置中将数据路径移出，或自行备份该文件夹，否则面板会拒绝执行此操作：",
     "filesNotDeleted": "服务器文件将不会被删除——你可以稍后重新添加此服务器。",
     "deletingFiles": "正在删除服务器文件…",
     "removingServer": "正在移除服务器…",
