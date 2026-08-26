@@ -32,7 +32,12 @@ export function parseTaskId(value) {
 // bare truthy check on `io` isn't enough (2026-08-26 bug hunt, scheduler
 // blind-success family: added after this exact shape broke an existing
 // req.app mock that returns the same object for any key).
-function emitActionResult(io, payload) {
+// Exported so server.js's POST /restart -- a second, independent client
+// entry point that also calls scheduler.performRestart() directly -- can
+// reuse the exact same guard and event shape rather than drifting a second
+// copy of it (2026-08-26 bug hunt: /server/restart turned out to be the
+// same blind-success shape as /restart-now, just in a different file).
+export function emitActionResult(io, payload) {
   if (typeof io?.emit === 'function') io.emit('scheduler:action_result', payload);
 }
 

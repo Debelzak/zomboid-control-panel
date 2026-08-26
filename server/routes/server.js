@@ -22,6 +22,7 @@ import { runManagedLifecycle } from "../services/managedContainer.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
 import { invalidateMapFolderScan } from "./chunks.js";
+import { emitActionResult } from "./scheduler.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 import { confineToRoots } from "../utils/browseRoots.js";
 
@@ -1485,10 +1486,32 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
       warningMinutes = 60; // Cap at 60 minutes
     }
 
-    // Run restart in background with specified warning time
-    scheduler.performRestart(warningMinutes, { label: "Manual restart" }).catch((err) => {
-      log.error(`Restart failed: ${err.message}`);
-    });
+    // Run restart in background with specified warning time. The HTTP
+    // response below only confirms the restart was ACCEPTED -- the
+    // countdown + graceful shutdown can take minutes, and performRestart()
+    // already computes a real {success, message} on every path. This is a
+    // second, independent entry point to the exact same call as scheduler.js's
+    // POST /restart-now (Dashboard's Restart/Restart Now buttons hit this
+    // route; the Scheduler page's own restart control hits that one) --
+    // it had the identical blind-success shape that route used to have
+    // before the 2026-08-26 bug hunt fixed it there, just never fixed here.
+    const io = req.app.get("io");
+    scheduler.performRestart(warningMinutes, { label: "Manual restart" })
+      .then((result) => {
+        emitActionResult(io, {
+          kind: "restart",
+          success: !!result?.success,
+          message: result?.message || (result?.success ? "Restart completed" : "Restart failed"),
+        });
+      })
+      .catch((err) => {
+        log.error(`Restart failed: ${err.message}`);
+        emitActionResult(io, {
+          kind: "restart",
+          success: false,
+          message: err.message,
+        });
+      });
 
     res.json({
       success: true,
