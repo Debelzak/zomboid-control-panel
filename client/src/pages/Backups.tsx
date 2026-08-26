@@ -1045,11 +1045,27 @@ export default function Backups() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Restore Confirmation Dialog */}
+      {/* Restore Confirmation Dialog. Michelle's UX audit (2026-08-26): this
+          used to be styled text-warning/bg-warning -- the same tier as
+          "delete a few old backup files" below -- despite replacing the
+          entire live world, arguably the highest-impact button in the app.
+          Bumped to text-destructive/bg-destructive to match this file's own
+          single-backup delete dialog and Dashboard's wipe confirm button,
+          both of which already use destructive for a smaller blast radius
+          than a full restore. Also fixed the bullet list's self-contradiction
+          flagged by the same audit: bulletSafetyBackup ("the panel will
+          create a safety backup") and the old bulletCannotUndo ("this action
+          cannot be undone") asserted opposite things. Verified against
+          backupService.js's restoreBackup() and this component's own
+          handleRestoreBackup call (passes createPreRestoreBackup: true) --
+          the safety-backup claim is true, so "cannot be undone" was the
+          false one: a restore CAN be undone, just not automatically.
+          Replaced with bulletUndoRequiresRestore, which keeps the real
+          warning (undoing isn't one click) without the false claim. */}
       <AlertDialog open={restoreDialog.open} onOpenChange={(open) => setRestoreDialog({ open, backupName: null })}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-warning">
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="w-5 h-5" />
               {t('restoreDialog.title')}
             </AlertDialogTitle>
@@ -1065,7 +1081,7 @@ export default function Backups() {
               <ul className="list-disc list-inside text-sm space-y-1 mt-2">
                 <li>{t('restoreDialog.bulletStopServer')}</li>
                 <li>{t('restoreDialog.bulletSafetyBackup')}</li>
-                <li>{t('restoreDialog.bulletCannotUndo')}</li>
+                <li>{t('restoreDialog.bulletUndoRequiresRestore')}</li>
               </ul>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1073,7 +1089,7 @@ export default function Backups() {
             <AlertDialogCancel>{t('restoreDialog.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => restoreDialog.backupName && handleRestoreBackup(restoreDialog.backupName)}
-              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t('restoreDialog.confirm')}
             </AlertDialogAction>

@@ -106,7 +106,7 @@
     "description": "Stelle <1>{{name}}</1> wieder her. Dies <2>ersetzt</2> die aktuellen Weltdaten.",
     "bulletStopServer": "Stoppe zuerst den Server.",
     "bulletSafetyBackup": "Das Panel erstellt vor der Wiederherstellung ein Sicherheits-Backup.",
-    "bulletCannotUndo": "Diese Aktion kann nicht rückgängig gemacht werden.",
+    "bulletUndoRequiresRestore": "Um das rückgängig zu machen, musst du dieses Sicherheits-Backup später selbst wiederherstellen — das geschieht nicht automatisch.",
     "cancel": "Abbrechen",
     "confirm": "Dieses Backup wiederherstellen"
   },
