@@ -1,5 +1,30 @@
 {
   "loading": "正在建立连接…",
+  "autoUpdateResult": {
+    "successTitle": "自动更新已完成",
+    "successDescription": "服务器自动更新已成功完成。",
+    "successDescriptionVersioned": "服务器自动更新已成功完成（当前运行版本 {{version}}）。",
+    "failedTitle": "自动更新失败",
+    "dismiss": "关闭",
+    "dismissAria": "关闭自动更新通知",
+    "dismissFailedTitle": "无法关闭通知",
+    "dismissFailedFallback": "无法关闭该通知，请重试。",
+    "serverUp": "您的服务器目前正在运行。",
+    "serverDown": "您的服务器目前已停止。",
+    "serverUnaffected": "没有发生任何更改——您的服务器状态未受影响。",
+    "reasons": {
+      "MANAGED_CONTAINER": "此服务器运行在面板管理的 Docker 容器中。请改为更新容器镜像——面板不会对受管理的容器运行 SteamCMD。",
+      "NOT_CONFIGURED": "未配置 SteamCMD 路径或服务器安装路径。",
+      "INITIAL_SCAN_FAILED": "无法确认服务器是否正在运行，出于安全考虑已放弃本次更新。",
+      "RCON_NOT_CONNECTED": "RCON 未连接，因此无法安全停止服务器。",
+      "SAVE_FAILED": "无法保存世界（{{reason}}），因此已放弃更新以避免丢失进度。",
+      "STOP_SCAN_FAILED": "无法再确认服务器是否已停止，出于安全考虑已放弃本次更新。",
+      "STOP_TIMEOUT": "服务器未在 5 分钟内停止。",
+      "STEAMCMD_NOT_FOUND": "在 {{path}} 未找到 SteamCMD。",
+      "STEAMCMD_EXIT_CODE": "SteamCMD 以代码 {{code}} 退出。",
+      "UNKNOWN": "自动更新过程中发生了意外错误。"
+    }
+  },
   "errors": {
     "failedToConnect": "无法连接到服务器。",
     "failedToLoad": "加载仪表盘状态失败。",

@@ -1,5 +1,30 @@
 {
   "loading": "Estableciendo conexión…",
+  "autoUpdateResult": {
+    "successTitle": "Actualización automática completada",
+    "successDescription": "La actualización automática del servidor se completó correctamente.",
+    "successDescriptionVersioned": "La actualización automática del servidor se completó correctamente (ahora ejecuta la versión {{version}}).",
+    "failedTitle": "La actualización automática falló",
+    "dismiss": "Descartar",
+    "dismissAria": "Descartar aviso de actualización automática",
+    "dismissFailedTitle": "No se pudo descartar el aviso",
+    "dismissFailedFallback": "No se pudo descartar el aviso. Inténtalo de nuevo.",
+    "serverUp": "Tu servidor está actualmente en ejecución.",
+    "serverDown": "Tu servidor está actualmente detenido.",
+    "serverUnaffected": "No se cambió nada; el estado de tu servidor no se vio afectado.",
+    "reasons": {
+      "MANAGED_CONTAINER": "Este servidor se ejecuta en un contenedor Docker gestionado por el panel. Actualiza la imagen del contenedor en su lugar — el panel no ejecuta SteamCMD contra un contenedor gestionado.",
+      "NOT_CONFIGURED": "La ruta de SteamCMD o la ruta de instalación del servidor no está configurada.",
+      "INITIAL_SCAN_FAILED": "No se pudo comprobar si el servidor estaba en ejecución, así que la actualización se abandonó por seguridad.",
+      "RCON_NOT_CONNECTED": "RCON no estaba conectado, así que el servidor no se pudo detener de forma segura.",
+      "SAVE_FAILED": "No se pudo guardar el mundo ({{reason}}), así que la actualización se abandonó para no perder progreso.",
+      "STOP_SCAN_FAILED": "Se perdió la capacidad de comprobar si el servidor se había detenido, así que la actualización se abandonó por seguridad.",
+      "STOP_TIMEOUT": "El servidor no se detuvo en 5 minutos.",
+      "STEAMCMD_NOT_FOUND": "No se encontró SteamCMD en {{path}}.",
+      "STEAMCMD_EXIT_CODE": "SteamCMD terminó con el código {{code}}.",
+      "UNKNOWN": "Ocurrió un error inesperado durante la actualización automática."
+    }
+  },
   "errors": {
     "failedToConnect": "No se pudo conectar con el servidor.",
     "failedToLoad": "No se pudo cargar el estado del tablero.",

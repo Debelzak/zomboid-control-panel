@@ -2943,12 +2943,31 @@ export interface UpdateStatus {
   lastCheck: string;
 }
 
+// 2026-08-26: persisted server-side (not a live-only socket event) so any
+// page can read it cold, long after the unattended run finished -- see
+// server/services/updateChecker.js's own comment on _recordAutoUpdateResult
+// for why. `reason` is a stable key (never a raw message), translated
+// client-side the same way every other coded failure in this app is.
+export interface AutoUpdateResult {
+  status: "success" | "failed";
+  at: string;
+  dismissed: boolean;
+  // failure-only
+  reason?: string;
+  params?: Record<string, string | number> | null;
+  phase?: "not-started" | "before-stop" | "updating";
+  serverUp?: boolean | null;
+  // success-only
+  appliedVersion?: string | null;
+}
+
 export interface UpdateCheckerStatus {
   updateAvailable: UpdateStatus | null;
   gameVersion: string | null;
   lastCheck: string | null;
   intervalMinutes: number;
   isChecking: boolean;
+  lastAutoUpdateResult: AutoUpdateResult | null;
 }
 
 export interface PanelUpdateAsset {
@@ -3039,6 +3058,12 @@ export const updateApi = {
     minutes: number,
   ): Promise<{ success: boolean; intervalMinutes: number }> =>
     apiPost("/server/update-check/interval", { minutes }),
+
+  // Acknowledge the last automatic-update result -- shared server-side
+  // state, not per-browser, so it stops showing for every admin/device at
+  // once (see the server route's own comment).
+  dismissAutoUpdateResult: (): Promise<UpdateCheckerStatus> =>
+    apiPost("/server/update-check/auto-update-result/dismiss"),
 };
 
 export const mapApi = {

@@ -31,6 +31,7 @@ import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
 import { HelpTip } from '@/components/HelpTip'
+import { AutoUpdateResultBanner } from '@/components/AutoUpdateResultBanner'
 import { cn, copyText } from '@/lib/utils'
 import { getUserErrorMessage, getRecoveryUrl } from '@/lib/errorMessage'
 import { VerdictBand, WorkList } from '@/components/dashboard/DashboardVerdict'
@@ -899,6 +900,7 @@ export default function Dashboard() {
   /* ====================================================================== */
   return (
     <div className="page-transition pb-12">
+      <AutoUpdateResultBanner />
       {/* ─── TOP STATUS BAR ───────────────────────────────────────── */}
       <header
         aria-label={t('header.ariaLabel')}

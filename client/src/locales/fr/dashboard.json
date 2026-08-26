@@ -1,5 +1,30 @@
 {
   "loading": "Connexion en cours…",
+  "autoUpdateResult": {
+    "successTitle": "Mise à jour automatique terminée",
+    "successDescription": "La mise à jour automatique du serveur s'est terminée avec succès.",
+    "successDescriptionVersioned": "La mise à jour automatique du serveur s'est terminée avec succès (version {{version}} en cours d'exécution).",
+    "failedTitle": "Échec de la mise à jour automatique",
+    "dismiss": "Ignorer",
+    "dismissAria": "Ignorer l'avis de mise à jour automatique",
+    "dismissFailedTitle": "Impossible d'ignorer l'avis",
+    "dismissFailedFallback": "L'avis n'a pas pu être ignoré. Réessayez.",
+    "serverUp": "Votre serveur est actuellement en cours d'exécution.",
+    "serverDown": "Votre serveur est actuellement arrêté.",
+    "serverUnaffected": "Rien n'a changé — l'état de votre serveur n'est pas affecté.",
+    "reasons": {
+      "MANAGED_CONTAINER": "Ce serveur s'exécute dans un conteneur Docker géré par le panneau. Mettez plutôt à jour l'image du conteneur — le panneau n'exécute pas SteamCMD sur un conteneur géré.",
+      "NOT_CONFIGURED": "Le chemin SteamCMD ou le chemin d'installation du serveur n'est pas configuré.",
+      "INITIAL_SCAN_FAILED": "Impossible de vérifier si le serveur était en cours d'exécution ; la mise à jour a donc été abandonnée par sécurité.",
+      "RCON_NOT_CONNECTED": "RCON n'était pas connecté, le serveur n'a donc pas pu être arrêté en toute sécurité.",
+      "SAVE_FAILED": "Le monde n'a pas pu être sauvegardé ({{reason}}), la mise à jour a donc été abandonnée pour éviter de perdre la progression.",
+      "STOP_SCAN_FAILED": "Impossible de continuer à vérifier que le serveur s'était arrêté ; la mise à jour a donc été abandonnée par sécurité.",
+      "STOP_TIMEOUT": "Le serveur ne s'est pas arrêté dans les 5 minutes.",
+      "STEAMCMD_NOT_FOUND": "SteamCMD est introuvable à {{path}}.",
+      "STEAMCMD_EXIT_CODE": "SteamCMD s'est terminé avec le code {{code}}.",
+      "UNKNOWN": "Une erreur inattendue s'est produite pendant la mise à jour automatique."
+    }
+  },
   "errors": {
     "failedToConnect": "Échec de la connexion au serveur.",
     "failedToLoad": "Échec du chargement de l'état du tableau de bord.",
