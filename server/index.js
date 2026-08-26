@@ -239,6 +239,7 @@ import chunksRoutes from "./routes/chunks.js";
 import discordRoutes from "./routes/discord.js";
 import debugRoutes, { addLogToBuffer } from "./routes/debug.js";
 import { getDiskFree } from "./utils/diskSpace.js";
+import { getSwapInfo } from "./utils/swapInfo.js";
 import serverFinderRoutes from "./routes/serverFinder.js";
 import panelBridgeRoutes from "./routes/panelBridge.js";
 import backupRoutes from "./routes/backup.js";
@@ -2129,6 +2130,27 @@ async function getDiskSnapshot() {
   return lastDiskSample.value;
 }
 
+// Swap headroom, same reasoning as disk above: Linux is a cheap /proc/meminfo
+// read, but macOS and Windows shell out (sysctl / a PowerShell CIM query),
+// which can be slow or hang on a stuck box -- sampled on its own schedule so
+// a slow swap read can't drag down the memory/CPU numbers in the same tick.
+let lastSwapSample = { at: 0, value: null };
+const SWAP_SAMPLE_INTERVAL_MS = 60000;
+
+async function getSwapSnapshot() {
+  const now = Date.now();
+  if (now - lastSwapSample.at < SWAP_SAMPLE_INTERVAL_MS) {
+    return lastSwapSample.value;
+  }
+  lastSwapSample.at = now;
+  try {
+    lastSwapSample.value = await getSwapInfo();
+  } catch {
+    lastSwapSample.value = null;
+  }
+  return lastSwapSample.value;
+}
+
 async function getPzProcessMemory() {
   // Get PZ server Java process memory from OS
   return new Promise((resolve) => {
@@ -2203,6 +2225,7 @@ async function startPerfPolling() {
 
       const pzMemBytes = await getPzProcessMemory();
       const disk = await getDiskSnapshot();
+      const swap = await getSwapSnapshot();
 
       const snapshot = {
         // Host machine
@@ -2212,6 +2235,11 @@ async function startPerfPolling() {
         // Storage on the drive holding the world saves (null if unreadable)
         hostDiskTotal: disk?.total ?? null,
         hostDiskUsed: disk?.used ?? null,
+        // Swap/pagefile headroom (null if could not be determined -- NOT
+        // the same as 0, which means swap is genuinely not configured; see
+        // utils/swapInfo.js for why that distinction is the whole point)
+        hostSwapTotal: swap?.total ?? null,
+        hostSwapUsed: swap?.used ?? null,
         // Panel process
         panelMemHeap: panelMem.heapUsed,
         panelMemRss: panelMem.rss,

@@ -62,6 +62,7 @@ interface PerformancePoint {
   time: string; timestamp?: string; playerCount: number; memoryMB: number
   pzMemMB?: number; cpuPercent?: number; hostMemUsedGB?: number; hostMemTotalGB?: number
   hostDiskUsedGB?: number; hostDiskTotalGB?: number
+  hostSwapUsedGB?: number; hostSwapTotalGB?: number
 }
 
 const DashboardPerformanceCharts = lazy(() => import('@/components/DashboardPerformanceCharts'))
@@ -352,6 +353,12 @@ export default function Dashboard() {
           hostMemTotalGB: h.hostMemTotal ? +((h.hostMemTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
           hostDiskUsedGB: h.hostDiskUsed ? +((h.hostDiskUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
           hostDiskTotalGB: h.hostDiskTotal ? +((h.hostDiskTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          // != null, not truthy: a real 0 (swap genuinely not configured) is
+          // the answer this feature exists to surface, and must survive this
+          // mapping rather than collapsing to undefined ("could not
+          // determine") the way a truthy check would.
+          hostSwapUsedGB: h.hostSwapUsed != null ? +((h.hostSwapUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+          hostSwapTotalGB: h.hostSwapTotal != null ? +((h.hostSwapTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         })))
       }
     } catch {
@@ -526,6 +533,10 @@ export default function Dashboard() {
         hostMemTotalGB: snap.hostMemTotal ? +((snap.hostMemTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         hostDiskUsedGB: snap.hostDiskUsed ? +((snap.hostDiskUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
         hostDiskTotalGB: snap.hostDiskTotal ? +((snap.hostDiskTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+        // != null, not truthy -- see the identical comment in
+        // fetchPerformanceHistory above.
+        hostSwapUsedGB: snap.hostSwapUsed != null ? +((snap.hostSwapUsed as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
+        hostSwapTotalGB: snap.hostSwapTotal != null ? +((snap.hostSwapTotal as number) / (1024 * 1024 * 1024)).toFixed(1) : undefined,
       }
       setPerformanceHistory(prev => {
         const next = [...prev, point]
