@@ -6,6 +6,7 @@ const log = createLogger("API:Config");
 import { getAllSettings, getSetting, setSetting } from "../database/init.js";
 import {
   sanitizeError,
+  sanitizeErrorParams,
   SENSITIVE_FIELD_RE,
   isMaskedSecret,
   maskSensitiveObject,
@@ -205,13 +206,16 @@ router.put("/", requirePermission("server.configure"), requireStoppedForLocalCon
     const config = req.body?.config;
 
     if (!config) {
-      return res.status(400).json({ error: "Config is required" });
+      return res.status(400).json({ error: "Config is required", code: ErrorCode.CONFIG_REQUIRED });
     }
 
     const saved = await serverManager.saveServerConfig(config);
     if (!saved?.success) {
+      const reason = saved?.error || "Configuration could not be written";
       return res.status(500).json({
-        error: sanitizeError(saved?.error || "Configuration could not be written"),
+        error: sanitizeError(reason),
+        code: ErrorCode.CONFIG_SAVE_FAILED,
+        params: sanitizeErrorParams({ reason }),
       });
     }
     res.json({ success: true, message: "Configuration saved" });
@@ -255,16 +259,16 @@ router.post("/option", requirePermission("server.configure"), async (req, res) =
     if (!name || value === undefined) {
       return res
         .status(400)
-        .json({ error: "Option name and value are required" });
+        .json({ error: "Option name and value are required", code: ErrorCode.CONFIG_OPTION_FIELDS_REQUIRED });
     }
 
     // Validate option name and value to prevent command injection
     if (!isValidOptionName(name)) {
-      return res.status(400).json({ error: "Invalid option name format" });
+      return res.status(400).json({ error: "Invalid option name format", code: ErrorCode.CONFIG_OPTION_NAME_INVALID });
     }
 
     if (!isValidOptionValue(value)) {
-      return res.status(400).json({ error: "Invalid option value format" });
+      return res.status(400).json({ error: "Invalid option value format", code: ErrorCode.CONFIG_OPTION_VALUE_INVALID });
     }
 
     const result = await rconService.changeOption(name, value);
@@ -305,7 +309,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
     );
 
     if (!settings || typeof settings !== "object") {
-      return res.status(400).json({ error: "Settings are required" });
+      return res.status(400).json({ error: "Settings are required", code: ErrorCode.CONFIG_APP_SETTINGS_REQUIRED });
     }
 
     // Fields whose validation only matters while a companion feature flag
@@ -387,7 +391,11 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       if (key === "corsAllowedOrigins") {
         const corsValidationError = validateCorsAllowedOrigins(value);
         if (corsValidationError) {
-          return res.status(400).json({ error: corsValidationError });
+          return res.status(400).json({
+            error: corsValidationError,
+            code: ErrorCode.CONFIG_INVALID_CORS_ORIGINS,
+            params: sanitizeErrorParams({ reason: corsValidationError }),
+          });
         }
       }
 
@@ -413,6 +421,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         return res.status(400).json({
           error:
             "Server name may only contain letters, numbers, spaces, underscores and hyphens (and can't start or end with a space).",
+          code: ErrorCode.CONFIG_INVALID_SERVER_NAME,
         });
       }
 
@@ -422,6 +431,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       ) {
         return res.status(400).json({
           error: `modCheckInterval must be a whole number of minutes from ${MOD_CHECK_INTERVAL_MINUTES_MIN} to ${MOD_CHECK_INTERVAL_MINUTES_MAX}`,
+          code: ErrorCode.CONFIG_INVALID_MOD_CHECK_INTERVAL,
         });
       }
 
@@ -445,7 +455,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           "Mod restart delay (minutes)",
         );
         if (!modRestartDelayCheck.ok) {
-          return res.status(400).json({ error: modRestartDelayCheck.message });
+          return res.status(400).json({ error: modRestartDelayCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: modRestartDelayCheck.message }) });
         }
       }
 
@@ -463,14 +473,14 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           "Server auto-update warning (minutes)",
         );
         if (!warningMinutesCheck.ok) {
-          return res.status(400).json({ error: warningMinutesCheck.message });
+          return res.status(400).json({ error: warningMinutesCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: warningMinutesCheck.message }) });
         }
       }
 
       if (key === "lanIpAddress" && value !== "" && net.isIP(value) !== 4) {
         return res
           .status(400)
-          .json({ error: "lanIpAddress must be an IPv4 address or empty" });
+          .json({ error: "lanIpAddress must be an IPv4 address or empty", code: ErrorCode.CONFIG_INVALID_LAN_IP });
       }
 
       if (
@@ -496,7 +506,11 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         ].includes(key) &&
         typeof value !== "boolean"
       ) {
-        return res.status(400).json({ error: `${key} must be true or false` });
+        return res.status(400).json({
+          error: `${key} must be true or false`,
+          code: ErrorCode.CONFIG_INVALID_BOOLEAN_FIELD,
+          params: sanitizeErrorParams({ field: key }),
+        });
       }
 
       // httpsCertPath/httpsKeyPath used to be accepted as any string and
@@ -526,7 +540,11 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         value !== ""
       ) {
         if (typeof value !== "string") {
-          return res.status(400).json({ error: `${key} must be a string` });
+          return res.status(400).json({
+            error: `${key} must be a string`,
+            code: ErrorCode.CONFIG_HTTPS_PATH_NOT_STRING,
+            params: sanitizeErrorParams({ field: key }),
+          });
         }
         let stat;
         try {
@@ -534,11 +552,15 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         } catch {
           return res.status(400).json({
             error: `${key} does not point to a file that exists: ${value}`,
+            code: ErrorCode.CONFIG_HTTPS_PATH_NOT_FOUND,
+            params: sanitizeErrorParams({ field: key, value }),
           });
         }
         if (!stat.isFile()) {
           return res.status(400).json({
             error: `${key} must be a file, not a directory: ${value}`,
+            code: ErrorCode.CONFIG_HTTPS_PATH_NOT_A_FILE,
+            params: sanitizeErrorParams({ field: key, value }),
           });
         }
         try {
@@ -546,6 +568,8 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         } catch {
           return res.status(400).json({
             error: `${key} exists but is not readable by the panel: ${value}`,
+            code: ErrorCode.CONFIG_HTTPS_PATH_NOT_READABLE,
+            params: sanitizeErrorParams({ field: key, value }),
           });
         }
       }
@@ -561,12 +585,14 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       if (key === "httpsPort") {
         const httpsPortCheck = requireIntInRange(value, BIND_PORT_MIN, BIND_PORT_MAX, "HTTPS port");
         if (!httpsPortCheck.ok) {
-          return res.status(400).json({ error: httpsPortCheck.message });
+          return res.status(400).json({ error: httpsPortCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: httpsPortCheck.message }) });
         }
         const panelPort = await getSetting("panelPort");
         if (panelPort && httpsPortCheck.value === Number(panelPort)) {
           return res.status(400).json({
             error: `HTTPS port cannot be the same as the panel's HTTP port (${panelPort})`,
+            code: ErrorCode.CONFIG_HTTPS_PORT_MATCHES_PANEL_PORT,
+            params: sanitizeErrorParams({ panelPort }),
           });
         }
       }
@@ -596,12 +622,14 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         // destination rule at server.js's BIND_PORT_MIN/DESTINATION_PORT_MIN.
         const panelPortCheck = requireIntInRange(value, BIND_PORT_MIN, BIND_PORT_MAX, "Panel port");
         if (!panelPortCheck.ok) {
-          return res.status(400).json({ error: panelPortCheck.message });
+          return res.status(400).json({ error: panelPortCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: panelPortCheck.message }) });
         }
         const httpsPort = await getSetting("httpsPort");
         if (httpsPort && panelPortCheck.value === Number(httpsPort)) {
           return res.status(400).json({
             error: `panelPort cannot be the same as the panel's HTTPS port (${httpsPort})`,
+            code: ErrorCode.CONFIG_PANEL_PORT_MATCHES_HTTPS_PORT,
+            params: sanitizeErrorParams({ httpsPort }),
           });
         }
       }
@@ -623,14 +651,14 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         // BIND_PORT_MIN/DESTINATION_PORT_MIN (GitHub #118).
         const rconPortCheck = requireIntInRange(value, BIND_PORT_MIN, BIND_PORT_MAX, "RCON port");
         if (!rconPortCheck.ok) {
-          return res.status(400).json({ error: rconPortCheck.message });
+          return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: rconPortCheck.message }) });
         }
       }
 
       if (key === "serverPort") {
         const serverPortCheck = requireIntInRange(value, BIND_PORT_MIN, GAME_PORT_MAX, "Game port");
         if (!serverPortCheck.ok) {
-          return res.status(400).json({ error: serverPortCheck.message });
+          return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: serverPortCheck.message }) });
         }
       }
 
@@ -648,7 +676,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           "SFTP port",
         );
         if (!sftpPortCheck.ok) {
-          return res.status(400).json({ error: sftpPortCheck.message });
+          return res.status(400).json({ error: sftpPortCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: sftpPortCheck.message }) });
         }
       }
 
@@ -660,21 +688,21 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
           "SFTP sync interval (seconds)",
         );
         if (!sftpPollCheck.ok) {
-          return res.status(400).json({ error: sftpPollCheck.message });
+          return res.status(400).json({ error: sftpPollCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: sftpPollCheck.message }) });
         }
       }
 
       if (key === "minMemory") {
         const minMemoryCheck = requireIntInRange(value, MEMORY_GB_MIN, MIN_MEMORY_GB_MAX, "Minimum memory (GB)");
         if (!minMemoryCheck.ok) {
-          return res.status(400).json({ error: minMemoryCheck.message });
+          return res.status(400).json({ error: minMemoryCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: minMemoryCheck.message }) });
         }
       }
 
       if (key === "maxMemory") {
         const maxMemoryCheck = requireIntInRange(value, MEMORY_GB_MIN, MAX_MEMORY_GB_MAX, "Maximum memory (GB)");
         if (!maxMemoryCheck.ok) {
-          return res.status(400).json({ error: maxMemoryCheck.message });
+          return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: maxMemoryCheck.message }) });
         }
       }
 
@@ -690,7 +718,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       if (key === "autoExportMaxPerPlayer") {
         const autoExportMaxCheck = requireIntInRange(value, AUTO_EXPORT_MAX_PER_PLAYER_MIN, AUTO_EXPORT_MAX_PER_PLAYER_MAX, "Auto-export copies kept");
         if (!autoExportMaxCheck.ok) {
-          return res.status(400).json({ error: autoExportMaxCheck.message });
+          return res.status(400).json({ error: autoExportMaxCheck.message, code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD, params: sanitizeErrorParams({ message: autoExportMaxCheck.message }) });
         }
       }
 
@@ -702,8 +730,11 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       if (key === "reconnectInterval") {
         const interval = parseBoundedInteger(value, null, 1, 60);
         if (interval === null) {
+          const message = "reconnectInterval must be a whole number from 1 to 60";
           return res.status(400).json({
-            error: "reconnectInterval must be a whole number from 1 to 60",
+            error: message,
+            code: ErrorCode.CONFIG_INVALID_NUMERIC_FIELD,
+            params: sanitizeErrorParams({ message }),
           });
         }
       }
@@ -713,16 +744,17 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         if (!Array.isArray(value)) {
           return res
             .status(400)
-            .json({ error: "chatPresets must be an array" });
+            .json({ error: "chatPresets must be an array", code: ErrorCode.CONFIG_CHAT_PRESETS_NOT_ARRAY });
         }
         if (value.length > 50) {
           return res
             .status(400)
-            .json({ error: "chatPresets supports up to 50 entries" });
+            .json({ error: "chatPresets supports up to 50 entries", code: ErrorCode.CONFIG_CHAT_PRESETS_TOO_MANY });
         }
         if (!value.every((v) => typeof v === "string" && v.length <= 500)) {
           return res.status(400).json({
             error: "chatPresets entries must be strings up to 500 characters",
+            code: ErrorCode.CONFIG_CHAT_PRESETS_INVALID_ENTRY,
           });
         }
       }
@@ -846,7 +878,7 @@ router.get("/cors-debug", requirePermission("diagnostics.manage"), async (req, r
     if (typeof getCorsDebugSnapshot !== "function") {
       return res
         .status(500)
-        .json({ error: "CORS diagnostics are not available" });
+        .json({ error: "CORS diagnostics are not available", code: ErrorCode.CONFIG_CORS_DIAGNOSTICS_UNAVAILABLE });
     }
     res.json({ diagnostics: getCorsDebugSnapshot() });
   } catch (error) {
@@ -861,7 +893,7 @@ router.post("/cors-debug/reload", requirePermission("diagnostics.manage"), async
     if (typeof refreshCorsConfig !== "function") {
       return res
         .status(500)
-        .json({ error: "CORS config reload is not available" });
+        .json({ error: "CORS config reload is not available", code: ErrorCode.CONFIG_CORS_RELOAD_UNAVAILABLE });
     }
     const diagnostics = await refreshCorsConfig();
     res.json({ success: true, diagnostics });
@@ -881,7 +913,7 @@ router.delete("/cors-debug/blocked", requirePermission("diagnostics.manage"), as
     ) {
       return res
         .status(500)
-        .json({ error: "CORS diagnostics are not available" });
+        .json({ error: "CORS diagnostics are not available", code: ErrorCode.CONFIG_CORS_DIAGNOSTICS_UNAVAILABLE });
     }
 
     clearCorsBlockedOrigins();
@@ -955,10 +987,10 @@ router.put("/paths", requirePermission("server.configure"), async (req, res) => 
 
     // Validate paths
     if (serverPath !== undefined && !isValidConfigPath(serverPath)) {
-      return res.status(400).json({ error: "Invalid server path" });
+      return res.status(400).json({ error: "Invalid server path", code: ErrorCode.CONFIG_INVALID_SERVER_PATH });
     }
     if (savePath !== undefined && !isValidConfigPath(savePath)) {
-      return res.status(400).json({ error: "Invalid save path" });
+      return res.status(400).json({ error: "Invalid save path", code: ErrorCode.CONFIG_INVALID_SAVE_PATH });
     }
 
     serverManager.updatePaths(serverPath, savePath);
@@ -1006,7 +1038,7 @@ router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
       typeof req.body !== "object" ||
       Array.isArray(req.body)
     ) {
-      return res.status(400).json({ error: "Request body must be an object" });
+      return res.status(400).json({ error: "Request body must be an object", code: ErrorCode.CONFIG_RCON_REQUEST_BODY_INVALID });
     }
     const { host, port, password } = req.body;
     let normalizedPort = port;
@@ -1014,7 +1046,7 @@ router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
     // Validate host (if provided)
     if (host !== undefined) {
       if (typeof host !== "string" || !RCON_HOST_REGEX.test(host)) {
-        return res.status(400).json({ error: "Invalid host format" });
+        return res.status(400).json({ error: "Invalid host format", code: ErrorCode.CONFIG_RCON_INVALID_HOST });
       }
     }
 
@@ -1024,7 +1056,7 @@ router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
       if (portNum === null) {
         return res
           .status(400)
-          .json({ error: "Invalid port number (must be 1-65535)" });
+          .json({ error: "Invalid port number (must be 1-65535)", code: ErrorCode.CONFIG_RCON_INVALID_PORT });
       }
       normalizedPort = portNum;
     }
@@ -1035,7 +1067,7 @@ router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
         typeof password !== "string" ||
         password.length > RCON_PASSWORD_MAX_LENGTH
       ) {
-        return res.status(400).json({ error: "Invalid password format" });
+        return res.status(400).json({ error: "Invalid password format", code: ErrorCode.CONFIG_RCON_INVALID_PASSWORD });
       }
     }
 

@@ -223,7 +223,7 @@ describe("config.js PUT /paths requires absolute paths (feeds server.js's /wipe 
       res,
     );
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody()).toEqual({ error: "Invalid save path" });
+    expect(res.getBody()).toEqual({ error: "Invalid save path", code: "CONFIG_INVALID_SAVE_PATH" });
     expect(serverManager.updatePaths).not.toHaveBeenCalled();
   });
 
