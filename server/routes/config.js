@@ -20,9 +20,11 @@ import {
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
 import {
   requireIntInRange,
-  PORT_MIN,
-  PORT_MAX,
+  BIND_PORT_MIN,
+  BIND_PORT_MAX,
   GAME_PORT_MAX,
+  DESTINATION_PORT_MIN,
+  DESTINATION_PORT_MAX,
   MEMORY_GB_MIN,
   MIN_MEMORY_GB_MAX,
   MAX_MEMORY_GB_MAX,
@@ -299,6 +301,35 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       return res.status(400).json({ error: "Settings are required" });
     }
 
+    // What panelBridgeSftpEnabled will actually BE once this save lands --
+    // not what it currently is in the database. Preferring the payload's
+    // own value (when this save touches the flag at all) matters both
+    // ways: a user turning SFTP OFF and fixing its port in the same save
+    // must not have the old, now-irrelevant port block them (GitHub #118),
+    // and a user turning SFTP ON in the same save that also sets its port
+    // must still have that port validated -- reading only the stored value
+    // would validate against the state this save is about to replace, not
+    // the state it's about to create. Falls back to stored state only when
+    // this payload doesn't mention the flag at all (a partial update that
+    // never touches it shouldn't have to resend it just to stay validated
+    // correctly). Lazy and memoized: most saves never touch an SFTP field
+    // at all, and a stored-state lookup should only happen for the ones
+    // that do -- an unconditional getSetting() here for every save (most of
+    // which have nothing to do with SFTP) would be one unnecessary DB round
+    // trip per save, every time, forever.
+    let effectiveSftpEnabledPromise = null;
+    function getEffectiveSftpEnabled() {
+      if (!effectiveSftpEnabledPromise) {
+        effectiveSftpEnabledPromise = Object.prototype.hasOwnProperty.call(
+          settings,
+          "panelBridgeSftpEnabled",
+        )
+          ? Promise.resolve(Boolean(settings.panelBridgeSftpEnabled))
+          : getSetting("panelBridgeSftpEnabled").then(Boolean);
+      }
+      return effectiveSftpEnabledPromise;
+    }
+
     // Only allow valid setting keys to prevent prototype pollution
     const validEntries = [];
     for (const [key, value] of Object.entries(settings)) {
@@ -467,7 +498,9 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // reachable by walking around it from the other direction isn't a
       // guard, it's a speed bump on one approach.
       if (key === "panelPort") {
-        const panelPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "Panel port");
+        // Bind: the panel itself listens on this. See the bind-vs-
+        // destination rule at server.js's BIND_PORT_MIN/DESTINATION_PORT_MIN.
+        const panelPortCheck = requireIntInRange(value, BIND_PORT_MIN, BIND_PORT_MAX, "Panel port");
         if (!panelPortCheck.ok) {
           return res.status(400).json({ error: panelPortCheck.message });
         }
@@ -487,24 +520,37 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // lives in a completely different file. Same ranges as server.js's
       // checks so the two doors can't disagree with each other.
       if (key === "rconPort") {
-        const rconPortCheck = requireIntInRange(value, PORT_MIN, PORT_MAX, "RCON port");
+        // This key is the legacy/single-active-server RCON target that
+        // /configure-rcon (server.js) hardcodes to rconHost 127.0.0.1 --
+        // always local, so it stays on the bind floor like server.js's own
+        // rconPort checks, not the destination floor RCON gets in
+        // servers.js's per-server (and genuinely remote-capable) model.
+        // See the full bind-vs-destination writeup at server.js's
+        // BIND_PORT_MIN/DESTINATION_PORT_MIN (GitHub #118).
+        const rconPortCheck = requireIntInRange(value, BIND_PORT_MIN, BIND_PORT_MAX, "RCON port");
         if (!rconPortCheck.ok) {
           return res.status(400).json({ error: rconPortCheck.message });
         }
       }
 
       if (key === "serverPort") {
-        const serverPortCheck = requireIntInRange(value, PORT_MIN, GAME_PORT_MAX, "Game port");
+        const serverPortCheck = requireIntInRange(value, BIND_PORT_MIN, GAME_PORT_MAX, "Game port");
         if (!serverPortCheck.ok) {
           return res.status(400).json({ error: serverPortCheck.message });
         }
       }
 
-      if (key === "panelBridgeSftpPort") {
+      // Destination, not bind: SFTP is a service on someone ELSE's machine
+      // that this panel connects out to -- 22, its standard port, is why
+      // this floor was the actual bug (GitHub #118). Also skipped entirely
+      // when SFTP won't be enabled after this save: an unused field must
+      // never block an unrelated save, and validating it anyway was wrong
+      // even with the correct range, since 22 was always a legal SFTP port.
+      if (key === "panelBridgeSftpPort" && (await getEffectiveSftpEnabled())) {
         const sftpPortCheck = requireIntInRange(
           value,
-          PORT_MIN,
-          PORT_MAX,
+          DESTINATION_PORT_MIN,
+          DESTINATION_PORT_MAX,
           "SFTP port",
         );
         if (!sftpPortCheck.ok) {
@@ -512,7 +558,9 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         }
       }
 
-      if (key === "panelBridgeSftpPollIntervalSeconds") {
+      // Same disabled-feature exemption as panelBridgeSftpPort above --
+      // this field is equally meaningless while SFTP is off.
+      if (key === "panelBridgeSftpPollIntervalSeconds" && (await getEffectiveSftpEnabled())) {
         const sftpPollCheck = requireIntInRange(
           value,
           SFTP_POLL_INTERVAL_MIN,

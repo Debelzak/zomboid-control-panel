@@ -391,21 +391,65 @@ describe("PUT /app-settings -- serverAutoUpdateWarningMinutes validation (bound 
 });
 
 describe("PUT /app-settings -- SFTP numeric settings validation", () => {
-  it("rejects an explicit zero SFTP port", async () => {
-    const res = await putAppSettings({ panelBridgeSftpPort: 0 });
+  // These now need panelBridgeSftpEnabled: true in the payload -- as of
+  // GitHub #118, an SFTP field is only validated when SFTP will actually be
+  // on after this save, so a range check test has to enable the feature it
+  // means to exercise.
+  it("rejects an explicit zero SFTP port while SFTP is enabled", async () => {
+    const res = await putAppSettings({ panelBridgeSftpEnabled: true, panelBridgeSftpPort: 0 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/SFTP port must be a whole number/);
   });
 
-  it("rejects a prefixed SFTP port instead of truncating it", async () => {
-    const res = await putAppSettings({ panelBridgeSftpPort: "22junk" });
+  it("rejects a prefixed SFTP port instead of truncating it, while SFTP is enabled", async () => {
+    const res = await putAppSettings({ panelBridgeSftpEnabled: true, panelBridgeSftpPort: "22junk" });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/SFTP port must be a whole number/);
   });
 
-  it("rejects an out-of-range SFTP polling interval", async () => {
-    const res = await putAppSettings({ panelBridgeSftpPollIntervalSeconds: 1 });
+  it("rejects an out-of-range SFTP polling interval while SFTP is enabled", async () => {
+    const res = await putAppSettings({ panelBridgeSftpEnabled: true, panelBridgeSftpPollIntervalSeconds: 1 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/SFTP sync interval/);
+  });
+
+  // GitHub #118: port 22 is the standard SFTP port and the frontend's own
+  // shipped default (Settings.tsx) -- it must be accepted, not just
+  // tolerated by skipping validation.
+  it("accepts port 22 as a valid SFTP port when SFTP is enabled", async () => {
+    const res = await putAppSettings({ panelBridgeSftpEnabled: true, panelBridgeSftpPort: 22 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  // The exact reported scenario: PanelBridge on local filesystem, SFTP
+  // disabled, the frontend's default port 22 still sitting in the payload
+  // (Settings.tsx always sends the whole settings object) -- saving an
+  // unrelated setting must succeed instead of being blocked by a field
+  // nobody is using.
+  it("GitHub #118: SFTP disabled with the default port 22 does not block saving an unrelated setting", async () => {
+    const res = await putAppSettings({
+      panelBridgeSftpEnabled: false,
+      panelBridgeSftpPort: "22",
+      panelBridgeAutoUpdate: false,
+    });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  // Ordering: the effective flag must come from THIS payload, not stored
+  // state, in both directions -- otherwise either an operator turning SFTP
+  // on gets its port silently skipped, or turning it off doesn't actually
+  // exempt the port in the same save.
+  it("still validates the SFTP port when this save is what turns SFTP on, even though it was off in storage", async () => {
+    const res = await putAppSettings({ panelBridgeSftpEnabled: true, panelBridgeSftpPort: 0 });
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/SFTP port must be a whole number/);
+  });
+
+  it("skips SFTP port validation when this save is what turns SFTP off, even with an out-of-range port present", async () => {
+    const res = await putAppSettings({ panelBridgeSftpEnabled: false, panelBridgeSftpPort: 0 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
   });
 });

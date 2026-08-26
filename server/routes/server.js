@@ -565,19 +565,54 @@ export function formatDirectoryReadError(
 
 // Shared range constants for the requireIntInRange call sites below AND in
 // config.js's PUT /app-settings (which imports these rather than retyping
-// the numbers) -- game port, RCON port and panel port all mean "a bindable
-// TCP port outside the well-known range," so they share one PORT_MIN/
-// PORT_MAX pair. Memory shares a floor (both fields refuse below 1 GB) but
-// have distinct ceilings. Exporting these is the actual fix for a claim
-// made in the 2026-08-23 validateInt-coerces audit that turned out false:
-// "no disagreement possible by construction" was said of two files with
-// sixteen hand-typed literal copies of these five numbers and no shared
-// constant anywhere -- true only of the FUNCTION (requireIntInRange itself,
+// the numbers). Exporting these was the actual fix for a claim made in the
+// 2026-08-23 validateInt-coerces audit that turned out false: "no
+// disagreement possible by construction" was said of two files with sixteen
+// hand-typed literal copies of these five numbers and no shared constant
+// anywhere -- true only of the FUNCTION (requireIntInRange itself,
 // imported), not the ranges. A future range change is one edit here instead
 // of a grep-and-hope across both files.
-export const PORT_MIN = 1024;
-export const PORT_MAX = 65535;
-export const GAME_PORT_MAX = PORT_MAX - 1;
+//
+// THE PORT SPLIT, AND THE IRONY OF THIS COMMENT (GitHub #118): the fix above
+// then asserted its own false claim in the very next sentence -- the
+// original version of this comment said game port, RCON port and panel
+// port "all mean a bindable TCP port outside the well-known range," so they
+// shared one PORT_MIN/PORT_MAX pair. That is a claim about what BINDS a
+// socket, and RCON does not inherently belong in it: 1024 is a bind
+// constraint (opening a listening socket below it needs root on Linux), and
+// nothing here about "is this port bindable" follows from a field being
+// named rconPort or sftpPort. The real rule is bind vs. destination, not
+// field name:
+//   - BIND: a port this PANEL PROCESS itself opens and listens on -- the
+//     panel's own HTTP(S) port, or the game port when the panel writes it
+//     into the .ini file of a PZ server it is installing/launching on THIS
+//     machine. These need BIND_PORT_MIN (1024): who's listening is us.
+//   - DESTINATION: a port on someone ELSE's socket that the panel only
+//     connects OUT to. SFTP is always this -- its standard port, 22, is
+//     the exact value that broke here, because a destination port has no
+//     reason to respect a floor that exists only to keep unprivileged
+//     processes from binding low ports. DESTINATION_PORT_MIN (1) is correct
+//     for it.
+// RCON is conceptually a destination too (servers.js's per-server RCON
+// config already treats it that way, floor 1, for the multi-server/remote
+// case) -- but every RCON call site IN THIS FILE and in config.js's
+// app-settings route is specifically the single legacy/locally-managed
+// server's own RCON target, never a remote one: /configure-rcon below
+// hardcodes rconHost to 127.0.0.1 on every save, and rcon.js's loadConfig()
+// documents the global rconHost/rconPort settings this route shares as the
+// "legacy" fallback used only when no active multi-server row exists. That
+// target is always this machine, so these specific call sites correctly
+// stay on BIND_PORT_MIN -- not because "RCON is bindable" as a category
+// (it isn't, and servers.js's remote RCON proves it), but because this
+// file's RCON fields happen to always target something local. Decide by
+// what a field actually points at, not by what it's called -- that
+// shortcut is what let a wrong comment stand in as a decision for two
+// audits in a row.
+export const BIND_PORT_MIN = 1024;
+export const BIND_PORT_MAX = 65535;
+export const GAME_PORT_MAX = BIND_PORT_MAX - 1;
+export const DESTINATION_PORT_MIN = 1;
+export const DESTINATION_PORT_MAX = 65535;
 export const MEMORY_GB_MIN = 1;
 export const MIN_MEMORY_GB_MAX = 64;
 export const MAX_MEMORY_GB_MAX = 128;
@@ -1812,11 +1847,11 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     if (!maxMemoryCheck.ok) {
       return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
     }
-    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, GAME_PORT_MAX, "Game port");
+    const serverPortCheck = requireIntInRange(serverPort, BIND_PORT_MIN, GAME_PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
-    const rconPortCheck = requireIntInRange(rconPort, PORT_MIN, PORT_MAX, "RCON port");
+    const rconPortCheck = requireIntInRange(rconPort, BIND_PORT_MIN, BIND_PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
       return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
     }
@@ -2315,11 +2350,11 @@ router.post("/quick-setup", requirePermission("server.install"), async (req, res
     if (!maxMemoryCheck.ok) {
       return res.status(400).json({ error: maxMemoryCheck.message, code: ErrorCode.INVALID_MAX_MEMORY });
     }
-    const serverPortCheck = requireIntInRange(serverPort, PORT_MIN, GAME_PORT_MAX, "Game port");
+    const serverPortCheck = requireIntInRange(serverPort, BIND_PORT_MIN, GAME_PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
-    const rconPortCheck = requireIntInRange(rconPort, PORT_MIN, PORT_MAX, "RCON port");
+    const rconPortCheck = requireIntInRange(rconPort, BIND_PORT_MIN, BIND_PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
       return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
     }
@@ -2493,7 +2528,7 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
   try {
     const { rconPassword, rconPort: rawRconPort = 27015 } = req.body || {};
     // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
-    const rconPortCheck = requireIntInRange(rawRconPort, PORT_MIN, PORT_MAX, "RCON port");
+    const rconPortCheck = requireIntInRange(rawRconPort, BIND_PORT_MIN, BIND_PORT_MAX, "RCON port");
     if (!rconPortCheck.ok) {
       return res.status(400).json({ error: rconPortCheck.message, code: ErrorCode.INVALID_RCON_PORT });
     }
@@ -2571,7 +2606,7 @@ router.post("/configure-network", requirePermission("server.configure"), async (
   try {
     const { serverPort: rawServerPort = 16261, useUpnp = true } = req.body || {};
     // Refused, not coerced: see 2026-08-23 validateInt-coerces audit.
-    const serverPortCheck = requireIntInRange(rawServerPort, PORT_MIN, GAME_PORT_MAX, "Game port");
+    const serverPortCheck = requireIntInRange(rawServerPort, BIND_PORT_MIN, GAME_PORT_MAX, "Game port");
     if (!serverPortCheck.ok) {
       return res.status(400).json({ error: serverPortCheck.message, code: ErrorCode.INVALID_SERVER_PORT });
     }
