@@ -161,6 +161,8 @@
   "INVALID_PATH": "Invalid path",
   "PATH_NOT_FOUND": "Path does not exist",
   "DELETE_FILES_NOT_PZ_INSTALL": "This does not appear to be a Project Zomboid server installation. Refusing to delete for safety.",
+  "DELETE_FILES_DATA_PATH_NESTED": "Refusing to delete: this server's Zomboid data folder is inside the folder you're about to delete, so this would also destroy the world save. Move the data path outside the install folder in Settings, or back it up yourself first.",
+  "DELETE_FILES_CONFIRM_REQUIRED": "Deleting these files requires confirm: true",
   "PATH_NOT_A_DIRECTORY": "Path is not a directory",
   "DIRECTORY_READ_FAILED": "Cannot read {{path}} ({{code}}). {{guidance}}",
   "DIRECTORY_READ_FAILED_WINDOWS": "Cannot read {{path}} ({{code}}). Run the panel as an account that can read this folder.",

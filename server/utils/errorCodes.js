@@ -600,6 +600,32 @@ export const ErrorCode = Object.freeze({
    * but none of the known PZ server marker files are present -- refusing to
    * delete a folder that might not be a PZ install. */
   DELETE_FILES_NOT_PZ_INSTALL: "DELETE_FILES_NOT_PZ_INSTALL",
+  /** server/routes/server.js -- POST /api/server/delete-files, the active
+   * server's zomboidDataPath is inside (or equal to) the install folder
+   * being deleted -- deleting it would also destroy the world save, not
+   * just the reinstallable game binaries. Refused outright rather than
+   * backing the data up first: the backups folder lives inside the same
+   * doomed tree. */
+  DELETE_FILES_DATA_PATH_NESTED: "DELETE_FILES_DATA_PATH_NESTED",
+  /** server/routes/server.js -- POST /api/server/delete-files, caller didn't
+   * pass `confirm: true`. Split from WIPE_CONFIRM_REQUIRED below (2026-08-26
+   * bug hunt round 2, Angela's find) rather than continuing to share it: that
+   * code's own name and message ("Wipe requires confirm: true") are correct
+   * for /wipe, and /delete-files was the borrower, not a co-owner -- unlike
+   * WIPE_SERVER_RUNNING two entries below, which genuinely IS shared by
+   * design (see that entry's own comment for why the two cases differ). The
+   * risk with the shared version wasn't hypothetical: api.ts hardcodes
+   * confirm:true for both of today's callers so the branch can't fire from
+   * the UI right now, but that's a precondition of the CURRENT client, not a
+   * property of the code -- the first caller that doesn't hardcode it would
+   * get an error about wiping when they were deleting files, or the reverse.
+   * Same anti-pattern already fixed for WRITABLE_PATH_ERROR and
+   * RCON_CONNECT_FAILED (see KNOWN_INTENTIONALLY_UNREFERENCED in
+   * server/tests/errorCodeRegistry.test.js for that pattern's write-up) --
+   * unlike those two, WIPE_CONFIRM_REQUIRED is NOT retired here: it keeps
+   * being correctly emitted by /wipe, so it stays in active use rather than
+   * moving to that allowlist. */
+  DELETE_FILES_CONFIRM_REQUIRED: "DELETE_FILES_CONFIRM_REQUIRED",
   /** server/routes/server.js -- POST /api/server/list-directory, path exists
    * but isn't a directory. */
   PATH_NOT_A_DIRECTORY: "PATH_NOT_A_DIRECTORY",
@@ -667,9 +693,13 @@ export const ErrorCode = Object.freeze({
    * same code, even though delete-files writes its own delete-flavored
    * `error` text at the call site rather than reusing wipe's wording. */
   WIPE_SERVER_RUNNING: "WIPE_SERVER_RUNNING",
-  /** server/routes/server.js (2 sites: /wipe, /delete-files) -- caller
-   * didn't pass `confirm: true`. See WIPE_SERVER_RUNNING above for why this
-   * is shared rather than split per route. */
+  /** server/routes/server.js -- POST /api/server/wipe, caller didn't pass
+   * `confirm: true`. /delete-files used to share this code too (own English
+   * text, same code) -- split out as DELETE_FILES_CONFIRM_REQUIRED above
+   * (2026-08-26 bug hunt round 2): unlike WIPE_SERVER_RUNNING above, which
+   * really is one condition meaning the same thing at both call sites,
+   * "confirm required" here was never a shared concept, just a borrowed
+   * code -- this one stays exactly what its name always said, /wipe's own. */
   WIPE_CONFIRM_REQUIRED: "WIPE_CONFIRM_REQUIRED",
   /** server/routes/server.js -- POST /api/server/wipe, `createBackup` was
    * true (the default) but the pre-wipe backup itself failed (backup
