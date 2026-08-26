@@ -286,6 +286,48 @@ After login, save it permanently in **Settings → Remote Access** so the env va
 
 For VPS or public-internet deployment, put the panel behind a reverse proxy (nginx or Caddy) with HTTPS, and set `HTTPS=true` so the panel emits HSTS headers. Don't expose port 3001 directly to the internet.
 
+### nginx reverse proxy
+
+The panel uses a live socket.io connection for status updates, chat, and the world map's activity overlay — nginx does not forward WebSocket upgrade requests by default, so without the `Upgrade`/`Connection` headers below the panel will load but the connection indicator will show disconnected and any live-updating panel (world map included) will silently stop working, while everything else keeps working normally. This is the single most common reverse-proxy misconfiguration reported against the panel.
+
+Recommended pattern: terminate TLS at nginx, run the panel itself over plain HTTP behind it (no need to also configure certificates inside the panel).
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-domain.example.com;
+
+    ssl_certificate     /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+
+        # Required for socket.io — without these two lines the panel's
+        # live connection never establishes, but every plain HTTP(S)
+        # request still works, which is why this is easy to miss.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Then set these before first launch (see [linux.md Phase 9](docs/install/linux.md) for the systemd equivalent):
+
+```bash
+TRUST_PROXY=1 HTTPS=true ./start.sh
+```
+
+`TRUST_PROXY=1` tells the panel to trust the `X-Forwarded-*` headers above for one proxy hop (IP-based rate limiting and login all key off this) — only set it if the panel is genuinely reachable exclusively through your proxy, never if port 3001 is also exposed directly. `HTTPS=true` makes the panel emit HSTS and treat the connection as secure for cookies even though it's speaking plain HTTP to nginx.
+
+If you instead terminate TLS at nginx *and* run the panel's own HTTPS listener behind it (double TLS termination — only needed if something else on the same host also talks to the panel directly over HTTPS), point `proxy_pass` at `https://127.0.0.1:<your HTTPS port>` instead and add `proxy_ssl_verify off;` if you're using the panel's self-signed certificate. The `Upgrade`/`Connection` headers above are still required either way — they're about forwarding the client's upgrade request, not about which protocol nginx uses to reach the panel.
+
 ---
 
 ## Security
