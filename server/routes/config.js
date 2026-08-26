@@ -19,6 +19,13 @@ import {
 } from "../services/modChecker.js";
 import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
 import {
+  checkTcpReachable,
+  RCON_UNREACHABLE_DETAIL,
+  RCON_AUTH_FAILED_DETAIL,
+  RCON_USER_ACTION_TIMEOUT_MS,
+} from "../services/rcon.js";
+import { ErrorCode } from "../utils/errorCodes.js";
+import {
   requireIntInRange,
   BIND_PORT_MIN,
   BIND_PORT_MAX,
@@ -301,33 +308,60 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       return res.status(400).json({ error: "Settings are required" });
     }
 
-    // What panelBridgeSftpEnabled will actually BE once this save lands --
-    // not what it currently is in the database. Preferring the payload's
-    // own value (when this save touches the flag at all) matters both
-    // ways: a user turning SFTP OFF and fixing its port in the same save
-    // must not have the old, now-irrelevant port block them (GitHub #118),
-    // and a user turning SFTP ON in the same save that also sets its port
-    // must still have that port validated -- reading only the stored value
-    // would validate against the state this save is about to replace, not
-    // the state it's about to create. Falls back to stored state only when
-    // this payload doesn't mention the flag at all (a partial update that
-    // never touches it shouldn't have to resend it just to stay validated
-    // correctly). Lazy and memoized: most saves never touch an SFTP field
-    // at all, and a stored-state lookup should only happen for the ones
-    // that do -- an unconditional getSetting() here for every save (most of
-    // which have nothing to do with SFTP) would be one unnecessary DB round
-    // trip per save, every time, forever.
-    let effectiveSftpEnabledPromise = null;
-    function getEffectiveSftpEnabled() {
-      if (!effectiveSftpEnabledPromise) {
-        effectiveSftpEnabledPromise = Object.prototype.hasOwnProperty.call(
-          settings,
-          "panelBridgeSftpEnabled",
-        )
-          ? Promise.resolve(Boolean(settings.panelBridgeSftpEnabled))
-          : getSetting("panelBridgeSftpEnabled").then(Boolean);
+    // Fields whose validation only matters while a companion feature flag
+    // is on -- built as ONE table, not N copies of "if (key === X &&
+    // effectiveFlagEnabled)". GitHub #118 was exactly this bug for
+    // panelBridgeSftpPort alone; the 2026-08-26 bug hunt (findings 4/9-12)
+    // found FOUR more fields with the identical shape (httpsCertPath/
+    // httpsKeyPath/httpsPort gated by httpsEnabled, modRestartDelay by
+    // modAutoRestart, serverAutoUpdateWarningMinutes by serverAutoUpdate,
+    // autoExportMaxPerPlayer by autoExportOnLogin, reconnectInterval by
+    // autoReconnect) sitting unfixed right next to the one that got fixed --
+    // the exact "sibling that was never hardened" pattern this whole floor
+    // spent the day on. Five hand-written copies of the same guard
+    // disagreeing with each other by the next release is the predictable
+    // outcome of writing it five times; one table can't drift from itself.
+    // An unused field must never block an unrelated save, regardless of
+    // which feature it belongs to.
+    const FEATURE_GATED_FIELDS = {
+      panelBridgeSftpPort: "panelBridgeSftpEnabled",
+      panelBridgeSftpPollIntervalSeconds: "panelBridgeSftpEnabled",
+      httpsCertPath: "httpsEnabled",
+      httpsKeyPath: "httpsEnabled",
+      httpsPort: "httpsEnabled",
+      modRestartDelay: "modAutoRestart",
+      serverAutoUpdateWarningMinutes: "serverAutoUpdate",
+      autoExportMaxPerPlayer: "autoExportOnLogin",
+      reconnectInterval: "autoReconnect",
+    };
+
+    // What a gating flag will actually BE once this save lands -- not what
+    // it currently is in the database. Preferring the payload's own value
+    // (when this save touches the flag at all) matters both ways: a user
+    // turning a feature OFF and fixing one of its fields in the same save
+    // must not have the old, now-irrelevant field block them, and a user
+    // turning a feature ON in the same save that also sets one of its
+    // fields must still have that field validated -- reading only the
+    // stored value would validate against the state this save is about to
+    // replace, not the state it's about to create. Falls back to stored
+    // state only when this payload doesn't mention the flag at all (a
+    // partial update that never touches it shouldn't have to resend it just
+    // to stay validated correctly). Lazy and memoized PER FLAG: most saves
+    // touch at most one or two of these features, and a stored-state lookup
+    // should only happen for the flags actually needed -- an unconditional
+    // getSetting() for every gated flag on every save would be several
+    // unnecessary DB round trips per save, every time, forever.
+    const effectiveFlagCache = new Map();
+    function getEffectiveFlag(flagKey) {
+      if (!effectiveFlagCache.has(flagKey)) {
+        effectiveFlagCache.set(
+          flagKey,
+          Object.prototype.hasOwnProperty.call(settings, flagKey)
+            ? Promise.resolve(Boolean(settings[flagKey]))
+            : getSetting(flagKey).then(Boolean),
+        );
       }
-      return effectiveSftpEnabledPromise;
+      return effectiveFlagCache.get(flagKey);
     }
 
     // Only allow valid setting keys to prevent prototype pollution
@@ -335,6 +369,18 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
     for (const [key, value] of Object.entries(settings)) {
       if (!VALID_SETTINGS_KEYS.includes(key)) {
         log.warn(`Invalid setting key rejected: ${key}`);
+        continue;
+      }
+
+      // Skip validation entirely for a field whose feature won't be on
+      // after this save -- still saved (a disabled field's stale value is
+      // harmless sitting in storage; refusing to even SAVE it would be its
+      // own new bug), just not checked. This one check replaces what used
+      // to be five separate "&& effectiveXEnabled" conditions bolted onto
+      // five separate validation blocks below.
+      const gateFlag = FEATURE_GATED_FIELDS[key];
+      if (gateFlag && !(await getEffectiveFlag(gateFlag))) {
+        validEntries.push([key, value]);
         continue;
       }
 
@@ -363,7 +409,9 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // accepts it fine would be a NEW save-vs-consumer disagreement, the
       // same bug class this whole thread closed. Settings.tsx keeping min=1
       // is fine and unrelated -- a UI recommendation, not a capability
-      // claim. See 2026-08-23 config.js numeric-field audit part 5.
+      // claim. See 2026-08-23 config.js numeric-field audit part 5. Gated
+      // by modAutoRestart via FEATURE_GATED_FIELDS above (2026-08-26 bug
+      // hunt finding 9) -- only reached when the feature will be on.
       if (key === "modRestartDelay") {
         const modRestartDelayCheck = requireIntInRange(
           value,
@@ -379,7 +427,9 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // Bound chased from the consuming service (updateChecker.js's
       // parseAutoUpdateWarningMinutes: `Math.min(60, Math.max(0, ...))`,
       // default 15) -- matches Settings.tsx's own input (min=0 max=60)
-      // exactly, no discrepancy to report for this one.
+      // exactly, no discrepancy to report for this one. Gated by
+      // serverAutoUpdate via FEATURE_GATED_FIELDS above (2026-08-26 bug
+      // hunt finding 10).
       if (key === "serverAutoUpdateWarningMinutes") {
         const warningMinutesCheck = requireIntInRange(
           value,
@@ -433,6 +483,19 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // place; the boot-time fix alone only stops the crash for a value
       // that goes bad AFTER being saved (moved/deleted/permissions changed
       // later), which is a real but separate case this can't catch.
+      //
+      // GitHub #118 sibling (2026-08-26 bug hunt, finding 4), REPRODUCIBLE:
+      // Settings.tsx never clears these fields when HTTPS is toggled off
+      // (only its one-click "Enable HTTPS" quick-setup resets them), so an
+      // operator who set a cert path, disabled HTTPS, and later had that
+      // file move/get deleted/lose permissions would find every UNRELATED
+      // settings save failing on a field doing nothing -- the exact SFTP
+      // bug, for a field with a much easier real-world path to a stale
+      // value. Handled generically above via FEATURE_GATED_FIELDS: this
+      // block is only reached at all when HTTPS will be on after this save.
+      // `value !== ""` here is a SEPARATE, orthogonal exemption -- clearing
+      // the field back to empty (auto-generated cert) must work even while
+      // HTTPS is enabled, which the feature-gate above does not cover.
       if (
         (key === "httpsCertPath" || key === "httpsKeyPath") &&
         value !== ""
@@ -462,17 +525,23 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         }
       }
 
+      // GitHub #118 sibling (2026-08-26 bug hunt, finding 4): this used a
+      // hand-rolled parseBoundedInteger floor of 1 and never joined the
+      // BIND_PORT_MIN family, even though HTTPS is unambiguously a bind
+      // port -- the panel itself opens and listens on it, exactly like
+      // panelPort three blocks below. Brought in now for the same reason
+      // panelPort uses it: one shared range instead of a second hand-typed
+      // copy that can silently drift from it. Disabled-feature skip is
+      // handled generically above via FEATURE_GATED_FIELDS.
       if (key === "httpsPort") {
-        const port = parseBoundedInteger(value, null, 1, 65535);
-        if (port === null) {
-          return res.status(400).json({
-            error: "httpsPort must be a whole number from 1 to 65535",
-          });
+        const httpsPortCheck = requireIntInRange(value, BIND_PORT_MIN, BIND_PORT_MAX, "HTTPS port");
+        if (!httpsPortCheck.ok) {
+          return res.status(400).json({ error: httpsPortCheck.message });
         }
         const panelPort = await getSetting("panelPort");
-        if (panelPort && port === Number(panelPort)) {
+        if (panelPort && httpsPortCheck.value === Number(panelPort)) {
           return res.status(400).json({
-            error: `httpsPort cannot be the same as the panel's HTTP port (${panelPort})`,
+            error: `HTTPS port cannot be the same as the panel's HTTP port (${panelPort})`,
           });
         }
       }
@@ -542,11 +611,11 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
 
       // Destination, not bind: SFTP is a service on someone ELSE's machine
       // that this panel connects out to -- 22, its standard port, is why
-      // this floor was the actual bug (GitHub #118). Also skipped entirely
-      // when SFTP won't be enabled after this save: an unused field must
-      // never block an unrelated save, and validating it anyway was wrong
-      // even with the correct range, since 22 was always a legal SFTP port.
-      if (key === "panelBridgeSftpPort" && (await getEffectiveSftpEnabled())) {
+      // this floor was the actual bug (GitHub #118). The disabled-feature
+      // skip is handled generically above via FEATURE_GATED_FIELDS -- by
+      // the time we reach here, either SFTP will be on after this save, or
+      // this line was never reached at all for this key.
+      if (key === "panelBridgeSftpPort") {
         const sftpPortCheck = requireIntInRange(
           value,
           DESTINATION_PORT_MIN,
@@ -558,9 +627,7 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         }
       }
 
-      // Same disabled-feature exemption as panelBridgeSftpPort above --
-      // this field is equally meaningless while SFTP is off.
-      if (key === "panelBridgeSftpPollIntervalSeconds" && (await getEffectiveSftpEnabled())) {
+      if (key === "panelBridgeSftpPollIntervalSeconds") {
         const sftpPollCheck = requireIntInRange(
           value,
           SFTP_POLL_INTERVAL_MIN,
@@ -592,7 +659,9 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // But an unvalidated garbage value would still sit in the database
       // forever, unreadable by that fallback's intent, as a trap for
       // whoever next reads that column expecting a real number. Range
-      // matches Settings.tsx's own input (min=1 max=50).
+      // matches Settings.tsx's own input (min=1 max=50). Gated by
+      // autoExportOnLogin via FEATURE_GATED_FIELDS above (2026-08-26 bug
+      // hunt finding 11).
       if (key === "autoExportMaxPerPlayer") {
         const autoExportMaxCheck = requireIntInRange(value, AUTO_EXPORT_MAX_PER_PLAYER_MIN, AUTO_EXPORT_MAX_PER_PLAYER_MAX, "Auto-export copies kept");
         if (!autoExportMaxCheck.ok) {
@@ -603,7 +672,8 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       // Same missing-range-check shape as httpsPort above, but the worst
       // case if it slips through is a too-fast/too-slow reconnect timer,
       // not a lockout -- worth closing anyway since it's one check in the
-      // same loop, not worth its own investigation.
+      // same loop, not worth its own investigation. Gated by autoReconnect
+      // via FEATURE_GATED_FIELDS above (2026-08-26 bug hunt finding 12).
       if (key === "reconnectInterval") {
         const interval = parseBoundedInteger(value, null, 1, 60);
         if (interval === null) {
@@ -993,10 +1063,41 @@ router.post("/test-rcon", requirePermission("server.configure"), async (req, res
         });
       }
     } else {
+      // Same reachability split as /rcon/test and /rcon/connect (see
+      // 0714d91): without this, EVERY failure -- host genuinely unreachable
+      // OR host reachable but the saved password is wrong -- collapsed into
+      // one generic message, which Console.tsx's banner then rendered as
+      // "host unreachable" even for a stale password. That told a user with
+      // a correct host/port to go debug their network for a problem that
+      // was actually a wrong password one screen away. Reuses the same
+      // canonical detail strings and error codes as those two routes
+      // (services/rcon.js) rather than a third, independently-drifting
+      // mapping -- this is the same failed-handshake outcome, just reached
+      // from a third call site.
+      const { host: configuredHost, port: configuredPort } =
+        rconService.getConfig();
+      const reachable = await checkTcpReachable(
+        configuredHost,
+        configuredPort,
+        RCON_USER_ACTION_TIMEOUT_MS,
+      );
+      if (!reachable) {
+        return res.json({
+          success: false,
+          error: "unreachable",
+          detail: RCON_UNREACHABLE_DETAIL,
+          message: RCON_UNREACHABLE_DETAIL,
+          connected: false,
+          code: ErrorCode.RCON_CONNECT_UNREACHABLE,
+        });
+      }
       res.json({
         success: false,
-        message: "Failed to connect to RCON",
+        error: "auth_failed",
+        detail: RCON_AUTH_FAILED_DETAIL,
+        message: RCON_AUTH_FAILED_DETAIL,
         connected: false,
+        code: ErrorCode.RCON_CONNECT_AUTH_FAILED,
       });
     }
   } catch (error) {

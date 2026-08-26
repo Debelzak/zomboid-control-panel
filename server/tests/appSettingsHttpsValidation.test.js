@@ -70,24 +70,29 @@ afterEach(() => {
   delete settingsStore.httpsPort;
 });
 
-describe("PUT /app-settings -- httpsCertPath / httpsKeyPath validation", () => {
+// These all now need httpsEnabled: true in the payload -- as of the
+// 2026-08-26 bug hunt (finding 4, GitHub #118 generalized), httpsCertPath/
+// httpsKeyPath/httpsPort are skipped entirely while HTTPS won't be enabled
+// after this save, the same treatment SFTP's fields got below.
+describe("PUT /app-settings -- httpsCertPath / httpsKeyPath validation (HTTPS enabled)", () => {
   it("rejects a directory as httpsCertPath instead of saving it", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-appsettings-test-"));
-    const res = await putAppSettings({ httpsCertPath: tempDir });
+    const res = await putAppSettings({ httpsEnabled: true, httpsCertPath: tempDir });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/must be a file, not a directory/);
   });
 
   it("rejects a path that doesn't exist", async () => {
     const res = await putAppSettings({
+      httpsEnabled: true,
       httpsKeyPath: "C:\\nonexistent\\path\\key.pem",
     });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/does not point to a file that exists/);
   });
 
-  it("accepts an empty string -- clearing the custom cert path back to auto-generated must still work", async () => {
-    const res = await putAppSettings({ httpsCertPath: "" });
+  it("accepts an empty string even while enabled -- clearing the custom cert path back to auto-generated must still work", async () => {
+    const res = await putAppSettings({ httpsEnabled: true, httpsCertPath: "" });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
@@ -96,70 +101,132 @@ describe("PUT /app-settings -- httpsCertPath / httpsKeyPath validation", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-appsettings-test-"));
     const certPath = path.join(tempDir, "panel.cert");
     fs.writeFileSync(certPath, "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n");
-    const res = await putAppSettings({ httpsCertPath: certPath });
+    const res = await putAppSettings({ httpsEnabled: true, httpsCertPath: certPath });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  // GitHub #118, the reproducible half of finding 4: Settings.tsx never
+  // clears httpsCertPath/httpsKeyPath when HTTPS is toggled off, so a stale
+  // path (moved file, revoked permissions) sitting there used to block
+  // every unrelated save. HTTPS disabled must exempt it regardless of value.
+  it("does not block an unrelated save over a stale/garbage httpsCertPath while HTTPS is disabled", async () => {
+    const res = await putAppSettings({
+      httpsEnabled: false,
+      httpsCertPath: "C:\\this\\file\\was\\deleted\\ages\\ago.cert",
+      darkMode: true,
+    });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
 });
 
-describe("PUT /app-settings -- httpsPort validation", () => {
+describe("PUT /app-settings -- httpsPort validation (HTTPS enabled, bind-port range joined to BIND_PORT_MIN/MAX)", () => {
   it("rejects a non-integer value", async () => {
-    const res = await putAppSettings({ httpsPort: "not-a-number" });
+    const res = await putAppSettings({ httpsEnabled: true, httpsPort: "not-a-number" });
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody().error).toMatch(/httpsPort must be a whole number/);
+    expect(res.getBody().error).toMatch(/HTTPS port must be a whole number/);
   });
 
   it.each(["1e2", " "])("rejects non-decimal whole-number input %j", async (value) => {
-    const res = await putAppSettings({ httpsPort: value });
+    const res = await putAppSettings({ httpsEnabled: true, httpsPort: value });
     expect(res.getStatusCode()).toBe(400);
   });
 
   it("rejects an out-of-range value", async () => {
-    const res = await putAppSettings({ httpsPort: 999999 });
+    const res = await putAppSettings({ httpsEnabled: true, httpsPort: 999999 });
     expect(res.getStatusCode()).toBe(400);
-    expect(res.getBody().error).toMatch(/httpsPort must be a whole number/);
+    expect(res.getBody().error).toMatch(/HTTPS port must be a whole number/);
   });
 
-  it("rejects zero and negative values", async () => {
-    const zero = await putAppSettings({ httpsPort: 0 });
+  // Now rejected by the BIND_PORT_MIN floor (1024), not just a bare "must
+  // be positive" check -- HTTPS is a bind port like panelPort, joined to
+  // the same shared range in this pass (bug hunt finding 4).
+  it("rejects a port below the 1024 bind floor, zero, and negative values", async () => {
+    const belowFloor = await putAppSettings({ httpsEnabled: true, httpsPort: 443 });
+    expect(belowFloor.getStatusCode()).toBe(400);
+    const zero = await putAppSettings({ httpsEnabled: true, httpsPort: 0 });
     expect(zero.getStatusCode()).toBe(400);
-    const negative = await putAppSettings({ httpsPort: -443 });
+    const negative = await putAppSettings({ httpsEnabled: true, httpsPort: -443 });
     expect(negative.getStatusCode()).toBe(400);
   });
 
   it("rejects a port equal to the panel's own HTTP port", async () => {
     settingsStore.panelPort = 3001;
-    const res = await putAppSettings({ httpsPort: 3001 });
+    const res = await putAppSettings({ httpsEnabled: true, httpsPort: 3001 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/cannot be the same as the panel's HTTP port/);
   });
 
   it("accepts a valid, non-colliding port", async () => {
     settingsStore.panelPort = 3001;
-    const res = await putAppSettings({ httpsPort: 3443 });
+    const res = await putAppSettings({ httpsEnabled: true, httpsPort: 3443 });
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody().success).toBe(true);
+  });
+
+  it("does not block an unrelated save over an out-of-range httpsPort while HTTPS is disabled", async () => {
+    const res = await putAppSettings({ httpsEnabled: false, httpsPort: 0, darkMode: true });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
 });
 
-describe("PUT /app-settings -- reconnectInterval validation (same missing-range-check shape, lower stakes)", () => {
+describe("PUT /app-settings -- reconnectInterval validation (same missing-range-check shape, lower stakes; autoReconnect enabled)", () => {
   it("rejects an out-of-range value", async () => {
-    const tooLow = await putAppSettings({ reconnectInterval: 0 });
+    const tooLow = await putAppSettings({ autoReconnect: true, reconnectInterval: 0 });
     expect(tooLow.getStatusCode()).toBe(400);
-    const tooHigh = await putAppSettings({ reconnectInterval: 61 });
+    const tooHigh = await putAppSettings({ autoReconnect: true, reconnectInterval: 61 });
     expect(tooHigh.getStatusCode()).toBe(400);
   });
 
   it("rejects scientific notation instead of coercing it", async () => {
-    const res = await putAppSettings({ reconnectInterval: "1e1" });
+    const res = await putAppSettings({ autoReconnect: true, reconnectInterval: "1e1" });
     expect(res.getStatusCode()).toBe(400);
   });
 
   it("accepts a valid value", async () => {
-    const res = await putAppSettings({ reconnectInterval: 15 });
+    const res = await putAppSettings({ autoReconnect: true, reconnectInterval: 15 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
+});
+
+// One table-driven pass covering every field in FEATURE_GATED_FIELDS
+// (config.js) instead of five more hand-written "skips while disabled" /
+// "still validates when turning on" test blocks -- the DO-IT-ONCE
+// instruction (2026-08-26 bug hunt follow-up) applies to the tests too, not
+// just the production code: five nearly-identical copies of this test are
+// exactly as likely to silently miss a sixth field as five copies of the
+// guard itself were.
+describe("PUT /app-settings -- feature-gated fields (FEATURE_GATED_FIELDS), table-driven", () => {
+  const cases = [
+    ["panelBridgeSftpEnabled", "panelBridgeSftpPort", 0, /SFTP port must be a whole number/],
+    ["panelBridgeSftpEnabled", "panelBridgeSftpPollIntervalSeconds", 1, /SFTP sync interval/],
+    ["httpsEnabled", "httpsPort", 0, /HTTPS port must be a whole number/],
+    ["modAutoRestart", "modRestartDelay", -1, /Mod restart delay/],
+    ["serverAutoUpdate", "serverAutoUpdateWarningMinutes", 61, /Server auto-update warning/],
+    ["autoExportOnLogin", "autoExportMaxPerPlayer", 500, /Auto-export copies kept/],
+    ["autoReconnect", "reconnectInterval", 0, /reconnectInterval must be a whole number/],
+  ];
+
+  it.each(cases)(
+    "skips validating %s's %s (garbage value %j) while the flag is off in this same save",
+    async (flagKey, fieldKey, garbageValue) => {
+      const res = await putAppSettings({ [flagKey]: false, [fieldKey]: garbageValue });
+      expect(res.getStatusCode()).toBe(200);
+      expect(res.getBody().success).toBe(true);
+    },
+  );
+
+  it.each(cases)(
+    "still validates %s's %s when THIS save is what turns the flag on (ordering: reads the payload, not stale stored state)",
+    async (flagKey, fieldKey, garbageValue, errorPattern) => {
+      const res = await putAppSettings({ [flagKey]: true, [fieldKey]: garbageValue });
+      expect(res.getStatusCode()).toBe(400);
+      expect(res.getBody().error).toMatch(errorPattern);
+    },
+  );
 });
 
 // Regression coverage for the 2026-08-23 config.js numeric-field audit:
@@ -289,15 +356,17 @@ describe("PUT /app-settings -- the second door onto server.js's four hardened fi
 // export rotation -- but an unvalidated garbage value would still sit in the
 // database unreadable by that fallback's intent. Range matches Settings.tsx's
 // own input (min=1 max=50).
-describe("PUT /app-settings -- autoExportMaxPerPlayer validation (low priority, self-heals at use)", () => {
+// Gated by autoExportOnLogin as of the 2026-08-26 bug hunt (finding 11) --
+// these need autoExportOnLogin: true in the payload to reach the check.
+describe("PUT /app-settings -- autoExportMaxPerPlayer validation (low priority, self-heals at use; autoExportOnLogin enabled)", () => {
   it("rejects an out-of-range value instead of storing garbage", async () => {
-    const res = await putAppSettings({ autoExportMaxPerPlayer: 500 });
+    const res = await putAppSettings({ autoExportOnLogin: true, autoExportMaxPerPlayer: 500 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/Auto-export copies kept must be a whole number/);
   });
 
   it("accepts a valid value", async () => {
-    const res = await putAppSettings({ autoExportMaxPerPlayer: 3 });
+    const res = await putAppSettings({ autoExportOnLogin: true, autoExportMaxPerPlayer: 3 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
@@ -342,26 +411,28 @@ describe("PUT /app-settings -- the other 8 boolean settings now reject a non-boo
 // save-vs-consumer disagreement, the same bug class this thread closed.
 // Settings.tsx keeping min=1 is a UI recommendation, not a capability claim,
 // and is allowed to differ.
-describe("PUT /app-settings -- modRestartDelay validation (bound chased, service is the authority)", () => {
+// Gated by modAutoRestart as of the 2026-08-26 bug hunt (finding 9) -- these
+// need modAutoRestart: true in the payload to reach the check.
+describe("PUT /app-settings -- modRestartDelay validation (bound chased, service is the authority; modAutoRestart enabled)", () => {
   it("accepts zero -- the service's own floor, even though Settings.tsx's UI recommends min=1", async () => {
-    const res = await putAppSettings({ modRestartDelay: 0 });
+    const res = await putAppSettings({ modAutoRestart: true, modRestartDelay: 0 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
 
   it("rejects a negative value", async () => {
-    const res = await putAppSettings({ modRestartDelay: -1 });
+    const res = await putAppSettings({ modAutoRestart: true, modRestartDelay: -1 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/Mod restart delay \(minutes\) must be a whole number/);
   });
 
   it("rejects a value above 30", async () => {
-    const res = await putAppSettings({ modRestartDelay: 31 });
+    const res = await putAppSettings({ modAutoRestart: true, modRestartDelay: 31 });
     expect(res.getStatusCode()).toBe(400);
   });
 
   it("accepts a valid value", async () => {
-    const res = await putAppSettings({ modRestartDelay: 5 });
+    const res = await putAppSettings({ modAutoRestart: true, modRestartDelay: 5 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
@@ -369,22 +440,24 @@ describe("PUT /app-settings -- modRestartDelay validation (bound chased, service
 
 // Bound chased from updateChecker.js's parseAutoUpdateWarningMinutes
 // (`Math.min(60, Math.max(0, ...))`) -- matches Settings.tsx's own input
-// (min=0 max=60) exactly, no discrepancy for this one.
-describe("PUT /app-settings -- serverAutoUpdateWarningMinutes validation (bound chased, matches client exactly)", () => {
+// (min=0 max=60) exactly, no discrepancy for this one. Gated by
+// serverAutoUpdate as of the 2026-08-26 bug hunt (finding 10) -- these need
+// serverAutoUpdate: true in the payload to reach the check.
+describe("PUT /app-settings -- serverAutoUpdateWarningMinutes validation (bound chased, matches client exactly; serverAutoUpdate enabled)", () => {
   it("accepts zero (a real, meaningful choice here: restart with no warning)", async () => {
-    const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 0 });
+    const res = await putAppSettings({ serverAutoUpdate: true, serverAutoUpdateWarningMinutes: 0 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
 
   it("rejects a value above 60", async () => {
-    const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 61 });
+    const res = await putAppSettings({ serverAutoUpdate: true, serverAutoUpdateWarningMinutes: 61 });
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().error).toMatch(/Server auto-update warning \(minutes\) must be a whole number/);
   });
 
   it("accepts a valid value", async () => {
-    const res = await putAppSettings({ serverAutoUpdateWarningMinutes: 15 });
+    const res = await putAppSettings({ serverAutoUpdate: true, serverAutoUpdateWarningMinutes: 15 });
     expect(res.getStatusCode()).toBe(200);
     expect(res.getBody().success).toBe(true);
   });
