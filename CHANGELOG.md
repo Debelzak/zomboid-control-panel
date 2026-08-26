@@ -21,16 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Saving any setting failed when SFTP was switched off** (#118). The panel shipped `22` as the
   default SFTP port and then refused it, because one port rule was shared between ports the panel
-  opens itself and ports it connects to elsewhere. Those are now separate rules, and a disabled
-  feature's fields no longer block unrelated saves.
+  opens itself and ports it connects to elsewhere. Those are now separate rules, and the fields of any
+  switched-off feature - SFTP, HTTPS, mod auto-restart, update warnings, auto-export and
+  auto-reconnect - no longer block unrelated saves. Turning a feature on and configuring it in the
+  same save still validates, because the check reads the settings you are submitting rather than the
+  ones already stored.
 
 - **The dashboard said "Container down" while the Docker panel showed it running** (#114). The status
   badge was reading a local process scan that cannot see inside another container. It now reads the
-  container itself, and says "unknown" rather than "down" when it genuinely cannot tell.
+  container itself, and says "unknown" rather than "down" when it genuinely cannot tell. The badge
+  turned out to be one of four places that made the same mistake: the dashboard headline (which also
+  decided whether Start and Stop were available), the server cards, and the sidebar status dot -
+  which had no such check at all, so it was wrong on every page for Docker and remote servers
+  alike.
 
 - **Number fields snapped back to a default the moment you cleared them.** Clearing a port to retype
-  it silently restored `27015` or `16261` under your fingers. Fourteen fields across the wizards,
-  server settings, players and scheduler now keep what you typed and refuse on save instead.
+  it silently restored `27015` or `16261` under your fingers. Fields across the setup wizards, server
+  settings, players, scheduler, mod options, the item spawner and the map tools now keep what you
+  typed and refuse on save instead. Memory sliders and summary screens no longer render `NaN` while
+  a field is mid-edit.
 
 - **Advice you could see but not act on.** The PanelBridge status badge told you where to go and was
   not clickable; empty screens could not offer a destination at all. Both now work. RCON
