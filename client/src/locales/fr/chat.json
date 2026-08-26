@@ -51,7 +51,10 @@
     "addAria": "Ajouter un message rapide",
     "saveAria": "Enregistrer",
     "cancelAria": "Annuler",
-    "deleteAria": "Supprimer le message rapide {{index}}"
+    "deleteAria": "Supprimer le message rapide {{index}}",
+    "deleteConfirmTitle": "Supprimer ce message rapide ?",
+    "deleteConfirmDescription": "\"{{preset}}\" est partagé -- tous les admins qui utilisent les messages rapides le perdront aussi.",
+    "deleteConfirmButton": "Supprimer le message rapide"
   },
   "toasts": {
     "adminSentTitle": "Message admin envoyé",

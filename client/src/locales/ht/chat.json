@@ -51,7 +51,10 @@
     "addAria": "Ajoute anons rapid",
     "saveAria": "Sove",
     "cancelAria": "Anile",
-    "deleteAria": "Efase anons rapid {{index}}"
+    "deleteAria": "Efase anons rapid {{index}}",
+    "deleteConfirmTitle": "Efase anons rapid sa a?",
+    "deleteConfirmDescription": "\"{{preset}}\" pataje -- tout admin ki itilize anons rapid yo ap pèdi l tou.",
+    "deleteConfirmButton": "Efase Anons Rapid"
   },
   "toasts": {
     "adminSentTitle": "Mesaj Admin Voye",

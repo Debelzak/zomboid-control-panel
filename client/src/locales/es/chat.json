@@ -51,7 +51,10 @@
     "addAria": "Añadir preajuste",
     "saveAria": "Guardar",
     "cancelAria": "Cancelar",
-    "deleteAria": "Eliminar preajuste {{index}}"
+    "deleteAria": "Eliminar preajuste {{index}}",
+    "deleteConfirmTitle": "¿Eliminar este preajuste?",
+    "deleteConfirmDescription": "\"{{preset}}\" es compartido -- todos los administradores que usan los mensajes rápidos también lo perderán.",
+    "deleteConfirmButton": "Eliminar preajuste"
   },
   "toasts": {
     "adminSentTitle": "Mensaje de administración enviado",

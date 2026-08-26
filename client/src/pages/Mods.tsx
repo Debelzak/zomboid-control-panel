@@ -5416,7 +5416,7 @@ export default function Mods() {
                                 {t('deactivatedTab.deleteHint')}
                               </p>
                               <Button
-                                variant="destructive"
+                                variant="outline"
                                 size="sm"
                                 className="self-start sm:self-auto"
                                 disabled={loading || (deactivatedIds.length === 0)}
@@ -5425,7 +5425,11 @@ export default function Mods() {
                                   const label = someSelected
                                     ? t(ids.length === 1 ? 'deactivatedTab.deleteSelectedConfirm_one' : 'deactivatedTab.deleteSelectedConfirm_other', { count: ids.length })
                                     : t(ids.length === 1 ? 'deactivatedTab.deleteAllConfirm_one' : 'deactivatedTab.deleteAllConfirm_other', { count: ids.length })
-                                  const ok = await confirm({ title: t('deactivatedTab.deleteFromTrackingTitle'), description: label, confirmLabel: t('deactivatedTab.deleteConfirmButton') })
+                                  // Actually just an INI untrack (files stay on disk, see
+                                  // deleteHint above) -- not a disk delete, so this doesn't
+                                  // get the same red/no-undo framing as Mods.tsx's actual
+                                  // delete-from-disk actions elsewhere in this file.
+                                  const ok = await confirm({ title: t('deactivatedTab.deleteFromTrackingTitle'), description: label, confirmLabel: t('deactivatedTab.deleteConfirmButton'), destructive: false })
                                   if (!ok) return
                                   setSelectedMods(new Set(ids))
                                   handleBulkRemove(ids)

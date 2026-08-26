@@ -51,7 +51,10 @@
     "addAria": "添加预设",
     "saveAria": "保存",
     "cancelAria": "取消",
-    "deleteAria": "删除预设 {{index}}"
+    "deleteAria": "删除预设 {{index}}",
+    "deleteConfirmTitle": "删除此预设？",
+    "deleteConfirmDescription": "“{{preset}}”是共享的——使用快速广播的每位管理员也会失去它。",
+    "deleteConfirmButton": "删除预设"
   },
   "toasts": {
     "adminSentTitle": "管理员消息已发送",

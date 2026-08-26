@@ -51,7 +51,10 @@
     "addAria": "Add preset",
     "saveAria": "Save",
     "cancelAria": "Cancel",
-    "deleteAria": "Delete preset {{index}}"
+    "deleteAria": "Delete preset {{index}}",
+    "deleteConfirmTitle": "Delete this preset?",
+    "deleteConfirmDescription": "\"{{preset}}\" is shared -- every admin who uses quick broadcasts loses it too.",
+    "deleteConfirmButton": "Delete Preset"
   },
   "toasts": {
     "adminSentTitle": "Admin Message Sent",

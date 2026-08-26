@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast'
 import { panelBridgeApi, playersApi, configApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { EmptyState } from '@/components/EmptyState'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -62,6 +63,7 @@ export default function Chat() {
   const stickToBottomRef = useRef(true)
   const sendingRef = useRef(false)
   const { toast } = useToast()
+  const confirm = useConfirm()
   const socket = useSocket()
 
   // Track whether the user is parked at (or near) the bottom of the
@@ -271,14 +273,25 @@ export default function Chat() {
     setEditingDraft('')
   }, [editingDraft, editingIdx, persistPresets, presets])
 
-  const handleDeletePreset = useCallback((idx: number) => {
+  const handleDeletePreset = useCallback(async (idx: number) => {
+    // Quick-broadcast presets are a shared, panel-wide setting (persisted
+    // via configApi.updateAppSettings), not per-admin -- deleting one here
+    // removes it for every other admin who uses it too, and this ran on a
+    // single click with no confirmation at all.
+    const ok = await confirm({
+      title: t('quickBroadcasts.deleteConfirmTitle'),
+      description: t('quickBroadcasts.deleteConfirmDescription', { preset: presets[idx] }),
+      confirmLabel: t('quickBroadcasts.deleteConfirmButton'),
+      destructive: false,
+    })
+    if (!ok) return
     const next = presets.filter((_, i) => i !== idx)
     persistPresets(next)
     if (editingIdx === idx) {
       setEditingIdx(null)
       setEditingDraft('')
     }
-  }, [editingIdx, persistPresets, presets])
+  }, [confirm, editingIdx, persistPresets, presets, t])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

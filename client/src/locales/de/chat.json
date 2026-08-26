@@ -51,7 +51,10 @@
     "addAria": "Vorlage hinzufügen",
     "saveAria": "Speichern",
     "cancelAria": "Abbrechen",
-    "deleteAria": "Vorlage {{index}} löschen"
+    "deleteAria": "Vorlage {{index}} löschen",
+    "deleteConfirmTitle": "Diese Vorlage löschen?",
+    "deleteConfirmDescription": "\"{{preset}}\" ist gemeinsam genutzt -- jeder Admin, der Schnellansagen verwendet, verliert sie ebenfalls.",
+    "deleteConfirmButton": "Vorlage löschen"
   },
   "toasts": {
     "adminSentTitle": "Admin-Nachricht gesendet",

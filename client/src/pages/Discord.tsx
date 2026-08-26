@@ -1516,7 +1516,11 @@ export default function Discord() {
             <div className="flex gap-2">
               {status?.running ? (
                 <Button
-                  variant="destructive"
+                  // Reversible -- the bot restarts on demand, same as
+                  // Servers.tsx's own Stop button (variant="outline" there
+                  // too) -- red/destructive overstated this action's actual
+                  // severity, and it had zero confirmation either way.
+                  variant="outline"
                   onClick={handleStop}
                   className="flex-1"
                   disabled={stopping}
