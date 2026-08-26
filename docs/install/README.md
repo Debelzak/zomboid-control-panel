@@ -20,10 +20,16 @@ don't need to read the others first.
   Organized by what's actually on your screen, not by which guide you
   followed or which subsystem you suspect — start here regardless of which
   path above you took.
+- **[hosted.md](hosted.md)** — You rent a Project Zomboid server from a
+  host (Indifferent Broccoli and similar) instead of running it yourself:
+  no shell, no Docker, no systemd on that machine. Covers what the panel
+  can and can't do for a server it doesn't own the process of, why
+  PanelBridge needs SFTP specifically (not FTP), and installing the panel
+  itself on a separate machine you do control first.
 
-Not covered here: macOS (Docker Desktop or OrbStack) and already-hosted
-providers like Indifferent Broccoli are short enough to live in the main
-[README](../../README.md#macos) instead of getting their own file.
+Not covered here: macOS (Docker Desktop or OrbStack) is short enough to
+live in the main [README](../../README.md#macos) instead of getting its
+own file.
 
 For anything past initial install — PanelBridge, updates, remote access, the
 full feature list — see the main [README.md](../../README.md).
