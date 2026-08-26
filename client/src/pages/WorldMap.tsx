@@ -71,7 +71,7 @@ import {
 import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { useToast } from '@/components/ui/use-toast'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 
@@ -2575,16 +2575,17 @@ export default function WorldMap() {
     [toast, fetchPlayerPositions, t]
   )
 
-  // Copy map coordinates to the clipboard.
+  // Copy map coordinates to the clipboard. Goes through copyText (not the
+  // raw clipboard API directly) so this still works over a plain-HTTP LAN
+  // deployment -- navigator.clipboard requires a secure context and is
+  // unavailable there; copyText falls back to execCommand.
   const copyCoords = useCallback(
     async (x: number, y: number) => {
       const text = `${Math.round(x)}, ${Math.round(y)}`
-      try {
-        await navigator.clipboard.writeText(text)
-        toast({ title: t('toasts.copiedTitle'), description: text })
-      } catch {
-        toast({ title: t('toasts.copyFailedTitle'), description: t('toasts.copyFailedDesc'), variant: 'destructive' })
-      }
+      const ok = await copyText(text)
+      toast(ok
+        ? { title: t('toasts.copiedTitle'), description: text }
+        : { title: t('toasts.copyFailedTitle'), description: t('toasts.copyFailedDesc'), variant: 'destructive' })
     },
     [toast, t]
   )

@@ -141,5 +141,7 @@
   "track": "Swiv",
   "moreTitle": "Plis",
   "openOnSteam": "Louvri sou Steam",
-  "copyWorkshopId": "Kopye ID Workshop"
+  "copyWorkshopId": "Kopye ID Workshop",
+  "copiedTitle": "Kopye",
+  "copyFailedTitle": "Kopi echwe"
 }

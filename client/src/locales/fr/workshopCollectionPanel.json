@@ -141,5 +141,7 @@
   "track": "Suivre",
   "moreTitle": "Plus",
   "openOnSteam": "Ouvrir sur Steam",
-  "copyWorkshopId": "Copier l'ID Workshop"
+  "copyWorkshopId": "Copier l'ID Workshop",
+  "copiedTitle": "Copié",
+  "copyFailedTitle": "Échec de la copie"
 }

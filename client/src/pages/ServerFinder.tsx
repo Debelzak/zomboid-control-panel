@@ -47,6 +47,7 @@ import {
 import { Link } from 'react-router-dom'
 import { useToast } from '@/components/ui/use-toast'
 import { apiFetch } from '@/lib/api'
+import { copyText } from '@/lib/utils'
 
 interface GameServer {
   name: string
@@ -278,11 +279,15 @@ export default function ServerFinder() {
     setCurrentPage(validPage)
   }
 
+  // Goes through copyText (not the raw clipboard API directly) so this
+  // still works over a plain-HTTP LAN deployment -- navigator.clipboard
+  // requires a secure context and is unavailable there; copyText falls
+  // back to execCommand.
   const copyAddress = async (address: string) => {
-    try {
-      await navigator.clipboard.writeText(address)
+    const ok = await copyText(address)
+    if (ok) {
       toast({ title: t('serverItem.addressCopiedTitle'), description: address })
-    } catch {
+    } else {
       toast({
         title: t('serverItem.addressCopyFailedTitle'),
         variant: 'destructive',

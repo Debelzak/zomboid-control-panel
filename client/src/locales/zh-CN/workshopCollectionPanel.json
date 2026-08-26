@@ -141,5 +141,7 @@
   "track": "跟踪",
   "moreTitle": "更多",
   "openOnSteam": "在 Steam 中打开",
-  "copyWorkshopId": "复制 Workshop ID"
+  "copyWorkshopId": "复制 Workshop ID",
+  "copiedTitle": "已复制",
+  "copyFailedTitle": "复制失败"
 }

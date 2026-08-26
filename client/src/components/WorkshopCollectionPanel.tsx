@@ -942,6 +942,7 @@ function Row({
   onAction: (action: RowAction) => void
 }) {
   const { t } = useTranslation('workshopCollectionPanel')
+  const { toast } = useToast()
   const statusMeta =
     item.status === 'synced'
       ? { label: t('statusInSync'), cls: 'text-success border-success/40 bg-success/10', icon: <Check className="w-3 h-3" /> }

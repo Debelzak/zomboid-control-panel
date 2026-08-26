@@ -141,5 +141,7 @@
   "track": "Track",
   "moreTitle": "More",
   "openOnSteam": "Open on Steam",
-  "copyWorkshopId": "Copy workshop ID"
+  "copyWorkshopId": "Copy workshop ID",
+  "copiedTitle": "Copied",
+  "copyFailedTitle": "Copy failed"
 }
