@@ -107,6 +107,12 @@ function formatPort(port: number): string {
   return Number.isFinite(port) ? String(port) : "—";
 }
 
+// Same rationale as formatPort -- minMemory/maxMemory can now genuinely be
+// NaN mid-edit too (NumberInput), and the summary screen must never render it.
+function formatMemory(gb: number): string {
+  return Number.isFinite(gb) ? String(gb) : "—";
+}
+
 function generatePassword(length = 12): string {
   const chars =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -1681,14 +1687,13 @@ export default function ServerSetup() {
                   <Label>{t("common.minRamLabel")}</Label>
                   <HelpTip label={t("common.minRamLabel")}>{t("common.ramHelp")}</HelpTip>
                 </div>
-                <Input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={64}
                   value={minMemory}
                   className="h-8 w-20 bg-background text-right font-mono"
-                  onChange={e => {
-                    const value = Math.min(64, Math.max(1, parseInt(e.target.value, 10) || 1))
+                  clamp={n => Math.min(64, Math.max(1, n))}
+                  onChange={value => {
                     setMinMemory(value)
                     if (value > maxMemory) setMaxMemory(value)
                   }}
@@ -1696,7 +1701,7 @@ export default function ServerSetup() {
                 />
               </div>
               <Slider
-                value={[Math.min(minMemory, 64)]}
+                value={[Math.min(Number.isFinite(minMemory) ? minMemory : 1, 64)]}
                 onValueChange={([val]) => {
                   setMinMemory(val);
                   if (val > maxMemory) setMaxMemory(val);
@@ -1711,14 +1716,13 @@ export default function ServerSetup() {
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <Label>{t("common.maxRamLabel")}</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={128}
                   value={maxMemory}
                   className="h-8 w-20 bg-background text-right font-mono"
-                  onChange={e => {
-                    const value = Math.min(128, Math.max(1, parseInt(e.target.value, 10) || 1))
+                  clamp={n => Math.min(128, Math.max(1, n))}
+                  onChange={value => {
                     setMaxMemory(value)
                     if (value < minMemory) setMinMemory(value)
                   }}
@@ -1726,7 +1730,7 @@ export default function ServerSetup() {
                 />
               </div>
               <Slider
-                value={[Math.min(maxMemory, 64)]}
+                value={[Math.min(Number.isFinite(maxMemory) ? maxMemory : 1, 64)]}
                 onValueChange={([val]) => {
                   setMaxMemory(val);
                   if (val < minMemory) setMinMemory(val);
@@ -1850,7 +1854,7 @@ export default function ServerSetup() {
             <div className="flex justify-between py-2 border-b">
               <span className="text-muted-foreground">{t("common.summaryMemory")}</span>
               <span className="font-mono">
-                {minMemory}GB - {maxMemory}GB
+                {formatMemory(minMemory)}GB - {formatMemory(maxMemory)}GB
               </span>
             </div>
             <div className="flex justify-between py-2 border-b">
@@ -2314,14 +2318,13 @@ export default function ServerSetup() {
                     <Label>{t("common.minRamLabel")}</Label>
                     <HelpTip label={t("common.minRamLabel")}>{t("common.ramHelp")}</HelpTip>
                   </div>
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={1}
                     max={64}
                     value={minMemory}
                     className="h-8 w-20 bg-background text-right font-mono"
-                    onChange={e => {
-                      const value = Math.min(64, Math.max(1, parseInt(e.target.value, 10) || 1))
+                    clamp={n => Math.min(64, Math.max(1, n))}
+                    onChange={value => {
                       setMinMemory(value)
                       if (value > maxMemory) setMaxMemory(value)
                     }}
@@ -2329,7 +2332,7 @@ export default function ServerSetup() {
                   />
                 </div>
                 <Slider
-                  value={[Math.min(minMemory, 64)]}
+                  value={[Math.min(Number.isFinite(minMemory) ? minMemory : 1, 64)]}
                   onValueChange={([val]) => {
                     setMinMemory(val);
                     if (val > maxMemory) setMaxMemory(val);
@@ -2344,14 +2347,13 @@ export default function ServerSetup() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <Label>{t("common.maxRamLabel")}</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={1}
                     max={128}
                     value={maxMemory}
                     className="h-8 w-20 bg-background text-right font-mono"
-                    onChange={e => {
-                      const value = Math.min(128, Math.max(1, parseInt(e.target.value, 10) || 1))
+                    clamp={n => Math.min(128, Math.max(1, n))}
+                    onChange={value => {
                       setMaxMemory(value)
                       if (value < minMemory) setMinMemory(value)
                     }}
@@ -2359,7 +2361,7 @@ export default function ServerSetup() {
                   />
                 </div>
                 <Slider
-                  value={[Math.min(maxMemory, 64)]}
+                  value={[Math.min(Number.isFinite(maxMemory) ? maxMemory : 1, 64)]}
                   onValueChange={([val]) => {
                     setMaxMemory(val);
                     if (val < minMemory) setMinMemory(val);
@@ -2519,7 +2521,7 @@ export default function ServerSetup() {
             <div className="flex justify-between py-2 border-b">
               <span className="text-muted-foreground">{t("common.summaryMemory")}</span>
               <span className="font-mono">
-                {minMemory}GB - {maxMemory}GB
+                {formatMemory(minMemory)}GB - {formatMemory(maxMemory)}GB
               </span>
             </div>
             <div className="flex justify-between py-2 border-b">

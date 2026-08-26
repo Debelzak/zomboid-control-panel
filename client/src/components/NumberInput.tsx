@@ -11,6 +11,8 @@ interface NumberInputProps {
   max?: number
   className?: string
   id?: string
+  disabled?: boolean
+  'aria-label'?: string
   /**
    * For a site with no submit-time refusal path to fall through to (e.g. a
    * bounded count, not a port) -- runs AFTER this component's own blur
@@ -40,7 +42,7 @@ interface NumberInputProps {
 // what they're typing. Once they leave the field (or something external
 // changes `value` -- RAM auto-detect, a loaded setting, a slider bound to
 // the same state), the effect below catches up `text` to match.
-export function NumberInput({ value, onChange, clamp, min, max, className, id, onBlur, onWheel }: NumberInputProps) {
+export function NumberInput({ value, onChange, clamp, min, max, className, id, disabled, onBlur, onWheel, 'aria-label': ariaLabel }: NumberInputProps) {
   const [text, setText] = useState(() => (Number.isFinite(value) ? String(value) : ''))
   const focused = useRef(false)
 
@@ -56,6 +58,8 @@ export function NumberInput({ value, onChange, clamp, min, max, className, id, o
       min={min}
       max={max}
       className={className}
+      disabled={disabled}
+      aria-label={ariaLabel}
       value={text}
       onFocus={() => {
         focused.current = true

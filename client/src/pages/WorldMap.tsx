@@ -48,6 +48,7 @@ import { VehiclePicker } from '@/components/VehiclePicker'
 import { ItemPicker } from '@/components/ItemPicker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -3560,15 +3561,14 @@ export default function WorldMap() {
                     {idx === 0 && (
                       <Label className="text-[10px] text-muted-foreground/70 mb-1 block">{t('dropDialog.qtyLabel')}</Label>
                     )}
-                    <Input
-                      type="number"
+                    <NumberInput
                       value={item.count}
                       min={1}
                       max={20}
                       className="h-9 text-center tabular-nums"
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value)
-                        const count = Number.isNaN(v) ? 1 : Math.max(1, Math.min(20, v))
+                      clamp={n => Math.max(1, Math.min(20, n))}
+                      onChange={(count) => {
+                        if (!Number.isFinite(count)) return
                         setDropItems((prev) => prev.map((it, i) => (i === idx ? { ...it, count } : it)))
                         setActiveTemplateId(null)
                       }}

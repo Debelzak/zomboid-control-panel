@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { NumberInput } from '@/components/NumberInput'
 import { cn } from '@/lib/utils'
 import { panelBridgeApi } from '@/lib/api'
 import { useToast } from '@/components/ui/use-toast'
@@ -654,17 +655,16 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <input
-                  type="number"
+                <NumberInput
                   value={qty}
-                  onChange={e => {
-                    const n = parseInt(e.target.value, 10)
-                    setQty(Number.isNaN(n) ? 1 : Math.max(1, Math.min(100, n)))
+                  onChange={n => {
+                    if (Number.isFinite(n)) setQty(n)
                   }}
+                  clamp={n => Math.max(1, Math.min(100, n))}
                   min={1}
                   max={100}
                   disabled={spawning}
-                  className="w-12 h-9 text-center text-sm tabular-nums bg-transparent outline-none border-x border-border/70 focus-visible:bg-accent/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="h-9 w-12 rounded-none border-x border-y-0 border-border/70 bg-transparent px-0 text-center text-sm shadow-none tabular-nums focus-visible:bg-accent/10 focus-visible:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   aria-label={t('quantityAria')}
                 />
                 <button

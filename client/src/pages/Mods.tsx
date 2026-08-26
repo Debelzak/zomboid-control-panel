@@ -59,6 +59,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { HelpTip } from '@/components/HelpTip'
 import { Switch } from '@/components/ui/switch'
@@ -3169,13 +3170,12 @@ export default function Mods() {
                   <div className="space-y-4">
                     <div>
                       <Label htmlFor="restart-warning-minutes">{t('restartSettingsDialog.warningTimeLabel')}</Label>
-                      <Input
+                      <NumberInput
                         id="restart-warning-minutes"
-                        type="number"
-                        min="0"
-                        max="30"
+                        min={0}
+                        max={30}
                         value={restartWarningMinutes}
-                        onChange={(e) => setRestartWarningMinutes(parseInt(e.target.value, 10) || 0)}
+                        onChange={setRestartWarningMinutes}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
                         {t('restartSettingsDialog.warningTimeHint')}
@@ -3198,13 +3198,12 @@ export default function Mods() {
                     {delayIfPlayersOnline && (
                       <div>
                         <Label htmlFor="restart-max-delay">{t('restartSettingsDialog.maxDelayLabel')}</Label>
-                        <Input
+                        <NumberInput
                           id="restart-max-delay"
-                          type="number"
-                          min="5"
-                          max="120"
+                          min={5}
+                          max={120}
                           value={maxDelayMinutes}
-                          onChange={(e) => setMaxDelayMinutes(parseInt(e.target.value, 10) || 30)}
+                          onChange={setMaxDelayMinutes}
                         />
                         <p className="text-xs text-muted-foreground mt-1">
                           {t('restartSettingsDialog.maxDelayHint')}
