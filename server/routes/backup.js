@@ -353,10 +353,24 @@ router.post("/delete-older-than", requirePermission("backups.manage"), async (re
   try {
     const days = req.body?.days;
 
-    if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
-      return res
-        .status(400)
-        .json({ error: "Invalid days parameter. Must be a number >= 1", code: ErrorCode.BACKUP_INVALID_DAYS_PARAMETER });
+    // Number.isInteger, not just finite: a fractional value used to reach
+    // deleteBackupsOlderThan()'s setDate(getDate() - days) uncaught, where
+    // JS Date arithmetic silently reinterprets it (e.g. 1.5 behaves like 2,
+    // not a genuine half-day cutoff) -- confusing, not a safety issue in
+    // itself (rounding observed toward an EARLIER cutoff, i.e. fewer
+    // deletions), but a value the client had no way to warn about and the
+    // operator never actually typed. Was unreachable in practice only
+    // because the client-side field clamped to whole numbers; that clamp
+    // is gone (client/src/pages/Backups.tsx now lets the server refuse).
+    if (
+      typeof days !== "number" ||
+      !Number.isInteger(days) ||
+      days < 1
+    ) {
+      return res.status(400).json({
+        error: "Invalid days parameter. Must be a whole number >= 1",
+        code: ErrorCode.BACKUP_INVALID_DAYS_PARAMETER,
+      });
     }
 
     const backupService = req.app.get("backupService");

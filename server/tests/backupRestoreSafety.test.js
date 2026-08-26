@@ -449,7 +449,7 @@ describe("deleteBackupsOlderThan result contract", () => {
 
     await expect(service.deleteBackupsOlderThan(days)).resolves.toEqual({
       success: false,
-      message: "Invalid days parameter. Must be a number >= 1",
+      message: "Invalid days parameter. Must be a whole number >= 1",
     });
     expect(listBackups).not.toHaveBeenCalled();
   });

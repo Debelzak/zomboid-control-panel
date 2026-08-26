@@ -430,7 +430,7 @@ export const ErrorCode = Object.freeze({
    * server process is currently running. */
   BACKUP_RESTORE_SERVER_RUNNING: "BACKUP_RESTORE_SERVER_RUNNING",
   /** server/routes/backup.js -- POST /api/backup/delete-older-than, `days`
-   * isn't a number >= 1. */
+   * isn't a whole number >= 1. */
   BACKUP_INVALID_DAYS_PARAMETER: "BACKUP_INVALID_DAYS_PARAMETER",
   /** server/routes/backup.js -- POST /api/backup/upload, active server is
    * remote. Distinct from the create/restore remote-refusal codes above --

@@ -18,7 +18,6 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -61,7 +60,7 @@ interface BackupProgress {
 }
 
 export default function Backups() {
-  const { t } = useTranslation('backups')
+  const { t, i18n } = useTranslation('backups')
   const { toast } = useToast()
   const socket = useSocket()
 
@@ -489,7 +488,7 @@ export default function Backups() {
 
   const formatDate = (dateStr: string): string => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleDateString(i18n.language) + ' ' + date.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })
   }
 
   // Translate the small set of cron presets we expose into a human label.
@@ -1021,7 +1020,7 @@ export default function Backups() {
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
                 <span>{t('snapshotDialog.serverLabel')}</span><span className="text-foreground">{snapshotDialog.snapshot.server.name}</span>
                 <span>{t('snapshotDialog.providerLabel')}</span><span className="text-foreground">{snapshotDialog.snapshot.server.provider}</span>
-                <span>{t('snapshotDialog.capturedLabel')}</span><span className="text-foreground">{new Date(snapshotDialog.snapshot.createdAt).toLocaleString()}</span>
+                <span>{t('snapshotDialog.capturedLabel')}</span><span className="text-foreground">{new Date(snapshotDialog.snapshot.createdAt).toLocaleString(i18n.language)}</span>
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">{t('snapshotDialog.serverIniLabel')}</p>
@@ -1150,18 +1149,13 @@ export default function Backups() {
                 <p>{t('deleteOlderDialog.description')}</p>
                 <div className="flex items-center gap-3">
                   <Label htmlFor="delete-days" className="text-foreground whitespace-nowrap">{t('deleteOlderDialog.olderThanLabel')}</Label>
-                  <Input
+                  <NumberInput
                     id="delete-days"
-                    type="number"
                     min={1}
                     max={365}
                     value={deleteOlderDays}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10)
-                      if (!isNaN(val) && val >= 1 && val <= 365) {
-                        setDeleteOlderDays(val)
-                      }
-                    }}
+                    onChange={setDeleteOlderDays}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-20"
                   />
                   <span className="text-foreground">{t('deleteOlderDialog.daysUnit')}</span>

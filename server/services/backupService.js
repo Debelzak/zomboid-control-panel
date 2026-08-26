@@ -803,8 +803,11 @@ export class BackupService {
    * remove other backups by exact name instead of by age.
    */
   async deleteBackupsOlderThan(days) {
-    if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
-      return { success: false, message: "Invalid days parameter. Must be a number >= 1" };
+    // Mirrors routes/backup.js's own guard -- see its comment for why
+    // Number.isInteger matters here specifically (setDate() below silently
+    // reinterprets a fractional value instead of using it as typed).
+    if (typeof days !== "number" || !Number.isInteger(days) || days < 1) {
+      return { success: false, message: "Invalid days parameter. Must be a whole number >= 1" };
     }
     try {
       const backups = await this.listBackups();
