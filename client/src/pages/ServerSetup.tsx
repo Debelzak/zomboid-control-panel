@@ -1448,29 +1448,34 @@ export default function ServerSetup() {
                   <Label>{t("common.useCustomLocation")}</Label>
                 </div>
                 {useCustomDataPath && (
-                  <div className="flex gap-2">
-                    <Input
-                      value={zomboidDataPath}
-                      onChange={(e) => setZomboidDataPath(e.target.value)}
-                      placeholder={t("common.customConfigLocationHelp")}
-                      className="font-mono flex-1"
-                      maxLength={260}
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() =>
-                        handleBrowseFolder(
-                          setZomboidDataPath,
-                          t("common.selectConfigFolderTitle"),
-                          zomboidDataPath,
-                        )
-                      }
-                      aria-label={t("common.browseFolderAriaConfig")}
-                    >
-                      <FolderOpen className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <>
+                    <div className="flex gap-2">
+                      <Input
+                        value={zomboidDataPath}
+                        onChange={(e) => setZomboidDataPath(e.target.value)}
+                        placeholder={t("common.customDataPathPlaceholder")}
+                        className="font-mono flex-1"
+                        maxLength={260}
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() =>
+                          handleBrowseFolder(
+                            setZomboidDataPath,
+                            t("common.selectConfigFolderTitle"),
+                            zomboidDataPath,
+                          )
+                        }
+                        aria-label={t("common.browseFolderAriaConfig")}
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("common.customConfigLocationHelp")}
+                    </p>
+                  </>
                 )}
               </div>
             </AccordionContent>
@@ -1577,13 +1582,19 @@ export default function ServerSetup() {
             </div>
 
             <div className="space-y-2">
-              <Label>{t("common.rconPortLabel")}</Label>
+              <div className="flex items-center gap-1.5">
+                <Label>{t("common.rconPortLabel")}</Label>
+                <HelpTip label={t("common.rconPortLabel")}>{t("common.rconPortHelp")}</HelpTip>
+              </div>
               <Input
                 type="number"
                 value={rconPort}
                 onChange={(e) => setRconPort(parseInt(e.target.value) || 27015)}
                 className="font-mono"
               />
+              <p className="text-xs text-muted-foreground">
+                {t("common.rconPortDefaultHint")}
+              </p>
             </div>
           </div>
         </CardContent>
@@ -1732,7 +1743,10 @@ export default function ServerSetup() {
           <AccordionContent className="px-4 pb-4 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>{t("common.gamePortLabel")}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label>{t("common.gamePortLabel")}</Label>
+                  <HelpTip label={t("common.gamePortLabel")}>{t("common.gamePortHelp")}</HelpTip>
+                </div>
                 <Input
                   type="number"
                   value={serverPort}
@@ -2201,7 +2215,10 @@ export default function ServerSetup() {
               </div>
 
               <div className="space-y-2">
-                <Label>{t("common.rconPortLabel")}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label>{t("common.rconPortLabel")}</Label>
+                  <HelpTip label={t("common.rconPortLabel")}>{t("common.rconPortHelp")}</HelpTip>
+                </div>
                 <Input
                   type="number"
                   value={rconPort}
@@ -2366,35 +2383,46 @@ export default function ServerSetup() {
                 />
                 <Label>{t("common.customConfigLocation")}</Label>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {t("full.step2.customDataHelp")}
+              </p>
               {useCustomDataPath && (
-                <div className="flex gap-2">
-                  <Input
-                    value={zomboidDataPath}
-                    onChange={(e) => setZomboidDataPath(e.target.value)}
-                    placeholder={t("common.customConfigLocationHelp")}
-                    className="font-mono flex-1"
-                    maxLength={260}
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() =>
-                      handleBrowseFolder(
-                        setZomboidDataPath,
-                        t("common.selectConfigFolderTitle"),
-                        zomboidDataPath,
-                      )
-                    }
-                    aria-label={t("common.browseFolderAriaConfig")}
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                  </Button>
-                </div>
+                <>
+                  <div className="flex gap-2">
+                    <Input
+                      value={zomboidDataPath}
+                      onChange={(e) => setZomboidDataPath(e.target.value)}
+                      placeholder={t("common.customDataPathPlaceholder")}
+                      className="font-mono flex-1"
+                      maxLength={260}
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() =>
+                        handleBrowseFolder(
+                          setZomboidDataPath,
+                          t("common.selectConfigFolderTitle"),
+                          zomboidDataPath,
+                        )
+                      }
+                      aria-label={t("common.browseFolderAriaConfig")}
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t("common.customConfigLocationHelp")}
+                  </p>
+                </>
               )}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>{t("common.gamePortLabel")}</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>{t("common.gamePortLabel")}</Label>
+                    <HelpTip label={t("common.gamePortLabel")}>{t("common.gamePortHelp")}</HelpTip>
+                  </div>
                   <Input
                     type="number"
                     value={serverPort}
