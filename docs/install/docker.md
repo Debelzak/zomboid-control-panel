@@ -31,10 +31,16 @@ from nothing.
 
 ### Phase 1 — Prerequisites
 
-1. A Linux host (or a Linux VM) with **Docker Engine** installed and running.
-   You do **not** need the Docker Compose plugin on the host — the installer
-   runs Compose inside its own controller container.
-2. `curl` available on the host.
+1. A Linux host (or a Linux VM), **amd64/x86_64**, with **Docker Engine**
+   installed and running. You do **not** need the Docker Compose plugin on
+   the host — the installer runs Compose inside its own controller
+   container.
+2. `curl` and `tar` available on the host.
+
+The installer checks all of this itself before it does anything else —
+missing command, unreachable Docker daemon, or a non-amd64 host each stop it
+immediately with a plain-English message, rather than failing confusingly
+partway through.
 
 **You know it worked when:** `docker info` runs without an error. If it
 prints "permission denied", your user isn't in the `docker` group yet (or you
@@ -49,31 +55,43 @@ need `sudo` in front of the commands below).
    This resolves the latest release, creates its state under
    `~/.local/state/zomboid-panel/` (override with the `PANEL_HOME` or
    `BUILD_ROOT` environment variables if you want it elsewhere), generates a
-   random updater token, and starts the stack.
+   random updater token, detects the host's LAN address, and starts the
+   stack.
 
    To install a specific version instead of the latest release, pass it as
    an argument:
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker/all-in-one/bootstrap.sh | sh -s -- 1.2.4
+   curl -fsSL https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker/all-in-one/bootstrap.sh | sh -s -- 1.2.6
    ```
 
-**You know it worked when:** the script prints `All-in-one panel is starting.`
-with no error above it. If it instead prints `Could not determine a valid
-release version`, the GitHub API call failed (rate-limited or offline) —
-pass a version explicitly as shown above.
+   For the panel and updater images, it pulls the exact release-tagged image
+   from GHCR first; only if that specific tag isn't published yet does it
+   fall back to building the image locally from the downloaded release
+   source — so a normal run doesn't compile anything on your host.
+
+**You know it worked when:** the script's last line is `All-in-one
+installation is ready.` followed by the panel URL and a note that the PZ
+ports are published automatically. If it instead prints `Could not determine
+a valid release version`, the GitHub API call failed (rate-limited or
+offline) — pass a version explicitly as shown above.
 
 ### Phase 3 — Wait for first boot
 
-4. The container downloads Project Zomboid through SteamCMD on its first
-   start, which can take several minutes depending on your connection. Watch
-   progress with:
+4. On first start, the container also downloads Project Zomboid itself
+   through SteamCMD, which can take several minutes depending on your
+   connection. The installer waits for this on its own — polling the
+   panel's health check for up to 15 minutes — so you don't need to watch
+   it, but you can:
    ```sh
    docker logs -f zomboid-panel
    ```
    Look for `[entrypoint] No PZ install found in /pz-server; installing as
    steam...` followed by SteamCMD's own output. A second start (after an
    update or restart) skips this — you'll see `[entrypoint] Existing PZ
-   install found in /pz-server.` instead.
+   install found in /pz-server.` instead. If the container stops or the
+   health check never turns green within 15 minutes, the installer prints
+   the last 40 lines of `docker logs` itself and exits — you don't need to
+   go dig for them.
 
 **You know it worked when:** `docker ps` lists both `zomboid-panel` and
 `zomboid-panel-updater` as `Up`, and `zomboid-panel` eventually shows
@@ -113,11 +131,15 @@ source and image automatically — you don't need to intervene.
   so it can rebuild and recreate the panel container, but it is not exposed
   on any host port — the panel reaches it only over the internal Compose
   network, authenticated with the token in `.env`.
+- The PZ game ports (`16261/udp`, `16262/udp`) are published automatically
+  by the stack — there's nothing to add to Compose by hand for this path.
 - Config lives at `<state dir>/build/ctx/.env` (`~/.local/state/zomboid-panel/build/ctx/.env`
-  by default). Edit `CORS_ORIGINS` there for remote access, then re-run the
-  `docker compose ... up -d --build` command the bootstrap script printed
-  (or just re-run the curl command from step 3 — it won't touch an existing
-  `.env`).
+  by default). The installer sets `CORS_ORIGINS` there itself on first run —
+  `http://localhost:3001` plus your detected LAN address — so LAN access
+  usually needs no extra configuration. For a reverse proxy or public
+  hostname, edit `CORS_ORIGINS` (and `TRUST_PROXY`) in that file, then
+  re-run the curl command from step 3 — it reapplies the stack but never
+  overwrites an `.env` that already exists, so your edit sticks.
 
 ---
 
@@ -366,17 +388,52 @@ unreachable, so `curl` from the panel host will still work fine even when a
 browser is blocked.
 
 Fix it — set the **exact** origin the browser uses (scheme, host, and port
-if non-default), comma-separated if there's more than one:
-```env
-CORS_ORIGINS=https://panel.example.com
-```
-Restart the panel for the change to take effect. Once you're logged in, you
-can also manage allowed origins from **Settings → Remote Access** instead of
-editing `.env` again — the environment variable exists specifically to solve
-the chicken-and-egg problem of not being able to reach Settings if CORS is
-already blocking you.
+if non-default), comma-separated if there's more than one. Once you're
+logged in, you can also manage allowed origins from **Settings → Remote
+Access** instead — the environment variable exists specifically to solve the
+chicken-and-egg problem of not being able to reach Settings if CORS is
+already blocking you. **Where you set it, and how you apply it, is different
+per path** — the variable name is the same everywhere, but only Path A and
+Path D actually wire it up out of the box:
 
-Path A (all-in-one) has this same variable, but it lives in a different
-file: `<state dir>/build/ctx/.env` (default:
-`~/.local/state/zomboid-panel/build/ctx/.env`), and defaults to
-`http://localhost:3001` when the installer first creates it.
+- **Path A (all-in-one):** already wired. It lives in a different file —
+  `<state dir>/build/ctx/.env` (default:
+  `~/.local/state/zomboid-panel/build/ctx/.env`) — and defaults to
+  `http://localhost:3001` plus your detected LAN address when the installer
+  first creates it. Edit it there, then re-run the bootstrap command to
+  apply the change (see [Path A's notes](#notes-specific-to-this-path)
+  above).
+- **Path B (docker-compose.yml):** **not** read from `.env` — the
+  `CORS_ORIGINS` line in `docker-compose.yml`'s `environment:` block is
+  commented out and literal, not `${CORS_ORIGINS}`-interpolated, so setting
+  it in `.env` alone does nothing here. Uncomment and edit the line directly
+  in `docker-compose.yml`:
+  ```yaml
+  environment:
+    - CORS_ORIGINS=https://panel.example.com
+  ```
+  then apply it:
+  ```sh
+  docker compose up -d
+  ```
+- **Path C (docker-compose.install.yml):** **no wiring for this at all** —
+  there's no `CORS_ORIGINS` line, commented or otherwise, anywhere in the
+  file. If you need the panel reachable through a reverse proxy or public
+  hostname on this path, add the line yourself before starting the stack:
+  ```yaml
+  environment:
+    NODE_ENV: production
+    TRUST_PROXY: ${TRUST_PROXY:-false}
+    CORS_ORIGINS: https://panel.example.com
+  ```
+  This works — the panel reads `CORS_ORIGINS` from its process environment
+  regardless of which compose file set it — but you're editing in a value
+  the file doesn't otherwise expose. If you'd rather not hand-edit the
+  compose file, use [Path B](#path-b-docker-composeyml-bind-mounts) instead,
+  which has the field ready to uncomment.
+- **Path D (Unraid):** already wired — it's the **CORS origins** field under
+  the template's advanced settings (blank by default, LAN-only). Expand
+  "Show more settings" if you don't see it.
+
+Restart (or recreate, for Path B/C) the panel container for the change to
+take effect.
