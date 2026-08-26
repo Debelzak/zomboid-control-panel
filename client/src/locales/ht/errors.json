@@ -470,5 +470,16 @@
   "DISCORD_BOT_NOT_RUNNING": "Bot la pa ap kouri",
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord rejte mesaj la. Verifye ID chanèl notifikasyon an ak si bot la ka poste la.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Konfigirasyon evènman obligatwa",
-  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Objè pèmisyon obligatwa"
+  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Objè pèmisyon obligatwa",
+  "SIM_TEMPLATE_NOT_FOUND": "Modèl pa jwenn",
+  "SIM_TEMPLATE_SERVER_NOT_FOUND": "Sèvè pa jwenn",
+  "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Sèvè a pa gen yon chemen konfigirasyon defini",
+  "SIM_TEMPLATE_BUILTIN_READONLY": "Ou pa kapab ekrase yon modèl entegre",
+  "SIM_TEMPLATE_VALIDATION_FAILED": "{{errors}}",
+  "SIM_TEMPLATE_SERVER_ID_REQUIRED": "ID sèvè a obligatwa",
+  "SIM_TEMPLATE_APPLY_STATE_UNKNOWN": "Pa t kapab verifye eta sèvè a",
+  "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Sispann sèvè a anvan w aplike yon modèl",
+  "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "Pa kapab verifye eta sèvè sa a -- panel la ka verifye sèlman sèvè ki aktif kounye a. Chanje pou sèvè sa a dabò, epi aplike modèl la apre.",
+  "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "Aplike modèl sou sèvè distan poko sipòte.",
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "Fichye INI sèvè a pa jwenn -- demare sèvè a yon fwa pou jenere l, oswa aplike sèlman paramèt Sandbox yo."
 }

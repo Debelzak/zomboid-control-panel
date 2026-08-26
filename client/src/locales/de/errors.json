@@ -470,5 +470,16 @@
   "DISCORD_BOT_NOT_RUNNING": "Bot läuft nicht",
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord hat die Nachricht abgelehnt. Überprüfe die Benachrichtigungskanal-ID und ob der Bot dort posten kann.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Ereigniskonfiguration erforderlich",
-  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Berechtigungsobjekt erforderlich"
+  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Berechtigungsobjekt erforderlich",
+  "SIM_TEMPLATE_NOT_FOUND": "Vorlage nicht gefunden",
+  "SIM_TEMPLATE_SERVER_NOT_FOUND": "Server nicht gefunden",
+  "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Für den Server ist kein Konfigurationspfad eingerichtet",
+  "SIM_TEMPLATE_BUILTIN_READONLY": "Eine integrierte Vorlage kann nicht überschrieben werden",
+  "SIM_TEMPLATE_VALIDATION_FAILED": "{{errors}}",
+  "SIM_TEMPLATE_SERVER_ID_REQUIRED": "Server-ID ist erforderlich",
+  "SIM_TEMPLATE_APPLY_STATE_UNKNOWN": "Serverstatus konnte nicht überprüft werden",
+  "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Server vor dem Anwenden einer Vorlage stoppen",
+  "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "Der Laufzeitstatus dieses Servers kann nicht überprüft werden -- das Panel kann nur den aktuell aktiven Server prüfen. Wechseln Sie zuerst zu diesem Server und wenden Sie die Vorlage dann an.",
+  "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "Das Anwenden von Vorlagen auf Remote-Server wird noch nicht unterstützt.",
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "Server-INI-Datei nicht gefunden -- starten Sie den Server einmal, um sie zu erzeugen, oder wenden Sie nur die Sandbox-Einstellungen an."
 }

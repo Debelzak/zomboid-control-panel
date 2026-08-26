@@ -470,5 +470,16 @@
   "DISCORD_BOT_NOT_RUNNING": "El bot no está en ejecución",
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord rechazó el mensaje. Verifica el ID del canal de notificaciones y que el bot pueda publicar allí.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Se requiere la configuración de eventos",
-  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Se requiere el objeto de permisos"
+  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Se requiere el objeto de permisos",
+  "SIM_TEMPLATE_NOT_FOUND": "Plantilla no encontrada",
+  "SIM_TEMPLATE_SERVER_NOT_FOUND": "Servidor no encontrado",
+  "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "El servidor no tiene una ruta de configuración establecida",
+  "SIM_TEMPLATE_BUILTIN_READONLY": "No se puede sobrescribir una plantilla integrada",
+  "SIM_TEMPLATE_VALIDATION_FAILED": "{{errors}}",
+  "SIM_TEMPLATE_SERVER_ID_REQUIRED": "Se requiere el ID del servidor",
+  "SIM_TEMPLATE_APPLY_STATE_UNKNOWN": "No se pudo verificar el estado del servidor",
+  "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Detén el servidor antes de aplicar una plantilla",
+  "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "No se puede verificar el estado de este servidor -- el panel solo puede comprobar el servidor actualmente activo. Cambia primero a este servidor y luego aplica la plantilla.",
+  "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "Aplicar plantillas a servidores remotos todavía no es compatible.",
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "No se encontró el archivo INI del servidor -- inicia el servidor una vez para generarlo, o aplica solo los ajustes de Sandbox."
 }

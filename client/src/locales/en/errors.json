@@ -470,5 +470,16 @@
   "DISCORD_BOT_NOT_RUNNING": "Bot is not running",
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord rejected the message. Check the notification channel ID and that the bot can post there.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Events configuration required",
-  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Permissions object required"
+  "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Permissions object required",
+  "SIM_TEMPLATE_NOT_FOUND": "Template not found",
+  "SIM_TEMPLATE_SERVER_NOT_FOUND": "Server not found",
+  "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Server has no configured config path",
+  "SIM_TEMPLATE_BUILTIN_READONLY": "Cannot overwrite a built-in template",
+  "SIM_TEMPLATE_VALIDATION_FAILED": "{{errors}}",
+  "SIM_TEMPLATE_SERVER_ID_REQUIRED": "Server ID is required",
+  "SIM_TEMPLATE_APPLY_STATE_UNKNOWN": "Unable to verify server state",
+  "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Stop the server before applying a template",
+  "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "Can't verify this server's running state — the panel can only check the currently active server. Switch to this server first, then apply the template.",
+  "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "Applying templates to remote servers is not supported yet.",
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "Server INI file not found — start the server once to generate it, or apply Sandbox settings only."
 }
