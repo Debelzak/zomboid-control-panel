@@ -311,6 +311,49 @@ describe("config mutation guard", () => {
       getActiveServerSpy.mockRestore();
     }
   });
+
+  // 2026-08-26: activeServer.isRemote is COMPUTED by normalizeServerMemory
+  // from whether the configured path resolves on THIS filesystem right now
+  // -- not a stored fact. A genuinely local, genuinely RUNNING server whose
+  // path is transiently unreachable (a disconnected network mount, a slow-
+  // mounting drive, an AV lock) would normalize to isRemote:true exactly
+  // like a real remote server, and the short-circuit above would let a
+  // wholesale config overwrite proceed against it unverified -- discovered
+  // by accident via upnpEditAppliesLive.test.js leaving an orphaned local
+  // server active with its temp install path deleted (fixed separately,
+  // 5fc722e). The guard now re-checks path reachability itself and treats
+  // "configured but unreachable" as unverifiable, matching backup.js's
+  // POST /restore/:name posture (refuse rather than proceed) instead of
+  // trusting the computed isRemote in the one direction that's unsafe to
+  // get wrong.
+  it("treats a configured-but-unreachable local path as unverifiable, not as remote", async () => {
+    const missingPath = path.join(os.tmpdir(), "zcp-guard-test-missing-path-does-not-exist");
+    expect(fs.existsSync(missingPath)).toBe(false);
+
+    const dbModule = await import("../database/init.js");
+    const getActiveServerSpy = vi.spyOn(dbModule, "getActiveServer").mockResolvedValue({
+      installPath: missingPath,
+      isRemote: true, // what normalizeServerMemory would actually compute here
+    });
+
+    try {
+      const next = vi.fn();
+      const appGet = vi.fn();
+      const req = { app: { get: appGet } };
+      const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+
+      await requireStoppedForLocalConfigMutation(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(appGet).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "SERVER_STATE_UNKNOWN" }),
+      );
+    } finally {
+      getActiveServerSpy.mockRestore();
+    }
+  });
 });
 
 describe("mod update auto-restart dedupe", () => {
