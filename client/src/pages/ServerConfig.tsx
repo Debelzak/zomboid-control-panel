@@ -811,7 +811,12 @@ export default function ServerConfig() {
   const [modSettingsModifiedOnly, setModSettingsModifiedOnly] = useState(false)
   const [expandedModGroups, setExpandedModGroups] = useState<Set<string>>(new Set())
   const [modSettingsLastLoaded, setModSettingsLastLoaded] = useState<Date | null>(null)
-  const modSettingsAbortRef = useRef<AbortController | null>(null)
+  // Generation counter, not an AbortController -- panelBridgeApi.sendCommand
+  // has no signal option to cancel the in-flight request, so the previous
+  // AbortController here aborted nothing and its signal was never even
+  // passed to sendCommand. Two Refresh clicks close together used to race:
+  // whichever response landed last (not last-requested) won, silently.
+  const modSettingsLoadIdRef = useRef(0)
   const modSettingsSearchRef = useRef<HTMLInputElement | null>(null)
   const iniSearchRef = useRef<HTMLInputElement | null>(null)
   const sandboxSearchRef = useRef<HTMLInputElement | null>(null)
@@ -1064,10 +1069,7 @@ export default function ServerConfig() {
 
   // Load mod sandbox options from PanelBridge
   const loadModSettings = useCallback(async () => {
-    // Abort any in-flight request
-    modSettingsAbortRef.current?.abort()
-    const controller = new AbortController()
-    modSettingsAbortRef.current = controller
+    const loadId = ++modSettingsLoadIdRef.current
     setModSettingsLoading(true)
     setModSettingsError(null)
     try {
@@ -1086,6 +1088,7 @@ export default function ServerConfig() {
         }
         error?: string
       }
+      if (modSettingsLoadIdRef.current !== loadId) return
       if (response?.success && response.data) {
         const options = Object.fromEntries(
           Object.entries(response.data.options).filter(([groupName]) => !VANILLA_SANDBOX_GROUPS.has(groupName))
@@ -1099,10 +1102,10 @@ export default function ServerConfig() {
         setModSettingsError(response?.error || t('modSettingsTab.loadFailedNotConnected'))
       }
     } catch (error) {
-      if (controller.signal.aborted) return
+      if (modSettingsLoadIdRef.current !== loadId) return
       setModSettingsError(getUserErrorMessage(error, t('modSettingsTab.loadFailedCheckConnection')))
     } finally {
-      if (!controller.signal.aborted) setModSettingsLoading(false)
+      if (modSettingsLoadIdRef.current === loadId) setModSettingsLoading(false)
     }
   }, [t])
 
