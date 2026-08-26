@@ -322,3 +322,60 @@ describe("players routes: activity log only written on RCON/bridge success", () 
     });
   });
 });
+
+describe("players toggle routes: enabled must remain a boolean", () => {
+  it.each(["/godmode", "/invisible", "/noclip", "/voiceban"])(
+    "rejects a string false on %s instead of enabling the player mode",
+    async (routePath) => {
+      const methodByRoute = {
+        "/godmode": "setGodMode",
+        "/invisible": "setInvisible",
+        "/noclip": "setNoclip",
+        "/voiceban": "voiceBan",
+      };
+      const method = methodByRoute[routePath];
+      const rconService = { [method]: vi.fn(async () => ({ success: true })) };
+      const response = createResponse();
+
+      await getRouteHandler("post", routePath)(
+        createRequest({ username: "Bob", enabled: "false" }, rconService),
+        response,
+      );
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith({
+        error: "enabled must be a boolean",
+      });
+      expect(rconService[method]).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("player notes: persisted values must keep their documented shape", () => {
+  it("rejects a non-text note instead of storing an object", async () => {
+    const response = createResponse();
+    const upsert = (await import("../database/init.js")).upsertPlayerNote;
+
+    await getRouteHandler("post", "/notes")(
+      createRequest({ playerName: "Bob", note: { malicious: true } }, {}),
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(response.json).toHaveBeenCalledWith({ error: "Note must be text" });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid player name before reaching persistence", async () => {
+    const response = createResponse();
+    const upsert = (await import("../database/init.js")).upsertPlayerNote;
+
+    await getRouteHandler("post", "/notes")(
+      createRequest({ playerName: "bad\\name", note: "note" }, {}),
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});

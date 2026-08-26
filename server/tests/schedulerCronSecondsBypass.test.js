@@ -121,6 +121,26 @@ describe("POST /api/scheduler/tasks -- seconds-precision cron rejection", () => 
     expect(createScheduledTask).not.toHaveBeenCalled();
   });
 
+  it.each(["1-4 * * * *", "1-4,30 * * * *"])(
+    "refuses minute ranges with sub-five-minute gaps (%s)",
+    async (cronExpression) => {
+      const response = createResponse();
+      await getHandler("/tasks", "post")(
+        baseReq({
+          body: { name: "x", cronExpression, command: "restart" },
+        }),
+        response,
+      );
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: "Tasks cannot run more frequently than every 5 minutes",
+        }),
+      );
+      expect(createScheduledTask).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not regress: a valid 5-field, not-too-frequent expression still creates the task", async () => {
     createScheduledTask.mockResolvedValue({ id: 99 });
     const response = createResponse();
@@ -190,5 +210,19 @@ describe("POST /api/scheduler/validate-cron -- preview stays consistent with wha
       response,
     );
     expect(response.json).toHaveBeenCalledWith({ valid: true });
+  });
+
+  it("previews an every-minute expression as invalid, matching create/update", async () => {
+    const response = createResponse();
+
+    await getHandler("/validate-cron", "post")(
+      baseReq({ body: { cronExpression: "* * * * *" } }),
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith({
+      valid: false,
+      error: "Tasks cannot run more frequently than every 5 minutes",
+    });
   });
 });

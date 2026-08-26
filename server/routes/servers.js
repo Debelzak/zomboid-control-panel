@@ -9,7 +9,7 @@ import {
   sanitizeServerResponseList,
   isMaskedSecret,
 } from "../utils/sanitize.js";
-import { normalizeRconHost, testRconConnection } from "../services/rcon.js";
+import { testRconConnection } from "../services/rcon.js";
 import {
   getServers,
   getServer,
@@ -28,8 +28,16 @@ import {
   installBridge,
 } from "../services/panelBridgeInstaller.js";
 import { refreshWorkshopChecker } from "../services/modChecker.js";
+import {
+  parseBoundedInteger,
+  parseClampedInteger,
+} from "../utils/queryNumbers.js";
+import { normalizeMemoryGb } from "../utils/memory.js";
+import { GAME_PORT_MAX } from "./server.js";
 
 const router = express.Router();
+const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
+const RCON_PASSWORD_MAX_LENGTH = 256;
 
 // serverName is interpolated into filesystem paths (server-files, backups,
 // chunks) as `${serverName}.ini` etc. — reject anything but a plain,
@@ -93,15 +101,6 @@ async function refreshWorkshopCheckerIfAvailable(req) {
   }
 }
 
-function normalizeMemoryGb(value, fallback) {
-  const parsed = parseInt(value, 10);
-  if (Number.isNaN(parsed) || parsed <= 0) return fallback;
-  if (parsed > 128) {
-    return Math.max(1, Math.round(parsed / 1024));
-  }
-  return parsed;
-}
-
 // Helper: Parse INI file
 function parseIni(content) {
   const result = {};
@@ -118,6 +117,15 @@ function parseIni(content) {
     }
   }
   return result;
+}
+
+export function parseDiscoveredPort(value, fallback, max = 65535) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value !== "string") return null;
+  if (value.trim() === "") return fallback;
+  return parseBoundedInteger(value, null, 1, max);
 }
 
 // Helper: Recursively scan for PZ server paths (max depth 3)
@@ -237,7 +245,7 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
 // sensitivity tier as chunks delete / panel-bridge command execution.
 router.post("/auto-scan", requirePermission("servers.discover"), async (req, res) => {
   try {
-    const { scanPath, maxDepth = 3 } = req.body;
+    const { scanPath, maxDepth = 3 } = req.body || {};
 
     if (!scanPath) {
       return res.status(400).json({ error: "Scan path is required" });
@@ -276,7 +284,7 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
 
     log.info(`Auto-scanning for PZ servers in: ${resolvedPath}`);
 
-    const clampedDepth = Math.min(Math.max(parseInt(maxDepth, 10) || 3, 1), 3);
+    const clampedDepth = parseClampedInteger(maxDepth, 3, 1, 3);
     const results = scanForPzPaths(resolvedPath, clampedDepth);
 
     // For each data path, detect the server configs
@@ -302,6 +310,11 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
             .readFileSync(iniPath, "utf-8")
             .replace(/\r\n/g, "\n");
           const settings = parseIni(content);
+          const rconPort = parseDiscoveredPort(settings.RCONPort, 27015);
+          const serverPort = parseDiscoveredPort(settings.DefaultPort, 16261, GAME_PORT_MAX);
+          if (rconPort === null || serverPort === null) {
+            throw new Error("RCONPort or DefaultPort is invalid");
+          }
 
           // Try to find a matching custom bat file for this server
           const matchingBat = results.customBatFiles.find(
@@ -315,9 +328,9 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
             serverConfigPath,
             serverName,
             iniFile,
-            rconPort: parseInt(settings.RCONPort, 10) || 27015,
+            rconPort,
             rconPassword: settings.RCONPassword || "",
-            serverPort: parseInt(settings.DefaultPort, 10) || 16261,
+            serverPort,
             publicName: settings.PublicName || serverName,
             hasRcon: !!settings.RCONPassword,
             // New: matched bat file info
@@ -351,7 +364,7 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
 // Same as /auto-scan: exposes RCON passwords read straight off disk.
 router.post("/detect", requirePermission("servers.discover"), async (req, res) => {
   try {
-    const { dataPath, installPath } = req.body;
+    const { dataPath, installPath } = req.body || {};
     log.info(
       `POST /detect: dataPath=${dataPath}, installPath=${installPath || "auto"}`,
     );
@@ -397,6 +410,9 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
       if (typeof installPath !== "string" || installPath.length > 500) {
         return res.status(400).json({ error: "Invalid install path format" });
       }
+      if (!path.isAbsolute(installPath)) {
+        return res.status(400).json({ error: "Install path must be absolute" });
+      }
       resolvedInstall = path.resolve(installPath);
       if (fs.existsSync(resolvedInstall)) {
         const startBat = path.join(resolvedInstall, "StartServer64.bat");
@@ -436,13 +452,18 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
             .readFileSync(iniPath, "utf-8")
             .replace(/\r\n/g, "\n");
           const settings = parseIni(content);
+          const rconPort = parseDiscoveredPort(settings.RCONPort, 27015);
+          const serverPort = parseDiscoveredPort(settings.DefaultPort, 16261, GAME_PORT_MAX);
+          if (rconPort === null || serverPort === null) {
+            throw new Error("RCONPort or DefaultPort is invalid");
+          }
 
           detectedServers.push({
             serverName,
             iniFile,
-            rconPort: parseInt(settings.RCONPort, 10) || 27015,
+            rconPort,
             rconPassword: settings.RCONPassword || "",
-            serverPort: parseInt(settings.DefaultPort, 10) || 16261,
+            serverPort,
             publicName: settings.PublicName || serverName,
             hasRcon: !!settings.RCONPassword,
           });
@@ -557,12 +578,21 @@ router.get("/rcon-status", async (req, res) => {
   try {
     const servers = await getServers();
     const statuses = await mapWithConcurrency(servers, 3, async (server) => {
-      if (!server.rconHost || !server.rconPort) {
+      const rconHost =
+        typeof server.rconHost === "string" ? server.rconHost.trim() : "";
+      const rconPort = parseBoundedInteger(server.rconPort, null, 1, 65535);
+      if (
+        !rconHost ||
+        server.rconPort === undefined ||
+        server.rconPort === null ||
+        server.rconPort === ""
+      ) {
         return { id: server.id, status: "unconfigured" };
       }
+      if (rconPort === null) return { id: server.id, status: "unavailable" };
       const result = await testRconConnection({
-        host: normalizeRconHost(server.rconHost),
-        port: Number(server.rconPort),
+        host: rconHost,
+        port: rconPort,
         password: server.rconPassword || "",
         timeoutMs: 3000,
       });
@@ -606,9 +636,10 @@ router.get("/:id", async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: "Invalid server ID" });
     }
-    // Check if ID looks like a UUID (contains dashes or letters beyond valid decimal digits)
-    const isUUID = /[a-f-]/i.test(id);
-    const serverId = isUUID ? id : parseInt(id, 10);
+    const serverId = parseServerId(id);
+    if (serverId === null) {
+      return res.status(400).json({ error: "Invalid server ID" });
+    }
 
     const server = await getServer(serverId);
     if (!server) {
@@ -625,7 +656,10 @@ router.get("/:id", async (req, res) => {
 // Create a new server
 router.post("/", requirePermission("servers.manage"), async (req, res) => {
   try {
-    const config = req.body;
+    const config =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body)
+        ? req.body
+        : {};
     log.info(
       `POST / — creating server: name=${config?.name}, remote=${!!config?.isRemote}`,
     );
@@ -638,7 +672,10 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       config.zomboidDataPath = process.env.PZ_SAVE_PATH || null;
 
     // Validate required fields - installPath not required for remote servers
-    const isRemote = !!config.isRemote;
+    if (config.isRemote !== undefined && typeof config.isRemote !== "boolean") {
+      return res.status(400).json({ error: "isRemote must be a boolean" });
+    }
+    const isRemote = config.isRemote === true;
     const requiredFields = isRemote
       ? ["name", "rconHost", "rconPort", "rconPassword"]
       : ["name", "installPath", "rconHost", "rconPort", "rconPassword"];
@@ -658,9 +695,21 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
     }
 
     // Validate RCON port
-    const rconPort = parseInt(config.rconPort, 10);
-    if (isNaN(rconPort) || rconPort < 1 || rconPort > 65535) {
+    const rconPort = parseBoundedInteger(config.rconPort, null, 1, 65535);
+    if (rconPort === null) {
       return res.status(400).json({ error: "Invalid RCON port" });
+    }
+    if (
+      typeof config.rconHost !== "string" ||
+      !RCON_HOST_REGEX.test(config.rconHost.trim())
+    ) {
+      return res.status(400).json({ error: "Invalid RCON host" });
+    }
+    if (
+      typeof config.rconPassword !== "string" ||
+      config.rconPassword.length > RCON_PASSWORD_MAX_LENGTH
+    ) {
+      return res.status(400).json({ error: "Invalid RCON password" });
     }
 
     // Validate serverName against path traversal. This value becomes the PZ
@@ -689,10 +738,17 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
     }
 
     // Validate server port if provided
-    if (config.serverPort) {
-      const serverPort = parseInt(config.serverPort, 10);
-      if (isNaN(serverPort) || serverPort < 1 || serverPort > 65535) {
+    let serverPort = 16261;
+    if (config.serverPort !== undefined && config.serverPort !== null && config.serverPort !== "") {
+      serverPort = parseBoundedInteger(config.serverPort, null, 1, GAME_PORT_MAX);
+      if (serverPort === null) {
         return res.status(400).json({ error: "Invalid server port" });
+      }
+    }
+
+    for (const key of ["useNoSteam", "useDebug"]) {
+      if (config[key] !== undefined && typeof config[key] !== "boolean") {
+        return res.status(400).json({ error: `${key} must be a boolean` });
       }
     }
 
@@ -704,15 +760,15 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       serverConfigPath: config.serverConfigPath || null,
       dockerContainerName: dockerContainerName || null,
       branch: config.branch || "stable",
-      rconHost: normalizeRconHost(config.rconHost),
+      rconHost: config.rconHost.trim(),
       rconPort: rconPort,
       rconPassword: config.rconPassword,
       adminPassword: config.adminPassword || "",
-      serverPort: parseInt(config.serverPort, 10) || 16261,
+      serverPort,
       minMemory: normalizeMemoryGb(config.minMemory, 4),
       maxMemory: normalizeMemoryGb(config.maxMemory, 8),
-      useNoSteam: !!config.useNoSteam,
-      useDebug: !!config.useDebug,
+      useNoSteam: config.useNoSteam === true,
+      useDebug: config.useDebug === true,
       isRemote: isRemote,
     });
 
@@ -753,6 +809,12 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   "adminPassword",
 ];
 
+export function parseServerId(value) {
+  const id = String(value ?? "").trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) return null;
+  return /^\d+$/.test(id) ? Number(id) : id;
+}
+
 // Update a server
 router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
   try {
@@ -760,15 +822,20 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: "Invalid server ID" });
     }
-    // Check if ID looks like a UUID (contains dashes or letters beyond valid decimal digits)
-    const isUUID = /[a-f-]/i.test(id);
-    const serverId = isUUID ? id : parseInt(id, 10);
+    const serverId = parseServerId(id);
+    if (serverId === null) {
+      return res.status(400).json({ error: "Invalid server ID" });
+    }
 
     // Only allow whitelisted fields — block id, isActive, created, etc.
     const updates = {};
+    const body =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body)
+        ? req.body
+        : {};
     for (const key of ALLOWED_SERVER_UPDATE_FIELDS) {
-      if (req.body[key] !== undefined) {
-        updates[key] = req.body[key];
+      if (body[key] !== undefined) {
+        updates[key] = body[key];
       }
     }
 
@@ -776,7 +843,10 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     // interpolated into filesystem paths downstream (server-files, backups,
     // chunks), so it must pass the same check as server creation.
     if (updates.serverName !== undefined) {
-      const trimmed = String(updates.serverName).trim();
+      if (typeof updates.serverName !== "string") {
+        return res.status(400).json({ error: "Invalid server name" });
+      }
+      const trimmed = updates.serverName.trim();
       if (!isValidServerName(trimmed)) {
         return res.status(400).json({
           error:
@@ -784,6 +854,15 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
         });
       }
       updates.serverName = trimmed;
+    }
+
+    if (
+      updates.name !== undefined &&
+      (typeof updates.name !== "string" || updates.name.length > 100)
+    ) {
+      return res.status(400).json({
+        error: "Server name must be under 100 characters",
+      });
     }
 
     if (updates.dockerContainerName !== undefined) {
@@ -806,13 +885,27 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     }
 
     if (updates.rconHost !== undefined) {
-      updates.rconHost = normalizeRconHost(updates.rconHost);
+      if (
+        typeof updates.rconHost !== "string" ||
+        !RCON_HOST_REGEX.test(updates.rconHost.trim())
+      ) {
+        return res.status(400).json({ error: "Invalid RCON host" });
+      }
+      updates.rconHost = updates.rconHost.trim();
+    }
+
+    if (
+      updates.rconPassword !== undefined &&
+      (typeof updates.rconPassword !== "string" ||
+        updates.rconPassword.length > RCON_PASSWORD_MAX_LENGTH)
+    ) {
+      return res.status(400).json({ error: "Invalid RCON password" });
     }
 
     // Validate RCON port if provided
     if (updates.rconPort !== undefined) {
-      const rconPort = parseInt(updates.rconPort, 10);
-      if (isNaN(rconPort) || rconPort < 1 || rconPort > 65535) {
+      const rconPort = parseBoundedInteger(updates.rconPort, null, 1, 65535);
+      if (rconPort === null) {
         return res.status(400).json({ error: "Invalid RCON port" });
       }
       updates.rconPort = rconPort;
@@ -820,8 +913,8 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
 
     // Validate server port if provided
     if (updates.serverPort !== undefined) {
-      const serverPort = parseInt(updates.serverPort, 10);
-      if (isNaN(serverPort) || serverPort < 1 || serverPort > 65535) {
+      const serverPort = parseBoundedInteger(updates.serverPort, null, 1, GAME_PORT_MAX);
+      if (serverPort === null) {
         return res.status(400).json({ error: "Invalid server port" });
       }
       updates.serverPort = serverPort;
@@ -836,11 +929,23 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     }
 
     // Parse boolean fields
-    if (updates.useNoSteam !== undefined) {
-      updates.useNoSteam = !!updates.useNoSteam;
+    for (const key of ["useNoSteam", "useDebug", "isRemote"]) {
+      if (updates[key] !== undefined) {
+        if (typeof updates[key] !== "boolean") {
+          return res.status(400).json({ error: `${key} must be a boolean` });
+        }
+      }
     }
-    if (updates.useDebug !== undefined) {
-      updates.useDebug = !!updates.useDebug;
+
+    const maskedSecretsOnly =
+      Object.keys(body).length > 0 &&
+      Object.entries(body).every(
+        ([key, value]) =>
+          ["rconPassword", "adminPassword"].includes(key) &&
+          isMaskedSecret(value),
+      );
+    if (Object.keys(updates).length === 0 && !maskedSecretsOnly) {
+      return res.status(400).json({ error: "At least one field is required" });
     }
 
     const server = await updateServer(serverId, updates);
@@ -852,6 +957,7 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
 
     // If the active server's RCON settings changed, refresh the RCON service
     // Otherwise the service keeps stale cached credentials after a reconnect
+    const reloadWarnings = [];
     if (server.isActive) {
       const rconFieldsChanged = ["rconHost", "rconPort", "rconPassword"].some(
         (k) => Object.prototype.hasOwnProperty.call(updates, k),
@@ -882,6 +988,9 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
           log.info(`ServerManager config refreshed after active server update`);
         } catch (e) {
           log.warn(`ServerManager reload failed after update: ${e.message}`);
+          reloadWarnings.push(
+            "Server manager failed to reload; restart the panel or server before relying on the updated settings",
+          );
         }
       }
 
@@ -891,11 +1000,20 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
             await rconService.disconnect();
           }
           await rconService.reloadConfig();
-          // Try to reconnect in background; auto-reconnect will also keep trying
-          rconService.connect().catch(() => {});
-          log.info(`RCON config refreshed after active server update`);
+          const reconnected = await rconService.connect();
+          if (!reconnected) {
+            log.warn("RCON reconnect returned false after active server update");
+            reloadWarnings.push(
+              "RCON could not reconnect; verify the updated connection settings",
+            );
+          } else {
+            log.info(`RCON config refreshed after active server update`);
+          }
         } catch (e) {
           log.warn(`RCON reload failed after update: ${e.message}`);
+          reloadWarnings.push(
+            "RCON failed to reload; reconnect before relying on the updated connection settings",
+          );
         }
       }
 
@@ -907,6 +1025,7 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     res.json({
       server: sanitizeServerResponse(server),
       message: "Server updated successfully",
+      ...(reloadWarnings.length > 0 ? { warnings: reloadWarnings } : {}),
     });
   } catch (error) {
     log.error(`Failed to update server: ${error.message}`);
@@ -921,9 +1040,10 @@ router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: "Invalid server ID" });
     }
-    // Check if ID looks like a UUID (contains dashes or letters beyond valid decimal digits)
-    const isUUID = /[a-f-]/i.test(id);
-    const serverId = isUUID ? id : parseInt(id, 10);
+    const serverId = parseServerId(id);
+    if (serverId === null) {
+      return res.status(400).json({ error: "Invalid server ID" });
+    }
 
     // Captured BEFORE deleting: deleteServer() silently promotes another
     // server to active when the one being deleted was active, but the live
@@ -1013,9 +1133,10 @@ router.post("/:id/activate", requirePermission("servers.manage"), async (req, re
     if (!id) {
       return res.status(400).json({ error: "Invalid server ID" });
     }
-    // Check if ID looks like a UUID (contains dashes or letters beyond valid decimal digits)
-    const isUUID = /[a-f-]/i.test(id);
-    const serverId = isUUID ? id : parseInt(id, 10);
+    const serverId = parseServerId(id);
+    if (serverId === null) {
+      return res.status(400).json({ error: "Invalid server ID" });
+    }
 
     const server = await setActiveServer(serverId);
     if (!server) {

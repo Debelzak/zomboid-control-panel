@@ -245,7 +245,7 @@
     "adminPasswordRequiredInstallDesc": "Enter an admin password before starting installation.",
     "adminPasswordRequiredCreateDesc": "Enter an admin password before creating this server.",
     "invalidPortTitle": "Invalid Port",
-    "invalidPortDesc": "Game port and RCON port must each be a whole number between 1024 and 65535.",
+    "invalidPortDesc": "Game port must be a whole number between 1024 and 65534; RCON port must be between 1024 and 65535.",
     "startingInstallLog": "Starting installation...",
     "creatingConfigLog": "Creating server configuration...",
     "configCreatedLog": "Server configuration created successfully!",

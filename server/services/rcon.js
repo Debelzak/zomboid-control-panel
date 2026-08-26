@@ -10,6 +10,7 @@ import {
 } from "../database/init.js";
 import { SourceRconClient } from "../utils/sourceRcon.js";
 import { readSecret } from "../utils/secrets.js";
+import { parseBoundedInteger } from "../utils/queryNumbers.js";
 
 // Common accented Latin letters (French in particular -- this panel ships an
 // FR locale) transliterated to their closest plain-ASCII equivalent, for
@@ -44,6 +45,17 @@ const LATIN_TRANSLITERATION_MAP = {
 export function normalizeRconHost(host) {
   if (typeof host !== "string") return "127.0.0.1";
   return host.trim() || "127.0.0.1";
+}
+
+function parseConfiguredRconPort(value) {
+  if (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return 27015;
+  }
+  return parseBoundedInteger(value, null, 1, 65535);
 }
 
 // Raw TCP reachability probe used by testRconConnection() below — separate
@@ -375,7 +387,7 @@ export class RconService extends EventEmitter {
         // listening there. Whether we can authenticate is decided
         // separately, below — it never changes WHERE we try to connect.
         this.config.host = normalizeRconHost(targetServer.rconHost);
-        this.config.port = parseInt(targetServer.rconPort, 10) || 27015;
+        this.config.port = parseConfiguredRconPort(targetServer.rconPort);
 
         if (targetServer.rconPassword) {
           if (!this.passwordFromSecretFile) {
@@ -416,8 +428,8 @@ export class RconService extends EventEmitter {
           this.config.password = dbPassword;
           log.info("password loaded from legacy settings");
         }
-        if (dbPort) {
-          this.config.port = parseInt(dbPort, 10);
+        if (dbPort !== undefined && dbPort !== null && dbPort !== "") {
+          this.config.port = parseConfiguredRconPort(dbPort);
         }
         if (dbHost) {
           this.config.host = normalizeRconHost(dbHost);
@@ -606,6 +618,11 @@ export class RconService extends EventEmitter {
 
     // Load config from database before connecting
     await this.loadConfig();
+
+    if (!Number.isInteger(this.config.port) || this.config.port < 1 || this.config.port > 65535) {
+      log.warn("RCON port configuration is invalid; skipping connection attempt");
+      return false;
+    }
 
     // Check if version changed (connection was force reset)
     if (this.connectionVersion !== startVersion) {

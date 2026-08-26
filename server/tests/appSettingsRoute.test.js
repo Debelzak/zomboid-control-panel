@@ -137,6 +137,21 @@ describe("PUT /api/config/app-settings", () => {
 
     expect(setSetting).toHaveBeenCalledWith("corsAllowAll", true);
   });
+
+  it("returns 400 for a missing body", async () => {
+    setSetting.mockReset();
+    const response = createResponse();
+
+    await runRoute(
+      "/app-settings",
+      "put",
+      { body: null, user: { role: "admin" }, app: makeApp() },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(setSetting).not.toHaveBeenCalled();
+  });
 });
 
 describe("PUT /api/config", () => {
@@ -166,5 +181,28 @@ describe("PUT /api/config", () => {
 
     expect(response.status).toHaveBeenCalledWith(409);
     expect(saveServerConfig).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a missing body", async () => {
+    getActiveServer.mockResolvedValue({ isRemote: false });
+    const response = createResponse();
+
+    await runRoute(
+      "/",
+      "put",
+      {
+        body: null,
+        user: { role: "admin" },
+        app: {
+          get: (key) =>
+            key === "serverManager"
+              ? { getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: false })) }
+              : null,
+        },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
   });
 });

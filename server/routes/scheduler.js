@@ -15,6 +15,17 @@ import {
 } from '../database/init.js';
 import { requirePermission } from '../services/permissions.js';
 import { classifyScheduledCommand } from '../services/scheduler.js';
+import {
+  hasUnsupportedCronFieldCount,
+  isCronTooFrequent,
+} from '../utils/cronValidation.js';
+import { parseBoundedInteger, parseClampedInteger } from '../utils/queryNumbers.js';
+
+export { hasUnsupportedCronFieldCount };
+
+export function parseTaskId(value) {
+  return parseBoundedInteger(value, null, 1, Number.MAX_SAFE_INTEGER);
+}
 
 const router = express.Router();
 
@@ -58,81 +69,6 @@ async function requireCapabilityInline(capability, req, res) {
   return passed;
 }
 
-// node-cron (this app's cron engine) accepts an optional LEADING seconds
-// field -- 6 space-separated fields instead of 5 -- which nothing in this
-// app documents, exposes, or needs: the UI's format hint and every preset
-// are 5-field ("minute hour day month weekday", see
-// client/src/locales/en/scheduler.json's cronFormatHint/customExpressionPlaceholder),
-// but the free-text custom-expression input (Scheduler.tsx) accepts
-// anything cron.validate() accepts, including 6 fields. isCronTooFrequent()
-// below was built to analyse a 5-field expression and always reads parts[0]
-// as MINUTES -- for a 6-field expression parts[0] is actually SECONDS, so
-// e.g. "*/5 * * * * *" (fires every 5 SECONDS) reads as minute="*/5", which
-// looks like a harmless once-every-5-minutes value and sails through the
-// DoS guard untouched. The bypass window is narrower than "any 6-field
-// expression": "* * * * * *" and "*/1"-"*/4" seconds are caught BY ACCIDENT
-// (parts[0] still matches the every-minute checks below), which is exactly
-// why this survived -- spot-checking with the obvious "every second" case
-// would have shown the guard working. What sails through is "*/5" to
-// "*/59" seconds, which look like ordinary sub-5-minute-safe minute values.
-// Reject outright rather than teaching the guard a second field grammar
-// for a feature this app has never exposed or tested.
-export function hasUnsupportedCronFieldCount(expr) {
-  return expr.trim().split(/\s+/).length !== 5;
-}
-
-/**
- * Check if a cron expression runs more frequently than every 5 minutes.
- * Parses the minute and hour fields to detect sub-5-minute intervals.
- * Assumes a 5-field expression -- callers must reject anything else via
- * hasUnsupportedCronFieldCount() first (both scheduler.js routes do). The
- * arity check below is defense-in-depth for any other caller, not the
- * primary gate: treats anything but exactly 5 fields as too-frequent-to-be-
- * safe (fail closed) rather than silently misreading a field it was never
- * built to parse.
- */
-function isCronTooFrequent(expr) {
-  const parts = expr.trim().split(/\s+/);
-  if (parts.length !== 5) return true;
-  const [minute, hour] = parts;
-
-  // Every minute: * or */1 through */4 (also catches range-step forms like 0-59/2)
-  if (minute === '*') return true;
-  if (/^\*\/([1-4])$/.test(minute)) return true;
-
-  // Range with step: e.g. "1-59/2" or "0-30/1" — bypasses the */N check.
-  // Reject any range step <5, regardless of the range bounds.
-  const rangeStep = minute.match(/^\d+-\d+\/(\d+)$/);
-  if (rangeStep) {
-    const step = parseInt(rangeStep[1], 10);
-    if (Number.isFinite(step) && step >= 1 && step < 5) return true;
-  }
-
-  // Comma-separated minutes — reject if any two consecutive runs are <5 min apart.
-  // Within-hour gaps fire whenever the cron runs, regardless of the hour field
-  // (e.g. `0,1,2 0 * * *` still produces 1-minute gaps at midnight). Previously
-  // this branch was gated on `hour === '*'` which let hour-pinned bursts slip
-  // through the throttle.
-  if (minute.includes(',')) {
-    const values = minute
-      .split(',')
-      .map(v => parseInt(v.trim(), 10))
-      .filter(n => Number.isFinite(n) && n >= 0 && n <= 59)
-      .sort((a, b) => a - b);
-    for (let i = 1; i < values.length; i++) {
-      if (values[i] - values[i - 1] < 5) return true;
-    }
-    // Wrap-around (last of hour N → first of hour N+1) only matters when
-    // consecutive hours fire. Conservatively gate this on hour === '*'.
-    if (hour === '*' && values.length >= 2) {
-      const wrap = (60 - values[values.length - 1]) + values[0];
-      if (wrap < 5) return true;
-    }
-  }
-
-  return false;
-}
-
 // Get scheduler status
 router.get('/status', async (req, res) => {
   try {
@@ -159,7 +95,7 @@ router.get('/tasks', async (req, res) => {
 // Validate cron expression
 router.post('/validate-cron', async (req, res) => {
   try {
-    const { cronExpression } = req.body;
+    const cronExpression = req.body?.cronExpression;
     if (!cronExpression) {
       return res.status(400).json({ valid: false, error: 'cronExpression is required' });
     }
@@ -179,6 +115,13 @@ router.post('/validate-cron', async (req, res) => {
       });
     }
 
+    if (isCronTooFrequent(cronExpression)) {
+      return res.json({
+        valid: false,
+        error: 'Tasks cannot run more frequently than every 5 minutes',
+      });
+    }
+
     res.json({ valid: true });
   } catch (error) {
     res.status(500).json({ valid: false, error: sanitizeError(error.message) });
@@ -189,8 +132,11 @@ router.post('/validate-cron', async (req, res) => {
 router.post('/tasks', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be an object' });
+    }
     const { name, cronExpression, command, serverId } = req.body;
-    log.info(`POST /tasks: name=${name}, cron=${cronExpression}, command=${(command || '').substring(0, 80)}, serverId=${serverId}`);
+    log.info(`POST /tasks: name=${name}, cron=${cronExpression}, command=${typeof command === 'string' ? command.substring(0, 80) : ''}, serverId=${serverId}`);
 
     if (!name || !cronExpression || !command) {
       return res.status(400).json({ error: 'Name, cronExpression, and command are required' });
@@ -257,7 +203,9 @@ router.post('/tasks', async (req, res) => {
 
     // Schedule the task — rollback DB entry if scheduling fails
     try {
-      scheduler.scheduleTask(task);
+      if (scheduler.scheduleTask(task) === false) {
+        throw new Error("Scheduler rejected the task");
+      }
     } catch (schedErr) {
       log.error(`Failed to schedule task, rolling back DB entry: ${schedErr.message}`);
       await deleteScheduledTask(result.id);
@@ -276,11 +224,14 @@ router.put('/tasks/:id', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
     const { id } = req.params;
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be an object' });
+    }
     const { name, cronExpression, command, enabled, serverId } = req.body;
     log.info(`PUT /tasks/${id}: name=${name}, cron=${cronExpression}, enabled=${enabled}, serverId=${serverId}`);
 
-    const taskId = parseInt(id, 10);
-    if (isNaN(taskId)) {
+    const taskId = parseTaskId(id);
+    if (taskId === null) {
       return res.status(400).json({ error: 'Invalid task ID' });
     }
 
@@ -334,6 +285,14 @@ router.put('/tasks/:id', async (req, res) => {
       }
     }
 
+    const tasksBeforeUpdate = await getScheduledTasks();
+    const previousTaskRecord = Array.isArray(tasksBeforeUpdate)
+      ? tasksBeforeUpdate.find((task) => String(task.id) === String(taskId))
+      : null;
+    const previousTask = previousTaskRecord
+      ? { ...previousTaskRecord }
+      : null;
+
     const updated = await updateScheduledTask(taskId, name, cronExpression, command, normalizedEnabled, serverId);
     if (!updated) {
       return res.status(404).json({ error: 'Task not found' });
@@ -344,7 +303,7 @@ router.put('/tasks/:id', async (req, res) => {
     // its pinned server and run it against whichever server is active.
     if (updated.enabled) {
       try {
-        scheduler.scheduleTask({
+        const scheduled = scheduler.scheduleTask({
           id: taskId,
           name: updated.name,
           cron_expression: updated.cron_expression,
@@ -352,10 +311,34 @@ router.put('/tasks/:id', async (req, res) => {
           server_id: updated.server_id,
           enabled: 1
         });
+        if (scheduled === false) {
+          throw new Error("Scheduler rejected the updated task");
+        }
       } catch (schedErr) {
         log.error(`Failed to reschedule task ${taskId}, reverting DB: ${schedErr.message}`);
-        // Revert: re-save the old enabled state to avoid phantom active task in DB
-        await updateScheduledTask(taskId, undefined, undefined, undefined, 0).catch(err => log.debug(`Failed to revert task ${taskId}: ${err.message}`));
+        if (previousTask) {
+          try {
+            await updateScheduledTask(
+              taskId,
+              previousTask.name,
+              previousTask.cron_expression,
+              previousTask.command,
+              previousTask.enabled,
+              previousTask.server_id,
+            );
+            if (previousTask.enabled) {
+              scheduler.scheduleTask(previousTask);
+            } else {
+              scheduler.cancelTask(taskId);
+            }
+          } catch (rollbackError) {
+            log.error(
+              `Failed to restore scheduled task ${taskId} after reschedule failure: ${rollbackError.message}`,
+            );
+          }
+        } else {
+          log.warn(`Could not restore scheduled task ${taskId}: previous record was unavailable`);
+        }
         return res.status(500).json({ error: 'Failed to reschedule task: ' + sanitizeError(schedErr.message) });
       }
     } else {
@@ -376,13 +359,16 @@ router.delete('/tasks/:id', async (req, res) => {
     const { id } = req.params;
     log.info(`DELETE /tasks/${id}`);
 
-    const taskId = parseInt(id, 10);
-    if (isNaN(taskId)) {
+    const taskId = parseTaskId(id);
+    if (taskId === null) {
       return res.status(400).json({ error: 'Invalid task ID' });
     }
 
+    const deleted = await deleteScheduledTask(taskId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
     scheduler.cancelTask(taskId);
-    await deleteScheduledTask(taskId);
 
     res.json({ success: true, message: 'Task deleted' });
   } catch (error) {
@@ -401,8 +387,8 @@ router.post('/tasks/:id/run', async (req, res) => {
   try {
     const scheduler = req.app.get('scheduler');
     const { id } = req.params;
-    const taskId = parseInt(id, 10);
-    if (isNaN(taskId)) {
+    const taskId = parseTaskId(id);
+    if (taskId === null) {
       return res.status(400).json({ error: 'Invalid task ID' });
     }
 
@@ -444,14 +430,17 @@ router.post('/restart-now', async (req, res) => {
     }
 
     const scheduler = req.app.get('scheduler');
-    const { warningMinutes } = req.body;
+    const warningMinutes = req.body?.warningMinutes;
 
     // Parse and validate warningMinutes (0-60 range)
-    let parsedWarningMinutes = parseInt(warningMinutes, 10);
+    let parsedWarningMinutes = parseBoundedInteger(
+      warningMinutes,
+      5,
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
     log.info(`POST /restart-now: warningMinutes=${warningMinutes}`);
-    if (isNaN(parsedWarningMinutes) || parsedWarningMinutes < 0) {
-      parsedWarningMinutes = 5; // Default
-    } else if (parsedWarningMinutes > 60) {
+    if (parsedWarningMinutes > 60) {
       parsedWarningMinutes = 60; // Cap at 60 minutes
     }
 
@@ -493,8 +482,14 @@ router.get('/cron-presets', (req, res) => {
 // Get schedule execution history
 router.get('/history', async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 100;
-    const taskId = req.query.taskId ? parseInt(req.query.taskId, 10) : null;
+    const limit = parseClampedInteger(req.query.limit, 100, 1, 500);
+    const taskId =
+      req.query.taskId === undefined
+        ? null
+        : parseBoundedInteger(req.query.taskId, null, 1, Number.MAX_SAFE_INTEGER);
+    if (req.query.taskId !== undefined && taskId === null) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
     const history = await getScheduleHistory(limit, taskId);
     res.json({ history });
   } catch (error) {

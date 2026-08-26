@@ -1,3 +1,4 @@
+import { parseClampedInteger } from "../utils/queryNumbers.js";
 import express from "express";
 import os from "os";
 import v8 from "v8";
@@ -161,7 +162,7 @@ router.get("/system", requirePermission("diagnostics.manage"), async (req, res) 
 // Get recent logs from buffer
 router.get("/logs", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 200;
+    const limit = parseClampedInteger(req.query.limit, 200, 1, 2000);
     res.json({
       logs: logBuffer.slice(-limit),
       total: logBuffer.length,
@@ -1473,6 +1474,7 @@ router.get("/health", requirePermission("diagnostics.manage"), async (req, res) 
     const rconService = req.app.get("rconService");
     const serverManager = req.app.get("serverManager");
     const modChecker = req.app.get("modChecker");
+    const serverState = await getServerProcessState(serverManager);
 
     res.json({
       status: "ok",
@@ -1483,7 +1485,8 @@ router.get("/health", requirePermission("diagnostics.manage"), async (req, res) 
           host: rconService?.config?.host || "not configured",
         },
         server: {
-          running: (await serverManager?.checkServerRunning?.()) || false,
+          running: serverState.running,
+          scanFailed: serverState.scanFailed,
         },
         modChecker: {
           running: modChecker?.isRunning || false,
@@ -2058,6 +2061,38 @@ function withTimeout(promise, ms, fallback) {
   ]);
 }
 
+export async function getServerProcessState(
+  serverManager,
+  timeoutMs = FS_TIMEOUT_MS,
+) {
+  if (!serverManager) return { running: false, scanFailed: false };
+
+  if (typeof serverManager.getServerProcessDetails === "function") {
+    const details = await withTimeout(
+      Promise.resolve().then(() => serverManager.getServerProcessDetails()),
+      timeoutMs,
+      null,
+    );
+    if (!details || details.scanFailed) {
+      return { running: null, scanFailed: true };
+    }
+    return { running: Boolean(details.running), scanFailed: false };
+  }
+
+  if (typeof serverManager.checkServerRunning === "function") {
+    const running = await withTimeout(
+      Promise.resolve().then(() => serverManager.checkServerRunning()),
+      timeoutMs,
+      null,
+    );
+    return typeof running === "boolean"
+      ? { running, scanFailed: false }
+      : { running: null, scanFailed: true };
+  }
+
+  return { running: null, scanFailed: true };
+}
+
 const FS_TIMEOUT_MS = 2000;
 const safePathExists = (p) =>
   withTimeout(pathExistsAsync(p), FS_TIMEOUT_MS, false);
@@ -2324,18 +2359,19 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
     const checks = [];
     const paths = getDataPaths();
 
-    // checkServerRunning may probe the OS process list and can hang on a
-    // misbehaving system — keep it bounded.
-    const checkRunningPromise = serverManager?.checkServerRunning?.()
-      ? withTimeout(serverManager.checkServerRunning(), FS_TIMEOUT_MS, false)
-      : Promise.resolve(false);
+    // Process detection may probe the OS process list and can hang on a
+    // misbehaving system — keep it bounded and preserve an unknown result.
+    const serverStatePromise = getServerProcessState(
+      serverManager,
+      FS_TIMEOUT_MS,
+    );
 
     const [
       activeServer,
       settings,
       trackedMods,
       scheduledTasks,
-      serverRunning,
+      serverState,
       dbStats,
     ] = await Promise.all([
       withTimeout(
@@ -2358,15 +2394,15 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
         FS_TIMEOUT_MS,
         [],
       ),
-      Promise.resolve(checkRunningPromise)
-        .then((v) => v || false)
-        .catch(() => false),
+      serverStatePromise,
       withTimeout(
         getDatabaseStats().catch(() => null),
         FS_TIMEOUT_MS,
         null,
       ),
     ]);
+
+    const serverRunning = serverState.running;
 
     // ─── Core Services ────────────────────────────────────────────────
     try {
@@ -2382,6 +2418,15 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             "server.process",
             "Remote server process",
             "Managed by the hosting provider; local process monitoring is unavailable. RCON controls remain available.",
+            { category: "services" },
+          ),
+        );
+      } else if (serverRunning === null) {
+        checks.push(
+          diagSkip(
+            "server.process",
+            "Server process state",
+            "Unable to determine whether the server process is running.",
             { category: "services" },
           ),
         );
@@ -2416,7 +2461,16 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             { category: "services", params: { host: rconHost, port: rconPort } },
           ),
         );
-      } else if (!serverRunning) {
+      } else if (serverRunning === null) {
+        checks.push(
+          diagSkip(
+            "rcon.connected",
+            "RCON",
+            "Server process state is unknown — RCON status cannot be inferred from it.",
+            { category: "services" },
+          ),
+        );
+      } else if (serverRunning === false) {
         checks.push(
           diagSkip(
             "rcon.connected",
@@ -3785,7 +3839,16 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 { category: "bridge", params: { age: ageText } },
               ),
             );
-          } else if (!serverRunning) {
+          } else if (serverRunning === null) {
+            checks.push(
+              diagSkip(
+                "bridge.heartbeat",
+                "Mod heartbeat",
+                "Server process state is unknown — heartbeat status cannot be inferred from it.",
+                { category: "bridge" },
+              ),
+            );
+          } else if (serverRunning === false) {
             checks.push(
               diagSkip(
                 "bridge.heartbeat",
@@ -5105,7 +5168,7 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
 });
 router.get("/performance-history", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 60;
+    const limit = parseClampedInteger(req.query.limit, 60, 1, 1440);
     const history = await getPerformanceHistory(limit);
     res.json({ history });
   } catch (error) {
@@ -5558,7 +5621,7 @@ router.post("/client-errors", (req, res) => {
 // GET /api/debug/activity — Merge all log sources into a single chronological feed
 router.get("/activity", requirePermission("diagnostics.manage"), async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
+    const limit = parseClampedInteger(req.query.limit, 200, 1, 500);
     const source = req.query.source || "all"; // 'all' | 'rcon' | 'bridge' | 'player' | 'server'
 
     const entries = [];

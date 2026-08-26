@@ -22,6 +22,7 @@ import {
 import { sanitizeError, sanitizeErrorParams, isMaskedSecret } from "../utils/sanitize.js";
 import { persistSandboxValues } from "./serverFiles.js";
 import { requirePermission } from "../services/permissions.js";
+import { parseClampedInteger } from "../utils/queryNumbers.js";
 import {
   getEmbeddedPanelBridgeLua,
   compareModVersions,
@@ -296,7 +297,7 @@ router.get("/status", async (req, res) => {
 // Auto-configure bridge from server settings (optionally specify serverId)
 router.post("/auto-configure", requirePermission("bridge.setup"), async (req, res) => {
   try {
-    const { serverId } = req.body;
+    const { serverId } = req.body || {};
     log.info(`POST /auto-configure (serverId=${serverId || "active"})`);
 
     // Get specified server or active server
@@ -755,7 +756,7 @@ router.get("/scan-server/:serverId", requirePermission("bridge.setup"), async (r
 
 // Auto-detect bridge path from server name
 router.post("/auto-detect", requirePermission("bridge.setup"), async (req, res) => {
-  const { serverName, zomboidUserFolder } = req.body;
+  const { serverName, zomboidUserFolder } = req.body || {};
 
   if (!serverName) {
     return res.status(400).json({
@@ -791,7 +792,7 @@ router.post("/auto-detect", requirePermission("bridge.setup"), async (req, res) 
 
 // Configure the bridge with Zomboid save path
 router.post("/configure", requirePermission("bridge.setup"), async (req, res) => {
-  const { zomboidSavePath } = req.body;
+  const { zomboidSavePath } = req.body || {};
 
   if (!zomboidSavePath) {
     return res.status(400).json({
@@ -828,7 +829,7 @@ router.post("/configure", requirePermission("bridge.setup"), async (req, res) =>
 
 // Configure the bridge with a direct panelbridge folder path (manual override)
 router.post("/configure-direct", requirePermission("bridge.setup"), async (req, res) => {
-  const { bridgePath: reqPath } = req.body;
+  const { bridgePath: reqPath } = req.body || {};
 
   if (!reqPath || typeof reqPath !== "string") {
     return res.status(400).json({
@@ -1171,7 +1172,7 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
     });
   }
 
-  const { action, args } = req.body;
+  const { action, args } = req.body || {};
 
   if (!action) {
     return res.status(400).json({
@@ -1443,7 +1444,7 @@ router.post("/weather/blizzard", requirePermission("server.world_events"), async
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { duration } = req.body;
+  const { duration } = req.body || {};
   try {
     const result = await bridge.triggerBlizzard(duration);
     res.json(result);
@@ -1461,7 +1462,7 @@ router.post("/weather/tropical-storm", requirePermission("server.world_events"),
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { duration } = req.body;
+  const { duration } = req.body || {};
   try {
     const result = await bridge.triggerTropicalStorm(duration);
     res.json(result);
@@ -1479,7 +1480,7 @@ router.post("/weather/storm", requirePermission("server.world_events"), async (r
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { duration } = req.body;
+  const { duration } = req.body || {};
   if (
     duration !== undefined &&
     (typeof duration !== "number" ||
@@ -1529,7 +1530,7 @@ router.post("/weather/generate", requirePermission("server.world_events"), async
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { strength, frontType } = req.body;
+  const { strength, frontType } = req.body || {};
   if (
     strength !== undefined &&
     (typeof strength !== "number" ||
@@ -1574,7 +1575,10 @@ router.post("/weather/snow", requirePermission("server.world_events"), async (re
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { enabled, intensity } = req.body;
+  const { enabled, intensity } = req.body || {};
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
   if (
     intensity !== undefined &&
     intensity !== null &&
@@ -1610,7 +1614,7 @@ router.post("/weather/rain/start", requirePermission("server.world_events"), asy
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { intensity } = req.body;
+  const { intensity } = req.body || {};
   if (
     intensity !== undefined &&
     (typeof intensity !== "number" ||
@@ -1658,7 +1662,7 @@ router.post("/weather/lightning", requirePermission("server.world_events"), asyn
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { x, y, strike, light, rumble } = req.body;
+  const { x, y, strike, light, rumble } = req.body || {};
   if (x !== undefined && (typeof x !== "number" || !Number.isFinite(x))) {
     return res.status(400).json({
       error: "x must be a number",
@@ -1706,7 +1710,7 @@ router.post("/climate/float", requirePermission("server.world_events"), async (r
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { floatId, value, enable } = req.body;
+  const { floatId, value, enable } = req.body || {};
   if (floatId === undefined || value === undefined) {
     return res.status(400).json({
       error: "floatId and value are required",
@@ -1769,7 +1773,7 @@ router.post("/climate/temperature", requirePermission("server.world_events"), as
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (
     value !== undefined &&
     (typeof value !== "number" ||
@@ -1799,7 +1803,7 @@ router.post("/climate/wind", requirePermission("server.world_events"), async (re
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (
     value !== undefined &&
     (typeof value !== "number" ||
@@ -1829,7 +1833,7 @@ router.post("/climate/fog", requirePermission("server.world_events"), async (req
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (
     value !== undefined &&
     (typeof value !== "number" ||
@@ -1859,7 +1863,7 @@ router.post("/climate/clouds", requirePermission("server.world_events"), async (
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (
     value !== undefined &&
     (typeof value !== "number" ||
@@ -1907,7 +1911,7 @@ router.post("/time", requirePermission("server.world_events"), async (req, res) 
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { hour, day, month, year } = req.body;
+  const { hour, day, month, year } = req.body || {};
   if (
     hour !== undefined &&
     (typeof hour !== "number" ||
@@ -2057,7 +2061,7 @@ router.post("/players/:username/teleport", requirePermission("players.gm_tools")
       code: ErrorCode.BRIDGE_INVALID_USERNAME_FORMAT,
     });
   }
-  const { x, y, z } = req.body;
+  const { x, y, z } = req.body || {};
   if (x === undefined || y === undefined) {
     return res.status(400).json({
       error: "x and y coordinates are required",
@@ -2109,7 +2113,7 @@ router.post("/message", requirePermission("server.world_events"), async (req, re
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { message } = req.body;
+  const { message } = req.body || {};
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
       .status(400)
@@ -2867,7 +2871,7 @@ router.post("/install-local", requirePermission("bridge.setup"), async (req, res
 // Auto-install mod to server's Lua folder (optionally specify serverId)
 router.post("/install-mod-auto", requirePermission("bridge.setup"), async (req, res) => {
   try {
-    const { serverId } = req.body;
+    const { serverId } = req.body || {};
 
     // Get specified server or active server
     let targetServer;
@@ -2922,7 +2926,7 @@ router.post("/install-mod-auto", requirePermission("bridge.setup"), async (req, 
 
 // Copy mod to server Lua folder (manual path)
 router.post("/install-mod", requirePermission("bridge.setup"), (req, res) => {
-  const { serverLuaPath } = req.body;
+  const { serverLuaPath } = req.body || {};
 
   // Support legacy field name
   const targetPath = serverLuaPath || req.body.serverModsPath;
@@ -3060,7 +3064,7 @@ router.post("/sound/world", requirePermission("server.world_events"), async (req
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { x, y, z, radius, volume } = req.body;
+  const { x, y, z, radius, volume } = req.body || {};
   if (x === undefined || y === undefined) {
     return res.status(400).json({
       error: "x and y coordinates are required",
@@ -3100,7 +3104,7 @@ router.post("/sound/near-player", requirePermission("server.world_events"), asyn
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { username, radius, volume } = req.body;
+  const { username, radius, volume } = req.body || {};
   if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Valid username is required",
@@ -3128,7 +3132,7 @@ router.post("/sound/gunshot", requirePermission("server.world_events"), async (r
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { x, y, z, username } = req.body;
+  const { x, y, z, username } = req.body || {};
   if (username && !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Invalid username format",
@@ -3156,7 +3160,7 @@ router.post("/sound/alarm", requirePermission("server.world_events"), async (req
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { x, y, z, username } = req.body;
+  const { x, y, z, username } = req.body || {};
   if (username && !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Invalid username format",
@@ -3181,7 +3185,7 @@ router.post("/sound/noise", requirePermission("server.world_events"), async (req
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { x, y, z, radius, volume, username } = req.body;
+  const { x, y, z, radius, volume, username } = req.body || {};
   if (username && !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Invalid username format",
@@ -3263,7 +3267,7 @@ router.post("/utilities/restore", requirePermission("server.world_events"), asyn
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { power, water } = req.body;
+  const { power, water } = req.body || {};
   log.info(
     `Restoring utilities - power: ${power !== false}, water: ${water !== false}`,
   );
@@ -3296,7 +3300,7 @@ router.post("/utilities/shutoff", requirePermission("server.world_events"), asyn
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { power, water } = req.body;
+  const { power, water } = req.body || {};
   log.info(
     `Shutting off utilities - power: ${power !== false}, water: ${water !== false}`,
   );
@@ -3333,7 +3337,7 @@ router.post("/character/export", requirePermission("players.gm_tools"), async (r
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { username } = req.body;
+  const { username } = req.body || {};
   if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Invalid or missing username",
@@ -3358,7 +3362,7 @@ router.post("/character/import", requirePermission("players.gm_tools"), async (r
         code: ErrorCode.BRIDGE_NOT_RUNNING,
       });
   }
-  const { username, data, options } = req.body;
+  const { username, data, options } = req.body || {};
   if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Invalid or missing username",
@@ -3432,7 +3436,7 @@ router.post("/players/:username/give-item", requirePermission("players.gm_tools"
       code: ErrorCode.BRIDGE_INVALID_USERNAME_FORMAT,
     });
   }
-  const { itemType, count = 1 } = req.body;
+  const { itemType, count = 1 } = req.body || {};
   if (
     !itemType ||
     typeof itemType !== "string" ||
@@ -3521,7 +3525,10 @@ router.post("/players/:username/godmode", requirePermission("players.gm_tools"),
       code: ErrorCode.BRIDGE_INVALID_USERNAME_FORMAT,
     });
   }
-  const { enabled } = req.body;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
   try {
     const result = await bridge.sendCommand("setGodMode", {
       username,
@@ -3548,7 +3555,10 @@ router.post("/players/:username/invisible", requirePermission("players.gm_tools"
       code: ErrorCode.BRIDGE_INVALID_USERNAME_FORMAT,
     });
   }
-  const { enabled } = req.body;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
   try {
     const result = await bridge.sendCommand("setInvisible", {
       username,
@@ -3588,7 +3598,7 @@ router.post("/zombies/clear-near-player", requirePermission("server.world_events
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { username, radius = 50 } = req.body;
+  const { username, radius = 50 } = req.body || {};
   if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Valid username is required",
@@ -3639,7 +3649,7 @@ router.post("/zombies/spawn-near", requirePermission("server.world_events"), asy
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { username, count = 50 } = req.body;
+  const { username, count = 50 } = req.body || {};
   if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Valid username is required",
@@ -3669,7 +3679,7 @@ router.post("/zombies/spawn-behind", requirePermission("server.world_events"), a
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { username, count = 50 } = req.body;
+  const { username, count = 50 } = req.body || {};
   if (!username || !BRIDGE_USERNAME_REGEX.test(username)) {
     return res.status(400).json({
       error: "Valid username is required",
@@ -3703,7 +3713,7 @@ router.post("/visual/view-distance", requirePermission("server.world_events"), a
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (typeof value !== "number") {
     return res
       .status(400)
@@ -3728,7 +3738,7 @@ router.post("/visual/daylight", requirePermission("server.world_events"), async 
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (typeof value !== "number") {
     return res.status(400).json({
       error: "value is required (0.0-1.0)",
@@ -3751,7 +3761,7 @@ router.post("/visual/night-strength", requirePermission("server.world_events"), 
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (typeof value !== "number") {
     return res.status(400).json({
       error: "value is required (0.0-1.0)",
@@ -3774,7 +3784,7 @@ router.post("/visual/desaturation", requirePermission("server.world_events"), as
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (typeof value !== "number") {
     return res.status(400).json({
       error: "value is required (0.0-1.0)",
@@ -3797,7 +3807,7 @@ router.post("/visual/ambient", requirePermission("server.world_events"), async (
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { value } = req.body;
+  const { value } = req.body || {};
   if (typeof value !== "number") {
     return res.status(400).json({
       error: "value is required (0.0-1.0)",
@@ -3842,7 +3852,7 @@ async function trySendViaRcon(req, text) {
 
 // Send to admin chat
 router.post("/chat/admin", requirePermission("server.world_events"), async (req, res) => {
-  const { message } = req.body;
+  const { message } = req.body || {};
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
       .status(400)
@@ -3905,7 +3915,7 @@ router.post("/chat/general", requirePermission("server.world_events"), async (re
     typeof req.body.author === "string"
       ? req.body.author.trim().slice(0, 64) || "Server"
       : "Server";
-  const { message } = req.body;
+  const { message } = req.body || {};
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
       .status(400)
@@ -3957,7 +3967,7 @@ router.post("/chat/general", requirePermission("server.world_events"), async (re
 
 // Send server alert
 router.post("/chat/alert", requirePermission("server.world_events"), async (req, res) => {
-  const { message, alert = true } = req.body;
+  const { message, alert = true } = req.body || {};
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
       .status(400)
@@ -4010,7 +4020,7 @@ router.get("/debug/log", requirePermission("bridge.diagnostics"), async (req, re
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+  const limit = parseClampedInteger(req.query.limit, 50, 1, 500);
   const VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"];
   const minLevel = VALID_LOG_LEVELS.includes(req.query.level)
     ? req.query.level
@@ -4047,7 +4057,10 @@ router.post("/debug/mode", requirePermission("bridge.diagnostics"), async (req, 
       code: ErrorCode.BRIDGE_NOT_RUNNING_BARE,
     });
   }
-  const { enabled } = req.body;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
   try {
     const result = await bridge.sendCommand("setDebugMode", {
       enabled: enabled === true,

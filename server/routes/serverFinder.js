@@ -46,6 +46,17 @@ function validateQueryIp(ip) {
   return true;
 }
 
+export function parseQueryPort(value) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 1 && value <= 65535
+      ? value
+      : null;
+  }
+  if (typeof value !== "string" || !/^\d+$/.test(value.trim())) return null;
+  const port = Number(value.trim());
+  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null;
+}
+
 // Project Zomboid App ID on Steam
 const PZ_APP_ID = 108600;
 
@@ -61,13 +72,22 @@ const SERVER_QUERY_TIMEOUT = 3000;
 /**
  * Query a single game server for detailed info using A2S_INFO protocol
  */
-async function queryServerInfo(ip, port) {
+export function buildA2SInfoQuery(challenge = null) {
+  const base = Buffer.from([
+    0xFF, 0xFF, 0xFF, 0xFF, 0x54,
+    ...Buffer.from("Source Engine Query\0"),
+  ]);
+  return challenge ? Buffer.concat([base, challenge]) : base;
+}
+
+export async function queryServerInfo(ip, port) {
   return new Promise((resolve) => {
     const socket = dgram.createSocket('udp4');
-    const timeout = setTimeout(() => {
+    let timeout = setTimeout(() => {
       socket.close();
       resolve(null);
     }, SERVER_QUERY_TIMEOUT);
+    let challengeRetried = false;
 
     socket.on('error', () => {
       clearTimeout(timeout);
@@ -77,6 +97,21 @@ async function queryServerInfo(ip, port) {
 
     socket.on('message', (msg) => {
       clearTimeout(timeout);
+      timeout = null;
+      if (
+        msg.length >= 9 &&
+        msg.readUInt8(4) === 0x41 &&
+        !challengeRetried
+      ) {
+        challengeRetried = true;
+        const challenge = msg.subarray(5, 9);
+        timeout = setTimeout(() => {
+          socket.close();
+          resolve(null);
+        }, SERVER_QUERY_TIMEOUT);
+        socket.send(buildA2SInfoQuery(challenge), port, ip);
+        return;
+      }
       try {
         const info = parseA2SInfoResponse(msg);
         info.ip = ip;
@@ -90,14 +125,10 @@ async function queryServerInfo(ip, port) {
       }
     });
 
-    // A2S_INFO query packet
-    // Header: 0xFFFFFFFF + 'T' (0x54) + "Source Engine Query\0"
-    const query = Buffer.from([
-      0xFF, 0xFF, 0xFF, 0xFF, 0x54,
-      ...Buffer.from('Source Engine Query\0'),
-    ]);
-
-    socket.send(query, port, ip);
+    // A2S_INFO query packet. A server may answer with a challenge; the
+    // message handler retries once with the challenge appended as required by
+    // the protocol.
+    socket.send(buildA2SInfoQuery(), port, ip);
   });
 }
 
@@ -358,6 +389,43 @@ async function getServersFromSteamAPI(apiKey, useCache = true) {
   return serverArray;
 }
 
+export function mapSteamServer(server) {
+  const gametype = server.gametype || "";
+  const tags = gametype
+    .split(";")
+    .filter((tag) => tag && !tag.startsWith("VERSION:"));
+  const versionMatch = gametype.match(/VERSION:([0-9.]+)/);
+  const gameVersion = versionMatch ? versionMatch[1] : "";
+
+  const addrParts = server.addr?.split(":") || [];
+  const portFromAddr = parseQueryPort(addrParts[1]);
+  const port =
+    portFromAddr !== null
+      ? portFromAddr
+      : parseQueryPort(server.gameport) || 16261;
+
+  return {
+    name: server.name || "Unknown",
+    ip: addrParts[0] || "",
+    port,
+    gamePort: server.gameport,
+    players: server.players || 0,
+    maxPlayers: server.max_players || 0,
+    map: server.map || "Muldraugh, KY",
+    version: gameVersion,
+    vac: server.secure || false,
+    isPrivate: server.password || false,
+    os: server.os === "l" ? "Linux" : server.os === "w" ? "Windows" : "Unknown",
+    dedicated: server.dedicated ?? true,
+    bots: server.bots || 0,
+    steamId: server.steamid,
+    gamedir: server.gamedir,
+    keywords: gametype,
+    tags,
+    ping: null,
+  };
+}
+
 /**
  * Get server list - tries Steam API first, falls back to master server query
  */
@@ -379,41 +447,7 @@ router.get('/', async (req, res) => {
           cached = true;
         }
         const apiServers = await getServersFromSteamAPI(steamApiKey, !forceRefresh);
-        servers = apiServers.map(s => {
-          // Parse gametype for version and tags
-          // Format: "hidden;hosted;vanilla;pvp;VERSION:42.13"
-          const gametype = s.gametype || '';
-          const tags = gametype.split(';').filter(t => t && !t.startsWith('VERSION:'));
-          const versionMatch = gametype.match(/VERSION:([0-9.]+)/);
-          const gameVersion = versionMatch ? versionMatch[1] : '';
-
-          // Safely parse IP and port from addr (format: "ip:port")
-          const addrParts = s.addr?.split(':') || [];
-          const ip = addrParts[0] || '';
-          const portFromAddr = addrParts[1] ? parseInt(addrParts[1], 10) : NaN;
-          const port = !isNaN(portFromAddr) ? portFromAddr : (s.gameport || 16261);
-
-          return {
-            name: s.name || 'Unknown',
-            ip,
-            port,
-            gamePort: s.gameport,
-            players: s.players || 0,
-            maxPlayers: s.max_players || 0,
-            map: s.map || 'Muldraugh, KY',
-            version: gameVersion, // Actual game version from gametype
-            vac: s.secure || false,
-            isPrivate: s.password || false,
-            os: s.os === 'l' ? 'Linux' : s.os === 'w' ? 'Windows' : 'Unknown',
-            dedicated: s.dedicated || true,
-            bots: s.bots || 0,
-            steamId: s.steamid,
-            gamedir: s.gamedir,
-            keywords: gametype, // Full gametype string
-            tags: tags, // Parsed tags array (hidden, hosted, vanilla, pvp, etc.)
-            ping: null, // Not available from API
-          };
-        });
+        servers = apiServers.map(mapSteamServer);
 
         log.info(`Found ${servers.length} PZ servers via Steam API`);
       } catch (apiError) {
@@ -507,8 +541,8 @@ router.get('/query', async (req, res) => {
   }
 
   // Validate port is a valid number
-  const portNum = parseInt(port, 10);
-  if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+  const portNum = parseQueryPort(port);
+  if (portNum === null) {
     return res.status(400).json({
       success: false,
       error: 'Invalid port number',
@@ -560,8 +594,8 @@ router.get('/ping', async (req, res) => {
   }
 
   // Validate port is a valid number
-  const portNum = parseInt(port, 10);
-  if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+  const portNum = parseQueryPort(port);
+  if (portNum === null) {
     return res.status(400).json({
       success: false,
       error: 'Invalid port number',

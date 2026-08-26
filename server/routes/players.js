@@ -1,3 +1,4 @@
+import { parseClampedInteger } from "../utils/queryNumbers.js";
 import express from 'express';
 import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:Players');
@@ -100,15 +101,23 @@ function isValidItem(item) {
 }
 
 function isValidNumber(num, min = -Infinity, max = Infinity) {
-  if (num === null || num === undefined || num === '') return false;
+  if (
+    num === null ||
+    num === undefined ||
+    (typeof num === 'string' && num.trim() === '')
+  ) {
+    return false;
+  }
   const n = Number(num);
   return Number.isFinite(n) && n >= min && n <= max;
 }
 
+function requireBooleanToggle(value) {
+  return typeof value === "boolean";
+}
+
 export function normalizePlayerLogLimit(value) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 100;
-  return Math.min(parsed, 500);
+  return parseClampedInteger(value, 100, 1, 500);
 }
 
 // B42's godmod/invisible commands only accept the "-true" value form and ignore
@@ -164,7 +173,7 @@ router.get('/', requirePermission("players.view"), async (req, res) => {
 router.post('/kick', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, reason } = req.body;
+    const { username, reason } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
@@ -198,10 +207,14 @@ router.post('/kick', requirePermission("players.moderate"), async (req, res) => 
 router.post('/ban', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, banIp, reason } = req.body;
+    const { username, banIp, reason } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
+    }
+
+    if (banIp !== undefined && typeof banIp !== 'boolean') {
+      return res.status(400).json({ error: 'banIp must be a boolean' });
     }
 
     if (!isValidUsername(username)) {
@@ -244,7 +257,7 @@ router.post('/ban', requirePermission("players.moderate"), async (req, res) => {
 router.post('/unban', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username } = req.body;
+    const { username } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
@@ -274,7 +287,7 @@ router.post('/unban', requirePermission("players.moderate"), async (req, res) =>
 router.post('/access-level', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, level } = req.body;
+    const { username, level } = req.body || {};
 
     if (!username || !level) {
       return res.status(400).json({ error: 'Username and level are required' });
@@ -308,7 +321,7 @@ router.post('/access-level', requirePermission("players.moderate"), async (req, 
 router.post('/whitelist/add', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
@@ -337,7 +350,7 @@ router.post('/whitelist/add', requirePermission("players.moderate"), async (req,
 router.post('/whitelist/remove', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username } = req.body;
+    const { username } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
@@ -363,7 +376,7 @@ router.post('/whitelist/remove', requirePermission("players.moderate"), async (r
 router.post('/teleport', requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    let { player1, player2, x, y, z } = req.body;
+    let { player1, player2, x, y, z } = req.body || {};
 
     // Backward compatibility: allow coordinates to be sent as "x,y,z" in player2
     if ((x === undefined || y === undefined || z === undefined) && typeof player2 === 'string' && player2.includes(',')) {
@@ -421,7 +434,7 @@ router.post('/teleport', requirePermission("players.gm_tools"), async (req, res)
 router.post('/add-item', requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, item, count } = req.body;
+    const { username, item, count } = req.body || {};
 
     if (!item) {
       return res.status(400).json({ error: 'Item is required' });
@@ -467,7 +480,7 @@ router.post('/add-item', requirePermission("players.gm_tools"), async (req, res)
 router.post('/add-xp', requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, perk, amount } = req.body;
+    const { username, perk, amount } = req.body || {};
 
     if (!username || !perk || amount === undefined || amount === null) {
       return res.status(400).json({ error: 'Username, perk, and amount are required' });
@@ -505,7 +518,7 @@ router.post('/add-xp', requirePermission("players.gm_tools"), async (req, res) =
 router.post('/add-vehicle', requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { vehicle, username } = req.body;
+    const { vehicle, username } = req.body || {};
 
     if (!vehicle) {
       return res.status(400).json({ error: 'Vehicle is required' });
@@ -541,18 +554,22 @@ router.post('/add-vehicle', requirePermission("players.gm_tools"), async (req, r
 router.post('/add-vehicle-at', requirePermission("players.gm_tools"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { vehicle, x, y, z = 0 } = req.body;
+    const { vehicle, x, y, z = 0 } = req.body || {};
 
     if (!vehicle || !/^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/.test(vehicle)) {
       return res.status(400).json({ error: 'Invalid vehicle ID format' });
     }
 
-    const coordinates = [x, y, z].map(Number);
-    if (!coordinates.every(Number.isFinite) || x < 0 || x > 24000 || y < 0 || y > 24000 || z < 0 || z > 8) {
+    if (
+      !isValidNumber(x, 0, 24000) ||
+      !isValidNumber(y, 0, 24000) ||
+      !isValidNumber(z, 0, 8)
+    ) {
       return res.status(400).json({ error: 'Invalid map coordinates' });
     }
+    const coordinates = [Number(x), Number(y), Number(z)];
 
-    const result = await rconService.addVehicleAt(vehicle, x, y, z);
+    const result = await rconService.addVehicleAt(vehicle, ...coordinates);
     log.info(`POST /add-vehicle-at: ${vehicle} at ${coordinates.map(Math.floor).join(',')}`);
     res.json(result);
   } catch (error) {
@@ -564,13 +581,16 @@ router.post('/add-vehicle-at', requirePermission("players.gm_tools"), async (req
 // God mode
 router.post('/godmode', requirePermission("players.gm_tools"), async (req, res) => {
   try {
-    const { username, enabled } = req.body;
+    const { username, enabled } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
+    }
+    if (!requireBooleanToggle(enabled)) {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
     }
 
     const result = await setPlayerMode(req, 'setGodMode', 'setGodMode', username, enabled);
@@ -592,13 +612,16 @@ router.post('/godmode', requirePermission("players.gm_tools"), async (req, res) 
 // Invisible
 router.post('/invisible', requirePermission("players.gm_tools"), async (req, res) => {
   try {
-    const { username, enabled } = req.body;
+    const { username, enabled } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
+    }
+    if (!requireBooleanToggle(enabled)) {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
     }
 
     const result = await setPlayerMode(req, 'setInvisible', 'setInvisible', username, enabled);
@@ -620,13 +643,16 @@ router.post('/invisible', requirePermission("players.gm_tools"), async (req, res
 // Noclip
 router.post('/noclip', requirePermission("players.gm_tools"), async (req, res) => {
   try {
-    const { username, enabled } = req.body;
+    const { username, enabled } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
     }
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
+    }
+    if (!requireBooleanToggle(enabled)) {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
     }
 
     const result = await setPlayerMode(req, 'setNoclip', 'setNoclip', username, enabled);
@@ -675,7 +701,7 @@ router.get('/steamid-bans', requirePermission("players.view"), async (req, res) 
 router.post('/banid', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { steamId, reason } = req.body;
+    const { steamId, reason } = req.body || {};
     const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
 
     if (!steamId) {
@@ -715,7 +741,7 @@ router.post('/banid', requirePermission("players.moderate"), async (req, res) =>
 router.post('/unbanid', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { steamId } = req.body;
+    const { steamId } = req.body || {};
 
     if (!steamId) {
       return res.status(400).json({ error: 'SteamID is required' });
@@ -746,7 +772,7 @@ router.post('/unbanid', requirePermission("players.moderate"), async (req, res) 
 router.post('/voiceban', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, enabled } = req.body;
+    const { username, enabled } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
@@ -754,6 +780,9 @@ router.post('/voiceban', requirePermission("players.moderate"), async (req, res)
 
     if (!isValidUsername(username)) {
       return res.status(400).json({ error: 'Invalid username format' });
+    }
+    if (!requireBooleanToggle(enabled)) {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
     }
 
     const result = await rconService.voiceBan(username, enabled);
@@ -773,7 +802,7 @@ router.post('/voiceban', requirePermission("players.moderate"), async (req, res)
 router.post('/adduser', requirePermission("players.moderate"), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
 
     if (!username) {
       return res.status(400).json({ error: 'Username is required' });
@@ -814,7 +843,7 @@ router.post('/whitelist/addall', requirePermission("players.moderate"), async (r
 
 router.post('/whitelist/steamid/add', requirePermission("players.moderate"), async (req, res) => {
   try {
-    const { steamId } = req.body;
+    const { steamId } = req.body || {};
     if (!/^\d{17}$/.test(String(steamId || ''))) {
       return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
     }
@@ -830,7 +859,7 @@ router.post('/whitelist/steamid/add', requirePermission("players.moderate"), asy
 
 router.post('/whitelist/steamid/remove', requirePermission("players.moderate"), async (req, res) => {
   try {
-    const { steamId } = req.body;
+    const { steamId } = req.body || {};
     if (!/^\d{17}$/.test(String(steamId || ''))) {
       return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
     }
@@ -905,15 +934,21 @@ router.get('/notes/:playerName', requirePermission("players.view"), async (req, 
 // Create or update player note
 router.post('/notes', requirePermission("players.moderate"), async (req, res) => {
   try {
-    const { playerName, note } = req.body;
+    const { playerName, note } = req.body || {};
     const tags = req.body.tags || [];
 
     if (!playerName) {
       return res.status(400).json({ error: 'Player name is required' });
     }
+    if (!isValidUsername(playerName)) {
+      return res.status(400).json({ error: 'Invalid player name format' });
+    }
 
     // Validate note length
-    if (note && note.length > 10000) {
+    if (note !== undefined && note !== null && typeof note !== 'string') {
+      return res.status(400).json({ error: 'Note must be text' });
+    }
+    if (typeof note === 'string' && note.length > 10000) {
       return res.status(400).json({ error: 'Note too long (max 10000 characters)' });
     }
 

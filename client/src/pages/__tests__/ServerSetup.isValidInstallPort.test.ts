@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidInstallPort } from '../ServerSetup'
+import { isValidGamePort, isValidInstallPort } from '../ServerSetup'
 
 // conv-hunt-pages-2 lens 4b, previously deferred: server/routes/server.js's
 // /install, /quick-setup, /configure-rcon and /configure-network used to
@@ -26,5 +26,12 @@ describe('ServerSetup -- isValidInstallPort', () => {
     expect(isValidInstallPort(1024)).toBe(true)
     expect(isValidInstallPort(27015)).toBe(true)
     expect(isValidInstallPort(65535)).toBe(true)
+  })
+})
+
+describe('ServerSetup -- isValidGamePort', () => {
+  it('rejects 65535 because the derived UDP port would overflow', () => {
+    expect(isValidGamePort(65535)).toBe(false)
+    expect(isValidGamePort(65534)).toBe(true)
   })
 })

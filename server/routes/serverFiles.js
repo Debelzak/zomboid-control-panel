@@ -1149,11 +1149,14 @@ router.put("/ini", async (req, res) => {
   try {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+      ? req.body
+      : {};
     log.info(
-      `PUT /ini: serverName=${serverName}, keys=${Object.keys(req.body.settings || {}).length}`,
+      `PUT /ini: serverName=${serverName}, keys=${Object.keys(body.settings || {}).length}`,
     );
     const filePath = path.join(configPath, `${serverName}.ini`);
-    const { settings } = req.body;
+    const { settings } = body;
 
     if (!settings || typeof settings !== "object") {
       return res.status(400).json({
@@ -1244,7 +1247,7 @@ router.put("/sandbox", async (req, res) => {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     const filePath = path.join(configPath, `${serverName}_SandboxVars.lua`);
-    const { sandbox } = req.body;
+    const { sandbox } = req.body || {};
 
     if (!sandbox || typeof sandbox !== "object") {
       return res.status(400).json({
@@ -1633,7 +1636,7 @@ router.put("/spawnpoints", async (req, res) => {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     const filePath = path.join(configPath, `${serverName}_spawnpoints.lua`);
-    const { spawnpoints } = req.body;
+    const { spawnpoints } = req.body || {};
 
     if (!spawnpoints || typeof spawnpoints !== "object") {
       return res.status(400).json({
@@ -1698,7 +1701,7 @@ router.put("/spawnregions", async (req, res) => {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     const filePath = path.join(configPath, `${serverName}_spawnregions.lua`);
-    const { spawnregions } = req.body;
+    const { spawnregions } = req.body || {};
 
     if (!Array.isArray(spawnregions)) {
       return res.status(400).json({
@@ -1777,7 +1780,7 @@ router.put("/raw/:type", async (req, res) => {
     const configPath = await getServerConfigPath();
     const serverName = await getServerName();
     const type = req.params.type;
-    const { content } = req.body;
+    const { content } = req.body || {};
     log.info(`PUT /raw/${type}: contentLength=${content?.length || 0}`);
 
     const fileMap = {
@@ -2173,7 +2176,7 @@ router.post("/templates/:id/apply", async (req, res) => {
       });
     }
 
-    const { applyIni = true, applySandbox = true } = req.body;
+    const { applyIni = true, applySandbox = true } = req.body || {};
 
     const templatesPath = await getTemplatesPath();
     const templateFile = path.join(templatesPath, `${safeId}.json`);
@@ -2269,7 +2272,7 @@ router.put("/templates/:id", async (req, res) => {
       });
     }
 
-    const { name, description } = req.body;
+    const { name, description } = req.body || {};
 
     const templatesPath = await getTemplatesPath();
     const templateFile = path.join(templatesPath, `${safeId}.json`);

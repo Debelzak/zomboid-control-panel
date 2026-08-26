@@ -243,7 +243,7 @@
     "adminPasswordRequiredInstallDesc": "开始安装前请输入管理员密码。",
     "adminPasswordRequiredCreateDesc": "创建此服务器前请输入管理员密码。",
     "invalidPortTitle": "端口无效",
-    "invalidPortDesc": "游戏端口和 RCON 端口都必须是 1024 到 65535 之间的整数。",
+    "invalidPortDesc": "游戏端口必须是 1024 到 65534 之间的整数；RCON 端口必须是 1024 到 65535 之间的整数。",
     "startingInstallLog": "正在开始安装...",
     "creatingConfigLog": "正在创建服务器配置...",
     "configCreatedLog": "服务器配置创建成功！",
