@@ -4659,12 +4659,6 @@ export default function Settings() {
                           max={100}
                           value={backupMaxCount}
                           onChange={setBackupMaxCount}
-                          onBlur={(e) => {
-                            const v = parseInt(e.target.value);
-                            if (!Number.isFinite(v) || v < 1)
-                              setBackupMaxCount(1);
-                            else if (v > 100) setBackupMaxCount(100);
-                          }}
                           onWheel={(e) => e.currentTarget.blur()}
                           className="max-w-24"
                         />

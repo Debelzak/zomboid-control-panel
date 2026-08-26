@@ -19,6 +19,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -735,21 +736,13 @@ export default function Backups() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="backup-max">{t('settingsPanel.maxBackupsLabel')}</Label>
-                <Input
+                <NumberInput
                   id="backup-max"
-                  type="number"
                   min={1}
                   max={100}
                   value={backupMaxCount}
-                  onChange={(e) => {
-                    const parsed = parseInt(e.target.value, 10)
-                    // Only update if valid number in range
-                    if (!isNaN(parsed) && parsed >= 1 && parsed <= 100) {
-                      setBackupMaxCount(parsed)
-                    } else if (e.target.value === '') {
-                      setBackupMaxCount(10) // Reset to default if cleared
-                    }
-                  }}
+                  onChange={setBackupMaxCount}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="max-w-24"
                 />
                 <p className="text-xs text-muted-foreground">
