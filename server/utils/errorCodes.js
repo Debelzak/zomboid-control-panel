@@ -1340,6 +1340,52 @@ export const ErrorCode = Object.freeze({
    * reasoning as PANELBRIDGE_SCAN_ITEMS_NOT_RUNNING above for vehicles. */
   PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING: "PANELBRIDGE_SCAN_VEHICLES_NOT_RUNNING",
 
+  /** server/services/panelBridgeSftp.js -- classifySftpErrorCode(), one of
+   * seven codes for the PanelBridge SFTP transport (POST /panel-bridge/
+   * sftp/test, /sftp/configure, and the transport.lastErrorCode field on GET
+   * /panel-bridge/status). Added 2026-08-26: formatSftpError()/
+   * getSftpErrorGuidance() already classified these failures correctly (a
+   * chrooted account vs. a bad password vs. a missing remote path vs. a
+   * network failure, ...) and appended a tailored English "Fix: ..."
+   * sentence, but that classifier was a parallel system that never fed into
+   * this registry -- every non-English user saw the raw English sentence
+   * regardless of locale. Each code's errors.json translation reproduces
+   * formatSftpError()'s exact "{{detail}} Fix: ..." shape via a {{detail}}
+   * param carrying the original error.message, so the dynamic specifics the
+   * English version carried (the literal path, the literal errno) survive
+   * translation instead of being replaced by a vaguer generic sentence --
+   * see resolveRegisteredTranslation's params-required-or-null design (used
+   * by RCON_CONNECT_AUTH_FAILED et al.) for why a missing `detail` param
+   * falls back to the raw message rather than ever rendering a broken
+   * "{{detail}}" literal. SFTP_UNKNOWN is the catch-all last entry in
+   * classifySftpError()'s ordered list -- always matches, never actually
+   * "unregistered". */
+  SFTP_CHROOTED_ACCOUNT: "SFTP_CHROOTED_ACCOUNT",
+  /** Same file, sibling of SFTP_CHROOTED_ACCOUNT above -- wrong username or
+   * password, or the account can't complete the SSH handshake at all. */
+  SFTP_AUTH_FAILED: "SFTP_AUTH_FAILED",
+  /** Same file -- reachable, authenticated, but the account lacks write
+   * access to the remote bridge folder or its parent. Distinct from the
+   * unrelated RBAC-level PERMISSION_DENIED above: that one means "this
+   * panel user can't call this API"; this one means "the remote SFTP
+   * account can't write this remote path" -- two unconnected concepts that
+   * happen to share the English phrase "permission denied". */
+  SFTP_PERMISSION_DENIED: "SFTP_PERMISSION_DENIED",
+  /** Same file -- the configured remote bridge path doesn't exist yet
+   * (first-time setup, or a typo). */
+  SFTP_REMOTE_PATH_MISSING: "SFTP_REMOTE_PATH_MISSING",
+  /** Same file -- something already occupies the exact path PanelBridge.lua
+   * needs to write to, and it isn't a regular file (e.g. a directory with
+   * that name). */
+  SFTP_PATH_OCCUPIED: "SFTP_PATH_OCCUPIED",
+  /** Same file -- connection-level failure (refused, timed out, DNS
+   * failure, host unreachable) reaching the SFTP host at all. */
+  SFTP_UNREACHABLE: "SFTP_UNREACHABLE",
+  /** Same file -- classifySftpError()'s catch-all: none of the six more
+   * specific patterns above matched. Always has a match (last entry's test
+   * is unconditional), so this is a real, reachable outcome, not dead code. */
+  SFTP_UNKNOWN: "SFTP_UNKNOWN",
+
   /** server/routes/server.js -- formatWritablePathError("install", ...),
    * /install and /quick-setup, installPath fails the post-checks writable
    * probe, not running in a container. Split from the single WRITABLE_PATH_
@@ -1394,6 +1440,154 @@ export const ErrorCode = Object.freeze({
    * false "connection successful". Carries `{{reason}}` (the underlying
    * OAuth error code or failure message, sanitizeError()'d). */
   OIDC_TEST_UNDETERMINED: "OIDC_TEST_UNDETERMINED",
+
+  // --- server/routes/players.js -- never adopted this registry at all
+  // until now (2026-08-26 bug hunt round 2, Angela's find): every
+  // validation branch in the GM-tools surface (add-item, add-xp,
+  // vehicle-spawn, moderation, notes, exports) was a bare error string
+  // with no code, so none of it could be translated, carry a fix-it
+  // destination, or be classified, in any of the six languages. Grouped
+  // identical wording across sites into one shared code, same convention
+  // AUTH_USERNAME_PASSWORD_REQUIRED etc. already established -- listed
+  // below by first call site, all sharing sites named in the comment. ---
+
+  /** server/routes/players.js (10 sites: /kick, /ban, /unban,
+   * /whitelist/add, /whitelist/remove, /godmode, /invisible, /noclip,
+   * /voiceban, /adduser) -- `username` missing from the body. Identical
+   * wording/meaning at every site, shared code. */
+  PLAYERS_USERNAME_REQUIRED: "PLAYERS_USERNAME_REQUIRED",
+  /** server/routes/players.js (14 sites: /kick, /ban, /unban,
+   * /access-level, /whitelist/add, /whitelist/remove, /add-item, /add-xp,
+   * /add-vehicle, /godmode, /invisible, /noclip, /voiceban, /adduser) --
+   * `username` fails isValidUsername() (control chars/quotes/backslash
+   * guard against RCON command injection). Identical wording/meaning at
+   * every site, shared code. Distinct from PLAYERS_TELEPORT_INVALID_
+   * PLAYER1/2 below, which name which specific field failed on /teleport
+   * rather than reusing this generic wording. */
+  PLAYERS_INVALID_USERNAME: "PLAYERS_INVALID_USERNAME",
+  /** server/routes/players.js (3 sites: /ban, /banid) -- optional `reason`
+   * fails isValidText(). Identical wording/meaning both routes, shared
+   * code. */
+  PLAYERS_INVALID_REASON: "PLAYERS_INVALID_REASON",
+  /** server/routes/players.js -- POST /api/players/ban, `banIp` present but
+   * not a boolean. */
+  PLAYERS_INVALID_BAN_IP: "PLAYERS_INVALID_BAN_IP",
+  /** server/routes/players.js -- POST /api/players/access-level, `username`
+   * and/or `level` missing. Own code from PLAYERS_USERNAME_REQUIRED above
+   * -- this route requires a second field in the same check, different
+   * wording. */
+  PLAYERS_ACCESS_LEVEL_FIELDS_REQUIRED: "PLAYERS_ACCESS_LEVEL_FIELDS_REQUIRED",
+  /** server/routes/players.js -- POST /api/players/access-level, `level`
+   * not one of ACCESS_LEVELS. Carries `{{validLevels}}` (ACCESS_LEVELS
+   * joined) as a param -- same shape as AUTH_INVALID_ROLE's `{{roles}}`
+   * above. */
+  PLAYERS_INVALID_ACCESS_LEVEL: "PLAYERS_INVALID_ACCESS_LEVEL",
+  /** server/routes/players.js (2 sites: /whitelist/add, /adduser) --
+   * optional `password` fails its alphanumeric-plus-symbols/length format
+   * check. Identical wording/meaning both sites, shared code. */
+  PLAYERS_INVALID_PASSWORD: "PLAYERS_INVALID_PASSWORD",
+  /** server/routes/players.js -- POST /api/players/teleport, x/y/z present
+   * but fail isValidNumber() range checks (0-24000 for x/y, 0-8 for z). */
+  PLAYERS_TELEPORT_INVALID_COORDINATES: "PLAYERS_TELEPORT_INVALID_COORDINATES",
+  /** server/routes/players.js (2 sites, both within POST
+   * /api/players/teleport) -- `player1` fails isValidUsername(), in either
+   * the coordinate-teleport branch or the player-to-player branch. Own
+   * wording ("player1", not the generic "username") from PLAYERS_INVALID_
+   * USERNAME above, so the response names which field. */
+  PLAYERS_TELEPORT_INVALID_PLAYER1: "PLAYERS_TELEPORT_INVALID_PLAYER1",
+  /** server/routes/players.js -- POST /api/players/teleport, coordinate
+   * branch: `player1` given but PanelBridge isn't running, and RCON's
+   * `teleportto` can't target another player. */
+  PLAYERS_TELEPORT_BRIDGE_OFFLINE: "PLAYERS_TELEPORT_BRIDGE_OFFLINE",
+  /** server/routes/players.js -- POST /api/players/teleport,
+   * player-to-player branch: optional `player2` fails isValidUsername().
+   * See PLAYERS_TELEPORT_INVALID_PLAYER1 above for why this names the
+   * field rather than reusing the generic username code. */
+  PLAYERS_TELEPORT_INVALID_PLAYER2: "PLAYERS_TELEPORT_INVALID_PLAYER2",
+  /** server/routes/players.js -- POST /api/players/teleport, neither
+   * coordinates nor a target player were given. */
+  PLAYERS_TELEPORT_TARGET_REQUIRED: "PLAYERS_TELEPORT_TARGET_REQUIRED",
+  /** server/routes/players.js -- POST /api/players/add-item, `item`
+   * missing. */
+  PLAYERS_ITEM_REQUIRED: "PLAYERS_ITEM_REQUIRED",
+  /** server/routes/players.js -- POST /api/players/add-item, `item` fails
+   * isValidItem() (must be "Module.ItemName" shape). */
+  PLAYERS_INVALID_ITEM: "PLAYERS_INVALID_ITEM",
+  /** server/routes/players.js -- POST /api/players/add-item, optional
+   * `count` fails isValidNumber(1, 100). */
+  PLAYERS_INVALID_ITEM_COUNT: "PLAYERS_INVALID_ITEM_COUNT",
+  /** server/routes/players.js -- POST /api/players/add-item, `item`/`count`
+   * valid but no `username` given -- unlike /add-vehicle, add-item has no
+   * self-target concept, so a player must be picked. */
+  PLAYERS_ADD_ITEM_TARGET_REQUIRED: "PLAYERS_ADD_ITEM_TARGET_REQUIRED",
+  /** server/routes/players.js -- POST /api/players/add-xp,
+   * `username`/`perk`/`amount` missing (checked together). */
+  PLAYERS_ADD_XP_FIELDS_REQUIRED: "PLAYERS_ADD_XP_FIELDS_REQUIRED",
+  /** server/routes/players.js -- POST /api/players/add-xp, `perk` not one
+   * of PERKS. Carries `{{validPerks}}` (PERKS joined) as a param, same
+   * shape as PLAYERS_INVALID_ACCESS_LEVEL above. */
+  PLAYERS_INVALID_PERK: "PLAYERS_INVALID_PERK",
+  /** server/routes/players.js -- POST /api/players/add-xp, `amount` fails
+   * isValidNumber(0, 100000). */
+  PLAYERS_INVALID_XP_AMOUNT: "PLAYERS_INVALID_XP_AMOUNT",
+  /** server/routes/players.js -- POST /api/players/add-vehicle, `vehicle`
+   * missing. */
+  PLAYERS_VEHICLE_REQUIRED: "PLAYERS_VEHICLE_REQUIRED",
+  /** server/routes/players.js (2 sites: /add-vehicle, /add-vehicle-at) --
+   * `vehicle` fails the "Module.VehicleName" format check. Identical
+   * wording/meaning both sites, shared code. */
+  PLAYERS_INVALID_VEHICLE_ID: "PLAYERS_INVALID_VEHICLE_ID",
+  /** server/routes/players.js -- POST /api/players/add-vehicle-at, x/y/z
+   * fail isValidNumber() range checks. Own wording ("map coordinates", no
+   * range spelled out) from PLAYERS_TELEPORT_INVALID_COORDINATES above --
+   * different route, different phrasing. */
+  PLAYERS_INVALID_MAP_COORDINATES: "PLAYERS_INVALID_MAP_COORDINATES",
+  /** server/routes/players.js (4 sites: /godmode, /invisible, /noclip,
+   * /voiceban) -- `enabled` present but not a boolean. Identical
+   * wording/meaning at every site, shared code. */
+  PLAYERS_INVALID_ENABLED_FLAG: "PLAYERS_INVALID_ENABLED_FLAG",
+  /** server/routes/players.js (2 sites: /banid, /unbanid) -- `steamId`
+   * missing. Identical wording/meaning both sites, shared code. */
+  PLAYERS_STEAMID_REQUIRED: "PLAYERS_STEAMID_REQUIRED",
+  /** server/routes/players.js (4 sites: /banid, /unbanid,
+   * /whitelist/steamid/add, /whitelist/steamid/remove) -- `steamId` fails
+   * the 17-digit format check. Identical wording/meaning at every site,
+   * shared code. */
+  PLAYERS_INVALID_STEAMID: "PLAYERS_INVALID_STEAMID",
+  /** server/routes/players.js -- GET /api/players/whitelist, no active
+   * server configured. */
+  PLAYERS_NO_ACTIVE_SERVER: "PLAYERS_NO_ACTIVE_SERVER",
+  /** server/routes/players.js -- POST /api/players/notes, `playerName`
+   * missing. */
+  PLAYERS_NOTE_PLAYER_NAME_REQUIRED: "PLAYERS_NOTE_PLAYER_NAME_REQUIRED",
+  /** server/routes/players.js -- POST /api/players/notes, `playerName`
+   * fails isValidUsername(). Own code from PLAYERS_INVALID_USERNAME above
+   * -- this route's own wording ("player name", not "username"). */
+  PLAYERS_INVALID_NOTE_PLAYER_NAME: "PLAYERS_INVALID_NOTE_PLAYER_NAME",
+  /** server/routes/players.js -- POST /api/players/notes, `note` present
+   * but not a string. */
+  PLAYERS_NOTE_MUST_BE_TEXT: "PLAYERS_NOTE_MUST_BE_TEXT",
+  /** server/routes/players.js -- POST /api/players/notes, `note` exceeds
+   * 10000 characters. */
+  PLAYERS_NOTE_TOO_LONG: "PLAYERS_NOTE_TOO_LONG",
+  /** server/routes/players.js -- POST /api/players/notes, `tags` present
+   * but not an array. */
+  PLAYERS_NOTE_TAGS_MUST_BE_ARRAY: "PLAYERS_NOTE_TAGS_MUST_BE_ARRAY",
+  /** server/routes/players.js -- POST /api/players/notes, a `tags` entry
+   * isn't a string or exceeds 50 characters. */
+  PLAYERS_NOTE_INVALID_TAGS: "PLAYERS_NOTE_INVALID_TAGS",
+  /** server/routes/players.js -- DELETE /api/players/notes/:playerName, no
+   * note existed for that player. */
+  PLAYERS_NOTE_NOT_FOUND: "PLAYERS_NOTE_NOT_FOUND",
+  /** server/routes/players.js (2 sites: GET /exports/:username/:filename,
+   * DELETE /exports/:username/:filename) -- `username`/`filename` fail
+   * their path-traversal-safe format checks. Identical wording/meaning
+   * both sites, shared code. */
+  PLAYERS_EXPORT_INVALID_PARAMETERS: "PLAYERS_EXPORT_INVALID_PARAMETERS",
+  /** server/routes/players.js (2 sites: GET /exports/:username/:filename,
+   * DELETE /exports/:username/:filename) -- resolved export file doesn't
+   * exist on disk. Identical wording/meaning both sites, shared code. */
+  PLAYERS_EXPORT_NOT_FOUND: "PLAYERS_EXPORT_NOT_FOUND",
 });
 
 /**
