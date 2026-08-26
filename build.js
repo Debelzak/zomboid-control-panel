@@ -258,8 +258,10 @@ echo.
   if exist "%MARKER%" call :apply_update
 
   rem === Pick the binary to launch. Newest of .exe / .exe.new / .exe.new2. ===
-  rem === First-install case: only .exe.new exists (from the release zip),  ===
-  rem === so this still picks it up on the very first run.                  ===
+  rem === A fresh install only ever has the plain .exe -- build.js copies   ===
+  rem === the packaged binary straight to ZomboidControlPanel.exe, and the  ===
+  rem === release zip is that folder as-is, so there is no .new on first    ===
+  rem === run. .new/.new2 only appear later, staged in place by an update.  ===
   set "TARGET="
   for /f "usebackq delims=" %%F in (\`powershell -NoProfile -Command "Get-ChildItem -LiteralPath '.' -File | Where-Object { $_.Name -match '^ZomboidControlPanel\\.exe(\\.new2?)?$' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty Name"\`) do set "TARGET=%%F"
 
