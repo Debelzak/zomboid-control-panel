@@ -70,7 +70,7 @@ function saveRecent(mode: SpawnMode, entries: RecentEntry[]) {
 
 export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: SpawnBrowserProps) {
   const isItems = mode === 'items'
-  const { t } = useTranslation(['spawnBrowser', 'itemPicker', 'vehiclePicker'])
+  const { t, i18n } = useTranslation(['spawnBrowser', 'itemPicker', 'vehiclePicker'])
   const { toast } = useToast()
 
   // Catalog state
@@ -393,7 +393,7 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
               </span>
               {scannedAt && (
                 <span className="ml-auto text-[11px] text-muted-foreground/50 tabular-nums shrink-0 hidden sm:inline">
-                  {t('scannedOn', { date: new Date(scannedAt).toLocaleDateString() })}
+                  {t('scannedOn', { date: new Date(scannedAt).toLocaleDateString(i18n.language) })}
                 </span>
               )}
             </DialogDescription>
@@ -412,8 +412,8 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
               catalogEmpty
                 ? (isItems ? t('loadToScanItems') : t('loadToScanVehicles'))
                 : (isItems
-                  ? t('searchNItems', { count: nonVehicleItems.length.toLocaleString() })
-                  : t('searchNVehicles', { count: vehicles.length.toLocaleString() }))
+                  ? t('searchNItems', { count: nonVehicleItems.length.toLocaleString(i18n.language) })
+                  : t('searchNVehicles', { count: vehicles.length.toLocaleString(i18n.language) }))
             }
             className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
             aria-label={isItems ? t('searchItemsAria') : t('searchVehiclesAria')}
@@ -467,7 +467,7 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
                 {isItems ? t('allItems') : t('allVehicles')}
               </span>
               <span className="text-[10px] tabular-nums opacity-60">
-                {(isItems ? nonVehicleItems.length : vehicles.length).toLocaleString()}
+                {(isItems ? nonVehicleItems.length : vehicles.length).toLocaleString(i18n.language)}
               </span>
             </button>
 
@@ -491,7 +491,7 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
                 >
                   <Icon className={cn('w-4 h-4 shrink-0', isActive ? 'opacity-100' : 'opacity-70')} />
                   <span className="flex-1 min-w-0 truncate">{cat.label}</span>
-                  <span className="text-[10px] tabular-nums opacity-50">{cat.count.toLocaleString()}</span>
+                  <span className="text-[10px] tabular-nums opacity-50">{cat.count.toLocaleString(i18n.language)}</span>
                 </button>
               )
             })}

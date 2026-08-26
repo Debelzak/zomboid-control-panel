@@ -44,7 +44,7 @@ interface Player {
 type ChatChannel = 'server' | 'admin' | 'general'
 
 export default function Chat() {
-  const { t } = useTranslation('chat')
+  const { t, i18n } = useTranslation('chat')
   const defaultPresets = t('presets.default', { returnObjects: true }) as string[]
   const [message, setMessage] = useState('')
   const [players, setPlayers] = useState<Player[]>([])
@@ -371,7 +371,7 @@ export default function Chat() {
                               </span>
                             </div>
                             <time dateTime={msg.timestamp.toISOString()} className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
-                              {msg.timestamp.toLocaleTimeString()}
+                              {msg.timestamp.toLocaleTimeString(i18n.language)}
                             </time>
                           </div>
                           <p className="text-sm text-foreground/90 [overflow-wrap:anywhere]">{msg.message}</p>

@@ -88,7 +88,7 @@ export const GROUP_META: Record<string, { order: number; icon: typeof Sword }> =
 const MAX_VISIBLE = 150
 
 export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPickerProps) {
-  const { t } = useTranslation('itemPicker')
+  const { t, i18n } = useTranslation('itemPicker')
   const resolvedPlaceholder = placeholder ?? t('searchItemsPlaceholder')
   const [items, setItems] = useState<CatalogItem[]>([])
   const [initialLoad, setInitialLoad] = useState(true)
@@ -394,7 +394,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
               ref={inputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={t('searchNItemsPlaceholder', { count: nonVehicleItems.length.toLocaleString() })}
+              placeholder={t('searchNItemsPlaceholder', { count: nonVehicleItems.length.toLocaleString(i18n.language) })}
               className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
               aria-label={t('filterItemsAria')}
               autoFocus
@@ -439,7 +439,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
               >
                 <LayoutGrid className="w-4 h-4 shrink-0" />
                 <span className="flex-1 min-w-0 font-medium">{t('allItems')}</span>
-                <span className="text-[11px] tabular-nums opacity-60">{nonVehicleItems.length.toLocaleString()}</span>
+                <span className="text-[11px] tabular-nums opacity-60">{nonVehicleItems.length.toLocaleString(i18n.language)}</span>
               </button>
 
               <div className="h-px bg-border/30 mx-3 my-1.5" />
@@ -461,7 +461,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
                   >
                     <CatIcon className="w-4 h-4 shrink-0 opacity-70" />
                     <span className="flex-1 min-w-0">{cat.label}</span>
-                    <span className="text-[11px] tabular-nums opacity-50">{cat.count.toLocaleString()}</span>
+                    <span className="text-[11px] tabular-nums opacity-50">{cat.count.toLocaleString(i18n.language)}</span>
                   </button>
                 )
               })}
@@ -473,7 +473,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
               <div className="sticky top-0 z-10 flex items-center gap-2.5 px-4 py-2 bg-muted/80 backdrop-blur-sm border-b border-border/30">
                 <ActiveIcon className="w-3.5 h-3.5 text-muted-foreground/70" />
                 <span className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">{activeCategoryLabel}</span>
-                <span className="text-xs text-muted-foreground/40 tabular-nums ml-auto">{totalFiltered.toLocaleString()} items</span>
+                <span className="text-xs text-muted-foreground/40 tabular-nums ml-auto">{totalFiltered.toLocaleString(i18n.language)} items</span>
               </div>
 
               {totalFiltered === 0 ? (
@@ -547,7 +547,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
                   <Trans
                     i18nKey="cappedFooter"
                     t={t}
-                    values={{ max: MAX_VISIBLE, total: totalFiltered.toLocaleString() }}
+                    values={{ max: MAX_VISIBLE, total: totalFiltered.toLocaleString(i18n.language) }}
                     components={{ 1: <span className="text-warning font-medium" /> }}
                   />
                 )
@@ -563,7 +563,7 @@ export function ItemPicker({ value, onChange, disabled, placeholder }: ItemPicke
             </div>
             {scannedAt && (
               <span className="text-right opacity-40 tabular-nums">
-                {new Date(scannedAt).toLocaleDateString()}
+                {new Date(scannedAt).toLocaleDateString(i18n.language)}
               </span>
             )}
           </div>

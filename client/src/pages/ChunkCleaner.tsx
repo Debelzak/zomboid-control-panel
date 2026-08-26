@@ -220,7 +220,7 @@ function findLastRenderableChunkIndex(
 }
 
 export default function ChunkCleaner() {
-  const { t } = useTranslation("chunkCleaner");
+  const { t, i18n } = useTranslation("chunkCleaner");
   const { theme } = useTheme();
   const socket = useSocket();
   const [saves, setSaves] = useState<SaveInfo[]>([]);
@@ -2093,7 +2093,7 @@ export default function ChunkCleaner() {
                             modifiedLabel = t("save.modifiedDaysAgo", {
                               count: Math.floor(ageDays),
                             });
-                          else modifiedLabel = d.toLocaleDateString();
+                          else modifiedLabel = d.toLocaleDateString(i18n.language);
                         } catch {
                           /* leave empty */
                         }
@@ -2828,9 +2828,9 @@ export default function ChunkCleaner() {
                           </div>
                           <p className="mt-1.5 text-[11px] opacity-70 tabular-nums">
                             {t("canvas.scanProgressDetail", {
-                              chunks: scanProgress.chunks.toLocaleString(),
-                              scanned: scanProgress.scanned.toLocaleString(),
-                              total: scanProgress.total.toLocaleString(),
+                              chunks: scanProgress.chunks.toLocaleString(i18n.language),
+                              scanned: scanProgress.scanned.toLocaleString(i18n.language),
+                              total: scanProgress.total.toLocaleString(i18n.language),
                             })}
                           </p>
                         </>
@@ -2838,7 +2838,7 @@ export default function ChunkCleaner() {
                         <p className="mt-2 text-xs">
                           {scanProgress
                             ? t("canvas.scanningChunks", {
-                                count: scanProgress.chunks.toLocaleString(),
+                                count: scanProgress.chunks.toLocaleString(i18n.language),
                               })
                             : t("canvas.loadingChunks")}
                         </p>

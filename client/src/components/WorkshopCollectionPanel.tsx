@@ -93,13 +93,13 @@ type RowAction = 'add' | 'remove' | 'track' | 'untrack' | 'add-server' | 'remove
 type TFn = (key: string, opts?: Record<string, unknown>) => string
 
 // Friendly relative-time string for the "last refreshed" badge.
-function formatAgo(date: Date | null, t: TFn): string {
+function formatAgo(date: Date | null, t: TFn, locale?: string): string {
   if (!date) return t('never')
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
   if (seconds < 5) return t('justNow')
   if (seconds < 60) return t('secondsAgo', { count: seconds })
   if (seconds < 3600) return t('minutesAgo', { count: Math.floor(seconds / 60) })
-  return date.toLocaleTimeString()
+  return date.toLocaleTimeString(locale)
 }
 
 function parseSteamCookieBlob(raw: string, t: TFn): { sessionid?: string; steamLoginSecure?: string; error?: string } {
@@ -120,7 +120,7 @@ function parseSteamCookieBlob(raw: string, t: TFn): { sessionid?: string; steamL
 }
 
 export function WorkshopCollectionPanel() {
-  const { t } = useTranslation('workshopCollectionPanel')
+  const { t, i18n } = useTranslation('workshopCollectionPanel')
   const { toast } = useToast()
   const [diff, setDiff] = useState<DiffResponse | null>(null)
   const [diffError, setDiffError] = useState<string | null>(null)
@@ -476,7 +476,7 @@ export function WorkshopCollectionPanel() {
               <span className="text-muted-foreground/60">·</span>
               <span>{t('autoSyncLabel')} <strong className={autoSync ? 'text-success' : 'text-muted-foreground'}>{autoSync ? t('on') : t('off')}</strong></span>
               <span className="text-muted-foreground/60">·</span>
-              <span>{t('refreshedAgo', { ago: formatAgo(diffCheckedAt, t) })}</span>
+              <span>{t('refreshedAgo', { ago: formatAgo(diffCheckedAt, t, i18n.language) })}</span>
               {!credsConfigured && (
                 <>
                   <span className="text-muted-foreground/60">·</span>

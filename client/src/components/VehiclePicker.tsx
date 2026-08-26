@@ -77,7 +77,7 @@ export const TYPE_ICON: Record<string, LucideIcon> = {
 const MAX_VISIBLE = 100
 
 export function VehiclePicker({ value, onChange, disabled, placeholder }: VehiclePickerProps) {
-  const { t } = useTranslation('vehiclePicker')
+  const { t, i18n } = useTranslation('vehiclePicker')
   const resolvedPlaceholder = placeholder ?? t('searchVehiclesPlaceholder')
   const [vehicles, setVehicles] = useState<CatalogVehicle[]>([])
   const [initialLoad, setInitialLoad] = useState(true)
@@ -463,7 +463,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
             </div>
             {scannedAt && (
               <span className="truncate text-right opacity-50">
-                {new Date(scannedAt).toLocaleDateString()}
+                {new Date(scannedAt).toLocaleDateString(i18n.language)}
               </span>
             )}
           </div>

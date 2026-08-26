@@ -235,7 +235,7 @@ function getQuickBroadcasts(t: TFunction<'console'>) {
 const COMMAND_HISTORY_FETCH_LIMIT = 50
 
 export default function Console() {
-  const { t } = useTranslation('console')
+  const { t, i18n } = useTranslation('console')
   const chatChannels = useMemo(() => getChatChannels(t), [t])
   const quickCommands = useMemo(() => getQuickCommands(t), [t])
   const quickBroadcasts = useMemo(() => getQuickBroadcasts(t), [t])
@@ -1100,7 +1100,7 @@ export default function Console() {
                       <span className="text-primary">$</span>
                       <span className="text-foreground/90">{entry.command}</span>
                       <span className="text-muted-foreground/60 text-[10px] ml-auto tabular-nums font-mono">
-                        {new Date(entry.timestamp).toLocaleTimeString()}
+                        {new Date(entry.timestamp).toLocaleTimeString(i18n.language)}
                       </span>
                     </div>
                     <div className={cn('ml-4 mt-0.5 text-xs border-l-2 pl-2', entry.success ? 'border-primary/30 text-foreground/85' : 'border-destructive/50 text-destructive')}>
@@ -1308,7 +1308,7 @@ export default function Console() {
                           <div className="flex items-center justify-between">
                             <code className="text-sm font-mono text-primary truncate">{entry.command}</code>
                             <span className="text-xs text-muted-foreground">
-                              {new Date(entry.executed_at).toLocaleString()}
+                              {new Date(entry.executed_at).toLocaleString(i18n.language)}
                             </span>
                           </div>
                           {entry.response && (

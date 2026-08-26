@@ -1332,7 +1332,7 @@ export default function Dashboard() {
                   return (
                     <li key={a.id} className="group grid grid-cols-[3.25rem_1rem_minmax(0,8rem)_minmax(0,1fr)] items-center gap-2 px-3 py-[3px] transition-colors hover:bg-muted/20">
                       <time className="font-mono text-[10px] tabular-nums text-muted-foreground/50">
-                        {new Date(a.logged_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(a.logged_at).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}
                       </time>
                       <span className={cn('flex justify-center', s.tone)} aria-hidden="true">{s.icon}</span>
                       <span className="truncate text-[11px] font-medium text-foreground/85" dir="auto" title={a.player_name}>
@@ -1438,7 +1438,7 @@ export default function Dashboard() {
                   <RefreshCw className={cn('h-3 w-3', loading ? 'animate-spin' : '')} />
                   {t('maintenance.refreshStatus')}
                   <span className="ml-auto font-mono text-[10px] text-muted-foreground/65">
-                    {lastUpdated ? lastUpdated.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—'}
+                    {lastUpdated ? lastUpdated.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' }) : '—'}
                   </span>
                 </Button>
                 <Button
@@ -1590,14 +1590,14 @@ export default function Dashboard() {
                     const category = t(`wipeDialog.categoryLabels.${key}`)
                     if (key === 'leftovers') {
                       return data.files > 0
-                        ? <div key={key}>{t('wipeDialog.filesCount', { count: data.files.toLocaleString(), category, mb: (data.size / 1024 / 1024).toFixed(1) })}</div>
+                        ? <div key={key}>{t('wipeDialog.filesCount', { count: data.files.toLocaleString(i18n.language), category, mb: (data.size / 1024 / 1024).toFixed(1) })}</div>
                         : null
                     }
                     return data.files > 0
-                      ? <div key={key}>{t('wipeDialog.filesCount', { count: data.files.toLocaleString(), category, mb: (data.size / 1024 / 1024).toFixed(1) })}</div>
+                      ? <div key={key}>{t('wipeDialog.filesCount', { count: data.files.toLocaleString(i18n.language), category, mb: (data.size / 1024 / 1024).toFixed(1) })}</div>
                       : <div key={key} className="text-muted-foreground">{t('wipeDialog.noCategoryFilesFound', { category })}</div>
                   })}
-                  <div className="pt-1 font-medium">{t('wipeDialog.total', { count: wipePreview.totalFiles.toLocaleString(), mb: (wipePreview.totalSize / 1024 / 1024).toFixed(1) })}</div>
+                  <div className="pt-1 font-medium">{t('wipeDialog.total', { count: wipePreview.totalFiles.toLocaleString(i18n.language), mb: (wipePreview.totalSize / 1024 / 1024).toFixed(1) })}</div>
                   {wipePreview.truncated && (
                     <div className="pt-1 text-warning">{t('wipeDialog.truncatedWarning')}</div>
                   )}

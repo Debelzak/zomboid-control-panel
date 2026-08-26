@@ -282,7 +282,7 @@ function ActionTile({
 }
 
 export default function Players() {
-  const { t } = useTranslation('players')
+  const { t, i18n } = useTranslation('players')
   const accessLevelLabels = useMemo(() => getAccessLevelLabels(t), [t])
   const [players, setPlayers] = useState<Player[]>([])
   const [perks, setPerks] = useState<PerkChoice[]>([])
@@ -1046,7 +1046,7 @@ export default function Players() {
           <div className="flex items-center gap-2">
             {lastRefresh && (
               <span className="text-xs text-muted-foreground">
-                {t('pageHeader.updated', { time: lastRefresh.toLocaleTimeString() })}
+                {t('pageHeader.updated', { time: lastRefresh.toLocaleTimeString(i18n.language) })}
               </span>
             )}
             <Button onClick={() => { fetchPlayers(); void fetchWhitelist() }} variant="outline" size="sm" className="gap-2">
@@ -1359,7 +1359,7 @@ export default function Players() {
                               : 'hover:bg-muted/50 border-transparent hover:border-border'
                           }`}
                           onClick={() => setSelectedPlayer(name)}
-                          title={t('roster.lastSeenTitle', { when: lastSeen ? lastSeen.toLocaleString() : t('roster.lastSeenUnknown') })}
+                          title={t('roster.lastSeenTitle', { when: lastSeen ? lastSeen.toLocaleString(i18n.language) : t('roster.lastSeenUnknown') })}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
@@ -1377,7 +1377,7 @@ export default function Players() {
                               </span>
                               {lastSeen && (
                                 <span className="text-[10px] text-muted-foreground/70">
-                                  {lastSeen.toLocaleDateString()}
+                                  {lastSeen.toLocaleDateString(i18n.language)}
                                 </span>
                               )}
                             </div>
@@ -1416,7 +1416,7 @@ export default function Players() {
                               <p className="text-[11px] text-muted-foreground truncate" title={ban.reason || ''}>
                                 {ban.reason ? `\u201c${ban.reason}\u201d` : ''}
                                 {ban.reason && ban.banned_at ? ' \u00b7 ' : ''}
-                                {ban.banned_at ? new Date(ban.banned_at).toLocaleDateString() : ''}
+                                {ban.banned_at ? new Date(ban.banned_at).toLocaleDateString(i18n.language) : ''}
                               </p>
                             )}
                           </div>
@@ -1471,7 +1471,7 @@ export default function Players() {
                               </div>
                               <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-muted-foreground">
                                 {account.steamId && <span className="font-mono">{account.steamId}</span>}
-                                {account.lastConnection && <span>{t('roster.whitelistLastConnection', { date: new Date(account.lastConnection).toLocaleDateString() })}</span>}
+                                {account.lastConnection && <span>{t('roster.whitelistLastConnection', { date: new Date(account.lastConnection).toLocaleDateString(i18n.language) })}</span>}
                                 <span>{online ? t('roster.whitelistOnline') : t('roster.whitelistOffline')}</span>
                               </div>
                             </div>
@@ -1614,7 +1614,7 @@ export default function Players() {
                                 </span>
                                 {stat.last_seen && (
                                   <span className="text-muted-foreground/70">
-                                    {t('dossier.lastLabel')} <span className="text-foreground/80">{new Date(stat.last_seen).toLocaleDateString()}</span>
+                                    {t('dossier.lastLabel')} <span className="text-foreground/80">{new Date(stat.last_seen).toLocaleDateString(i18n.language)}</span>
                                   </span>
                                 )}
                               </>
@@ -2234,7 +2234,7 @@ export default function Players() {
                                 {bannedSteamIds.map((ban) => (
                                   <SelectItem key={ban.steamId} value={ban.steamId}>
                                     {ban.steamId}
-                                    {ban.banned_at && <span className="ml-2 text-xs text-muted-foreground">{new Date(ban.banned_at).toLocaleDateString()}</span>}
+                                    {ban.banned_at && <span className="ml-2 text-xs text-muted-foreground">{new Date(ban.banned_at).toLocaleDateString(i18n.language)}</span>}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -2562,11 +2562,11 @@ export default function Players() {
                             </div>
                             <div>
                               <div className="text-muted-foreground text-xs">{t('notes.firstSeen')}</div>
-                              <div className="font-medium text-xs">{new Date(playerStats[selectedPlayer].first_seen).toLocaleDateString()}</div>
+                              <div className="font-medium text-xs">{new Date(playerStats[selectedPlayer].first_seen).toLocaleDateString(i18n.language)}</div>
                             </div>
                             <div>
                               <div className="text-muted-foreground text-xs">{t('notes.lastSeen')}</div>
-                              <div className="font-medium text-xs">{new Date(playerStats[selectedPlayer].last_seen).toLocaleString()}</div>
+                              <div className="font-medium text-xs">{new Date(playerStats[selectedPlayer].last_seen).toLocaleString(i18n.language)}</div>
                             </div>
                           </div>
                         </CardContent>
@@ -2649,7 +2649,7 @@ export default function Players() {
                     <div className="flex justify-between items-center pt-2">
                       <div className="text-xs text-muted-foreground">
                         {playerNotes[selectedPlayer]?.updated_at && (
-                          <span>{t('notes.lastUpdated', { date: new Date(playerNotes[selectedPlayer].updated_at).toLocaleString() })}</span>
+                          <span>{t('notes.lastUpdated', { date: new Date(playerNotes[selectedPlayer].updated_at).toLocaleString(i18n.language) })}</span>
                         )}
                       </div>
                       <div className="flex gap-2">
@@ -2765,7 +2765,7 @@ export default function Players() {
                           activityLogs.map((log) => (
                             <tr key={log.id} className="hover:bg-muted/50">
                               <td className="p-2 whitespace-nowrap text-xs text-muted-foreground">
-                                {new Date(log.logged_at).toLocaleString()}
+                                {new Date(log.logged_at).toLocaleString(i18n.language)}
                               </td>
                               <td className="p-2 text-xs font-medium break-words">{log.player_name}</td>
                               <td className="p-2">
@@ -3057,7 +3057,7 @@ export default function Players() {
                       <div key={`${exp.username}-${exp.filename}`} className="flex items-center justify-between gap-2 rounded-md border border-border/40 px-3 py-1.5 text-xs">
                         <div className="min-w-0 flex-1">
                           <span className="font-medium">{exp.username}</span>
-                          <span className="text-muted-foreground ml-2">{new Date(exp.timestamp).toLocaleString()}</span>
+                          <span className="text-muted-foreground ml-2">{new Date(exp.timestamp).toLocaleString(i18n.language)}</span>
                           <span className="text-muted-foreground ml-2">{t('importExport.sizeKb', { size: (exp.size / 1024).toFixed(1) })}</span>
                         </div>
                         <div className="flex gap-1 shrink-0">

@@ -71,7 +71,7 @@ type SortField = 'name' | 'players' | 'maxPlayers' | 'ping'
 type SortDirection = 'asc' | 'desc'
 
 export default function ServerFinder() {
-  const { t } = useTranslation('serverFinder')
+  const { t, i18n } = useTranslation('serverFinder')
   const [servers, setServers] = useState<GameServer[]>([])
   const [filteredServers, setFilteredServers] = useState<GameServer[]>([])
   const [loading, setLoading] = useState(false)
@@ -429,29 +429,29 @@ export default function ServerFinder() {
           {
             icon: Server,
             label: t('stats.totalServers'),
-            value: servers.length.toLocaleString(),
+            value: servers.length.toLocaleString(i18n.language),
             sub: `${source === 'steam_api' ? t('stats.viaSteamApi') : t('stats.viaMasterServer')}${cached ? t('stats.cachedSuffix') : ''}`,
             tone: 'muted' as const,
           },
           {
             icon: Globe,
             label: t('stats.activeServers'),
-            value: stats.activeServers.toLocaleString(),
+            value: stats.activeServers.toLocaleString(i18n.language),
             sub: t('stats.withPlayersOnline'),
             tone: 'primary' as const,
           },
           {
             icon: Users,
             label: t('stats.totalPlayers'),
-            value: stats.totalPlayers.toLocaleString(),
+            value: stats.totalPlayers.toLocaleString(i18n.language),
             sub: t('stats.playingNow'),
             tone: 'primary' as const,
           },
           {
             icon: Filter,
             label: t('stats.showing'),
-            value: filteredServers.length.toLocaleString(),
-            sub: isFiltered ? t('stats.filteredOf', { count: servers.length.toLocaleString() }) : t('stats.matchingFilters'),
+            value: filteredServers.length.toLocaleString(i18n.language),
+            sub: isFiltered ? t('stats.filteredOf', { count: servers.length.toLocaleString(i18n.language) }) : t('stats.matchingFilters'),
             tone: isFiltered ? ('warning' as const) : ('muted' as const),
           },
         ]
@@ -828,7 +828,7 @@ export default function ServerFinder() {
               {t('pagination.showing', {
                 from: ((currentPage - 1) * ITEMS_PER_PAGE) + 1,
                 to: Math.min(currentPage * ITEMS_PER_PAGE, filteredServers.length),
-                total: filteredServers.length.toLocaleString(),
+                total: filteredServers.length.toLocaleString(i18n.language),
               })}
             </div>
             <nav aria-label={t('pagination.nav')} className="flex items-center gap-2">

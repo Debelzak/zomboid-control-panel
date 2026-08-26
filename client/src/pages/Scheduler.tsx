@@ -118,7 +118,7 @@ function getCommonCommands(t: TFunction) {
 const EXECUTION_HISTORY_FETCH_LIMIT = 50
 
 export default function Scheduler() {
-  const { t } = useTranslation('scheduler')
+  const { t, i18n } = useTranslation('scheduler')
   const weekDays = useMemo(() => getWeekDays(t), [t])
   const commonCommands = useMemo(() => getCommonCommands(t), [t])
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
@@ -1086,7 +1086,7 @@ export default function Scheduler() {
                         </p>
                         {task.last_run && (
                           <p className="text-[11px] text-muted-foreground/70 mt-1">
-                            {t('scheduledTasks.lastRun', { date: new Date(task.last_run).toLocaleString() })}
+                            {t('scheduledTasks.lastRun', { date: new Date(task.last_run).toLocaleString(i18n.language) })}
                           </p>
                         )}
                       </div>
@@ -1249,7 +1249,7 @@ export default function Scheduler() {
                         </div>
                       </div>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(entry.executed_at).toLocaleString()}
+                        {new Date(entry.executed_at).toLocaleString(i18n.language)}
                       </span>
                     </div>
                     <div className="mt-1 ml-6 text-sm">

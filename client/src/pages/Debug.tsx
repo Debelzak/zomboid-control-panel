@@ -1513,7 +1513,7 @@ export default function Debug() {
             ...h,
             memoryMB: Math.round(h.memoryUsed / (1024 * 1024)),
             cpuLoad: h.cpuUsage,
-            time: new Date(h.timestamp).toLocaleTimeString(),
+            time: new Date(h.timestamp).toLocaleTimeString(i18n.language),
             hostMemGB: h.hostMemTotal
               ? +(h.hostMemTotal / (1024 * 1024 * 1024)).toFixed(1)
               : undefined,
@@ -4291,7 +4291,7 @@ export default function Debug() {
                     >
                       {activityPaused ? t("activityTab.pausedPrefix") : ""}
                       {t("activityTab.lastRefresh", {
-                        time: activityLastLoaded.toLocaleTimeString(),
+                        time: activityLastLoaded.toLocaleTimeString(i18n.language),
                       })}
                     </span>
                   )}
@@ -4360,9 +4360,9 @@ export default function Debug() {
                           >
                             <span
                               className="text-muted-foreground shrink-0 w-[65px]"
-                              title={new Date(entry.timestamp).toLocaleString()}
+                              title={new Date(entry.timestamp).toLocaleString(i18n.language)}
                             >
-                              {new Date(entry.timestamp).toLocaleTimeString()}
+                              {new Date(entry.timestamp).toLocaleTimeString(i18n.language)}
                             </span>
                             <Badge
                               variant="outline"
@@ -4573,7 +4573,7 @@ export default function Debug() {
                             s.value,
                           )}
                         >
-                          {tile.value.toLocaleString()}
+                          {tile.value.toLocaleString(i18n.language)}
                         </p>
                       </div>
                     </CardContent>
@@ -4962,7 +4962,7 @@ export default function Debug() {
                               <span className="mx-1.5 text-muted-foreground/50">
                                 ·
                               </span>
-                              {new Date(file.modified).toLocaleString()}
+                              {new Date(file.modified).toLocaleString(i18n.language)}
                             </p>
                           </div>
                         </div>
@@ -5086,7 +5086,7 @@ export default function Debug() {
                                 <span
                                   title={new Date(
                                     log.modified,
-                                  ).toLocaleString()}
+                                  ).toLocaleString(i18n.language)}
                                 >
                                   {formatTimestamp(new Date(log.modified))}
                                 </span>
@@ -5546,7 +5546,7 @@ export default function Debug() {
                         <span
                           title={new Date(
                             healthStatus.timestamp,
-                          ).toLocaleString()}
+                          ).toLocaleString(i18n.language)}
                         >
                           {t("healthTab.lastChecked", {
                             time: formatTimestamp(new Date(healthStatus.timestamp)),
@@ -5791,7 +5791,7 @@ export default function Debug() {
                   t("healthTab.since", {
                     date: new Date(
                       Date.now() - healthStatus.uptime * 1000,
-                    ).toLocaleString(),
+                    ).toLocaleString(i18n.language),
                   })}
                 {!healthStatus && "-"}
               </p>

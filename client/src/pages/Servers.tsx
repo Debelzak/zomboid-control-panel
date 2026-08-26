@@ -232,7 +232,7 @@ export function resolveDockerCardHostStatus(
 }
 
 export default function Servers() {
-  const { t } = useTranslation('servers')
+  const { t, i18n } = useTranslation('servers')
   const confirm = useConfirm()
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
@@ -1817,7 +1817,7 @@ export default function Servers() {
                 {/* Created date */}
                 {server.createdAt && (
                   <p className="text-[11px] text-muted-foreground/60 pt-1">
-                    {t('card.added', { date: new Date(server.createdAt).toLocaleDateString() })}
+                    {t('card.added', { date: new Date(server.createdAt).toLocaleDateString(i18n.language) })}
                   </p>
                 )}
               </CardContent>
@@ -2689,7 +2689,7 @@ export default function Servers() {
                   if (!selected) return t('steamDialog.branchHintDefault')
                   const details = [selected.description]
                   if (selected.buildId) details.push(t('steamDialog.buildPrefix', { buildId: selected.buildId }))
-                  if (selected.timeUpdated) details.push(t('steamDialog.updatedPrefix', { date: new Date(selected.timeUpdated).toLocaleString() }))
+                  if (selected.timeUpdated) details.push(t('steamDialog.updatedPrefix', { date: new Date(selected.timeUpdated).toLocaleString(i18n.language) }))
                   return details.join(' - ')
                 })()}
               </p>

@@ -521,14 +521,14 @@ export function getBridgeOperationGroups(t: TFunction) {
   ] as const
 }
 
-const formatPanelTimestamp = (date: Date): string => {
+const formatPanelTimestamp = (date: Date, locale?: string): string => {
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(locale, {
       dateStyle: 'medium',
       timeStyle: 'medium',
     }).format(date)
   } catch {
-    return date.toLocaleString()
+    return date.toLocaleString(locale)
   }
 }
 
@@ -855,7 +855,7 @@ interface ActivityEntry {
 }
 
 export default function Events() {
-  const { t } = useTranslation('events')
+  const { t, i18n } = useTranslation('events')
   const vehicles = useMemo(() => getVehiclePresets(t), [t])
   const bridgeOperationTemplates = useMemo(() => getBridgeOperationTemplates(t), [t])
   const bridgeOperationForms = useMemo(() => getBridgeOperationForms(t), [t])
@@ -1183,7 +1183,7 @@ export default function Events() {
         }
 
         if (updatedAnySource) {
-          setBridgeOptionsLastUpdated(formatPanelTimestamp(new Date()))
+          setBridgeOptionsLastUpdated(formatPanelTimestamp(new Date(), i18n.language))
         }
       } catch {
         if (!active) return
@@ -1207,7 +1207,7 @@ export default function Events() {
 
   const pushActivity = useCallback((label: string, ok: boolean) => {
     setActivity((prev) => [
-      { key: Date.now() + Math.random(), label, ok, at: formatPanelTimestamp(new Date()) },
+      { key: Date.now() + Math.random(), label, ok, at: formatPanelTimestamp(new Date(), i18n.language) },
       ...prev,
     ].slice(0, 6))
   }, [])
@@ -1579,7 +1579,7 @@ export default function Events() {
             operation: bridgeResultData.operation,
             success: true,
             data: payload,
-            timestamp: formatPanelTimestamp(new Date()),
+            timestamp: formatPanelTimestamp(new Date(), i18n.language),
           })
         } catch { /* ignore refresh failure */ }
       }
@@ -1653,9 +1653,9 @@ export default function Events() {
         operation: bridgeOperation,
         success: true,
         data: payload,
-        timestamp: formatPanelTimestamp(new Date()),
+        timestamp: formatPanelTimestamp(new Date(), i18n.language),
       })
-      setBridgeLastRunAt(formatPanelTimestamp(new Date()))
+      setBridgeLastRunAt(formatPanelTimestamp(new Date(), i18n.language))
       // Refresh combo options for list operations
       if (['getSafehouses', 'getFactions', 'getVehiclesDetailed'].includes(bridgeOperation)) {
         setBridgeOptionsRefreshTick((prev) => prev + 1)
@@ -1688,9 +1688,9 @@ export default function Events() {
         success: false,
         data: null,
         error: message,
-        timestamp: formatPanelTimestamp(new Date()),
+        timestamp: formatPanelTimestamp(new Date(), i18n.language),
       })
-      setBridgeLastRunAt(formatPanelTimestamp(new Date()))
+      setBridgeLastRunAt(formatPanelTimestamp(new Date(), i18n.language))
       toast({
         title: t('toasts.bridgeOperationFailedTitle'),
         description: message,

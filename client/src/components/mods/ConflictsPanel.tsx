@@ -55,7 +55,7 @@ export function ConflictsPanel({
   depSearchOpen, setDepSearchOpen, depSearchData, setDepSearchData,
   depAdding, setDepAdding, depAddResults, setDepAddResults,
 }: ConflictsPanelProps) {
-  const { t } = useTranslation('conflictsPanel')
+  const { t, i18n } = useTranslation('conflictsPanel')
   const [openPairs, setOpenPairs] = useState<string[]>([])
   const [conflictSubTab, setConflictSubTab] = useLocalStorageState<'network' | 'dependencies'>('zcp:mods:conflicts:subTab', 'network')
   const [pairSeverityFilter, setPairSeverityFilter] = useLocalStorageState<'all' | 'real' | 'high' | 'medium' | 'low'>('zcp:mods:conflicts:severity', 'real')
@@ -264,7 +264,7 @@ export function ConflictsPanel({
             <div className="flex items-center gap-2 shrink-0">
               {lastScanTime && (
                 <span className="text-[11px] tabular-nums text-muted-foreground/70 hidden sm:inline">
-                  {t('lastScan', { time: new Date(lastScanTime).toLocaleTimeString() })}
+                  {t('lastScan', { time: new Date(lastScanTime).toLocaleTimeString(i18n.language) })}
                 </span>
               )}
               <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={scanConflicts} disabled={conflictsLoading}>
@@ -1473,7 +1473,7 @@ export function ConflictsPanel({
                                                   )}
                                                   {hit.isDownloaded && <span className="text-[10px] text-success">{t('downloaded')}</span>}
                                                   {typeof hit.subscriberCount === 'number' && hit.subscriberCount > 0 && (
-                                                    <span className="text-[10px] text-muted-foreground/70">{t('subsCount', { count: hit.subscriberCount, formatted: hit.subscriberCount.toLocaleString() })}</span>
+                                                    <span className="text-[10px] text-muted-foreground/70">{t('subsCount', { count: hit.subscriberCount, formatted: hit.subscriberCount.toLocaleString(i18n.language) })}</span>
                                                   )}
                                                 </div>
                                                 {hit.description && (
