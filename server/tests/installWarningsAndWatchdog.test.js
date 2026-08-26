@@ -3,6 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { EventEmitter } from "events";
+import { setSetting } from "../database/init.js";
 
 // 2026-08-26 install-failure hunt findings #6 and #1. #6: the game files
 // installing is the expensive, hard-to-redo part -- a failure in an
@@ -165,6 +166,78 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
     const payload = await completePromise;
     expect(payload.success).toBe(true);
     expect(payload.warnings).toEqual([]);
+  });
+
+  // 2026-08-26 partial-failure-state hunt: these setSetting() calls were
+  // bare awaits with nothing catching a throw, and this app's
+  // process.on("unhandledRejection") handler (server/index.js) calls
+  // fatalExit(), which exits the WHOLE PANEL PROCESS. Before the fix, a
+  // rejection here would never resolve completePromise at all -- this test
+  // would time out (or the real process would simply die) rather than see
+  // an install:complete event. Reaching the assertions below is itself
+  // proof the crash path is closed, independent of what they check.
+  it("collects an INSTALL_SETTINGS_SAVE_FAILED warning instead of crashing the panel when saving settings throws, and still reports success:true", async () => {
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+    vi.mocked(setSetting).mockRejectedValueOnce(new Error("EBUSY: database locked"));
+
+    const { default: router } = await import("../routes/server.js");
+    const { io, completePromise } = fakeIoCapturingComplete();
+    const res = createResponse();
+    await getRouteHandler(router, "/install", "post")(
+      { body: baseBody(), app: { get: (k) => (k === "io" ? io : undefined) } },
+      res,
+    );
+
+    const payload = await completePromise;
+    expect(payload.success).toBe(true);
+    expect(payload.warnings).toContainEqual(
+      expect.objectContaining({
+        progressCode: "INSTALL_SETTINGS_SAVE_FAILED",
+        params: expect.objectContaining({ reason: expect.stringContaining("database locked") }),
+      }),
+    );
+  });
+
+  it("collects an INSTALL_SETTINGS_SAVE_FAILED warning when saving the RCON settings throws, and still reports success:true", async () => {
+    const fakeProc = new EventEmitter();
+    fakeProc.stdout = new EventEmitter();
+    fakeProc.stderr = new EventEmitter();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => fakeProc.emit("close", 0));
+      return fakeProc;
+    });
+    // The general settings block calls setSetting 8 times before the RCON
+    // block's first call -- let those succeed and fail only the RCON one.
+    vi.mocked(setSetting)
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockResolvedValueOnce()
+      .mockRejectedValueOnce(new Error("EBUSY: database locked"));
+
+    const { default: router } = await import("../routes/server.js");
+    const { io, completePromise } = fakeIoCapturingComplete();
+    const res = createResponse();
+    await getRouteHandler(router, "/install", "post")(
+      { body: baseBody(), app: { get: (k) => (k === "io" ? io : undefined) } },
+      res,
+    );
+
+    const payload = await completePromise;
+    expect(payload.success).toBe(true);
+    expect(payload.warnings).toContainEqual(
+      expect.objectContaining({ progressCode: "INSTALL_SETTINGS_SAVE_FAILED" }),
+    );
   });
 
   it("collects an INSTALL_RCON_INI_PRECREATE_FAILED warning instead of silently swallowing the failure, and still reports success:true", async () => {

@@ -69,6 +69,24 @@ export const ProgressCode = Object.freeze({
    * every language by design (same reasoning as WRITABLE_PATH_ERROR in
    * errorCodes.js). Params: {path, reason, command}. */
   INSTALL_DATA_FOLDER_NOT_WRITABLE: "INSTALL_DATA_FOLDER_NOT_WRITABLE",
+  /** Shared across 2 call sites in POST /api/server/install's success path:
+   * persisting the general install settings (serverPath/serverName/
+   * memory/port/UPnP/data paths) and persisting the RCON settings. Both
+   * used to be bare `await setSetting(...)` calls with nothing catching a
+   * failure -- and this app's process.on("unhandledRejection") handler
+   * calls fatalExit(), which kills the ENTIRE PANEL PROCESS (server/
+   * index.js). So a single transient settings-write failure (a lock
+   * contention, a full disk) after SteamCMD had ALREADY finished
+   * successfully didn't just leave a setting unsaved, it took the whole
+   * panel down mid-install with no message to the operator at all -- not
+   * even the generic exit-code failure text, since nothing ever reaches
+   * steamcmd.on("close")'s own res/io calls once the process itself has
+   * exited. 2026-08-26, partial-failure-state hunt. Same non-fatal
+   * `warnings`-array delivery as INSTALL_RCON_INI_PRECREATE_FAILED below
+   * (the game files are fine; only the panel's own bookkeeping failed, and
+   * every failed field can be re-entered from Settings once the panel is
+   * back up). Params: {fields, reason}. */
+  INSTALL_SETTINGS_SAVE_FAILED: "INSTALL_SETTINGS_SAVE_FAILED",
   /** POST /api/server/install -- RCON password/port were saved to settings.
    * Params: {port}. */
   RCON_SETTINGS_SAVED: "RCON_SETTINGS_SAVED",

@@ -184,6 +184,7 @@
   "WIPE_SERVER_RUNNING": "Le serveur doit être arrêté avant la réinitialisation. Arrêtez d'abord le serveur.",
   "WIPE_CONFIRM_REQUIRED": "La réinitialisation nécessite confirm : true",
   "WIPE_BACKUP_FAILED": "Réinitialisation annulée : impossible de créer une sauvegarde au préalable. Rien n'a été supprimé.",
+  "WIPE_PARTIAL_FAILURE": "La réinitialisation a échoué en cours de route ({{reason}}). Certaines des cibles sélectionnées ne sont peut-être que partiellement supprimées -- consultez les résultats pour voir ce qui a été terminé avant l'échec.",
   "CHUNKS_SAVE_PATH_MISSING": "Chemin manquant.",
   "CHUNKS_SAVE_PATH_EMPTY": "Le chemin est vide après normalisation.",
   "CHUNKS_INVALID_SAVE_NAME": "Nom de sauvegarde invalide",

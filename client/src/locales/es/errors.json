@@ -184,6 +184,7 @@
   "WIPE_SERVER_RUNNING": "El servidor debe estar detenido antes de borrar por completo. Detén primero el servidor.",
   "WIPE_CONFIRM_REQUIRED": "El borrado completo requiere confirm: true",
   "WIPE_BACKUP_FAILED": "Borrado cancelado: no se pudo crear una copia de seguridad antes. No se eliminó nada.",
+  "WIPE_PARTIAL_FAILURE": "El borrado falló a mitad de camino ({{reason}}). Algunos de los objetivos seleccionados pueden haberse eliminado solo parcialmente -- revisa los resultados para ver qué se completó antes del fallo.",
   "CHUNKS_SAVE_PATH_MISSING": "Falta la ruta.",
   "CHUNKS_SAVE_PATH_EMPTY": "La ruta queda vacía tras la normalización.",
   "CHUNKS_INVALID_SAVE_NAME": "Nombre de partida guardada no válido",

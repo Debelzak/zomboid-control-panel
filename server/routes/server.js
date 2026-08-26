@@ -2284,29 +2284,46 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
         // operator sees it without being told to reinstall over it.
         const warnings = [];
 
-        // Auto-update settings with new paths
-        await setSetting("serverPath", installPath);
-        await setSetting("serverName", serverName);
-        await setSetting("minMemory", minMemory);
-        await setSetting("maxMemory", maxMemory);
-        await setSetting("serverPort", serverPort);
-        await setSetting("useUpnp", useUpnp);
+        // Auto-update settings with new paths. Wrapped: these were bare
+        // awaits with nothing catching a throw, and this app's
+        // unhandledRejection handler (server/index.js) kills the whole
+        // panel process on an uncaught rejection -- so a transient
+        // settings-write failure here used to take the panel down mid-
+        // install instead of just leaving a setting unsaved. The game
+        // files already installed successfully at this point, so this
+        // follows the same warnings-array convention as the other
+        // self-healing failures below rather than reporting success:false.
+        try {
+          await setSetting("serverPath", installPath);
+          await setSetting("serverName", serverName);
+          await setSetting("minMemory", minMemory);
+          await setSetting("maxMemory", maxMemory);
+          await setSetting("serverPort", serverPort);
+          await setSetting("useUpnp", useUpnp);
 
-        if (zomboidDataPath) {
-          await setSetting("zomboidDataPath", zomboidDataPath);
-        } else {
-          await setSetting("zomboidDataPath", zomboidPath);
-          io.emit("install:log", {
-            type: "stdout",
-            text: `Using ${usesEnvironmentDataPath ? "configured" : "isolated"} data folder: ${zomboidPath}`,
-            progressCode: usesEnvironmentDataPath
-              ? ProgressCode.DATA_FOLDER_USING_CONFIGURED
-              : ProgressCode.DATA_FOLDER_USING_ISOLATED,
-            params: { path: zomboidPath },
+          if (zomboidDataPath) {
+            await setSetting("zomboidDataPath", zomboidDataPath);
+          } else {
+            await setSetting("zomboidDataPath", zomboidPath);
+            io.emit("install:log", {
+              type: "stdout",
+              text: `Using ${usesEnvironmentDataPath ? "configured" : "isolated"} data folder: ${zomboidPath}`,
+              progressCode: usesEnvironmentDataPath
+                ? ProgressCode.DATA_FOLDER_USING_CONFIGURED
+                : ProgressCode.DATA_FOLDER_USING_ISOLATED,
+              params: { path: zomboidPath },
+            });
+          }
+
+          await setSetting("serverConfigPath", serverConfigPath);
+        } catch (settingsError) {
+          log.error(`Failed to save install settings: ${settingsError.message}`);
+          warnings.push({
+            progressCode: ProgressCode.INSTALL_SETTINGS_SAVE_FAILED,
+            message: `Server files installed, but some install settings could not be saved (${sanitizeError(settingsError.message)}). Re-check them under Settings once the panel is back up.`,
+            params: { fields: "serverPath, serverName, memory, port, UPnP, data paths", reason: sanitizeError(settingsError.message) },
           });
         }
-
-        await setSetting("serverConfigPath", serverConfigPath);
 
         // Re-check after the download in case a mounted path changed while
         // SteamCMD was running.
@@ -2335,17 +2352,29 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
           return;
         }
 
-        // Save RCON settings for later use
+        // Save RCON settings for later use. Same crash exposure and same
+        // fix as the settings block above -- a bare await here previously
+        // meant a failed RCON settings write could take the whole panel
+        // down instead of just leaving RCON unconfigured.
         if (rconPassword) {
-          await setSetting("rconPassword", rconPassword);
-          await setSetting("rconPort", rconPort);
-          await setSetting("rconHost", "127.0.0.1");
-          io.emit("install:log", {
-            type: "stdout",
-            text: `RCON settings saved (port: ${rconPort})`,
-            progressCode: ProgressCode.RCON_SETTINGS_SAVED,
-            params: { port: rconPort },
-          });
+          try {
+            await setSetting("rconPassword", rconPassword);
+            await setSetting("rconPort", rconPort);
+            await setSetting("rconHost", "127.0.0.1");
+            io.emit("install:log", {
+              type: "stdout",
+              text: `RCON settings saved (port: ${rconPort})`,
+              progressCode: ProgressCode.RCON_SETTINGS_SAVED,
+              params: { port: rconPort },
+            });
+          } catch (rconSettingsError) {
+            log.error(`Failed to save RCON settings: ${rconSettingsError.message}`);
+            warnings.push({
+              progressCode: ProgressCode.INSTALL_SETTINGS_SAVE_FAILED,
+              message: `Server files installed, but the RCON password/port could not be saved (${sanitizeError(rconSettingsError.message)}). Re-check them under Settings once the panel is back up.`,
+              params: { fields: "RCON password, port, host", reason: sanitizeError(rconSettingsError.message) },
+            });
+          }
         }
 
         // Pre-create the INI with RCON + UPnP settings so PZ reads them on
@@ -4659,7 +4688,7 @@ router.get("/update-check", requirePermission("server.world_events"), async (req
       const result = await updateChecker.checkForUpdates(true);
       res.json(result || { error: "Could not check for updates", code: ErrorCode.UPDATE_CHECK_NO_RESULT });
     } else {
-      res.json(updateChecker.getStatus());
+      res.json(await updateChecker.getStatus());
     }
   } catch (error) {
     log.error(`Update check failed: ${error.message}`);
@@ -4675,7 +4704,25 @@ router.get("/update-check/status", requirePermission("server.world_events"), asy
       return res.status(503).json({ error: "Update checker not available", code: ErrorCode.UPDATE_CHECKER_NOT_AVAILABLE });
     }
 
-    res.json(updateChecker.getStatus());
+    res.json(await updateChecker.getStatus());
+  } catch (error) {
+    res.status(500).json({ error: sanitizeError(error.message) });
+  }
+});
+
+// Acknowledge the last automatic-update result so its banner stops showing.
+// Shared server-side state (not per-browser localStorage) deliberately: a
+// failure one admin dismisses must not vanish for another admin or another
+// device that never saw it.
+router.post("/update-check/auto-update-result/dismiss", requirePermission("server.world_events"), async (req, res) => {
+  try {
+    const updateChecker = req.app.get("updateChecker");
+    if (!updateChecker) {
+      return res.status(503).json({ error: "Update checker not available", code: ErrorCode.UPDATE_CHECKER_NOT_AVAILABLE });
+    }
+
+    await updateChecker.dismissAutoUpdateResult();
+    res.json(await updateChecker.getStatus());
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
@@ -5039,6 +5086,16 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
   }
   wipeInProgress = true;
 
+  // Declared here, not with `const`/`let` inside the try below, so the
+  // catch block can still see whatever these held at the moment of a
+  // mid-wipe throw -- a try-scoped `const results = {}` is invisible to
+  // its own catch in JS, which would have made the partial-failure report
+  // below throw a ReferenceError instead of ever reaching the client.
+  let serverName = null;
+  let backupResult = null;
+  let results = {};
+  let targets = null;
+
   try {
     const serverManager = req.app.get("serverManager");
     await serverManager.loadConfig();
@@ -5063,7 +5120,8 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
       });
     }
 
-    const { targets, confirm, createBackup = true } = req.body || {};
+    let confirm, createBackup;
+    ({ targets, confirm, createBackup = true } = req.body || {});
     if (confirm !== true) {
       return res.status(400).json({ error: "Wipe requires confirm: true", code: ErrorCode.WIPE_CONFIRM_REQUIRED });
     }
@@ -5086,7 +5144,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     }
 
     const savePath = serverManager.savePath;
-    const serverName = serverManager.serverName || "servertest";
+    serverName = serverManager.serverName || "servertest";
     if (!savePath) {
       return res.status(400).json({ error: "No zomboid data path configured", code: ErrorCode.WIPE_ZOMBOID_DATA_PATH_NOT_CONFIGURED });
     }
@@ -5122,7 +5180,6 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     // second copy of the save tree, reports progress over `io` the same way,
     // and is exempt from ad-hoc invention: it's the codebase's one existing
     // answer to "back up the whole world safely."
-    let backupResult = null;
     if (createBackup) {
       const backupService = req.app.get("backupService");
       if (!backupService) {
@@ -5185,7 +5242,7 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
       }
     }
 
-    const results = {};
+    results = {};
 
     // Same directory/file lists as preview
     const MAP_DIRS = [
@@ -5324,7 +5381,28 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
     });
   } catch (error) {
     log.error(`Wipe failed: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
+    // 2026-08-26, partial-failure-state hunt: `results` may already hold
+    // completed targets from before this throw (map/leftovers/accounts
+    // deletion isn't individually try/caught the way players/world's
+    // root-file loops are) -- a bare {error} here told the operator
+    // neither what actually got deleted nor that a pre-wipe backup exists
+    // to fall back to. Both are already in scope from earlier in this
+    // handler; surfacing them costs nothing and answers the two questions
+    // that actually matter after a failed destructive operation.
+    log.warn(`WIPE PARTIAL: server=${serverName || "unknown"}, results=${JSON.stringify(results)}`);
+    await logServerEventBestEffort(
+      "wipe",
+      `Server wipe FAILED partway through: ${error.message}`,
+      { targets, results, error: error.message },
+    );
+    res.status(500).json({
+      error: `Wipe failed partway through (${sanitizeError(error.message)}). Some of the selected targets may be only partially deleted -- check the results for what completed before the failure.`,
+      code: ErrorCode.WIPE_PARTIAL_FAILURE,
+      params: { reason: sanitizeError(error.message) },
+      results,
+      backupCreated: !!backupResult?.success,
+      backupName: backupResult?.backup?.name || null,
+    });
   } finally {
     wipeInProgress = false;
   }

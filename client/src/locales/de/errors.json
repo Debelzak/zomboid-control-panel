@@ -184,6 +184,7 @@
   "WIPE_SERVER_RUNNING": "Der Server muss vor dem Löschen gestoppt werden. Stoppe zuerst den Server.",
   "WIPE_CONFIRM_REQUIRED": "Für den Löschvorgang ist confirm: true erforderlich",
   "WIPE_BACKUP_FAILED": "Löschvorgang abgebrochen: Es konnte vorher kein Backup erstellt werden. Es wurde nichts gelöscht.",
+  "WIPE_PARTIAL_FAILURE": "Löschvorgang ist mittendrin fehlgeschlagen ({{reason}}). Einige der ausgewählten Ziele wurden möglicherweise nur teilweise gelöscht -- prüfe die Ergebnisse, um zu sehen, was vor dem Fehler abgeschlossen wurde.",
   "CHUNKS_SAVE_PATH_MISSING": "Fehlender Pfad.",
   "CHUNKS_SAVE_PATH_EMPTY": "Der Pfad ist nach der Normalisierung leer.",
   "CHUNKS_INVALID_SAVE_NAME": "Ungültiger Spielstandname",

@@ -184,6 +184,7 @@
   "WIPE_SERVER_RUNNING": "Sèvè a dwe sispann anvan w efase l. Sispann sèvè a dabò.",
   "WIPE_CONFIRM_REQUIRED": "Efasman bezwen confirm: true",
   "WIPE_BACKUP_FAILED": "Efasman anile: pa t kapab fè yon kopi sovgad anvan. Pa gen anyen ki efase.",
+  "WIPE_PARTIAL_FAILURE": "Efasman echwe nan mitan wout ({{reason}}). Gen posiblite kèk nan sib ou chwazi yo efase sèlman an pati -- tcheke rezilta yo pou wè sa ki fini anvan echèk la.",
   "CHUNKS_SAVE_PATH_MISSING": "Chemen an manke.",
   "CHUNKS_SAVE_PATH_EMPTY": "Chemen an vid apre nòmalizasyon.",
   "CHUNKS_INVALID_SAVE_NAME": "Non sovgad envalid",

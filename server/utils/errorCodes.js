@@ -709,6 +709,19 @@ export const ErrorCode = Object.freeze({
    * backup: proceeding after a failed backup is worse than not offering
    * one, since the operator now believes an undo exists. */
   WIPE_BACKUP_FAILED: "WIPE_BACKUP_FAILED",
+  /** server/routes/server.js -- POST /wipe, the backup succeeded and
+   * deletion began, but one of the per-target delete steps (map dirs,
+   * leftovers-sweep, accounts db) threw partway through -- e.g. an EPERM
+   * on one file in a multi-directory delete. The players/world steps
+   * already catch their own errors and record "not found" instead of
+   * crashing; map/leftovers/accounts did not, so a mid-loop throw used to
+   * reach the outer catch and return a bare `{error}` with no indication
+   * of which targets partially completed or that a pre-wipe backup exists
+   * to recover from. 2026-08-26, partial-failure-state hunt. Carries the
+   * partial `results` object (same shape as a successful wipe's) plus
+   * `backupCreated`/`backupName` so the operator isn't left guessing
+   * whether an undo exists. Params: {reason}. */
+  WIPE_PARTIAL_FAILURE: "WIPE_PARTIAL_FAILURE",
 
   /** server/routes/chunks.js -- POST /save-path, no `path` string in the body. */
   CHUNKS_SAVE_PATH_MISSING: "CHUNKS_SAVE_PATH_MISSING",

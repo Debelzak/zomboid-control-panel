@@ -233,6 +233,60 @@ describe("POST /api/server/wipe backs up before deleting (default createBackup: 
   });
 });
 
+// 2026-08-26 bug hunt (partial-failure-state): the map/leftovers/accounts
+// deletion steps aren't individually try/caught the way players/world's
+// root-file loops are, so a throw partway through used to reach the outer
+// catch and reply with a bare {error}, telling the operator neither what
+// had already been deleted nor that a pre-wipe backup exists to fall back
+// to. This also guards the fix itself: serverName/backupResult/results
+// were declared with const/let INSIDE the try block, invisible to its own
+// catch in JS -- a naive fix referencing them there would throw a
+// ReferenceError instead of ever reaching response.json, which these
+// assertions would catch by simply failing to see the expected shape.
+describe("POST /api/server/wipe reports partial state when a deletion step throws mid-way", () => {
+  it("surfaces WIPE_PARTIAL_FAILURE with the partial results and backup info instead of a bare {error}", async () => {
+    const serverManager = buildServerManager();
+    const backupService = {
+      createBackup: vi.fn(async () => ({
+        success: true,
+        backup: { name: "servertest_2026.zip" },
+      })),
+    };
+    const app = {
+      get: (key) => {
+        if (key === "serverManager") return serverManager;
+        if (key === "backupService") return backupService;
+        return undefined;
+      },
+    };
+
+    const rmSpy = vi.spyOn(fs, "rmSync").mockImplementation(() => {
+      throw new Error("EPERM: operation not permitted");
+    });
+
+    const handler = getWipeHandler();
+    const response = createResponse();
+    try {
+      await handler(
+        { app, body: { targets: ["map"], confirm: true } },
+        response,
+      );
+    } finally {
+      rmSpy.mockRestore();
+    }
+
+    expect(response.status).toHaveBeenCalledWith(500);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "WIPE_PARTIAL_FAILURE",
+        backupCreated: true,
+        backupName: "servertest_2026.zip",
+        results: expect.any(Object),
+      }),
+    );
+  });
+});
+
 describe("POST /api/server/wipe with createBackup: false", () => {
   it("skips the backup step entirely and deletes as before", async () => {
     const serverManager = buildServerManager();
