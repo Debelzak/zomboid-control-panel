@@ -46,7 +46,11 @@ interface EmptyStateProps {
   type?: EmptyStateType
   icon?: ReactNode
   title: string
-  description?: string
+  // A plain string covers most callers, but body copy that needs to define a
+  // jargon term inline (e.g. a HelpTip on "PanelBridge") has nowhere else to
+  // put it -- widened from `string` so that case has an escape hatch without
+  // a second, differently-shaped prop next to this one.
+  description?: ReactNode
   action?: EmptyStateAction
   secondaryAction?: EmptyStateAction
   compact?: boolean

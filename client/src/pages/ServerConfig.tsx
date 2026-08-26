@@ -3262,7 +3262,15 @@ export default function ServerConfig() {
                 <EmptyState
                   type="noMods"
                   title={t('modSettingsTab.notLoadedTitle')}
-                  description={t('modSettingsTab.notLoadedDesc')}
+                  description={
+                    <span>
+                      {t('modSettingsTab.notLoadedDescPrefix')}
+                      <HelpTip label={t('modSettingsTab.panelBridgeLabel')} side="bottom" className="mx-1 align-[-2px]">
+                        {t('modSettingsTab.panelBridgeTip')}
+                      </HelpTip>
+                      {t('modSettingsTab.notLoadedDescSuffix')}
+                    </span>
+                  }
                 />
               )}
 

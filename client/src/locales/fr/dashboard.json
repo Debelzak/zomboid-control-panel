@@ -112,6 +112,8 @@
     "serverStatusUnknown": "État du serveur inconnu",
     "serverStopped": "Serveur arrêté",
     "rconDisconnected": "RCON déconnecté",
+    "rconHelpLabel": "RCON",
+    "rconHelpTip": "RCON est le protocole de console à distance que ce panneau utilise pour envoyer des commandes au jeu en cours d'exécution — expulser des joueurs, sauvegarder le monde, diffuser des messages, et tout ce que fait le panneau. Tant qu'il est déconnecté, ces actions sont indisponibles jusqu'à la reconnexion.",
     "hostMemory": "Mémoire de l'hôte {{percent}} %",
     "diskAlmostFull": "Disque presque plein, {{gb}} Go restants",
     "diskPercent": "Disque {{percent}} %, {{gb}} Go restants",

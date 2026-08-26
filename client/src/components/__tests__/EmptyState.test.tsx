@@ -31,6 +31,17 @@ describe('EmptyState', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('accepts a ReactNode description, not just a plain string -- the seam that lets a HelpTip live inside empty-state body copy', () => {
+    render(
+      <EmptyState
+        title="Mod settings not loaded"
+        description={<span>Fetch options via <button type="button">PanelBridge</button></span>}
+      />
+    )
+    expect(screen.getByText(/Fetch options via/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'PanelBridge' })).toBeInTheDocument()
+  })
+
   it('renders compact variant with smaller padding', () => {
     const { container } = render(<EmptyState title="Compact" compact />)
     const wrapper = container.firstElementChild as HTMLElement

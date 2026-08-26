@@ -30,6 +30,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import { cn, copyText } from '@/lib/utils'
 import { getUserErrorMessage, getRecoveryUrl } from '@/lib/errorMessage'
 import { VerdictBand, WorkList } from '@/components/dashboard/DashboardVerdict'
@@ -726,6 +727,11 @@ export default function Dashboard() {
       return {
         level: 'warning',
         headline: t('verdict.rconDisconnected'),
+        headlineHelp: (
+          <HelpTip label={t('verdict.rconHelpLabel')} className="ml-1.5 align-[-2px]">
+            {t('verdict.rconHelpTip')}
+          </HelpTip>
+        ),
         action: {
           label: t('actions.connectRcon'),
           onClick: () => { void handleConnect() },

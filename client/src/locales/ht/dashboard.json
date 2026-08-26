@@ -112,6 +112,8 @@
     "serverStatusUnknown": "Estati sèvè enkoni",
     "serverStopped": "Sèvè a sispann",
     "rconDisconnected": "RCON dekonekte",
+    "rconHelpLabel": "RCON",
+    "rconHelpTip": "RCON se pwotokòl konsòl adistans panèl sa a itilize pou voye kòmand nan jwèt k ap fonksyone a — mete jwè deyò, sove mond lan, difize mesaj, ak tout lòt bagay panèl la fè. Pandan li dekonekte, aksyon sa yo pa disponib jistan li rekonekte.",
     "hostMemory": "Memwa lame a {{percent}}%",
     "diskAlmostFull": "Disk prèske plen, {{gb}} GB rete",
     "diskPercent": "Disk {{percent}}%, {{gb}} GB rete",

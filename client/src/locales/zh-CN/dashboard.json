@@ -112,6 +112,8 @@
     "serverStatusUnknown": "服务器状态未知",
     "serverStopped": "服务器已停止",
     "rconDisconnected": "RCON 已断开",
+    "rconHelpLabel": "RCON",
+    "rconHelpTip": "RCON 是本面板用来向正在运行的游戏发送命令的远程控制台协议——踢出玩家、保存世界、广播消息，以及面板所做的其他一切操作。在它断开连接期间，这些操作将无法使用，直到重新连接为止。",
     "hostMemory": "主机内存 {{percent}}%",
     "diskAlmostFull": "磁盘空间即将耗尽，剩余 {{gb}} GB",
     "diskPercent": "磁盘 {{percent}}%，剩余 {{gb}} GB",

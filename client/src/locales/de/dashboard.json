@@ -112,6 +112,8 @@
     "serverStatusUnknown": "Serverstatus unbekannt",
     "serverStopped": "Server gestoppt",
     "rconDisconnected": "RCON getrennt",
+    "rconHelpLabel": "RCON",
+    "rconHelpTip": "RCON ist das Remote-Konsolen-Protokoll, mit dem dieses Panel Befehle an das laufende Spiel sendet — Spieler kicken, die Welt speichern, Nachrichten senden und alles andere, was das Panel tut. Solange die Verbindung getrennt ist, sind diese Aktionen nicht verfügbar, bis sie wiederhergestellt ist.",
     "hostMemory": "Host-Arbeitsspeicher {{percent}} %",
     "diskAlmostFull": "Festplatte fast voll, noch {{gb}} GB frei",
     "diskPercent": "Festplatte {{percent}} %, noch {{gb}} GB frei",
