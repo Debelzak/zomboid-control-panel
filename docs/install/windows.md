@@ -61,10 +61,11 @@ finally a boxed **"Ready"** section listing a `Local:` URL
 default browser automatically — you don't need to type it in yourself.
 
 **If this goes wrong:**
-- The console prints `ERROR no ZomboidControlPanel binary found` — you ran
-  `Start.bat` from somewhere other than the folder you extracted in Phase 1,
-  or moved `Start.bat` without its sibling `.exe`. Re-extract into one folder
-  and run it from there.
+- The console prints `ERROR: No ZomboidControlPanel binary found in this
+  folder.` followed by `Expected one of: ZomboidControlPanel.exe, .exe.new,
+  .exe.new2` — you ran `Start.bat` from somewhere other than the folder you
+  extracted in Phase 1, or moved `Start.bat` without its sibling `.exe`.
+  Re-extract into one folder and run it from there.
 - The console prints `Port <n> is in use and PORT is explicitly set;
   refusing to choose a different port.` — see
   [Phase 7](#phase-7-what-to-do-if-port-3001-is-already-taken) below. If you
