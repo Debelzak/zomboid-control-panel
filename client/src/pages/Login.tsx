@@ -10,6 +10,29 @@ import { Eye, EyeOff, Loader2, ArrowLeft, KeyRound } from 'lucide-react'
 
 type PanelStatus = 'checking' | 'online' | 'unreachable'
 
+// Device-scoped only: counts failed login SUBMISSIONS from this browser,
+// never the submitted username or any per-account state. The mechanism this
+// hints at (10 failed attempts on ONE account -> 15 minute lock, see
+// services/auth.js) never changes what it shows the user either way --
+// "Invalid username or password" reads identically whether the account
+// exists, is currently locked, or the password was simply wrong. That's a
+// deliberate anti-enumeration property and stays; what was actually missing
+// is that a stuck user has no way to learn the mechanism exists at all. This
+// hint fixes that without becoming an account oracle: it reacts only to "did
+// this browser's last few submissions fail," never to who or what was typed,
+// so it reads identically for a real account, a locked account, or a typo'd
+// username that doesn't exist. See conv install-idiot-proofing-2026-08.
+const LOGIN_DEVICE_FAILURE_KEY = 'pz-login-failed-attempts'
+const DEVICE_HINT_THRESHOLD = 3
+
+function readDeviceFailureCount(): number {
+  try {
+    return Number(localStorage.getItem(LOGIN_DEVICE_FAILURE_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
 function usePanelHealth() {
   const [status, setStatus] = useState<PanelStatus>('checking')
   const [version, setVersion] = useState<string | null>(null)
@@ -49,6 +72,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const errorId = error ? 'login-error' : undefined
+  const [deviceFailedAttempts, setDeviceFailedAttempts] = useState(readDeviceFailureCount)
 
   const [resetMode, setResetMode] = useState(false)
   const [resetAvailable, setResetAvailable] = useState(false)
@@ -133,8 +157,17 @@ export default function Login() {
     setLoading(true)
     try {
       await login(username, password, rememberMe)
+      // Succeeded -- this device no longer needs the hint below on a future
+      // visit, regardless of how many failures came before it.
+      setDeviceFailedAttempts(0)
+      try { localStorage.removeItem(LOGIN_DEVICE_FAILURE_KEY) } catch { /* ignore */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : t('errors.loginFailed'))
+      setDeviceFailedAttempts((prev) => {
+        const next = prev + 1
+        try { localStorage.setItem(LOGIN_DEVICE_FAILURE_KEY, String(next)) } catch { /* ignore */ }
+        return next
+      })
     } finally {
       setLoading(false)
     }
@@ -438,6 +471,22 @@ export default function Login() {
                   className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                 >
                   {error}
+                </div>
+              )}
+
+              {deviceFailedAttempts >= DEVICE_HINT_THRESHOLD && (
+                <div
+                  role="status"
+                  className="rounded-md border border-border/70 bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground"
+                >
+                  <p className="font-medium text-foreground">{t('repeatedFailureHint.title')}</p>
+                  <p className="mt-1">
+                    <Trans
+                      t={t}
+                      i18nKey="repeatedFailureHint.body"
+                      components={{ code: <span className="font-mono text-foreground/85" /> }}
+                    />
+                  </p>
                 </div>
               )}
 

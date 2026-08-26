@@ -93,10 +93,19 @@ the password is right, or you simply never wrote it down.
 **What it means, first:** if you've mistyped the password 10 times, the
 account locks for 15 minutes — but the panel still shows the exact same
 `Invalid username or password` message during the lockout, not a distinct
-"account locked" message. If you were sure of the password and it suddenly
-stops working for a while after several attempts, this is almost certainly
-why. Wait 15 minutes and try again with the correct password before
-assuming it's actually wrong.
+"account locked" message (this is deliberate: a message that changed when an
+account got locked would let someone confirm an account exists just by
+trying wrong passwords against it). If you were sure of the password and it
+suddenly stops working for a while after several attempts, this is almost
+certainly why. Wait 15 minutes and try again with the correct password
+before assuming it's actually wrong.
+
+After a few failed sign-in attempts from the same browser, the login page
+itself starts showing a **"Still not working?"** hint explaining this same
+15-minute lockout and pointing at recovery codes and `--reset-password` —
+it appears the same way regardless of whether the account you're typing
+exists, is locked, or the password was simply wrong, so seeing it isn't
+itself a sign anything is broken.
 
 Also check for `Too many login attempts. Please try again later.` — that's
 a separate, shorter limit (5 attempts per minute per IP) and clears in under
@@ -142,23 +151,22 @@ actually running on, or use a recovery code / `--reset-password`.
 **What you see:** the server won't connect over RCON, but the two possible
 causes look similar from the outside.
 
-**What to do:** open **Servers**, find the server's RCON fields, and use its
-**Test connection** button rather than just trying to connect from the
-dashboard — the test endpoint tells the two failure modes apart explicitly:
+**What to do:** either the dashboard's reconnect action or **Servers → Test
+connection** now tells the two failure modes apart the same way:
 
-- `Unreachable: check host and port` — the panel couldn't even open a TCP
-  connection. This means the PZ server isn't listening there at all: it's
-  not running, `RCONPort` in its `.ini` doesn't match what you typed, a
-  firewall is blocking it, or the host/IP is wrong.
-- `Authentication failed: check RCON password` — the panel reached the
-  server and got a response, but the password you gave doesn't match
+- `Unreachable` / `Could not connect to RCON. Is the server running and RCON
+  enabled?` — the panel couldn't even open a TCP connection. This means the
+  PZ server isn't listening there at all: it's not running, `RCONPort` in
+  its `.ini` doesn't match what you typed, a firewall is blocking it, or the
+  host/IP is wrong.
+- `Authentication failed` / `Connected to the server, but authentication
+  failed. Check the RCON password in server settings.` — the panel reached
+  the server and got a response, but the password you gave doesn't match
   `RCONPassword` in the PZ server's `.ini`.
 
-The dashboard's own reconnect action only gives you the generic `Could not
-connect to RCON. Is the server running and RCON enabled?` — it doesn't
-distinguish the two causes, which is exactly why **Servers → Test
-connection** is the right tool for diagnosing this rather than retrying from
-the dashboard.
+(The exact wording differs slightly between the two entry points, but both
+now distinguish the same two causes — neither collapses them into one
+generic message anymore.)
 
 Once connected, if a live command later drops the connection, watch for
 these in the console/log — they map to the same two root causes:
