@@ -1436,14 +1436,23 @@ export class RconService extends EventEmitter {
     return this.execute("stoprain");
   }
 
+  // 2026-08-26 bug hunt: this used to send a bare "startstorm" with no
+  // duration when the caller omitted one, leaving PZ's own internal default
+  // to decide the length -- an internal default this panel has no way to
+  // read, and one that PanelBridge's triggerStorm Lua handler does NOT
+  // share, since it explicitly defaults an omitted duration to 2.0 hours.
+  // Two controls both labeled "Storm" could silently run for different
+  // lengths depending on which one was pressed, with nothing surfacing that
+  // they could disagree. Fixed by always sending an explicit duration here
+  // too -- 2.0 hours, matching PanelBridge's own existing default exactly,
+  // rather than inventing a new number or trying to guess PZ's hidden one
+  // (unverifiable from this repo, and not the point: the fix is making both
+  // paths agree with EACH OTHER, not with a number neither of us can see).
   async startStorm(duration = null) {
-    if (duration !== null && duration !== undefined) {
-      const n = Number(duration);
-      if (!Number.isFinite(n) || n < 0 || n > 168)
-        throw new Error("duration must be 0-168");
-      return this.execute(`startstorm ${n}`);
-    }
-    return this.execute("startstorm");
+    const n = duration === null || duration === undefined ? 2.0 : Number(duration);
+    if (!Number.isFinite(n) || n < 0 || n > 168)
+      throw new Error("duration must be 0-168");
+    return this.execute(`startstorm ${n}`);
   }
 
   async stopWeather() {
