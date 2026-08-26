@@ -169,6 +169,57 @@ if (Test-Path $pkgFile) {
     Write-Warning "Package file not found: $pkgFile"
 }
 
+# client/package.json drifted from root for four releases (1.2.2 while root
+# reached 1.2.6) because this step never touched it -- bump it in the same
+# step as root so there's no window where they can disagree. A test
+# (server/tests/clientVersionMatchesRoot.test.js) asserts they match, but
+# this is the fix at the one place versions actually get bumped; the test is
+# the backstop for every OTHER way they could still drift (a hand-edit, a
+# merge like the one that didn't cause this drift but could have).
+$clientPkgFile = Join-Path $RepoDir "client\package.json"
+if (Test-Path $clientPkgFile) {
+    $clientContent = Get-Content $clientPkgFile -Raw
+    $newClientContent = $clientContent -replace '"version":\s*"[^"]*"', "`"version`": `"$Version`""
+    if ($DryRun) {
+        Write-Dry "Would update $clientPkgFile"
+    } else {
+        [System.IO.File]::WriteAllText($clientPkgFile, $newClientContent, [System.Text.UTF8Encoding]::new($false))
+        Write-Ok "Updated $clientPkgFile"
+    }
+} else {
+    Write-Warning "Package file not found: $clientPkgFile"
+}
+
+# client/package-lock.json carries the version TWICE (top-level, and again
+# under packages[""]) -- a blind "replace every version string" would also
+# clobber unrelated dependencies that happen to share the same version
+# number (e.g. a dependency pinned to the same "1.2.x" string). Anchor on
+# the package's own name, which appears nowhere else in the file, so only
+# the two real occurrences move.
+$clientLockFile = Join-Path $RepoDir "client\package-lock.json"
+if (Test-Path $clientLockFile) {
+    $lockContent = Get-Content $clientLockFile -Raw
+    $lockPattern = '("name":\s*"pz-server-manager-client",\s*\r?\n\s*"version":\s*")[^"]*(")'
+    # ${1}/${2}, not $1/$2 -- .NET tries to parse digits immediately after a
+    # bare $N as part of the group number, and $Version starts with a digit,
+    # so "$1" + "9.9.9" reads as "reference group 19" (which doesn't exist)
+    # and silently drops the whole backreference instead of falling back to
+    # group 1. Caught this only by actually running it against a scratch
+    # copy -- the pattern read correctly, the substitution didn't.
+    $newLockContent = [regex]::Replace($lockContent, $lockPattern, "`${1}$Version`${2}")
+    $matchCount = [regex]::Matches($lockContent, $lockPattern).Count
+    if ($matchCount -ne 2) {
+        Write-Warning "Expected exactly 2 version occurrences anchored to pz-server-manager-client in $clientLockFile, found $matchCount -- skipping automatic edit, update it by hand"
+    } elseif ($DryRun) {
+        Write-Dry "Would update $clientLockFile ($matchCount occurrences)"
+    } else {
+        [System.IO.File]::WriteAllText($clientLockFile, $newLockContent, [System.Text.UTF8Encoding]::new($false))
+        Write-Ok "Updated $clientLockFile ($matchCount occurrences)"
+    }
+} else {
+    Write-Warning "Package lock file not found: $clientLockFile"
+}
+
 # ============================================
 # STEP 2: Build client
 # ============================================
