@@ -100,6 +100,8 @@
   "RCON_INVALID_PORT": "Puerto no válido (1-65535)",
   "RCON_INVALID_PASSWORD": "Formato de contraseña no válido",
   "RCON_CONNECT_FAILED": "No se pudo conectar a RCON. ¿Está el servidor en ejecución y RCON activado?",
+  "RCON_CONNECT_UNREACHABLE": "No se pudo conectar a RCON. ¿Está el servidor en ejecución y RCON activado?",
+  "RCON_CONNECT_AUTH_FAILED": "Conectado al servidor, pero la autenticación falló. Verifica la contraseña de RCON en la configuración del servidor.",
   "BACKUP_REMOTE_NOT_AVAILABLE": "Las copias de seguridad no están disponibles para servidores remotos. El sistema de archivos del servidor no es accesible desde este panel.",
   "BACKUPS_FOLDER_NOT_FOUND": "No se encontró la carpeta de copias de seguridad",
   "BACKUP_INVALID_FILE": "Archivo de copia de seguridad no válido",

@@ -100,6 +100,8 @@
   "RCON_INVALID_PORT": "Pò envalid (1-65535)",
   "RCON_INVALID_PASSWORD": "Fòma modpas envalid",
   "RCON_CONNECT_FAILED": "Pa t kapab konekte ak RCON. Èske sèvè a ap kouri epi RCON aktive?",
+  "RCON_CONNECT_UNREACHABLE": "Pa t kapab konekte ak RCON. Èske sèvè a ap kouri epi RCON aktive?",
+  "RCON_CONNECT_AUTH_FAILED": "Konekte ak sèvè a, men otantifikasyon echwe. Verifye modpas RCON nan paramèt sèvè a.",
   "BACKUP_REMOTE_NOT_AVAILABLE": "Kopi sovgad pa disponib pou sèvè aleka. Sistèm dosye sèvè a pa aksesib soti nan panèl sa a.",
   "BACKUPS_FOLDER_NOT_FOUND": "Dosye kopi sovgad pa jwenn",
   "BACKUP_INVALID_FILE": "Dosye kopi sovgad envalid",

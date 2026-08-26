@@ -66,16 +66,29 @@ export function checkTcpReachable(host, port, timeoutMs) {
   });
 }
 
+// Default timeout for a user-initiated connection attempt: this function's
+// own probe, and POST /connect's follow-up reachability check below (routes/
+// rcon.js) when reused for the same purpose. Longer than checkPortOpen()'s
+// 2s background-loop timeout, same reasoning as that method's comment.
+export const RCON_USER_ACTION_TIMEOUT_MS = 5000;
+
+// The two canonical detail strings for a first-time RCON handshake failure.
+// Exported so POST /connect (routes/rcon.js) can report the exact same
+// wording for the exact same two classes /test already distinguishes,
+// instead of maintaining a second, independently-drifting mapping.
+export const RCON_UNREACHABLE_DETAIL = "Unreachable: check host and port";
+export const RCON_AUTH_FAILED_DETAIL = "Authentication failed: check RCON password";
+
 // Tests arbitrary RCON credentials without touching the shared RconService
 // singleton's connection state — used by the "Test Connection" UI so a user
 // can validate host/port/password before saving them.
-export async function testRconConnection({ host, port, password, timeoutMs = 5000 }) {
+export async function testRconConnection({ host, port, password, timeoutMs = RCON_USER_ACTION_TIMEOUT_MS }) {
   const reachable = await checkTcpReachable(host, port, timeoutMs);
   if (!reachable) {
     return {
       success: false,
       error: "unreachable",
-      detail: "Unreachable: check host and port",
+      detail: RCON_UNREACHABLE_DETAIL,
     };
   }
 
@@ -87,7 +100,7 @@ export async function testRconConnection({ host, port, password, timeoutMs = 500
     return {
       success: false,
       error: "auth_failed",
-      detail: "Authentication failed: check RCON password",
+      detail: RCON_AUTH_FAILED_DETAIL,
     };
   } finally {
     client.disconnect();

@@ -100,6 +100,8 @@
   "RCON_INVALID_PORT": "端口无效（1-65535）",
   "RCON_INVALID_PASSWORD": "密码格式无效",
   "RCON_CONNECT_FAILED": "无法连接到 RCON。服务器是否正在运行且已启用 RCON？",
+  "RCON_CONNECT_UNREACHABLE": "无法连接到 RCON。服务器是否正在运行且已启用 RCON？",
+  "RCON_CONNECT_AUTH_FAILED": "已连接到服务器，但身份验证失败。请检查服务器设置中的 RCON 密码。",
   "BACKUP_REMOTE_NOT_AVAILABLE": "远程服务器不支持备份。此面板无法访问该服务器的文件系统。",
   "BACKUPS_FOLDER_NOT_FOUND": "未找到备份文件夹",
   "BACKUP_INVALID_FILE": "备份文件无效",

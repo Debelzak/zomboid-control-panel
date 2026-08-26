@@ -82,23 +82,31 @@ function findMemberReferences() {
   return found;
 }
 
-// Two ErrorCode entries are registered but deliberately never emitted --
-// each was split into narrower variants on 2026-08-22 (WRITABLE_PATH_ERROR
-// -> WRITABLE_PATH_{INSTALL,DATA}_{BAREMETAL,CONTAINER};
-// DIRECTORY_READ_FAILED -> DIRECTORY_READ_FAILED_{WINDOWS,POSIX}) because
-// each one covered multiple distinct English sentences behind an
-// unreachable {{label}}/{{guidance}} placeholder that never actually
-// received params. Both splits were additive-only: the original code stays
-// registered, with its own explanatory comment at the registry entry (see
-// server/utils/errorCodes.js) and its own client/src/locales/en/errors.json
-// key, on purpose -- "kept for registry completeness," not an oversight.
-// Verified 2026-08-23: neither appears as a literal or an ErrorCode.NAME
-// reference anywhere in server/routes, server/services, server/middleware
-// or server/index.js. Do not remove either from this allowlist without
-// first removing the registry entry and its locale key in the same commit.
+// Three ErrorCode entries are registered but deliberately never emitted --
+// each was split into narrower variants because the original covered
+// multiple distinct outcomes behind one message. WRITABLE_PATH_ERROR and
+// DIRECTORY_READ_FAILED were split on 2026-08-22 (into
+// WRITABLE_PATH_{INSTALL,DATA}_{BAREMETAL,CONTAINER} and
+// DIRECTORY_READ_FAILED_{WINDOWS,POSIX} respectively) because each covered
+// multiple distinct English sentences behind an unreachable
+// {{label}}/{{guidance}} placeholder that never actually received params.
+// RCON_CONNECT_FAILED was split on 2026-08-26 into RCON_CONNECT_UNREACHABLE
+// / RCON_CONNECT_AUTH_FAILED (server/routes/rcon.js POST /connect) because
+// it collapsed "host never reachable" and "reachable, but the password is
+// wrong" into one generic message, while POST /rcon/test already told the
+// two apart -- see conv install-idiot-proofing-2026-08. All three splits
+// were additive-only: the original code stays registered, with its own
+// explanatory comment at the registry entry (see server/utils/errorCodes.js)
+// and its own client/src/locales/en/errors.json key, on purpose -- "kept
+// for registry completeness," not an oversight. Verified 2026-08-26: none
+// of the three appears as a literal or an ErrorCode.NAME reference anywhere
+// in server/routes, server/services, server/middleware or server/index.js.
+// Do not remove any of them from this allowlist without first removing the
+// registry entry and its locale key in the same commit.
 const KNOWN_INTENTIONALLY_UNREFERENCED = new Set([
   "WRITABLE_PATH_ERROR",
   "DIRECTORY_READ_FAILED",
+  "RCON_CONNECT_FAILED",
 ]);
 
 // This is a STRUCTURE check, one level deeper than the fr/en locale parity

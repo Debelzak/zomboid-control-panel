@@ -4,7 +4,13 @@ const log = createLogger('API:RCON');
 import { getCommandHistory } from '../database/init.js';
 import { PZ_COMMANDS } from '../utils/commands.js';
 import { sanitizeError } from '../utils/sanitize.js';
-import { testRconConnection } from '../services/rcon.js';
+import {
+  testRconConnection,
+  checkTcpReachable,
+  RCON_UNREACHABLE_DETAIL,
+  RCON_AUTH_FAILED_DETAIL,
+  RCON_USER_ACTION_TIMEOUT_MS,
+} from '../services/rcon.js';
 import { requirePermission } from '../services/permissions.js';
 import { ErrorCode } from '../utils/errorCodes.js';
 
@@ -124,13 +130,42 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
     if (host || port || password) {
       rconService.updateConfig(host, port, password);
     }
-    
-    const connected = await rconService.connect();
-    if (connected) {
-      res.json({ success: true, message: 'Connected to RCON' });
-    } else {
-      res.status(503).json({ success: false, error: 'Could not connect to RCON. Is the server running and RCON enabled?', code: ErrorCode.RCON_CONNECT_FAILED });
+
+    let connected;
+    try {
+      connected = await rconService.connect();
+    } catch {
+      // rconService.connect() throws for some failures (e.g. authenticate()
+      // rejecting) and resolves false for others (e.g. the port never opened)
+      // -- both just mean "did not connect" here. Which one it was gets
+      // reclassified by the reachability probe below, the same way /test
+      // classifies it, rather than by sniffing this error's message.
+      connected = false;
     }
+
+    if (connected) {
+      return res.json({ success: true, message: 'Connected to RCON' });
+    }
+
+    // Reused from /api/rcon/test (below): same probe, same two canonical
+    // detail strings, so the dashboard's reconnect action -- the path a
+    // user hits FIRST -- tells "never reachable" apart from "reachable, but
+    // the password is wrong" exactly as well as the Servers page already
+    // does, instead of the one generic message this used to return for both.
+    const { host: configuredHost, port: configuredPort } = rconService.getConfig();
+    const reachable = await checkTcpReachable(configuredHost, configuredPort, RCON_USER_ACTION_TIMEOUT_MS);
+    if (!reachable) {
+      return res.status(503).json({
+        success: false,
+        error: RCON_UNREACHABLE_DETAIL,
+        code: ErrorCode.RCON_CONNECT_UNREACHABLE,
+      });
+    }
+    return res.status(503).json({
+      success: false,
+      error: RCON_AUTH_FAILED_DETAIL,
+      code: ErrorCode.RCON_CONNECT_AUTH_FAILED,
+    });
   } catch (error) {
     log.error(`RCON connect failed: ${error.message}`);
     const rconService = req.app.get('rconService');

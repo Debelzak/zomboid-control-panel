@@ -100,6 +100,8 @@
   "RCON_INVALID_PORT": "Ungültiger Port (1–65535)",
   "RCON_INVALID_PASSWORD": "Ungültiges Passwortformat",
   "RCON_CONNECT_FAILED": "Verbindung zu RCON fehlgeschlagen. Läuft der Server und ist RCON aktiviert?",
+  "RCON_CONNECT_UNREACHABLE": "Verbindung zu RCON fehlgeschlagen. Läuft der Server und ist RCON aktiviert?",
+  "RCON_CONNECT_AUTH_FAILED": "Mit dem Server verbunden, aber die Authentifizierung ist fehlgeschlagen. RCON-Passwort in den Servereinstellungen überprüfen.",
   "BACKUP_REMOTE_NOT_AVAILABLE": "Backups sind für externe Server nicht verfügbar. Das Server-Dateisystem ist von diesem Panel aus nicht zugänglich.",
   "BACKUPS_FOLDER_NOT_FOUND": "Backup-Ordner nicht gefunden",
   "BACKUP_INVALID_FILE": "Ungültige Backup-Datei",

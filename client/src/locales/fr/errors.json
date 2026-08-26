@@ -100,6 +100,8 @@
   "RCON_INVALID_PORT": "Port invalide (1-65535)",
   "RCON_INVALID_PASSWORD": "Format de mot de passe invalide",
   "RCON_CONNECT_FAILED": "Impossible de se connecter au RCON. Le serveur est-il démarré et le RCON activé ?",
+  "RCON_CONNECT_UNREACHABLE": "Impossible de se connecter au RCON. Le serveur est-il démarré et le RCON activé ?",
+  "RCON_CONNECT_AUTH_FAILED": "Connecté au serveur, mais l'authentification a échoué. Vérifiez le mot de passe RCON dans les paramètres du serveur.",
   "BACKUP_REMOTE_NOT_AVAILABLE": "Les sauvegardes ne sont pas disponibles pour les serveurs distants. Le système de fichiers du serveur n'est pas accessible depuis ce panneau.",
   "BACKUPS_FOLDER_NOT_FOUND": "Dossier de sauvegardes introuvable",
   "BACKUP_INVALID_FILE": "Fichier de sauvegarde invalide",

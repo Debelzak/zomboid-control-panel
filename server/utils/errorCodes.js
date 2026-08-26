@@ -389,9 +389,22 @@ export const ErrorCode = Object.freeze({
   /** server/routes/rcon.js -- POST /api/rcon/connect, password isn't a
    * string or exceeds 256 characters. */
   RCON_INVALID_PASSWORD: "RCON_INVALID_PASSWORD",
-  /** server/routes/rcon.js -- POST /api/rcon/connect, rconService.connect()
-   * returned false (server not running or RCON not enabled there). */
+  /** No longer emitted by server/routes/rcon.js as of the 2026-08-26 /connect
+   * granularity fix -- a failed connect() is now always classified as one of
+   * the two codes below instead. Kept defined (not deleted) since it's a
+   * frozen wire value other integrations may still match on; see
+   * RCON_CONNECT_UNREACHABLE / RCON_CONNECT_AUTH_FAILED for the real codes. */
   RCON_CONNECT_FAILED: "RCON_CONNECT_FAILED",
+  /** server/routes/rcon.js -- POST /api/rcon/connect, rconService.connect()
+   * failed and a follow-up TCP probe confirms host:port is unreachable --
+   * same classification /api/rcon/test uses (RCON_UNREACHABLE_DETAIL in
+   * services/rcon.js). */
+  RCON_CONNECT_UNREACHABLE: "RCON_CONNECT_UNREACHABLE",
+  /** server/routes/rcon.js -- POST /api/rcon/connect, rconService.connect()
+   * failed but host:port IS reachable -- treated as a failed authentication,
+   * same classification /api/rcon/test uses (RCON_AUTH_FAILED_DETAIL in
+   * services/rcon.js). */
+  RCON_CONNECT_AUTH_FAILED: "RCON_CONNECT_AUTH_FAILED",
 
   /** server/routes/backup.js -- POST /api/backup/create, active server is
    * remote (SFTP-managed), so there's no local filesystem to back up. */
