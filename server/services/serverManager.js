@@ -394,13 +394,34 @@ export class ServerManager {
           this.serverPath = dbServerPath;
           log.debug(`Loaded serverPath from database: ${dbServerPath}`);
         }
+        // Defense in depth: config.js's PUT /app-settings now rejects an
+        // unsafe serverName before it can be stored (the real fix), but an
+        // install that already has one saved from before that validation
+        // existed would otherwise carry it straight into this.serverName /
+        // this.serverBat, which getServerConfig()/saveServerConfig() below
+        // and the .bat/.sh launch path both interpolate into a filesystem
+        // path unguarded. path.basename() unchanged is the same "safe or
+        // reject" test serverFiles.js's getServerName() uses -- here a
+        // reject just means "treat as if no legacy name were configured"
+        // (this.serverName/this.serverBat stay at their prior/default
+        // values, exactly like the `if (dbServerName)` false case already
+        // did) rather than throwing, since this is a broad state-loading
+        // method with many non-request callers, not a single-purpose
+        // accessor a route handler can turn straight into a 400.
         if (dbServerName) {
-          this.serverName = dbServerName;
-          // Use custom startup script if server was set up through the app
-          if (isWindows) {
-            this.serverBat = `StartServer_${dbServerName}.bat`;
+          const safeServerName = path.basename(dbServerName);
+          if (safeServerName === dbServerName && safeServerName) {
+            this.serverName = dbServerName;
+            // Use custom startup script if server was set up through the app
+            if (isWindows) {
+              this.serverBat = `StartServer_${dbServerName}.bat`;
+            } else {
+              this.serverBat = `start-server_${dbServerName}.sh`;
+            }
           } else {
-            this.serverBat = `start-server_${dbServerName}.sh`;
+            log.warn(
+              `Ignoring legacy settings.serverName "${dbServerName}" -- contains path-unsafe characters. Re-save the server name in Settings to clear this.`,
+            );
           }
         }
         if (dbZomboidPath) {

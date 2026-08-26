@@ -3840,13 +3840,19 @@ router.post("/add-missing-dep", async (req, res) => {
       let wsAdded = false;
       if (!currentWs.includes(wsIdStr)) {
         currentWs.push(wsIdStr);
+        // sanitizeIniList, not a bare join(";") -- inert today only because
+        // wsIdStr is already digit-only by the time it gets here (workshopId
+        // is regex-checked earlier in this handler), but every other
+        // WorkshopItems=/Mods= write site in this file goes through
+        // sanitizeIniList/sanitizeModIdList regardless of whether its own
+        // input happens to be pre-constrained, and this one should match
+        // (2026-08-26 bug hunt finding 14) rather than rely on a guard that
+        // lives in a different function than the write it protects.
+        const wsLine = `WorkshopItems=${sanitizeIniList(currentWs)}`;
         if (content.includes("WorkshopItems=")) {
-          content = content.replace(
-            /^WorkshopItems=.*/m,
-            `WorkshopItems=${currentWs.join(";")}`,
-          );
+          content = content.replace(/^WorkshopItems=.*/m, wsLine);
         } else {
-          content += `\nWorkshopItems=${currentWs.join(";")}`;
+          content += `\n${wsLine}`;
         }
         wsAdded = true;
       }

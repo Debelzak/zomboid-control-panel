@@ -152,6 +152,74 @@ describe("PUT /api/config/app-settings", () => {
     expect(response.status).toHaveBeenCalledWith(400);
     expect(setSetting).not.toHaveBeenCalled();
   });
+
+  // 2026-08-26 bug hunt finding 1: this was the one serverName write path
+  // that never validated the value at all, unlike routes/servers.js's
+  // SERVER_NAME_REGEX for the modern multi-server profile path -- an
+  // unvalidated value here reaches an unguarded path.join() downstream in
+  // serverManager.js's legacy-settings fallback (getServerConfig/
+  // saveServerConfig build `${serverName}.ini`, and the same value names
+  // the launched startup script). Rejecting it here is the real fix;
+  // serverManagerLegacyServerNameGuard.test.js covers the sink-side defense
+  // in depth for a value already stored before this validation existed.
+  it("rejects a serverName containing a path-traversal segment (Finding 1)", async () => {
+    setSetting.mockReset();
+    const response = createResponse();
+
+    await runRoute(
+      "/app-settings",
+      "put",
+      {
+        body: { settings: { serverName: "../../../etc/evil" } },
+        user: { role: "admin" },
+        app: makeApp(),
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(setSetting).not.toHaveBeenCalled();
+  });
+
+  it("rejects a serverName that is itself an absolute path (Finding 1)", async () => {
+    setSetting.mockReset();
+    const response = createResponse();
+
+    await runRoute(
+      "/app-settings",
+      "put",
+      {
+        body: { settings: { serverName: "/etc/passwd" } },
+        user: { role: "admin" },
+        app: makeApp(),
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(setSetting).not.toHaveBeenCalled();
+  });
+
+  it("allows a normal serverName", async () => {
+    setSetting.mockReset();
+    const response = createResponse();
+
+    await runRoute(
+      "/app-settings",
+      "put",
+      {
+        body: { settings: { serverName: "DoomerZ" } },
+        user: { role: "admin" },
+        app: makeApp(),
+      },
+      response,
+    );
+
+    expect(setSetting).toHaveBeenCalledWith("serverName", "DoomerZ");
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+  });
 });
 
 describe("PUT /api/config", () => {

@@ -391,6 +391,31 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
         }
       }
 
+      // serverName is interpolated into filesystem paths downstream
+      // (serverManager.js's getServerConfig/saveServerConfig build
+      // `${serverName}.ini`, and the same value names the launched
+      // StartServer_<name>.bat/start-server_<name>.sh script) via the
+      // legacy-settings fallback in serverManager.js's loadConfig(). The
+      // modern multi-server profile path (routes/servers.js's
+      // SERVER_NAME_REGEX) already rejects anything but a traversal-
+      // incapable name at write time for exactly this reason -- this
+      // endpoint is the one write path that never got the same check
+      // (2026-08-26 bug hunt finding 13). Same whitelist, kept local
+      // rather than imported since route files in this codebase don't
+      // currently import from one another (servers.js/server.js each keep
+      // their own copy of this same regex already).
+      if (
+        key === "serverName" &&
+        !/^[a-zA-Z0-9_-][a-zA-Z0-9_\- ]*[a-zA-Z0-9_-]$|^[a-zA-Z0-9_-]$/.test(
+          String(value),
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            "Server name may only contain letters, numbers, spaces, underscores and hyphens (and can't start or end with a space).",
+        });
+      }
+
       if (
         key === "modCheckInterval" &&
         minutesToCheckIntervalMs(value) === null
