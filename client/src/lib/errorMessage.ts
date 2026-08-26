@@ -97,6 +97,30 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+// Escape hatch for eslint-rules/no-raw-error-message.js: that rule forbids
+// writing `error instanceof Error ? error.message : fallback` directly in a
+// toast/error-state call, in favor of getUserErrorMessage() above.
+//
+// In practice this turned out to be nearly unused: getUserErrorMessage()
+// already falls through to the exact same raw-message behavior when no
+// error code matches (see its own body above), so a "bucket C" site (the
+// 2026-08-26 coverage audit's term for self-contained validation text with
+// no code and no sensible recovery link) shows byte-identical text either
+// way — there is no real site found in that audit where calling
+// getUserErrorMessage() instead of the raw ternary was worse. The honest
+// answer is that almost every real site should just call
+// getUserErrorMessage() and take the free upgrade if a code ever gets
+// added later, not reach for this.
+//
+// Kept anyway, deliberately trivial, as a named and greppable way to state
+// "I considered getUserErrorMessage() here and it's wrong for this specific
+// site" for the rare future case that isn't just bucket C — a plain
+// eslint-disable comment hides that reasoning; a call to this function
+// puts it in the diff and in code review.
+export function rawErrorMessageIntentional(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 // HARD CONSTRAINT: every destination this function can return must be an
 // internal path (enforced below by requiring a leading "/") -- never build
 // this from anything the server sends as free text, and never loosen the
