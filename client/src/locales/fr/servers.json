@@ -61,6 +61,8 @@
     "buildLabel": "Build :",
     "branchLabel": "Branche :",
     "stopThisServer": "Arrêter ce serveur",
+    "stopConfirmTitle": "Arrêter le serveur ?",
+    "stopConfirmDescription": "Cela déconnectera tous les joueurs connectés. Vous pouvez le redémarrer à tout moment.",
     "stopping": "Arrêt...",
     "stop": "Arrêter",
     "startThisServer": "Démarrer ce serveur",

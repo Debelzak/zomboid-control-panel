@@ -62,6 +62,8 @@
     "buildLabel": "Build:",
     "branchLabel": "Branch:",
     "stopThisServer": "Sispann sèvè sa a",
+    "stopConfirmTitle": "Sispann sèvè a?",
+    "stopConfirmDescription": "Sa ap dekonekte tout jwè ki konekte yo. Ou ka demare l ankò nenpòt lè.",
     "stopping": "N ap sispann...",
     "stop": "Sispann",
     "startThisServer": "Demare sèvè sa a",

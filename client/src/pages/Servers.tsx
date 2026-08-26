@@ -86,6 +86,7 @@ import { resolveClientProvider, waitForServerState } from '@/lib/serverStatus'
 import { getInstallProgressMessage } from '@/lib/installProgressMessage'
 import { ServerStatusBadge } from '@/components/ServerStatusBadge'
 import { SocketContext } from '@/contexts/SocketContext'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { PasswordInput } from '@/components/PasswordInput'
@@ -232,6 +233,7 @@ export function resolveDockerCardHostStatus(
 
 export default function Servers() {
   const { t } = useTranslation('servers')
+  const confirm = useConfirm()
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
   const [rconStatuses, setRconStatuses] = useState<Record<string, string>>({})
@@ -905,6 +907,18 @@ export default function Servers() {
   }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t])
 
   const handleInlineStop = useCallback(async (server: ServerInstance) => {
+    // Unlike the Dashboard's Stop button (which gates behind a confirm
+    // dialog), this inline card button ran the stop immediately on click --
+    // a single misclick disconnects everyone on the server with no chance
+    // to back out. Reversible (start it again anytime), so this stays a
+    // plain, non-destructive-styled confirm rather than full alarm styling.
+    const ok = await confirm({
+      title: t('card.stopConfirmTitle'),
+      description: t('card.stopConfirmDescription'),
+      confirmLabel: t('card.stop'),
+      destructive: false,
+    })
+    if (!ok) return
     setServerActionPending(`stop-${server.id}`)
     try {
       if (!server.isActive) {
@@ -930,7 +944,7 @@ export default function Servers() {
     } finally {
       setServerActionPending(null)
     }
-  }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t])
+  }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t, confirm])
 
   const handleDeleteServer = async () => {
     if (!deleteServer) return

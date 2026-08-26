@@ -61,6 +61,8 @@
     "buildLabel": "Build:",
     "branchLabel": "Rama:",
     "stopThisServer": "Detener este servidor",
+    "stopConfirmTitle": "¿Detener el servidor?",
+    "stopConfirmDescription": "Esto desconectará a todos los jugadores conectados. Puedes volver a iniciarlo cuando quieras.",
     "stopping": "Deteniendo…",
     "stop": "Detener",
     "startThisServer": "Iniciar este servidor",

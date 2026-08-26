@@ -61,6 +61,7 @@ import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
+import { useConfirm } from '@/contexts/ConfirmContext'
 
 interface Player {
   name: string
@@ -985,6 +986,7 @@ export default function Events() {
   } | null>(null)
 
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   const [activeSection, setActiveSection] = useState<EventSectionKey>('rain')
   const [sectionQuery, setSectionQuery] = useState('')
@@ -1618,6 +1620,28 @@ export default function Events() {
         variant: 'destructive',
       })
       return
+    }
+
+    // Kick/ban ops are raw-argument bridge commands with no other gate --
+    // unlike every other kick/ban entry point in the app (Players.tsx), a
+    // mistyped username/IP/SteamID here fires straight at a real player with
+    // zero confirmation. Not styled destructive-red: these are reversible
+    // via an unban elsewhere, matching the same tier as Players.tsx's own
+    // kick/ban dialogs, just a last-look check before it goes out.
+    if (['moderationKickUser', 'moderationBanUser', 'moderationBanIP', 'moderationBanSteamID'].includes(bridgeOperation)) {
+      const target = String(parsedArgs.username ?? parsedArgs.ip ?? parsedArgs.steamId ?? '')
+      const reason = typeof parsedArgs.reason === 'string' ? parsedArgs.reason : ''
+      const operationLabel = bridgeOperationTemplates[bridgeOperation]?.label || bridgeOperation
+      const ok = await confirm({
+        title: t('bridgeOps.moderationConfirmTitle', { operation: operationLabel }),
+        description: t('bridgeOps.moderationConfirmDescription', {
+          target: target ? t('bridgeOps.moderationConfirmTarget', { target }) : '',
+          reason: reason ? t('bridgeOps.moderationConfirmReason', { reason }) : '',
+        }),
+        confirmLabel: t('bridgeOps.moderationConfirmButton'),
+        destructive: false,
+      })
+      if (!ok) return
     }
 
     setBridgeLoading(bridgeOperation)

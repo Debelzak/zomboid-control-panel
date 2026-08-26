@@ -977,7 +977,13 @@ export default function Dashboard() {
                   title: t('confirm.stopServer.title'),
                   description: t('confirm.stopServer.description'),
                   action: serverApi.stop,
-                  variant: 'destructive',
+                  // Same severity class as the adjacent graceful Restart
+                  // button (reversible, comes back with a click) -- was
+                  // styled destructive-red while Restart uses warning-amber
+                  // for the same "disconnects players, nothing is lost"
+                  // outcome. Matches Restart's precedent instead of
+                  // inventing a third tier.
+                  variant: 'warning',
                 })}
                 disabled={loading !== null || !hostRunning}
                 variant="ghost"

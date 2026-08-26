@@ -61,6 +61,8 @@
     "buildLabel": "构建版本：",
     "branchLabel": "分支：",
     "stopThisServer": "停止此服务器",
+    "stopConfirmTitle": "停止服务器？",
+    "stopConfirmDescription": "这将断开所有已连接玩家的连接。您可以随时重新启动它。",
     "stopping": "正在停止…",
     "stop": "停止",
     "startThisServer": "启动此服务器",

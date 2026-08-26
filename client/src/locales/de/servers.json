@@ -61,6 +61,8 @@
     "buildLabel": "Build:",
     "branchLabel": "Branch:",
     "stopThisServer": "Diesen Server stoppen",
+    "stopConfirmTitle": "Server stoppen?",
+    "stopConfirmDescription": "Dadurch werden alle verbundenen Spieler getrennt. Du kannst ihn jederzeit wieder starten.",
     "stopping": "Wird gestoppt...",
     "stop": "Stoppen",
     "startThisServer": "Diesen Server starten",
