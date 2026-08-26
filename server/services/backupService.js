@@ -79,7 +79,18 @@ async function countFiles(rootDir) {
   return count;
 }
 
-function waitForArchiveEntry(archive, append) {
+// 2026-08-26 bug hunt: used to resolve with nothing (undefined) on BOTH a
+// genuine "entry" success and an ENOENT warning (a file that vanished
+// between the initial scan and archiving -- a real race on a live PZ
+// directory, since the game process rotates/deletes temp files, logs and
+// lock files while a backup can be mid-scan). That made the two outcomes
+// indistinguishable to every caller, so a silently-dropped file left zero
+// trace anywhere -- createBackup resolved success:true regardless of how
+// many files were actually skipped. Now resolves { skipped: boolean } so
+// callers can track precisely which archive entries made it in and which
+// didn't, entry by entry, with no separate bookkeeping needed: every path
+// that adds anything to the archive already goes through this function.
+export function waitForArchiveEntry(archive, append) {
   return new Promise((resolve, reject) => {
     let settled = false;
 
@@ -96,11 +107,11 @@ function waitForArchiveEntry(archive, append) {
       handler(value);
     };
 
-    const onEntry = () => settle(resolve);
+    const onEntry = () => settle(resolve, { skipped: false });
     const onError = (error) => settle(reject, error);
     const onWarning = (error) => {
       if (error.code === "ENOENT") {
-        settle(resolve);
+        settle(resolve, { skipped: true });
       } else {
         settle(reject, error);
       }
@@ -118,13 +129,19 @@ function waitForArchiveEntry(archive, append) {
   });
 }
 
-async function appendDirectoryToArchive(archive, sourceRoot, destinationRoot) {
+// Returns the archive-relative paths of any entries that were skipped
+// (vanished between the scan and the archive pass) rather than swallowing
+// that information the way the caller used to have no way to find out.
+export async function appendDirectoryToArchive(archive, sourceRoot, destinationRoot) {
+  const skipped = [];
   for await (const { entry, fullPath, archivePath } of walkDirectory(sourceRoot)) {
     const entryName = `${destinationRoot}/${archivePath}${entry.isDirectory() ? "/" : ""}`;
-    await waitForArchiveEntry(archive, () =>
+    const result = await waitForArchiveEntry(archive, () =>
       archive.file(fullPath, { name: entryName }),
     );
+    if (result.skipped) skipped.push(entryName);
   }
+  return skipped;
 }
 
 export class BackupService {
@@ -433,6 +450,10 @@ export class BackupService {
     });
 
     let filesProcessed = 0;
+    // Every archive addition (saves-folder walk, the snapshot, db.json) goes
+    // through waitForArchiveEntry, so this collects every skip precisely --
+    // not a sampled backstop, the complete account.
+    const skippedFiles = [];
 
     return new Promise((resolve, reject) => {
       // Track progress during archiving
@@ -478,9 +499,15 @@ export class BackupService {
         const sizeBytes = archive.pointer();
         const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
 
-        log.info(
-          `Backup completed: ${backupName} (${sizeMB} MB) in ${duration}s`,
-        );
+        if (skippedFiles.length > 0) {
+          log.warn(
+            `Backup ${backupName} completed but skipped ${skippedFiles.length} file(s) that vanished during archiving: ${skippedFiles.join(", ")}`,
+          );
+        } else {
+          log.info(
+            `Backup completed: ${backupName} (${sizeMB} MB) in ${duration}s`,
+          );
+        }
 
         this.lastBackup = {
           name: backupName,
@@ -527,10 +554,19 @@ export class BackupService {
             );
         }
 
+        // Surfaced, not decided here: the transition (write + rename) really
+        // did succeed, so success stays true -- but WHETHER a skip is
+        // acceptable depends on why this backup was taken, which only the
+        // caller knows. A routine/scheduled backup tolerates skips and
+        // reports them; a backup taken immediately before a destructive
+        // operation (restoreBackup's pre-restore backup, /wipe's pre-wipe
+        // backup) is about to become the only copy and must treat any skip
+        // as a failure. That policy lives at those call sites, not here.
         resolve({
           success: true,
           backup: this.lastBackup,
           duration: parseFloat(duration),
+          skippedFiles,
         });
       });
 
@@ -573,21 +609,25 @@ export class BackupService {
 
       const appendBackupContents = async () => {
         try {
-          await appendDirectoryToArchive(
+          const skippedSaves = await appendDirectoryToArchive(
             archive,
             savesPath,
             path.basename(savesPath),
           );
-          await waitForArchiveEntry(archive, () =>
+          skippedFiles.push(...skippedSaves);
+
+          const snapshotResult = await waitForArchiveEntry(archive, () =>
             archive.append(JSON.stringify(serverSnapshot, null, 2), {
               name: "panel-server-snapshot.json",
             }),
           );
+          if (snapshotResult.skipped) skippedFiles.push("panel-server-snapshot.json");
 
           if (dbPathToInclude) {
-            await waitForArchiveEntry(archive, () =>
+            const dbResult = await waitForArchiveEntry(archive, () =>
               archive.file(dbPathToInclude, { name: "db.json" }),
             );
+            if (dbResult.skipped) skippedFiles.push("db.json");
           }
 
           await archive.finalize();
@@ -974,16 +1014,31 @@ export class BackupService {
         // running silently -- restore no longer looks stalled during what can
         // be the longest part of the whole operation.
         const preBackupResult = await this.createBackup({ isPreRestore: true, io });
-        if (!preBackupResult.success) {
-          log.error(`Pre-restore backup failed: ${preBackupResult.message}`);
+        // 2026-08-26 bug hunt: createBackup can return success:true while
+        // having silently skipped files that vanished mid-archive (a real
+        // race on a live PZ directory) -- it surfaces that via
+        // skippedFiles rather than deciding policy itself, because the same
+        // skip means different things depending on why the backup exists.
+        // THIS backup is about to become the world's only copy while
+        // restore overwrites the live save -- "mostly complete" is not a
+        // safety net here, so any skip is treated exactly like an outright
+        // backup failure, the same fail-closed posture already applied to
+        // an unconfirmed server-stopped state above.
+        const preBackupIncomplete =
+          preBackupResult.success && (preBackupResult.skippedFiles?.length ?? 0) > 0;
+        if (!preBackupResult.success || preBackupIncomplete) {
+          const reason = preBackupIncomplete
+            ? `it skipped ${preBackupResult.skippedFiles.length} file(s) that vanished during archiving (${preBackupResult.skippedFiles.join(", ")}) -- an incomplete pre-restore backup is not a safety net`
+            : preBackupResult.message;
+          log.error(`Pre-restore backup failed: ${reason}`);
           emitProgress(
             "error",
             0,
-            `Cannot restore: pre-restore backup failed (${preBackupResult.message}). Aborting to protect save data.`,
+            `Cannot restore: pre-restore backup failed (${reason}). Aborting to protect save data.`,
           );
           return {
             success: false,
-            message: `Cannot restore: pre-restore backup failed (${preBackupResult.message}). Aborting to protect save data.`,
+            message: `Cannot restore: pre-restore backup failed (${reason}). Aborting to protect save data.`,
           };
         }
       }

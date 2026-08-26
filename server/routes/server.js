@@ -5103,9 +5103,21 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
       }
       const io = req.app.get("io");
       backupResult = await backupService.createBackup({ isPreWipe: true, io });
-      if (!backupResult.success) {
+      // 2026-08-26 bug hunt: createBackup can return success:true while
+      // having silently skipped files that vanished mid-archive -- it
+      // surfaces that via skippedFiles rather than deciding policy itself.
+      // This backup is about to become the ONLY copy of whatever wipe is
+      // about to delete -- "mostly complete" is not a safety net, so any
+      // skip is treated exactly like an outright backup failure, same as
+      // the existing backup-or-abort posture below.
+      const backupIncomplete =
+        backupResult.success && (backupResult.skippedFiles?.length ?? 0) > 0;
+      if (!backupResult.success || backupIncomplete) {
+        const reason = backupIncomplete
+          ? `it skipped ${backupResult.skippedFiles.length} file(s) that vanished during archiving (${backupResult.skippedFiles.join(", ")}) -- an incomplete pre-wipe backup is not a safety net`
+          : backupResult.message;
         return res.status(500).json({
-          error: `Wipe aborted: could not create a backup first (${backupResult.message}). Nothing was deleted.`,
+          error: `Wipe aborted: could not create a backup first (${reason}). Nothing was deleted.`,
           code: ErrorCode.WIPE_BACKUP_FAILED,
         });
       }

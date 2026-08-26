@@ -198,7 +198,23 @@ router.post("/create", requirePermission("backups.manage"), async (req, res) => 
     const result = await backupService.createBackup({ ...req.body, io });
 
     if (result.success) {
-      res.json(result);
+      // 2026-08-26 bug hunt: createBackup surfaces skipped files rather than
+      // deciding policy -- this is the routine/manual path, so a skip
+      // (almost always a temp/log/lock file the live game process rotated
+      // out from under the scan) is tolerated, not fatal. Reported as a
+      // warnings array so it's visible rather than silently dropped, same
+      // convention as the reloadWarnings/scriptWarnings responses used
+      // elsewhere tonight.
+      if (result.skippedFiles?.length > 0) {
+        res.json({
+          ...result,
+          warnings: [
+            `${result.skippedFiles.length} file(s) vanished during archiving and were skipped: ${result.skippedFiles.join(", ")}. This usually means a temp, log, or lock file the running server rewrote mid-backup -- check that the backup still restores correctly if any of these look like save data.`,
+          ],
+        });
+      } else {
+        res.json(result);
+      }
     } else {
       res.status(400).json(result);
     }

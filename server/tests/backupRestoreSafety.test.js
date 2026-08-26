@@ -174,6 +174,59 @@ describe("restoreBackup archive safety", () => {
     ).toBe("RESTORED");
   });
 
+  // 2026-08-26 bug hunt: createBackup can return success:true while having
+  // silently skipped files that vanished mid-archive (a real race on a live
+  // PZ directory) -- it surfaces that via skippedFiles rather than deciding
+  // policy itself. The pre-restore backup is about to become the world's
+  // ONLY copy while restore overwrites the live save, so this must refuse
+  // exactly like an outright backup failure -- "mostly complete" is not a
+  // safety net here.
+  it("refuses to restore when the mandatory pre-restore backup completed but silently skipped a file", async () => {
+    const good = path.join(backupsPath, "good.zip");
+    await writeValidBackup(good, "RESTORED");
+
+    const service = createService();
+    service.createBackup = async () => ({
+      success: true,
+      backup: { name: "pre-restore.zip" },
+      skippedFiles: ["servertest/map_meta.bin"],
+    });
+
+    const result = await service.restoreBackup("good.zip", {
+      createPreRestoreBackup: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/pre-restore backup failed/i);
+    expect(result.message).toContain("map_meta.bin");
+    // Nothing about the live save should have moved -- restore must never
+    // reach extraction when the safety net it depends on isn't real.
+    expect(
+      fs.readFileSync(path.join(savesPath, "map_meta.bin"), "utf8"),
+    ).toBe("LIVE");
+  });
+
+  it("still restores normally when the pre-restore backup completes with zero skips", async () => {
+    const good = path.join(backupsPath, "good.zip");
+    await writeValidBackup(good, "RESTORED");
+
+    const service = createService();
+    service.createBackup = async () => ({
+      success: true,
+      backup: { name: "pre-restore.zip" },
+      skippedFiles: [],
+    });
+
+    const result = await service.restoreBackup("good.zip", {
+      createPreRestoreBackup: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(
+      fs.readFileSync(path.join(savesPath, "map_meta.bin"), "utf8"),
+    ).toBe("RESTORED");
+  });
+
   it("still reports a successful restore when the completion event cannot be logged", async () => {
     const good = path.join(backupsPath, "good.zip");
     await writeValidBackup(good, "RESTORED");

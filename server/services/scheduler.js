@@ -518,15 +518,24 @@ export class Scheduler {
           });
           const duration = Date.now() - startTime;
           if (result.success) {
+            // 2026-08-26 bug hunt: createBackup surfaces skipped files
+            // rather than deciding policy -- a scheduled backup tolerates a
+            // skip (same reasoning as the manual /backup/create route) but
+            // must not bury it inside a message that reads identically to a
+            // clean run, since Schedule History is the only place anyone
+            // would ever see it for an unattended backup.
+            const skipNote = result.skippedFiles?.length
+              ? ` (skipped ${result.skippedFiles.length} file(s) that vanished during archiving: ${result.skippedFiles.join(", ")})`
+              : "";
             await logScheduleExecution(
               null,
               "Scheduled Backup",
               "backup",
               true,
-              `Created: ${result.backup.name}`,
+              `Created: ${result.backup.name}${skipNote}`,
               duration,
             );
-            log.info(`Scheduled backup completed: ${result.backup.name}`);
+            log.info(`Scheduled backup completed: ${result.backup.name}${skipNote}`);
           } else {
             await logScheduleExecution(
               null,

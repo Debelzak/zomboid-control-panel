@@ -93,6 +93,44 @@ describe("POST /api/server/wipe backs up before deleting (default createBackup: 
     expect(fs.existsSync(path.join(saveDir, "map", "0_0.bin"))).toBe(true);
   });
 
+  // 2026-08-26 bug hunt: createBackup can return success:true while having
+  // silently skipped files that vanished mid-archive -- it surfaces that via
+  // skippedFiles rather than deciding policy itself. This pre-wipe backup is
+  // about to become the ONLY copy of whatever wipe is about to delete, so a
+  // skip is treated exactly like an outright backup failure -- same
+  // fail-closed posture as the "backup fails" test above.
+  it("aborts the wipe and deletes nothing when the pre-wipe backup completed but silently skipped a file", async () => {
+    const serverManager = buildServerManager();
+    const backupService = {
+      createBackup: vi.fn(async () => ({
+        success: true,
+        backup: { name: "servertest_2026.zip" },
+        skippedFiles: ["servertest/map/0_0.bin"],
+      })),
+    };
+    const app = {
+      get: (key) => {
+        if (key === "serverManager") return serverManager;
+        if (key === "backupService") return backupService;
+        return undefined;
+      },
+    };
+
+    const handler = getWipeHandler();
+    const response = createResponse();
+    await handler(
+      { app, body: { targets: ["map"], confirm: true } },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(500);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "WIPE_BACKUP_FAILED" }),
+    );
+    // Nothing was deleted -- the map/ directory this test seeded is untouched.
+    expect(fs.existsSync(path.join(saveDir, "map", "0_0.bin"))).toBe(true);
+  });
+
   it("aborts the wipe and deletes nothing when no backup service is registered", async () => {
     const serverManager = buildServerManager();
     const app = {
