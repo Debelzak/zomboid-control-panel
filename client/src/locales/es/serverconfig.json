@@ -33,7 +33,9 @@
   },
   "stopServerAlert": {
     "title": "El servidor está en ejecución",
-    "description": "Puedes guardar los cambios ahora. Según lo que estés editando, es posible que necesiten un reinicio del servidor para aplicarse — la confirmación tras guardar te lo indicará."
+    "description": "Puedes guardar los cambios ahora. Según lo que estés editando, es posible que necesiten un reinicio del servidor para aplicarse — la confirmación tras guardar te lo indicará.",
+    "unknownTitle": "No se puede confirmar que el servidor esté detenido",
+    "unknownDescription": "No pudimos determinar si el servidor está en ejecución actualmente. Si lo está, es posible que los cambios necesiten un reinicio del servidor para aplicarse — la confirmación tras guardar te lo indicará."
   },
   "invalidValuesAlert": {
     "title": "Corregir valores no válidos antes de guardar",

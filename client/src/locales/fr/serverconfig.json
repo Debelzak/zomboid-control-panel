@@ -33,7 +33,9 @@
   },
   "stopServerAlert": {
     "title": "Le serveur est en cours d'exécution",
-    "description": "Vous pouvez enregistrer vos modifications maintenant. Selon ce que vous modifiez, un redémarrage du serveur peut être nécessaire pour qu'elles prennent effet — la confirmation après l'enregistrement vous le précisera."
+    "description": "Vous pouvez enregistrer vos modifications maintenant. Selon ce que vous modifiez, un redémarrage du serveur peut être nécessaire pour qu'elles prennent effet — la confirmation après l'enregistrement vous le précisera.",
+    "unknownTitle": "Impossible de confirmer que le serveur est arrêté",
+    "unknownDescription": "Nous n'avons pas pu déterminer si le serveur est actuellement en cours d'exécution. Si c'est le cas, un redémarrage du serveur peut être nécessaire pour que les modifications prennent effet — la confirmation après l'enregistrement vous le précisera."
   },
   "invalidValuesAlert": {
     "title": "Corrigez les valeurs invalides avant d'enregistrer",

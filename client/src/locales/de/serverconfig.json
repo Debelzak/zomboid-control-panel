@@ -33,7 +33,9 @@
   },
   "stopServerAlert": {
     "title": "Der Server läuft",
-    "description": "Du kannst deine Änderungen jetzt speichern. Je nachdem, was du bearbeitest, ist eventuell ein Serverneustart nötig, damit sie wirksam werden — die Bestätigung nach dem Speichern sagt dir, ob das der Fall ist."
+    "description": "Du kannst deine Änderungen jetzt speichern. Je nachdem, was du bearbeitest, ist eventuell ein Serverneustart nötig, damit sie wirksam werden — die Bestätigung nach dem Speichern sagt dir, ob das der Fall ist.",
+    "unknownTitle": "Kann nicht bestätigen, dass der Server gestoppt ist",
+    "unknownDescription": "Wir konnten nicht feststellen, ob der Server derzeit läuft. Falls doch, ist eventuell ein Serverneustart nötig, damit Änderungen wirksam werden — die Bestätigung nach dem Speichern sagt dir, ob das der Fall ist."
   },
   "invalidValuesAlert": {
     "title": "Behebe ungültige Werte vor dem Speichern",

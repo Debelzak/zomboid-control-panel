@@ -33,7 +33,9 @@
   },
   "stopServerAlert": {
     "title": "Sèvè a ap fonksyone",
-    "description": "Ou ka sove chanjman yo kounye a. Selon sa w ap modifye, yo ka bezwen yon redemaraj sèvè pou pran efè — konfimasyon apre ou sove a ap di ou."
+    "description": "Ou ka sove chanjman yo kounye a. Selon sa w ap modifye, yo ka bezwen yon redemaraj sèvè pou pran efè — konfimasyon apre ou sove a ap di ou.",
+    "unknownTitle": "Nou pa ka konfime si sèvè a kanpe",
+    "unknownDescription": "Nou pa t kapab detèmine si sèvè a ap fonksyone kounye a. Si li ap fonksyone, chanjman yo ka bezwen yon redemaraj sèvè pou pran efè — konfimasyon apre ou sove a ap di ou."
   },
   "invalidValuesAlert": {
     "title": "Korije valè envalid anvan ou sove",

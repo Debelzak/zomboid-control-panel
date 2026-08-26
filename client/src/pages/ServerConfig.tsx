@@ -99,7 +99,8 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PageHeader } from '@/components/PageHeader'
 // DropdownMenu imports available if needed
-import { serverApi, serverFilesApi, panelBridgeApi, ApiError, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
+import { serverApi, serverFilesApi, serversApi, panelBridgeApi, ApiError, SpawnPointsByProfession, SpawnRegion, SandboxData, ConfigTemplate } from '@/lib/api'
+import { resolveServerRunning } from '@/lib/serverStatus'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
@@ -937,14 +938,34 @@ export default function ServerConfig() {
     }
   }
 
+  // GH#118-adjacent (2026-08-26, "the sibling that was never hardened"):
+  // serverApi.getStatus() is the raw local process scan -- correct for a
+  // native server, but blind to a docker-managed server's process, which
+  // runs in a different container this scan can never see (same root cause
+  // as GH#114). Trusting it unconditionally here meant a live docker
+  // container could read serverRunning=false, which suppresses BOTH the
+  // "stop the server before editing" banner and the sticky-bar Discard
+  // guard below. resolveServerRunning() (client/src/lib/serverStatus.ts)
+  // shares resolveClientProvider() and the same 3-signal composed-status
+  // read Layout.tsx/Dashboard.tsx already use (54cf13a/2d5745e), rather
+  // than re-deriving a fourth implementation of the same idea -- see that
+  // function's own doc comment for the fail-closed contract it guarantees.
   const refreshServerState = useCallback(async () => {
     try {
-      const status = await serverApi.getStatus()
-      setServerRunning(Boolean(status.running))
+      const { server } = await serversApi.getActive()
+      const running = await resolveServerRunning(server, serverApi.getStatus, serversApi.getComposedStatus)
+      setServerRunning(running)
     } catch {
       setServerRunning(null)
     }
   }, [])
+
+  // Only a CONFIRMED-stopped server (serverRunning === false) is safe to
+  // let through unwarned. true (confirmed running) and null (unknown --
+  // lookup failed, no active server, or an indeterminate composed signal)
+  // both must behave as "it might be running": unknown is the safe answer
+  // here, never the permissive one.
+  const serverMayBeRunning = serverRunning !== false
 
   useEffect(() => {
     void refreshServerState()
@@ -1977,12 +1998,12 @@ export default function ServerConfig() {
             </TabsTrigger>
           ))}
         </TabsList>
-        {serverRunning === true && ['ini', 'sandbox', 'spawnpoints', 'spawnregions'].includes(activeTab) && (
+        {serverMayBeRunning && ['ini', 'sandbox', 'spawnpoints', 'spawnregions'].includes(activeTab) && (
           <Alert className="mt-3 border-primary/30 bg-primary/5">
             <Info className="h-4 w-4 text-primary" />
-            <AlertTitle>{t('stopServerAlert.title')}</AlertTitle>
+            <AlertTitle>{serverRunning === true ? t('stopServerAlert.title') : t('stopServerAlert.unknownTitle')}</AlertTitle>
             <AlertDescription>
-              {t('stopServerAlert.description')}
+              {serverRunning === true ? t('stopServerAlert.description') : t('stopServerAlert.unknownDescription')}
             </AlertDescription>
           </Alert>
         )}
@@ -3569,7 +3590,7 @@ export default function ServerConfig() {
               variant="ghost"
               size="sm"
               onClick={activeTab === 'ini' ? discardIniChanges : discardSandboxChanges}
-              disabled={saving || serverRunning === true}
+              disabled={saving || serverMayBeRunning}
               className="h-8 gap-1.5 text-xs font-medium text-muted-foreground hover:text-destructive"
             >
               <Undo2 className="h-3 w-3" /> {t('stickySaveBar.discard')}

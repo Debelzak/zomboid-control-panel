@@ -33,7 +33,9 @@
   },
   "stopServerAlert": {
     "title": "The server is running",
-    "description": "You can save changes now. Depending on what you're editing, they may need a server restart to take effect — the confirmation after saving will tell you."
+    "description": "You can save changes now. Depending on what you're editing, they may need a server restart to take effect — the confirmation after saving will tell you.",
+    "unknownTitle": "Can't confirm the server is stopped",
+    "unknownDescription": "We couldn't determine whether the server is currently running. If it is, changes may need a server restart to take effect — the confirmation after saving will tell you."
   },
   "invalidValuesAlert": {
     "title": "Fix invalid values before saving",
