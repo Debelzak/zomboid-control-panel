@@ -406,5 +406,20 @@
   "PLAYERS_NOTE_INVALID_TAGS": "Tags must be strings (max 50 chars each)",
   "PLAYERS_NOTE_NOT_FOUND": "Player note not found",
   "PLAYERS_EXPORT_INVALID_PARAMETERS": "Invalid parameters",
-  "PLAYERS_EXPORT_NOT_FOUND": "Export not found"
+  "PLAYERS_EXPORT_NOT_FOUND": "Export not found",
+  "SCHEDULER_REQUEST_BODY_INVALID": "Request body must be an object",
+  "SCHEDULER_TASK_FIELDS_REQUIRED": "Name, cron expression, and command are required",
+  "SCHEDULER_INVALID_TASK_NAME": "Invalid task name (max 100 characters)",
+  "SCHEDULER_INVALID_COMMAND": "Invalid command (max 2000 characters)",
+  "SCHEDULER_INVALID_CRON_FORMAT": "Invalid cron expression format",
+  "SCHEDULER_INVALID_CRON_EXPRESSION": "Invalid cron expression. Use the format: minute hour day month weekday (e.g. \"0 */6 * * *\" for every 6 hours)",
+  "SCHEDULER_CRON_SECONDS_UNSUPPORTED": "The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday",
+  "SCHEDULER_CRON_TOO_FREQUENT": "Tasks cannot run more frequently than every 5 minutes",
+  "SCHEDULER_TARGET_SERVER_NOT_FOUND": "Target server not found",
+  "SCHEDULER_TASK_SCHEDULING_FAILED": "Could not schedule the task: {{reason}}",
+  "SCHEDULER_INVALID_TASK_ID": "Invalid task ID",
+  "SCHEDULER_INVALID_ENABLED_VALUE": "The enabled field must be a boolean or 0/1",
+  "SCHEDULER_TASK_NOT_FOUND": "Task not found",
+  "SCHEDULER_TASK_RESCHEDULE_FAILED": "Could not reschedule the task: {{reason}}",
+  "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Cannot restart a remote server. The process is not managed by this panel"
 }
