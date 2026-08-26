@@ -9,7 +9,7 @@
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/jHsWJDNmSg)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-Manage your Project Zomboid dedicated server from one place: server controls, RCON, a live world map, Workshop mods, scheduled restarts, backups, and Discord integration.
+Project Zomboid is a zombie survival game; playing it with friends means running a **dedicated server** somewhere. Zomboid Control Panel is the web app that sets up and manages that server for you — no command line required — with a live world map, Workshop mod management, scheduled restarts, backups, and Discord integration built in.
 
 [**🚀 Download**](https://github.com/fpsacha/zomboid-control-panel/releases/latest) ·
 [**👁️ Live demo**](https://fpsacha.github.io/zomboid-control-panel/) ·
@@ -180,8 +180,9 @@ Visual map selector for reclaiming disk space from an aging save. Delete individ
 
 ## Requirements
 
-- **Project Zomboid dedicated server** — Build 41 or Build 42.
-- **RCON enabled**, and **network access** between the panel and the PZ server (same machine, same LAN, or a reachable IP) — confirm these in the PZ server's `.ini` before adding it to the panel:
+**Don't have a Project Zomboid server yet?** You don't need one before you start — the Setup Wizard in Quick Start below installs a fresh Build 41 or Build 42 server for you, RCON included. The rest of this section applies either way; if you're pointing the panel at a server you already run, confirm these in its `.ini` first:
+
+- **RCON enabled**, and **network access** between the panel and the PZ server (same machine, same LAN, or a reachable IP):
   ```ini
   RCONPort=27015
   RCONPassword=choose-a-strong-password
@@ -208,7 +209,9 @@ PanelBridge features additionally need its server files or SFTP access.
 | Docker or Unraid | [docs/install/docker.md](docs/install/docker.md) |
 | Renting from a host (Indifferent Broccoli, etc.) | [docs/install/hosted.md](docs/install/hosted.md) |
 
-Download the current package from [Releases](https://github.com/fpsacha/zomboid-control-panel/releases/latest). Something not working? [docs/install/troubleshooting.md](docs/install/troubleshooting.md) is organized by what's actually on your screen, not by which guide you followed.
+**Not sure which?** If you already rent a Project Zomboid server from a host, pick Hosted — you're not installing anything server-side. Otherwise pick the row that matches the computer the *panel* will run on; Docker needs the fewest manual steps if that machine has it.
+
+Every path above ends the same way: a browser tab open to the panel's setup screen, where you create your admin account. Download the current package from [Releases](https://github.com/fpsacha/zomboid-control-panel/releases/latest). Something not working? [docs/install/troubleshooting.md](docs/install/troubleshooting.md) is organized by what's actually on your screen, not by which guide you followed.
 
 ### macOS
 
@@ -253,6 +256,8 @@ building from source.
 2. In **Settings**, set your server install path and Zomboid data path.
 3. Configure RCON (host, port `27015`, password from your server `.ini`).
 4. Optionally install PanelBridge for advanced features.
+
+If you installed a brand-new server with the Setup Wizard, steps 2 and 3 are already done — the wizard fills them in as part of installing.
 
 ### PanelBridge (Optional)
 
