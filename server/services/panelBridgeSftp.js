@@ -57,8 +57,16 @@ export function formatSftpError(error) {
 export function validateSftpBridgeConfig(config) {
   const host = typeof config?.host === 'string' ? config.host.trim() : '';
   const username = typeof config?.username === 'string' ? config.username.trim() : '';
-  const port = Number(config?.port || 22);
-  const pollIntervalSeconds = Number(config?.pollIntervalSeconds || 3);
+  const port =
+    config?.port === undefined || config?.port === null || config?.port === ""
+      ? 22
+      : Number(config.port);
+  const pollIntervalSeconds =
+    config?.pollIntervalSeconds === undefined ||
+    config?.pollIntervalSeconds === null ||
+    config?.pollIntervalSeconds === ""
+      ? 3
+      : Number(config.pollIntervalSeconds);
   if (!host || host.length > 253 || /[\s/\\]/.test(host)) throw new Error('A valid SFTP host is required');
   if (!username || username.length > 128 || /[\r\n]/.test(username)) throw new Error('A valid SFTP username is required');
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('SFTP port must be between 1 and 65535');

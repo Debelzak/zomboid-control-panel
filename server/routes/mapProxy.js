@@ -7,6 +7,7 @@ import { createLogger } from "../utils/logger.js";
 import { getDataPaths } from "../utils/paths.js";
 import { getActiveServer } from "../database/init.js";
 import { listPersistedVehicles } from "../utils/vehiclesDb.js";
+import { parseBoundedInteger } from "../utils/queryNumbers.js";
 const log = createLogger("API:MapProxy");
 const execFileAsync = promisify(execFile);
 
@@ -806,19 +807,19 @@ router.get("/vehicles", async (req, res) => {
 // Validates inputs to prevent SSRF — only allows numeric level 0-22,
 // floor -17..30, and tile filenames matching the DZI convention.
 router.get("/tiles/:level/:tile", async (req, res) => {
-  const level = parseInt(req.params.level, 10);
+  const level = parseBoundedInteger(req.params.level, null, 0, 22);
   const tile = req.params.tile;
   const floorRaw = Array.isArray(req.query.floor)
     ? req.query.floor[0]
     : req.query.floor;
-  const floor = parseInt(String(floorRaw ?? "0"), 10);
+  const floor = parseBoundedInteger(String(floorRaw ?? "0"), null, -17, 29);
 
-  if (isNaN(level) || level < 0 || level > 22) {
+  if (level === null) {
     return res.status(400).json({ error: "Invalid level" });
   }
   // Client clamps floor to -17..29 (WorldMap.tsx changeFloor); keep the
   // backend in sync so anything outside the real range is rejected early.
-  if (isNaN(floor) || floor < -17 || floor > 29) {
+  if (floor === null) {
     return res.status(400).json({ error: "Invalid floor" });
   }
   // Every B42 layer DZI declares JPEG tiles, including basements and upper floors.
@@ -838,10 +839,10 @@ router.get("/tiles/:level/:tile", async (req, res) => {
 // These tiles use webp format at all levels.
 // Only floor 0 is available in the top-down view.
 router.get("/toptiles/:level/:tile", async (req, res) => {
-  const level = parseInt(req.params.level, 10);
+  const level = parseBoundedInteger(req.params.level, null, 0, 22);
   const tile = req.params.tile;
 
-  if (isNaN(level) || level < 0 || level > 22) {
+  if (level === null) {
     return res.status(400).json({ error: "Invalid level" });
   }
   const parsed = /^(\d+_\d+)\.(webp|jpe?g|png)$/.exec(tile);
@@ -861,10 +862,10 @@ router.get("/toptiles/:level/:tile", async (req, res) => {
 
 // Proxy B41 DZI tiles from tiles.pzmap.org.
 router.get("/b41tiles/:level/:tile", async (req, res) => {
-  const level = parseInt(req.params.level, 10);
+  const level = parseBoundedInteger(req.params.level, null, 0, 22);
   const tile = req.params.tile;
 
-  if (isNaN(level) || level < 0 || level > 22) {
+  if (level === null) {
     return res.status(400).json({ error: "Invalid level" });
   }
   if (!/^\d+_\d+\.jpg$/.test(tile)) {

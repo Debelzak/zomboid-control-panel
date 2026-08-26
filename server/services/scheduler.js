@@ -12,7 +12,10 @@ import {
   logScheduleExecution,
   getActiveServer,
 } from "../database/init.js";
-
+import {
+  isCronTooFrequent,
+  isSupportedFiveFieldCron,
+} from "../utils/cronValidation.js";
 // Built-in PanelBridge actions exposed to the scheduler via the
 // `bridge:<action>` command syntax. Optional JSON args follow the action,
 // e.g. `bridge:triggerBlizzard {"duration":2}`. Only the actions listed
@@ -115,7 +118,10 @@ export class Scheduler {
   }
 
   scheduleTask(task) {
-    if (!cron.validate(task.cron_expression)) {
+    if (
+      !isSupportedFiveFieldCron(task.cron_expression) ||
+      isCronTooFrequent(task.cron_expression)
+    ) {
       log.error(
         `Invalid cron expression for task ${task.id} (${task.name}): ${task.cron_expression}`,
       );
@@ -483,7 +489,10 @@ export class Scheduler {
         return;
       }
 
-      if (!cron.validate(settings.schedule)) {
+      if (
+        !isSupportedFiveFieldCron(settings.schedule) ||
+        isCronTooFrequent(settings.schedule)
+      ) {
         log.error(
           `Invalid backup schedule cron expression: ${settings.schedule}`,
         );
@@ -547,7 +556,10 @@ export class Scheduler {
       return;
     }
 
-    if (!cron.validate(cronExpression)) {
+    if (
+      !isSupportedFiveFieldCron(cronExpression) ||
+      isCronTooFrequent(cronExpression)
+    ) {
       log.error(`Invalid auto-restart cron expression: ${cronExpression}`);
       return;
     }
@@ -702,8 +714,20 @@ export class Scheduler {
     }
 
     try {
+      const readProcessDetails = async () => {
+        if (typeof serverManager.getServerProcessDetails === "function") {
+          return serverManager.getServerProcessDetails();
+        }
+        return {
+          running: await serverManager.checkServerRunning(),
+          scanFailed: false,
+        };
+      };
+
       // Check if server is actually running - use multiple methods
-      let wasRunning = await serverManager.checkServerRunning();
+      const initialProcessDetails = await readProcessDetails();
+      const processScanFailed = Boolean(initialProcessDetails?.scanFailed);
+      let wasRunning = Boolean(initialProcessDetails?.running);
       log.info(`Auto-restart: Process check returned: ${wasRunning}`);
 
       // If process check says not running, also try RCON as a fallback
@@ -734,6 +758,22 @@ export class Scheduler {
       }
 
       if (!wasRunning) {
+        if (processScanFailed) {
+          const restartDuration = Date.now() - restartStartTime;
+          const errorMsg =
+            "Could not confirm whether the server is stopped because process detection failed";
+          await logScheduleExecution(
+            null,
+            label,
+            "restart",
+            false,
+            errorMsg,
+            restartDuration,
+          );
+          logServerEvent("auto_restart_error", errorMsg);
+          return { success: false, wasRunning: false, message: errorMsg };
+        }
+
         // Server wasn't running - just start it
         log.info(
           "Auto-restart triggered but server was not running - starting server",
@@ -747,7 +787,10 @@ export class Scheduler {
 
         // Wait a bit and verify it started
         await this.sleep(10000);
-        const isNowRunning = await serverManager.checkServerRunning();
+        const postStartDetails = await readProcessDetails();
+        const isNowRunning =
+          rconService.connected ||
+          Boolean(postStartDetails && !postStartDetails.scanFailed && postStartDetails.running);
 
         const restartDuration = Date.now() - restartStartTime;
         if (isNowRunning) {
@@ -952,20 +995,70 @@ export class Scheduler {
         }
         await this.sleep(10000);
 
-        // Wait for server to stop
+        // Wait for server to stop. A failed scan is unknown, not stopped.
         let attempts = 0;
-        while ((await serverManager.checkServerRunning()) && attempts < 60) {
+        let processDetails = await readProcessDetails();
+        if (!processDetails || processDetails.scanFailed) {
+          const restartDuration = Date.now() - restartStartTime;
+          const errorMsg =
+            "Could not confirm the old server stopped because process detection failed";
+          await logScheduleExecution(
+            null,
+            label,
+            "restart",
+            false,
+            errorMsg,
+            restartDuration,
+          );
+          logServerEvent("auto_restart_error", errorMsg);
+          return { success: false, wasRunning: true, message: errorMsg };
+        }
+        while (processDetails.running && attempts < 60) {
           await this.sleep(1000);
           attempts++;
+          processDetails = await readProcessDetails();
+          if (!processDetails || processDetails.scanFailed) {
+            const restartDuration = Date.now() - restartStartTime;
+            const errorMsg =
+              "Could not confirm the old server stopped because process detection failed";
+            await logScheduleExecution(
+              null,
+              label,
+              "restart",
+              false,
+              errorMsg,
+              restartDuration,
+            );
+            logServerEvent("auto_restart_error", errorMsg);
+            return { success: false, wasRunning: true, message: errorMsg };
+          }
         }
 
         // Force stop if needed
-        if (await serverManager.checkServerRunning()) {
+        if (processDetails.running) {
           const forced = await serverManager.stopServer(false);
-          if (!forced?.success) {
-            log.warn(
-              `Auto-restart: forced stop reported failure: ${forced?.error || forced?.message || "unknown error"}`,
+          if (!forced?.success || forced.confirmed === false) {
+            const stopError =
+              forced?.error || forced?.message || "unknown error";
+            const restartDuration = Date.now() - restartStartTime;
+            log.warn(`Auto-restart: forced stop failed: ${stopError}`);
+            await logScheduleExecution(
+              null,
+              label,
+              "restart",
+              false,
+              `Could not confirm the old server stopped: ${stopError}`,
+              restartDuration,
             );
+            logServerEvent(
+              "auto_restart_error",
+              `Could not confirm the old server stopped: ${stopError}`,
+            );
+            return {
+              success: false,
+              wasRunning: true,
+              message: `Could not confirm the old server stopped: ${stopError}`,
+            };
           }
           await this.sleep(5000);
         }
@@ -1007,7 +1100,13 @@ export class Scheduler {
         // Wait for server process to be running (up to 60 seconds)
         for (let i = 0; i < 60; i++) {
           await this.sleep(1000);
-          if (await serverManager.checkServerRunning()) {
+          const processDetails = await readProcessDetails();
+          if (
+            rconService.connected ||
+            (processDetails &&
+              !processDetails.scanFailed &&
+              processDetails.running)
+          ) {
             serverStarted = true;
             log.info("Auto-restart: Server process detected as running");
             break;

@@ -62,6 +62,15 @@ describe('PanelBridge SFTP configuration', () => {
     expect(() => validateSftpBridgeConfig({ ...valid, pollIntervalSeconds })).toThrow('between 2 and 10 seconds');
   });
 
+  it('does not replace an explicit zero port or poll interval with defaults', () => {
+    expect(() => validateSftpBridgeConfig({ ...valid, port: 0 })).toThrow(
+      'between 1 and 65535',
+    );
+    expect(() => validateSftpBridgeConfig({ ...valid, pollIntervalSeconds: 0 })).toThrow(
+      'between 2 and 10 seconds',
+    );
+  });
+
   it('rejects remote path traversal', () => {
     expect(() => validateSftpBridgeConfig({ ...valid, bridgePath: '/home/pz/../etc' })).toThrow('without traversal');
   });

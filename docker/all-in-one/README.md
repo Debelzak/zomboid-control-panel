@@ -12,9 +12,11 @@ This file is the short version.
 
 ## Prerequisites
 
-A Linux host with Docker Engine installed and `curl` available. The Docker
-Compose plugin is **not** required on the host — the installer runs Compose
-inside its own controller container.
+A Linux host with Docker Engine installed, an amd64/x86_64 architecture, and
+`curl` available. The installer checks all three itself and exits with a
+clear message if one is missing, rather than failing confusingly partway
+through. The Docker Compose plugin is **not** required on the host — the
+installer runs Compose inside its own controller container.
 
 ## First install
 
@@ -31,30 +33,44 @@ argument:
 curl -fsSL https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker/all-in-one/bootstrap.sh | sh -s -- 1.2.4
 ```
 
-The script resolves the latest GitHub release (unless you passed one),
-creates its state below `~/.local/state/zomboid-panel/` by default,
-generates an updater token, builds the controller, and starts the stack. Set
-`PANEL_HOME` or `BUILD_ROOT` before running it if you prefer a different
-host location. It deliberately runs Docker Compose *inside* the controller
-image, so the host does not need the Docker Compose plugin.
+The script validates Docker and the host architecture, resolves the latest
+GitHub release (unless you passed one), creates its state below
+`~/.local/state/zomboid-panel/` by default, generates the updater token,
+detects the host's LAN address, and starts the stack. Set `PANEL_HOME` or
+`BUILD_ROOT` before running it if you prefer a different host location. It
+runs Docker Compose *inside* the controller image, so the host does not need
+the Docker Compose plugin.
 
-On first start, the container downloads Project Zomboid through SteamCMD —
-this can take several minutes. Watch progress with:
+For the panel and updater images, it pulls the exact release-tagged images
+first; if a release image isn't published yet, it builds that image locally
+from the downloaded release source instead.
+
+On first start, the container also downloads Project Zomboid itself through
+SteamCMD — this can take several minutes. The installer waits for the
+panel's own health check (up to 15 minutes) and prints the container's logs
+if something goes wrong, so you don't need to watch it, but you can:
 
 ```sh
 docker logs -f zomboid-panel
 ```
 
-The default URL is `http://localhost:3001`. Before accessing the panel from
-another machine or through a reverse proxy, update `CORS_ORIGINS` in the
-generated `.env` file (`<state dir>/build/ctx/.env`) to the exact browser
-origin, then rerun the final command from the script.
+The installer detects your host's LAN address and includes it in
+`CORS_ORIGINS` automatically, so the panel is usually reachable from other
+devices on your network with no extra configuration — it prints the URL to
+use when it finishes. Reaching it through a reverse proxy or a public
+hostname still needs its own origin added: set `CORS_ORIGINS` (and
+`TRUST_PROXY`) before running the installer, or edit them in the generated
+`.env` file (`<state dir>/build/ctx/.env`) and rerun the script to apply the
+change — it won't touch an `.env` that already exists.
 
 The stack uses Docker named volumes for panel state, logs, the PZ
 installation, and Zomboid save data. This keeps a default install
 independent of a particular NAS or host filesystem layout, and means you
 never need to configure `PUID`/`PGID` for this path — the container always
 runs Project Zomboid internally as UID/GID `1000` and owns its own volumes.
+
+The Compose stack publishes the PZ game ports `16261/udp` and `16262/udp`
+automatically. They do not need to be added to Compose by hand.
 
 The update controller has Docker socket access, but it is not exposed on a
 host port. The panel can reach it only over the Compose network using the

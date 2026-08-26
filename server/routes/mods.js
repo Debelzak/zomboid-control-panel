@@ -53,6 +53,7 @@ import {
 import { requirePermission } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
+import { parseBoundedInteger } from "../utils/queryNumbers.js";
 
 const router = express.Router();
 
@@ -696,7 +697,14 @@ router.post("/start", async (req, res) => {
     const modChecker = getModChecker(req, res);
     if (!modChecker) return;
 
-    modChecker.start();
+    const started = modChecker.start();
+    if (!started) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Mod checker could not start. Configure a valid Workshop ACF path first.",
+      });
+    }
     res.json({ success: true, message: "Mod checker started" });
   } catch (error) {
     log.error(`Failed to start mod checker: ${error.message}`);
@@ -799,24 +807,25 @@ router.put("/restart-options", async (req, res) => {
 
     // Validate each field if present. Allow undefined (means "don't change").
     const inRange = (v, min, max) =>
-      Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max;
-    if (warningMinutes !== undefined && !inRange(warningMinutes, 0, 1440)) {
+      parseBoundedInteger(v, null, min, max) !== null;
+    if (warningMinutes !== undefined && !inRange(warningMinutes, 0, 30)) {
       return res.status(400).json({
-        error: "warningMinutes must be 0-1440",
+        error: "warningMinutes must be a whole number from 0 to 30",
         code: ErrorCode.MODS_RESTART_WARNING_MINUTES_INVALID,
       });
     }
-    if (maxDelayMinutes !== undefined && !inRange(maxDelayMinutes, 0, 1440)) {
+    if (maxDelayMinutes !== undefined && !inRange(maxDelayMinutes, 5, 120)) {
       return res.status(400).json({
-        error: "maxDelayMinutes must be 0-1440",
+        error: "maxDelayMinutes must be a whole number from 5 to 120",
         code: ErrorCode.MODS_RESTART_MAX_DELAY_MINUTES_INVALID,
       });
     }
     if (
       checkInterval !== undefined &&
       (!inRange(checkInterval, 60_000, 120 * 60 * 1000) ||
-        !Number.isInteger(Number(checkInterval)) ||
-        Number(checkInterval) % 60_000 !== 0)
+        parseBoundedInteger(checkInterval, null, 60_000, 120 * 60 * 1000) %
+          60_000 !==
+          0)
     ) {
       return res.status(400).json({
         error:
@@ -5480,6 +5489,11 @@ const WALK_MAX_FILES = 50_000;
 // entries (~150MB worst case) matches the maxEntries budget server.js's
 // wipe-preview countDir() already uses for the same class of problem.
 export const FILE_INDEX_MAX_ENTRIES = 300_000;
+// A single shared path is copied into every affected mod pair for the API.
+// With N mods that is N*(N-1)/2 rows, so the bounded file index can still
+// expand into millions of pair-file objects and exhaust V8 while grouping or
+// serializing the response. Keep the projection bounded independently.
+export const CONFLICT_PAIR_FILE_MAX_ENTRIES = 100_000;
 const WALK_SKIP_DIRS = new Set([
   ".git",
   ".svn",
@@ -6481,15 +6495,24 @@ async function detectSameWorkshopLuaSymbolConflicts(
   return conflicts;
 }
 
-// Group flat conflict list into mod pairs
-export function groupIntoPairs(conflicts) {
+// Group flat conflict list into mod pairs with a global output budget.
+export function groupIntoPairs(
+  conflicts,
+  maxFileEntries = CONFLICT_PAIR_FILE_MAX_ENTRIES,
+) {
   const pairConflicts = {};
-  for (const conflict of conflicts) {
+  let groupedFileEntries = 0;
+  let truncated = false;
+  outer: for (const conflict of conflicts) {
     // Deduplicate first: a repeated mod ID would otherwise produce an "A vs A"
     // self-pair and double-count every real pair it appears in.
     const modIds = [...new Set(conflict.mods.map((m) => m.modId))].sort();
     for (let i = 0; i < modIds.length; i++) {
       for (let j = i + 1; j < modIds.length; j++) {
+        if (groupedFileEntries >= maxFileEntries) {
+          truncated = true;
+          break outer;
+        }
         const pairKey = `${modIds[i]}|${modIds[j]}`;
         if (!pairConflicts[pairKey]) {
           pairConflicts[pairKey] = {
@@ -6513,6 +6536,7 @@ export function groupIntoPairs(conflicts) {
           winner: conflict.winner || null,
           overlap: conflict.overlap || null,
         });
+        groupedFileEntries++;
         const severityKey = `${conflict.severity}Count`;
         if (severityKey in pairConflicts[pairKey])
           pairConflicts[pairKey][severityKey]++;
@@ -6526,12 +6550,16 @@ export function groupIntoPairs(conflicts) {
       }
     }
   }
-  return Object.values(pairConflicts).sort(
-    (a, b) =>
-      b.highCount - a.highCount ||
-      b.mediumCount - a.mediumCount ||
-      b.files.length - a.files.length,
-  );
+  return {
+    pairs: Object.values(pairConflicts).sort(
+      (a, b) =>
+        b.highCount - a.highCount ||
+        b.mediumCount - a.mediumCount ||
+        b.files.length - a.files.length,
+    ),
+    truncated,
+    groupedFileEntries,
+  };
 }
 
 // Annotate each conflict with the winning mod, based on the `Mods=` load order.
@@ -6953,7 +6981,13 @@ router.get("/conflicts", async (req, res) => {
         (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) ||
         a.file.localeCompare(b.file),
     );
-    const pairs = groupIntoPairs(conflicts);
+    const { pairs, truncated: pairOutputTruncated } =
+      groupIntoPairs(conflicts);
+    if (pairOutputTruncated) {
+      warnings.push(
+        `Conflict output reached the global ${CONFLICT_PAIR_FILE_MAX_ENTRIES.toLocaleString()} pair-file limit — the conflict scan is incomplete. Scan fewer mods at once or remove unused ones and retry.`,
+      );
+    }
     const missingDeps = findMissingDeps(modInfoMap, modIdsFromIni, serverPath);
     let steamDeps = [];
     try {
@@ -6981,7 +7015,7 @@ router.get("/conflicts", async (req, res) => {
       steamDeps,
       idCollisions,
       modLoadOrder: modIdsFromIni,
-      truncated,
+      truncated: truncated || pairOutputTruncated,
       warnings,
       scanDurationMs: Date.now() - scanStart,
     };
@@ -7206,7 +7240,13 @@ router.get("/conflicts/stream", async (req, res) => {
         (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) ||
         a.file.localeCompare(b.file),
     );
-    const pairs = groupIntoPairs(conflicts);
+    const { pairs, truncated: pairOutputTruncated } =
+      groupIntoPairs(conflicts);
+    if (pairOutputTruncated) {
+      warnings.push(
+        `Conflict output reached the global ${CONFLICT_PAIR_FILE_MAX_ENTRIES.toLocaleString()} pair-file limit — the conflict scan is incomplete. Scan fewer mods at once or remove unused ones and retry.`,
+      );
+    }
     const missingDeps = findMissingDeps(modInfoMap, modIdsFromIni, serverPath);
 
     // Phase 4: Steam API dependency check (parallel-safe, non-blocking)
@@ -7240,7 +7280,7 @@ router.get("/conflicts/stream", async (req, res) => {
       steamDeps,
       idCollisions,
       modLoadOrder: modIdsFromIni,
-      truncated,
+      truncated: truncated || pairOutputTruncated,
       warnings,
       scanDurationMs: Date.now() - scanStart,
     };

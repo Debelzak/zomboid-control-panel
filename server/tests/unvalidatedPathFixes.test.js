@@ -131,6 +131,18 @@ describe("GET /api/server/branches rejects an unvalidated steamcmdPath", () => {
   });
 });
 
+describe("server path validation rejects raw traversal segments", () => {
+  it("rejects an absolute path containing a parent segment before normalization erases it", async () => {
+    const { isValidPath } = await import("../routes/server.js");
+    const absolutePath =
+      process.platform === "win32"
+        ? "C:\\pz\\..\\Windows\\System32"
+        : "/var/lib/../etc";
+
+    expect(isValidPath(absolutePath)).toBe(false);
+  });
+});
+
 describe("panelBridge.js /configure and /auto-detect reject an unvalidated path", () => {
   it("POST /configure refuses a relative zomboidSavePath", async () => {
     const { default: router } = await import("../routes/panelBridge.js");
@@ -226,5 +238,15 @@ describe("config.js PUT /paths requires absolute paths (feeds server.js's /wipe 
     );
     expect(res.getStatusCode()).toBe(200);
     expect(serverManager.updatePaths).toHaveBeenCalledWith(undefined, absolutePath);
+  });
+
+  it("rejects an absolute savePath whose parent segment would disappear during normalization", async () => {
+    const { isValidConfigPath } = await import("../routes/config.js");
+    const traversalPath =
+      process.platform === "win32"
+        ? "C:\\pz\\..\\Windows"
+        : "/var/lib/../etc";
+
+    expect(isValidConfigPath(traversalPath)).toBe(false);
   });
 });

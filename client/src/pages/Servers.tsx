@@ -190,7 +190,11 @@ function formatBytes(bytes: number) {
 // "Invalid RCON port" / "Invalid server port") so the client can reject
 // out-of-range ports before a round trip instead of after one.
 export function isValidPort(port: number): boolean {
-  return Number.isFinite(port) && port >= 1 && port <= 65535
+  return Number.isInteger(port) && port >= 1 && port <= 65535
+}
+
+export function isValidGamePort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65534
 }
 
 export default function Servers() {
@@ -960,7 +964,7 @@ export default function Servers() {
       toast({ title: t('toasts.error'), description: t('toasts.rconPortRangeError'), variant: 'destructive' })
       return
     }
-    if (!isValidPort(editingServer.serverPort)) {
+    if (!isValidGamePort(editingServer.serverPort)) {
       toast({ title: t('toasts.error'), description: t('toasts.gamePortRangeError'), variant: 'destructive' })
       return
     }
@@ -981,8 +985,14 @@ export default function Servers() {
 
     setSavingEdit(true)
     try {
-      await serversApi.update(editingServer.id, editingServer)
-      toast({ title: t('toasts.savedTitle'), description: t('toasts.savedDesc') })
+      const result = await serversApi.update(editingServer.id, editingServer)
+      const warnings = result.warnings?.filter(Boolean) ?? []
+      toast({
+        title: warnings.length > 0 ? t('toasts.warningTitle') : t('toasts.savedTitle'),
+        description: warnings.length > 0
+          ? `${t('toasts.savedDesc')}. ${warnings.join(' ')}`
+          : t('toasts.savedDesc')
+      })
       setEditingServer(null)
       fetchServers()
     } catch (error) {
@@ -1145,7 +1155,7 @@ export default function Servers() {
       toast({ title: t('toasts.error'), description: t('toasts.rconPortRangeError'), variant: 'destructive' })
       return
     }
-    if (!isValidPort(newServer.serverPort)) {
+    if (!isValidGamePort(newServer.serverPort)) {
       toast({ title: t('toasts.error'), description: t('toasts.gamePortRangeError'), variant: 'destructive' })
       return
     }
@@ -1833,6 +1843,8 @@ export default function Servers() {
                 <div className="space-y-2">
                   <Label>{t('remoteForm.gamePortLabel')}</Label>
                   <NumberInput
+                    min={1}
+                    max={65534}
                     value={newServer.serverPort}
                     onChange={serverPort => setNewServer({ ...newServer, serverPort })}
                   />
@@ -2341,6 +2353,8 @@ export default function Servers() {
                 <div className="space-y-2">
                   <Label>{t('editDialog.gamePortLabel')}</Label>
                   <NumberInput
+                    min={1}
+                    max={65534}
                     value={editingServer.serverPort}
                     onChange={serverPort => setEditingServer({ ...editingServer, serverPort })}
                   />

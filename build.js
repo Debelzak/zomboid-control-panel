@@ -430,6 +430,42 @@ goto :eof
 `.replace(/\r?\n/g, "\r\n");
 }
 
+export function generateStartSh() {
+  return `#!/bin/bash
+# Zomboid Control Panel — Linux launcher
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "Starting Zomboid Control Panel..."
+echo ""
+
+if [ ! -f "./ZomboidControlPanel" ]; then
+  echo "ERROR: ./ZomboidControlPanel was not found in this folder."
+  exit 1
+fi
+
+# Check glibc version (panel requires glibc 2.28+)
+if command -v ldd >/dev/null 2>&1; then
+  GLIBC_VER=$(ldd --version 2>&1 | head -1 | grep -oP '\\d+\\.\\d+$' || true)
+  if [ -n "$GLIBC_VER" ]; then
+    MAJOR=$(echo "$GLIBC_VER" | cut -d. -f1)
+    MINOR=$(echo "$GLIBC_VER" | cut -d. -f2)
+    if [ "$MAJOR" -lt 2 ] || { [ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 28 ]; }; then
+      echo "WARNING: glibc $GLIBC_VER detected. This binary requires glibc 2.28+."
+      echo "CentOS 7 (glibc 2.17) is not supported. Use CentOS Stream 8+, Rocky 8+, or Docker."
+    fi
+  fi
+fi
+
+# Warn if running as root
+if [ "$(id -u)" = "0" ]; then
+  echo "WARNING: Running as root is not recommended. Consider creating a dedicated user."
+fi
+
+./ZomboidControlPanel
+`;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const targets = resolveTargets(args);
@@ -736,41 +772,7 @@ Recommended safe-upgrade commands:
   const startBat = generateStartBat();
   fs.writeFileSync("./release/Start.bat", startBat);
 
-  const startSh = `#!/bin/bash
-# Zomboid Control Panel — Linux launcher
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
-
-echo "Starting Zomboid Control Panel..."
-echo ""
-echo "Open your browser to: http://localhost:3001"
-echo ""
-
-if [ ! -f "./ZomboidControlPanel" ]; then
-  echo "ERROR: ./ZomboidControlPanel was not found in this folder."
-  exit 1
-fi
-
-# Check glibc version (panel requires glibc 2.28+)
-if command -v ldd >/dev/null 2>&1; then
-  GLIBC_VER=$(ldd --version 2>&1 | head -1 | grep -oP '\\d+\\.\\d+$' || true)
-  if [ -n "$GLIBC_VER" ]; then
-    MAJOR=$(echo "$GLIBC_VER" | cut -d. -f1)
-    MINOR=$(echo "$GLIBC_VER" | cut -d. -f2)
-    if [ "$MAJOR" -lt 2 ] || { [ "$MAJOR" -eq 2 ] && [ "$MINOR" -lt 28 ]; }; then
-      echo "WARNING: glibc $GLIBC_VER detected. This binary requires glibc 2.28+."
-      echo "CentOS 7 (glibc 2.17) is not supported. Use CentOS Stream 8+, Rocky 8+, or Docker."
-    fi
-  fi
-fi
-
-# Warn if running as root
-if [ "$(id -u)" = "0" ]; then
-  echo "WARNING: Running as root is not recommended. Consider creating a dedicated user."
-fi
-
-./ZomboidControlPanel
-`;
+  const startSh = generateStartSh();
   fs.writeFileSync("./release/start.sh", startSh.replace(/\r\n/g, "\n"), {
     mode: 0o755,
   });

@@ -3,6 +3,10 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('API:RCON');
 import { getCommandHistory } from '../database/init.js';
 import { PZ_COMMANDS } from '../utils/commands.js';
+import {
+  parseBoundedInteger,
+  parseClampedInteger,
+} from '../utils/queryNumbers.js';
 import { sanitizeError } from '../utils/sanitize.js';
 import {
   testRconConnection,
@@ -43,8 +47,8 @@ function validateTestInput(host, port, password) {
   if (typeof host !== 'string' || host.length > 255 || !/^[a-zA-Z0-9.-]+$/.test(host)) {
     return 'Invalid host format';
   }
-  const portNum = parseInt(port, 10);
-  if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+  const portNum = parseBoundedInteger(port, null, 1, 65535);
+  if (portNum === null) {
     return 'Invalid port (1-65535)';
   }
   if (password !== undefined && (typeof password !== 'string' || password.length > 256)) {
@@ -57,8 +61,8 @@ function validateTestInput(host, port, password) {
 router.post('/execute', requirePermission('rcon.execute'), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
-    const { command } = req.body;
-    log.info(`POST /execute: ${(command || '').substring(0, 100)}`);
+    const command = req.body?.command;
+    log.info(`POST /execute: ${typeof command === 'string' ? command.substring(0, 100) : ''}`);
     
     if (!command) {
       return res.status(400).json({ error: 'Command is required', code: ErrorCode.RCON_COMMAND_REQUIRED });
@@ -101,6 +105,9 @@ router.get('/status', async (req, res) => {
 // Connect to RCON
 router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
   try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ success: false, error: 'Request body must be an object' });
+    }
     const rconService = req.app.get('rconService');
     const { host, port, password } = req.body;
     log.info(`POST /connect (host=${host || 'default'}, port=${port || 'default'}, password=${password ? '***' : 'none'})`);
@@ -113,9 +120,10 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
     }
 
     // Validate port if provided
+    let normalizedPort;
     if (port !== undefined) {
-      const portNum = parseInt(port, 10);
-      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      normalizedPort = parseBoundedInteger(port, null, 1, 65535);
+      if (normalizedPort === null) {
         return res.status(400).json({ success: false, error: 'Invalid port (1-65535)', code: ErrorCode.RCON_INVALID_PORT });
       }
     }
@@ -127,8 +135,8 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
       }
     }
     
-    if (host || port || password) {
-      rconService.updateConfig(host, port, password);
+    if (host !== undefined || port !== undefined || password !== undefined) {
+      rconService.updateConfig(host, normalizedPort, password);
     }
 
     let connected;
@@ -178,7 +186,7 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
 // validate host/port/password before the user saves a server's settings.
 router.post('/test', requirePermission('rcon.execute'), async (req, res) => {
   try {
-    const { host, port, password } = req.body;
+    const { host, port, password } = req.body || {};
     log.info(`POST /test (host=${host || 'none'}, port=${port || 'none'})`);
 
     const validationError = validateTestInput(host, port, password);
@@ -186,7 +194,11 @@ router.post('/test', requirePermission('rcon.execute'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'invalid_input', detail: validationError });
     }
 
-    const result = await testRconConnection({ host, port: parseInt(port, 10), password });
+    const result = await testRconConnection({
+      host,
+      port: parseBoundedInteger(port, null, 1, 65535),
+      password,
+    });
     res.json(result);
   } catch (error) {
     log.error(`RCON test failed: ${error.message}`);
@@ -224,7 +236,7 @@ router.post('/disconnect', requirePermission('rcon.execute'), async (req, res) =
 // Get command history
 router.get('/history', requirePermission('rcon.execute'), async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 1000);
+    const limit = parseClampedInteger(req.query.limit, 100, 1, 1000);
     const history = await getCommandHistory(limit);
     res.json({ history });
   } catch (error) {

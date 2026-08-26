@@ -314,7 +314,7 @@
     "deletedFromPanel": "Servidor «{{name}}» quitado del panel",
     "deleteServerFailed": "No se pudo eliminar el servidor",
     "rconPortRangeError": "El puerto de RCON debe estar entre 1 y 65535",
-    "gamePortRangeError": "El puerto del juego debe estar entre 1 y 65535",
+    "gamePortRangeError": "El puerto del juego debe estar entre 1 y 65534",
     "memoryRequiredError": "Indica un valor mínimo y máximo de memoria",
     "savedTitle": "Guardado",
     "savedDesc": "Ajustes del servidor actualizados",

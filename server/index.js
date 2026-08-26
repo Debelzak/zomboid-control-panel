@@ -1151,14 +1151,11 @@ rconService.on("disconnected", async () => {
   // This gives faster detection than the 10s watchdog interval
   setTimeout(async () => {
     try {
-      const activeServer = await getActiveServer();
-      const processRunning = activeServer?.isRemote
-        ? false
-        : await serverManager.checkServerRunning();
-      const running = isServerObservedRunning({
-        processRunning,
-        bridgeConnected: panelBridge.isModConnected(),
-      });
+      const running = await getObservedServerRunning();
+      if (running === null) {
+        log.debug("RCON disconnect status check could not determine process state");
+        return;
+      }
       if (!running && lastKnownRunning !== false) {
         lastKnownRunning = false;
         log.info(
@@ -1660,7 +1657,19 @@ export async function handlePanelUpdateDownload(req, res) {
           });
         }
 
-        const isRunning = await serverManager.checkServerRunning();
+        const processDetails =
+          typeof serverManager.getServerProcessDetails === "function"
+            ? await serverManager.getServerProcessDetails()
+            : null;
+        if (!processDetails || processDetails.scanFailed) {
+          return res.status(503).json({
+            success: false,
+            error:
+              "Can't verify whether the server is stopped because process detection failed. The Docker update was not started.",
+            code: ErrorCode.SERVER_STATE_UNKNOWN,
+          });
+        }
+        const isRunning = Boolean(processDetails.running);
         if (isRunning) {
           const rconService = req.app.get("rconService");
           if (!rconService?.connected) {
@@ -1708,6 +1717,20 @@ export async function handlePanelUpdateDownload(req, res) {
       log.error(`Panel update download failed: ${error.message}`);
       res.status(500).json({ error: sanitizeError(error.message) });
     }
+}
+
+export function classifyStartupProcessState(processState, isRemote = false) {
+  if (isRemote) {
+    return { running: Boolean(processState?.running), unknown: false };
+  }
+  if (
+    !processState ||
+    processState.scanFailed ||
+    typeof processState.running !== "boolean"
+  ) {
+    return { running: false, unknown: true };
+  }
+  return { running: processState.running, unknown: false };
 }
 
 app.post(
@@ -2231,18 +2254,28 @@ function stopPerfPolling() {
 let statusWatchdogInterval = null;
 let lastKnownRunning = null;
 
-async function getObservedServerRunning() {
+export async function getObservedServerRunning() {
   const activeServer = await getActiveServer();
-  const processRunning = activeServer?.isRemote
-    ? false
-    : await serverManager.checkServerRunning();
+  if (activeServer?.isRemote) {
+    return isServerObservedRunning({
+      processRunning: false,
+      rconConnected: rconService.connected,
+      bridgeConnected: panelBridge.isModConnected(),
+    });
+  }
+
+  const processDetails =
+    typeof serverManager.getServerProcessDetails === "function"
+      ? await serverManager.getServerProcessDetails()
+      : null;
 
   // A systemd-launched local server can evade strict per-server ownership
   // attribution. RCON and the bridge remain direct evidence that it is alive.
   return isServerObservedRunning({
-    processRunning,
+    processRunning: processDetails?.running,
     rconConnected: rconService.connected,
     bridgeConnected: panelBridge.isModConnected(),
+    processScanFailed: !processDetails || processDetails.scanFailed,
   });
 }
 
@@ -2252,6 +2285,10 @@ function startStatusWatchdog() {
   statusWatchdogInterval = setInterval(async () => {
     try {
       const running = await getObservedServerRunning();
+      if (running === null) {
+        log.debug("Status watchdog: server state is unknown; skipping transition");
+        return;
+      }
       if (lastKnownRunning !== null && running !== lastKnownRunning) {
         log.info(
           `Status watchdog: server state changed → ${running ? "running" : "stopped"}`,
@@ -2617,10 +2654,13 @@ async function start() {
         // STEP 2: Check if PZ server is running and connect RCON
         const timeoutMs = 15000;
         const activeServer = await getActiveServer();
-        const isRunning = await Promise.race([
+        const processState = await Promise.race([
           activeServer?.isRemote
-            ? Promise.resolve(rconService.connected || panelBridge.isModConnected())
-            : serverManager.checkServerRunning(),
+            ? Promise.resolve({
+                running: rconService.connected || panelBridge.isModConnected(),
+                scanFailed: false,
+              })
+            : serverManager.getServerProcessDetails(),
           new Promise((_, reject) =>
             setTimeout(
               () => reject(new Error("Server check timeout")),
@@ -2628,9 +2668,19 @@ async function start() {
             ),
           ),
         ]);
+        const startupState = classifyStartupProcessState(
+          processState,
+          Boolean(activeServer?.isRemote),
+        );
+        const processStateUnknown = startupState.unknown;
+        const isRunning = startupState.running;
 
-        if (isRunning) {
-          log.info("PZ server detected running - connecting RCON...");
+        if (isRunning || processStateUnknown) {
+          log.info(
+            processStateUnknown
+              ? "PZ server process state is unknown - trying RCON but will not auto-start"
+              : "PZ server detected running - connecting RCON...",
+          );
 
           // Try to connect RCON with retries
           let connected = false;

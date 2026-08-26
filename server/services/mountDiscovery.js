@@ -162,6 +162,15 @@ function parseIni(content) {
   return result;
 }
 
+function parsePort(value, fallback, max = 65535) {
+  if (value === undefined || value === null || value.trim() === "") {
+    return fallback;
+  }
+  if (!/^\d+$/.test(value.trim())) return null;
+  const port = Number(value.trim());
+  return Number.isInteger(port) && port >= 1 && port <= max ? port : null;
+}
+
 // Read RCON/port/name settings out of a discovered server's
 // `Server/<name>.ini` so create-from-discovery can pre-fill a profile
 // instead of leaving RCON blank.
@@ -176,10 +185,14 @@ export function readServerIniSettings(dataPath, serverName) {
     return null;
   }
 
+  const rconPort = parsePort(settings.RCONPort, 27015);
+  const serverPort = parsePort(settings.DefaultPort, 16261, 65534);
+  if (rconPort === null || serverPort === null) return null;
+
   return {
-    rconPort: parseInt(settings.RCONPort, 10) || 27015,
+    rconPort,
     rconPassword: settings.RCONPassword || "",
-    serverPort: parseInt(settings.DefaultPort, 10) || 16261,
+    serverPort,
     publicName: settings.PublicName || serverName,
   };
 }

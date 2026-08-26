@@ -26,7 +26,7 @@ function normalizePath(value) {
 
 // GET /api/servers/discover-mounts — probe common bind-mount locations for
 // PZ server files so Settings can offer a one-click "connect this" profile.
-router.get("/discover-mounts", async (req, res) => {
+router.get("/discover-mounts", requirePermission("servers.discover"), async (req, res) => {
   try {
     res.json({ mounts: discoverMounts() });
   } catch (error) {
@@ -41,7 +41,12 @@ router.get("/discover-mounts", async (req, res) => {
 router.post("/create-from-discovery", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { installPath, dataPath, serverName, name } = req.body || {};
-    if (!installPath || !dataPath) {
+    if (
+      typeof installPath !== "string" ||
+      typeof dataPath !== "string" ||
+      !installPath ||
+      !dataPath
+    ) {
       return res
         .status(400)
         .json({ error: "installPath and dataPath are required" });
@@ -88,7 +93,12 @@ router.post("/create-from-discovery", requirePermission("servers.discover"), asy
     }
 
     const iniSettings = readServerIniSettings(discovered.dataPath, resolvedName);
-    if (!iniSettings?.rconPassword) {
+    if (!iniSettings) {
+      return res.status(400).json({
+        error: `Could not read valid RCON or game port settings from ${resolvedName}.ini — fix the file, then retry.`,
+      });
+    }
+    if (!iniSettings.rconPassword) {
       return res.status(400).json({
         error: `RCON password not set in ${resolvedName}.ini — set RCONPassword on the server, then retry.`,
       });

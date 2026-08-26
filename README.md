@@ -216,7 +216,33 @@ There's no native macOS binary. Run the panel with Docker Desktop or OrbStack �
 
 ### Docker and Unraid
 
-See [docs/install/docker.md](docs/install/docker.md) — it covers four configurations (a single all-in-one container, a panel bound to an existing PZ install, a panel-only container talking to a remote server, or Unraid specifically) depending on where Project Zomboid itself already runs, including running PZ in a separate container from the panel and choosing between the published image and building from source.
+The fastest path to a fully working setup — panel **and** a new Project
+Zomboid server — is the all-in-one installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker/all-in-one/bootstrap.sh | sh
+```
+
+It checks Docker, generates the secret and persistent configuration, pulls the
+prebuilt release images, installs PZ, detects the LAN address, and publishes
+the required UDP ports `16261` and `16262`. The final line prints the panel URL.
+
+If PZ already runs on the host, in another container, or on another machine,
+use the panel-only image instead:
+
+```bash
+curl -O https://raw.githubusercontent.com/fpsacha/zomboid-control-panel/main/docker-compose.install.yml
+docker compose -f docker-compose.install.yml up -d
+```
+
+The panel-only image deliberately does not publish PZ game ports; those belong
+to the existing game-server host or container.
+
+See [docs/install/docker.md](docs/install/docker.md) for the full walkthrough
+of these and the other two configurations (bind-mounting an existing PZ
+install, and Unraid specifically) — including running PZ in a separate
+container from the panel, and choosing between the published image and
+building from source.
 
 ---
 

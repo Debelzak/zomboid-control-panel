@@ -314,7 +314,7 @@
     "deletedFromPanel": "服务器「{{name}}」已从面板中移除",
     "deleteServerFailed": "删除服务器失败",
     "rconPortRangeError": "RCON 端口必须介于 1 到 65535 之间",
-    "gamePortRangeError": "游戏端口必须介于 1 到 65535 之间",
+    "gamePortRangeError": "游戏端口必须介于 1 到 65534 之间",
     "memoryRequiredError": "请输入最小和最大内存值",
     "savedTitle": "已保存",
     "savedDesc": "服务器设置已更新",

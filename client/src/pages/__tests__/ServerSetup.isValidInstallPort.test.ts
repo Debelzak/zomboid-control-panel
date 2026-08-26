@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidInstallPort } from '../ServerSetup'
+import { isValidGamePort, isValidInstallPort } from '../ServerSetup'
 
 // conv-hunt-pages-2 lens 4b, previously deferred: server/routes/server.js's
 // /install, /quick-setup, /configure-rcon and /configure-network used to
@@ -46,5 +46,12 @@ describe('isValidInstallPort composes with NumberInput leaving a cleared field a
   it('a field the operator emptied is indistinguishable, to this check, from any other invalid port', () => {
     const clearedField = NaN // what NumberInput reports for an empty/unparseable field
     expect(isValidInstallPort(clearedField)).toBe(isValidInstallPort(999999)) // both false, same refusal path
+  })
+})
+
+describe('ServerSetup -- isValidGamePort', () => {
+  it('rejects 65535 because the derived UDP port would overflow', () => {
+    expect(isValidGamePort(65535)).toBe(false)
+    expect(isValidGamePort(65534)).toBe(true)
   })
 })

@@ -90,13 +90,14 @@ function handleCardKeyDown(
 }
 
 // Generate a random password
-// Mirrors server/routes/server.js's requireIntInRange(value, 1024, 65535, ...)
-// used by /install, /quick-setup, /configure-rcon and /configure-network for
-// rconPort/serverPort -- those now refuse an out-of-range port with a named
-// 400 instead of silently substituting a default, so the client can reject
-// it before the round trip too.
+// Game port 65535 is excluded because configure-network derives UDPPort as
+// gamePort + 1; RCON ports may still use the full 1024-65535 range.
 export function isValidInstallPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1024 && port <= 65535;
+}
+
+export function isValidGamePort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1024 && port <= 65534;
 }
 
 // A port field can now genuinely be NaN mid-edit (see NumberInput) -- a
@@ -710,7 +711,7 @@ export default function ServerSetup() {
       });
       return;
     }
-    if (!isValidInstallPort(serverPort) || !isValidInstallPort(rconPort)) {
+    if (!isValidGamePort(serverPort) || !isValidInstallPort(rconPort)) {
       toast({
         title: t("toasts.invalidPortTitle"),
         description: t("toasts.invalidPortDesc"),
@@ -762,7 +763,7 @@ export default function ServerSetup() {
       });
       return;
     }
-    if (!isValidInstallPort(serverPort) || !isValidInstallPort(rconPort)) {
+    if (!isValidGamePort(serverPort) || !isValidInstallPort(rconPort)) {
       toast({
         title: t("toasts.invalidPortTitle"),
         description: t("toasts.invalidPortDesc"),
@@ -1595,6 +1596,8 @@ export default function ServerSetup() {
                 <HelpTip label={t("common.rconPortLabel")}>{t("common.rconPortHelp")}</HelpTip>
               </div>
               <NumberInput
+                min={1024}
+                max={65535}
                 value={rconPort}
                 onChange={setRconPort}
                 className="font-mono"
@@ -1755,6 +1758,8 @@ export default function ServerSetup() {
                   <HelpTip label={t("common.gamePortLabel")}>{t("common.gamePortHelp")}</HelpTip>
                 </div>
                 <NumberInput
+                  min={1024}
+                  max={65534}
                   value={serverPort}
                   onChange={setServerPort}
                   className="font-mono"
@@ -2224,6 +2229,8 @@ export default function ServerSetup() {
                   <HelpTip label={t("common.rconPortLabel")}>{t("common.rconPortHelp")}</HelpTip>
                 </div>
                 <NumberInput
+                  min={1024}
+                  max={65535}
                   value={rconPort}
                   onChange={setRconPort}
                   className="font-mono"
@@ -2425,6 +2432,8 @@ export default function ServerSetup() {
                     <HelpTip label={t("common.gamePortLabel")}>{t("common.gamePortHelp")}</HelpTip>
                   </div>
                   <NumberInput
+                    min={1024}
+                    max={65534}
                     value={serverPort}
                     onChange={setServerPort}
                     className="font-mono"

@@ -1943,6 +1943,8 @@ export default function Settings() {
         "reconnectInterval",
         "panelPort",
         "httpsPort",
+        "panelBridgeSftpPort",
+        "panelBridgeSftpPollIntervalSeconds",
       ].includes(key)
     ) {
       // Allow empty string but reject non-numeric values

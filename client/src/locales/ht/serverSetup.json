@@ -249,7 +249,7 @@
     "adminPasswordRequiredInstallDesc": "Antre yon modpas administratè anvan w kòmanse enstalasyon an.",
     "adminPasswordRequiredCreateDesc": "Antre yon modpas administratè anvan w kreye sèvè sa a.",
     "invalidPortTitle": "Pò Envalid",
-    "invalidPortDesc": "Pò Jwèt la ak Pò RCON dwe chak yon nonm antye ant 1024 ak 65535.",
+    "invalidPortDesc": "Pò Jwèt la dwe yon nonm antye ant 1024 ak 65534; Pò RCON dwe ant 1024 ak 65535.",
     "startingInstallLog": "N ap kòmanse enstalasyon...",
     "creatingConfigLog": "N ap kreye konfigirasyon sèvè...",
     "configCreatedLog": "Konfigirasyon sèvè kreye avèk siksè!",
