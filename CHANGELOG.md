@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-08-27
+
+Completes the configuration-loss fix that v1.2.7 only half-delivered. If you run scheduled
+restarts, this release matters more than v1.2.7 did.
+
+### Security
+
+- **Scanning for SteamCMD could run a program from a folder chosen in the same request.** When the
+  panel needed the SteamCMD executable, it accepted the folder to look in as part of whichever
+  request was being handled, and checked only that the path was absolute and contained no `..` -
+  not that it was the folder you had actually configured. An account able to reach those routes
+  could therefore point the panel at a directory of its choosing and have it run whatever
+  SteamCMD-named file was there. Exploiting it also required some separate way to place a file at
+  that location first, and every built-in role that can reach these routes already has equal or
+  greater power by ordinary means - but a custom role built around installing the server alone
+  would have gained more than its description implies. The executable is now always resolved from
+  your saved SteamCMD path: browsing to a new location still works, it simply has to be saved
+  before it is used.
+
+- **Testing an RCON connection let you reach any address, not just your server.** The "test
+  connection" action connects to whatever host and port it is given, and required only the
+  permission to run RCON commands - a permission whose description promises the ability to talk to
+  *your configured server*, not to open a connection to any address on your network. An account
+  with only that permission could use the panel to find out which internal hosts and ports accept
+  connections. Blocking local and private addresses was not an option, because same-machine and
+  split-host installations legitimately use exactly those. Testing a connection now also requires
+  permission to manage servers - if you can add a server, you can test one - and the target host
+  and port are recorded in the log.
+
+### Fixed
+
+- **A scheduled restart could replace your server's settings with defaults.** This is the other
+  half of the problem described in v1.2.7, and on its own it is the half that actually bites.
+  The panel writes a start script for your server with the save-data location and server name
+  written directly into it, and regenerates that script when you start the server from the panel.
+  A *scheduled* restart never regenerated it. So if you changed your data path or server name in
+  settings and then let a scheduled restart happen before ever starting the server manually, the
+  server was launched with the old location still baked into the script. Project Zomboid, finding
+  no configuration where it was told to look, created a fresh default one - which is why the
+  password stopped working, the mod list emptied, and every sandbox setting reverted. Scheduled
+  restarts now refresh the start script and RCON configuration exactly as a manual start does.
+
+- **Nothing automatic ever took a configuration backup.** Backups of your server configuration were
+  only ever made when a person edited and saved something, so no restart - scheduled or manual -
+  and no automated task ever produced one. The single event most likely to damage a configuration
+  unattended was the one event with no backup behind it, which is why the panel's own backup screen
+  had nothing to offer when this went wrong. Every restart now takes a configuration backup first.
+  A restart that changes nothing does not add a duplicate, so scheduled restarts cannot quietly
+  push your real backups out of the retention limit.
+
+- **Importing a Steam collection failed every time for any collection containing another
+  collection.** Steam collections can contain sub-collections, and the panel treated those exactly
+  like ordinary mods: listed as importable, tracked, written into the server configuration, and
+  finally sent back to Steam as items to add. Steam refuses to place a collection inside another
+  collection, for any account, regardless of how the browser session was set up - so the import
+  failed completely and reported an error that pointed at login credentials, sending at least one
+  person looking in the wrong place for days. Sub-collections are now recognised and skipped, with
+  a notice saying so, and the error message names the actual cause instead of showing a raw
+  protocol response.
+
+- **A failed bulk action showed only the first error.** Selecting many mods and acting on them
+  collected every failure correctly but displayed only one, so forty-seven different problems and
+  forty-seven copies of the same problem looked identical. The result now says whether the failures
+  shared one cause or how many distinct causes there were.
+
+- **The panel reported regenerating a start script it had not written.** When a server was
+  configured to use its own launcher file, the panel still attempted to rewrite the start script,
+  quietly discarded the resulting error, and logged that it had regenerated the script anyway.
+  Anyone investigating a configuration problem would have read that line as proof the script was
+  current.
+
+### Added
+
+- **Custom launcher support.** If you point the panel at your own `.bat`, `.sh` or `.exe` instead
+  of a server folder, that is now a supported mode rather than something that happened to work.
+  The panel launches your file and does not attempt to manage or regenerate it, and the Add and
+  Edit Server dialogs say so plainly - including the consequence, which is that memory, admin
+  password, data path and server name changes made in the panel will not reach the server unless
+  you put them in your script yourself. Existing setups already pointing at a launcher file keep
+  working exactly as before. Server paths are now also checked when saved: previously neither the
+  install path nor the server path was validated at all.
+
 ## [1.2.7] - 2026-08-27
 
 ### Security
