@@ -85,6 +85,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { EmptyState } from "@/components/EmptyState";
+import { DisabledReason } from "@/components/DisabledReason";
 import {
   configApi,
   panelBridgeApi,
@@ -4731,6 +4732,7 @@ export default function Settings() {
                                     }
                                     disabled={restoringBackup !== null}
                                     className="text-warning hover:text-warning hover:bg-warning/10"
+                                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint; the "(server must be stopped)" parenthetical is a general precondition note, not tied to the actual disable condition (another restore already in progress, self-evident via the spinner). Triaged 2026-08-27.
                                     title={t("backups.restoreTitle")}
                                   >
                                     {restoringBackup === backup.name ? (
@@ -6477,24 +6479,23 @@ function WorkshopCollectionSyncCard({
         {/* Status / actions */}
         <div className="space-y-2 pt-2 border-t border-border/40">
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTest}
-              disabled={!collectionIdValid || !credsConfigured || testing}
-              title={
-                !credsConfigured
-                  ? t("workshopSync.testConnectionTitleNeedsCookies")
-                  : t("workshopSync.testConnectionTitleReady")
-              }
-            >
-              {testing ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              {t("workshopSync.testConnection")}
-            </Button>
+            <DisabledReason reason={!credsConfigured ? t("workshopSync.testConnectionTitleNeedsCookies") : null}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTest}
+                disabled={!collectionIdValid || !credsConfigured || testing}
+                // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27: the disabled-reason branch (needs cookies) now lives in the DisabledReason wrapper above; this title carries only the enabled-state hint.
+                title={!credsConfigured ? undefined : t("workshopSync.testConnectionTitleReady")}
+              >
+                {testing ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                {t("workshopSync.testConnection")}
+              </Button>
+            </DisabledReason>
             <Button
               variant="outline"
               size="sm"
@@ -6730,6 +6731,7 @@ function WorkshopCollectionSyncCard({
                                       })
                                     }
                                     disabled={!!busy}
+                                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
                                     title={t("workshopSync.removeFromServerTitle")}
                                   >
                                     {busy === "remove-server" ? (
@@ -6748,6 +6750,7 @@ function WorkshopCollectionSyncCard({
                                       runRowAction(it.workshopId, "add-server")
                                     }
                                     disabled={!!busy}
+                                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
                                     title={t("workshopSync.addToServerTitle")}
                                   >
                                     {busy === "add-server" ? (
@@ -6760,55 +6763,49 @@ function WorkshopCollectionSyncCard({
                                 )}
                                 {/* Collection side */}
                                 {it.inCollection ? (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
-                                    onClick={() =>
-                                      runRowAction(it.workshopId, "remove")
-                                    }
-                                    disabled={!!busy || !credsConfigured || tokenExpired}
-                                    title={
-                                      tokenExpired
-                                        ? t("workshopSync.sessionExpiredShort")
-                                        : !credsConfigured
-                                          ? t("workshopSync.removeFromCollectionNeedsCookies")
-                                          : t("workshopSync.removeFromCollectionTitle")
-                                    }
-                                  >
-                                    {busy === "remove" ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <Minus className="w-3 h-3" />
-                                    )}
-                                    <span className="ml-1">
-                                      {t("workshopSync.fromCollection")}
-                                    </span>
-                                  </Button>
+                                  <DisabledReason reason={tokenExpired ? t("workshopSync.sessionExpiredShort") : !credsConfigured ? t("workshopSync.removeFromCollectionNeedsCookies") : null}>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() =>
+                                        runRowAction(it.workshopId, "remove")
+                                      }
+                                      disabled={!!busy || !credsConfigured || tokenExpired}
+                                      // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (real bug: this ternary correctly selected "Steam session expired"/"Need Steam cookies" but a native title is never shown on a disabled element -- Chromium confirmed empirically). The disabled-reason now lives in the DisabledReason wrapper above; this title carries only the enabled-state hint.
+                                      title={tokenExpired || !credsConfigured ? undefined : t("workshopSync.removeFromCollectionTitle")}
+                                    >
+                                      {busy === "remove" ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Minus className="w-3 h-3" />
+                                      )}
+                                      <span className="ml-1">
+                                        {t("workshopSync.fromCollection")}
+                                      </span>
+                                    </Button>
+                                  </DisabledReason>
                                 ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
-                                    onClick={() =>
-                                      runRowAction(it.workshopId, "add")
-                                    }
-                                    disabled={!!busy || !credsConfigured || tokenExpired}
-                                    title={
-                                      tokenExpired
-                                        ? t("workshopSync.sessionExpiredShort")
-                                        : !credsConfigured
-                                          ? t("workshopSync.removeFromCollectionNeedsCookies")
-                                          : t("workshopSync.addToCollectionTitle")
-                                    }
-                                  >
-                                    {busy === "add" ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <Plus className="w-3 h-3" />
-                                    )}
-                                    <span className="ml-1">{t("workshopSync.toCollection")}</span>
-                                  </Button>
+                                  <DisabledReason reason={tokenExpired ? t("workshopSync.sessionExpiredShort") : !credsConfigured ? t("workshopSync.removeFromCollectionNeedsCookies") : null}>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
+                                      onClick={() =>
+                                        runRowAction(it.workshopId, "add")
+                                      }
+                                      disabled={!!busy || !credsConfigured || tokenExpired}
+                                      // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27, same real bug and fix as the remove-from-collection button above.
+                                      title={tokenExpired || !credsConfigured ? undefined : t("workshopSync.addToCollectionTitle")}
+                                    >
+                                      {busy === "add" ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Plus className="w-3 h-3" />
+                                      )}
+                                      <span className="ml-1">{t("workshopSync.toCollection")}</span>
+                                    </Button>
+                                  </DisabledReason>
                                 )}
                                 {/* Tracked side */}
                                 {it.inTracked ? (
@@ -6820,6 +6817,7 @@ function WorkshopCollectionSyncCard({
                                       runRowAction(it.workshopId, "untrack")
                                     }
                                     disabled={!!busy}
+                                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
                                     title={t("workshopSync.untrackTitle")}
                                   >
                                     {busy === "untrack" ? (
@@ -6838,6 +6836,7 @@ function WorkshopCollectionSyncCard({
                                       runRowAction(it.workshopId, "track")
                                     }
                                     disabled={!!busy}
+                                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
                                     title={t("workshopSync.trackTitle")}
                                   >
                                     {busy === "track" ? (
@@ -6863,6 +6862,7 @@ function WorkshopCollectionSyncCard({
                                     })
                                   }
                                   disabled={!!busy}
+                                  // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
                                   title={t("workshopSync.purgeTitle")}
                                 >
                                   {busy === "purge" ? (

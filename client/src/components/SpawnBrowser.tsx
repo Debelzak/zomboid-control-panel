@@ -437,6 +437,7 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
             onClick={handleScan}
             disabled={scanning}
             className="h-8 px-2.5 text-xs"
+            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint; disables only while a scan is already in flight (the spinner is the self-evident why). Triaged 2026-08-27.
             title={t('rescanTitle')}
           >
             {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -604,6 +605,7 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
                       'motion-safe:transition-colors duration-100',
                       'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-background/40 disabled:hover:border-border/60 disabled:hover:text-foreground/90'
                     )}
+                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint naming the action ("Spawn X again"); when disabled for the isItems-without-a-player case, the actual reason is already surfaced visibly in this dialog's own hint row below (t('pickPlayerFirst')), so nothing is hidden. Triaged 2026-08-27.
                     title={isItems ? t('spawnAgainTitleWithQty', { name: r.name, qty: r.qty }) : t('spawnAgainTitle', { name: r.name })}
                   >
                     <RotateCw className="w-3 h-3 opacity-50 motion-safe:group-hover:opacity-100 motion-safe:transition-opacity" />

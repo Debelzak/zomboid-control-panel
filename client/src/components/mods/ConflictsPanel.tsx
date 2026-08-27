@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { FileDiffViewer } from '@/components/FileDiffViewer'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { DisabledReason } from '@/components/DisabledReason'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { CONFLICT_FILE_LIMIT, useLocalStorageState, type DepSearchState } from '@/lib/modsShared'
 
@@ -1061,34 +1062,40 @@ export function ConflictsPanel({
                                             {/* Fix-it actions: promote one mod over the other in load order. */}
                                             {posA != null && posB != null && (
                                               <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-                                                <Button
-                                                  size="sm"
-                                                  variant="outline"
-                                                  className="h-7 px-2 text-[11px] gap-1"
-                                                  disabled={savingModOrder || posA > posB}
-                                                  title={posA > posB ? t('alreadyLoadsLast', { name: pair.modA.modName }) : t('moveToLoadAfter', { name: pair.modA.modName, other: pair.modB.modName })}
-                                                  onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    promoteModOverOpponent(pair.modA.modId, pair.modA.modName, pair.modB.modId, pair.modB.modName)
-                                                  }}
-                                                >
-                                                  <Wrench className="w-3 h-3" />
-                                                  <span className="truncate max-w-[140px]">{t('makeAWin')}</span>
-                                                </Button>
-                                                <Button
-                                                  size="sm"
-                                                  variant="outline"
-                                                  className="h-7 px-2 text-[11px] gap-1"
-                                                  disabled={savingModOrder || posB > posA}
-                                                  title={posB > posA ? t('alreadyLoadsLast', { name: pair.modB.modName }) : t('moveToLoadAfter', { name: pair.modB.modName, other: pair.modA.modName })}
-                                                  onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    promoteModOverOpponent(pair.modB.modId, pair.modB.modName, pair.modA.modId, pair.modA.modName)
-                                                  }}
-                                                >
-                                                  <Wrench className="w-3 h-3" />
-                                                  <span className="truncate max-w-[140px]">{t('makeBWin')}</span>
-                                                </Button>
+                                                <DisabledReason reason={posA > posB ? t('alreadyLoadsLast', { name: pair.modA.modName }) : null}>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-7 px-2 text-[11px] gap-1"
+                                                    disabled={savingModOrder || posA > posB}
+                                                    // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27: the disabled-reason branch (posA > posB, "already loads last") now lives in the DisabledReason wrapper above; this title carries only the enabled-state action hint.
+                                                    title={posA > posB ? undefined : t('moveToLoadAfter', { name: pair.modA.modName, other: pair.modB.modName })}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      promoteModOverOpponent(pair.modA.modId, pair.modA.modName, pair.modB.modId, pair.modB.modName)
+                                                    }}
+                                                  >
+                                                    <Wrench className="w-3 h-3" />
+                                                    <span className="truncate max-w-[140px]">{t('makeAWin')}</span>
+                                                  </Button>
+                                                </DisabledReason>
+                                                <DisabledReason reason={posB > posA ? t('alreadyLoadsLast', { name: pair.modB.modName }) : null}>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-7 px-2 text-[11px] gap-1"
+                                                    disabled={savingModOrder || posB > posA}
+                                                    // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27: the disabled-reason branch (posB > posA, "already loads last") now lives in the DisabledReason wrapper above; this title carries only the enabled-state action hint.
+                                                    title={posB > posA ? undefined : t('moveToLoadAfter', { name: pair.modB.modName, other: pair.modA.modName })}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      promoteModOverOpponent(pair.modB.modId, pair.modB.modName, pair.modA.modId, pair.modA.modName)
+                                                    }}
+                                                  >
+                                                    <Wrench className="w-3 h-3" />
+                                                    <span className="truncate max-w-[140px]">{t('makeBWin')}</span>
+                                                  </Button>
+                                                </DisabledReason>
                                                 <Button
                                                   size="sm"
                                                   variant="ghost"
@@ -1303,6 +1310,7 @@ export function ConflictsPanel({
                             onClick={handleFixAll}
                             disabled={fixingAllDeps}
                             className="h-7 text-xs"
+                            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint: the ternary's condition (addableRows vs rows count) is unrelated to the disabled condition (fixingAllDeps, a transient in-flight state shown by the spinner). Neither branch explains the disable. Triaged 2026-08-27.
                             title={addableRows.length < rows.length - addedCount
                               ? t('addResolvedPartialTitle', { count: addableRows.length, remaining: rows.length - addableRows.length - addedCount })
                               : t('addResolvedAllTitle', { count: addableRows.length })}

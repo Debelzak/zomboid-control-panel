@@ -2201,6 +2201,7 @@ export default function Events() {
                   variant="outline"
                   onClick={() => handleBridgeAction('Start Rain', () => panelBridgeApi.startRain(Math.max(0.05, precipitationIntensity / 100)))}
                   disabled={bridgeLoading !== null || !bridgeConnected}
+                  // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the action does (precipitation-slider intensity), unrelated to why the button disables (bridge not connected / another action in flight). This is the rule's own canonical "Start Rain" shape-3 example. Triaged 2026-08-27.
                   title={t('climate.rainTooltip')}
                   className="h-9 gap-2 text-xs font-medium"
                 >
@@ -2404,18 +2405,39 @@ export default function Events() {
                     </Button>
                   </DisabledReason>
                   <DisabledReason reason={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : null}>
-                    <Button variant="outline" onClick={() => handleAction('Lightning', () => triggerLightning(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? undefined : t('quickSounds.lightningTooltip')} className="h-9 gap-2 text-xs font-medium text-amber-400/90 hover:text-amber-400 hover:border-amber-400/40">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleAction('Lightning', () => triggerLightning(pickStrikeTarget()))}
+                      disabled={loading !== null || players.length === 0}
+                      // eslint-disable-next-line local/no-dead-disabled-title -- already split (this file's own precedent, cited in the rule's docs): the disabled-reason (no players online) lives in the DisabledReason wrapper above; this title carries only the enabled-state hint. Marker added 2026-08-27.
+                      title={players.length === 0 ? undefined : t('quickSounds.lightningTooltip')}
+                      className="h-9 gap-2 text-xs font-medium text-amber-400/90 hover:text-amber-400 hover:border-amber-400/40"
+                    >
                       {loading === 'Lightning' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
                       {t('quickSounds.lightning')}
                     </Button>
                   </DisabledReason>
                   <DisabledReason reason={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : null}>
-                    <Button variant="outline" onClick={() => handleAction('Thunder', () => triggerThunder(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? undefined : t('quickSounds.thunderTooltip')} className="h-9 gap-2 text-xs font-medium">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleAction('Thunder', () => triggerThunder(pickStrikeTarget()))}
+                      disabled={loading !== null || players.length === 0}
+                      // eslint-disable-next-line local/no-dead-disabled-title -- already split (this file's own precedent, cited in the rule's docs): the disabled-reason (no players online) lives in the DisabledReason wrapper above; this title carries only the enabled-state hint. Marker added 2026-08-27.
+                      title={players.length === 0 ? undefined : t('quickSounds.thunderTooltip')}
+                      className="h-9 gap-2 text-xs font-medium"
+                    >
                       {loading === 'Thunder' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudLightning className="w-3.5 h-3.5" />}
                       {t('quickSounds.thunder')}
                     </Button>
                   </DisabledReason>
-                  <Button variant="outline" onClick={() => handleAction('Alarm', triggerAlarm)} disabled={loading !== null} title={t('quickSounds.alarmTooltip')} className="h-9 gap-2 text-xs font-medium">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleAction('Alarm', triggerAlarm)}
+                    disabled={loading !== null}
+                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (this file's own precedent, cited in the rule's docs as "Alarm"); disables only while another quick-sound action is in flight, unrelated to what the title describes. Triaged 2026-08-27.
+                    title={t('quickSounds.alarmTooltip')}
+                    className="h-9 gap-2 text-xs font-medium"
+                  >
                     {loading === 'Alarm' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                     {t('quickSounds.alarm')}
                   </Button>
@@ -2658,11 +2680,25 @@ export default function Events() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => handleAction('Teleport self', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number))} disabled={loading !== null || !hasValidTeleportCoords} title={t('teleport.teleportSelfTitle')} className="h-9 gap-2 text-xs font-medium">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleAction('Teleport self', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number))}
+                    disabled={loading !== null || !hasValidTeleportCoords}
+                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (this file's own precedent, cited in the rule's docs as "Teleport Player/Self"); the parenthetical is an always-relevant server-side note, not tied to the disabled condition (invalid coords / action in flight). Triaged 2026-08-27.
+                    title={t('teleport.teleportSelfTitle')}
+                    className="h-9 gap-2 text-xs font-medium"
+                  >
                     {loading === 'Teleport self' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
                     {t('teleport.teleportSelf')}
                   </Button>
-                  <Button variant="outline" onClick={() => handleAction('Teleport player', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number, getTargetPlayer()))} disabled={loading !== null || !hasValidTeleportCoords || targetAll || !selectedPlayer} title={t('teleport.teleportPlayerTitle')} className="h-9 gap-2 text-xs font-medium">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleAction('Teleport player', () => teleportToCoords(teleportCoordX as number, teleportCoordY as number, teleportCoordZ as number, getTargetPlayer()))}
+                    disabled={loading !== null || !hasValidTeleportCoords || targetAll || !selectedPlayer}
+                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (this file's own precedent, cited in the rule's docs as "Teleport Player/Self"); an unconditional action description, no branch of it explains any of the four disable conditions. Triaged 2026-08-27.
+                    title={t('teleport.teleportPlayerTitle')}
+                    className="h-9 gap-2 text-xs font-medium"
+                  >
                     {loading === 'Teleport player' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
                     {t('teleport.teleportTarget', { target: selectedPlayer || t('teleport.targetFallback') })}
                   </Button>

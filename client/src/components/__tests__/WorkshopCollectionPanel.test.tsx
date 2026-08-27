@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { WorkshopCollectionPanel } from '../WorkshopCollectionPanel'
 import { ConfirmProvider } from '@/contexts/ConfirmContext'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { modsApi } from '@/lib/api'
 
 vi.mock('@/lib/api', async () => {
@@ -54,9 +55,11 @@ async function renderPanel(items: any[]) {
   collectionDiff.mockResolvedValue(baseDiff(items) as any)
   render(
     <MemoryRouter>
-      <ConfirmProvider>
-        <WorkshopCollectionPanel />
-      </ConfirmProvider>
+      <TooltipProvider>
+        <ConfirmProvider>
+          <WorkshopCollectionPanel />
+        </ConfirmProvider>
+      </TooltipProvider>
     </MemoryRouter>
   )
   await waitFor(() => expect(collectionDiff).toHaveBeenCalled())
@@ -231,16 +234,23 @@ describe('WorkshopCollectionPanel', () => {
     } as any)
     render(
       <MemoryRouter>
-        <WorkshopCollectionPanel />
+        <TooltipProvider>
+          <WorkshopCollectionPanel />
+        </TooltipProvider>
       </MemoryRouter>
     )
     await screen.findByText(ACCENTED_NAME)
 
-    const addButton = screen.getByTitle('Need Steam cookies')
+    // 2026-08-27 no-dead-disabled-title triage: a native title is invisible on a
+    // disabled element (confirmed empirically, no tooltip on hover) -- the reason
+    // now lives in aria-label AND in a real DisabledReason/Radix Tooltip on a
+    // focusable wrapper, so it reaches both assistive tech and a sighted mouse
+    // user hovering the (now-focusable) wrapper. The dead title= is gone, not
+    // just duplicated -- find the button by its accessible name instead.
+    const addButton = screen.getByRole('button', { name: 'Need Steam cookies' })
     expect(addButton).toBeDisabled()
-    // A native title is invisible on touch and unreliable for screen readers on a
-    // disabled control -- the same reason must also be the button's accessible name.
     expect(addButton).toHaveAccessibleName('Need Steam cookies')
+    expect(addButton).not.toHaveAttribute('title')
   })
 
   it('defaults to the "missing from collection" filter, hiding in-sync items until asked', async () => {

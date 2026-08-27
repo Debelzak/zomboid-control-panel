@@ -106,6 +106,7 @@ import { getUserErrorMessage } from '@/lib/errorMessage'
 import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
 import { EmptyState } from '@/components/EmptyState'
 import { useAuth } from '@/contexts/AuthContext'
+import { DisabledReason } from '@/components/DisabledReason'
 import {
   INI_SCHEMA,
   INI_CATEGORIES,
@@ -3354,23 +3355,26 @@ export default function ServerConfig() {
                       </button>
                     )}
                   </div>
-                  <Button
-                    variant={modSettingsModifiedOnly ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setModSettingsModifiedOnly(v => !v)}
-                    disabled={modifiedModSettingsCount === 0 && !modSettingsModifiedOnly}
-                    className="shrink-0 h-9 gap-1.5 text-xs font-medium"
-                    aria-pressed={modSettingsModifiedOnly}
-                    title={modifiedModSettingsCount === 0 ? t('modSettingsTab.modifiedFilterNoneTitle') : t('modSettingsTab.modifiedFilterTitle')}
-                  >
-                    <Filter className="w-3.5 h-3.5" />
-                    {t('modSettingsTab.modifiedFilter')}
-                    {modifiedModSettingsCount > 0 && (
-                      <Badge variant={modSettingsModifiedOnly ? 'secondary' : 'warning'} className="ml-0.5 h-4 px-1.5 py-0 text-xs">
-                        {modifiedModSettingsCount}
-                      </Badge>
-                    )}
-                  </Button>
+                  <DisabledReason reason={modifiedModSettingsCount === 0 && !modSettingsModifiedOnly ? t('modSettingsTab.modifiedFilterNoneTitle') : null}>
+                    <Button
+                      variant={modSettingsModifiedOnly ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setModSettingsModifiedOnly(v => !v)}
+                      disabled={modifiedModSettingsCount === 0 && !modSettingsModifiedOnly}
+                      className="shrink-0 h-9 gap-1.5 text-xs font-medium"
+                      aria-pressed={modSettingsModifiedOnly}
+                      // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27: the disabled-reason branch (no modified options) now lives in the DisabledReason wrapper above; this title carries only the enabled-state hint.
+                      title={t('modSettingsTab.modifiedFilterTitle')}
+                    >
+                      <Filter className="w-3.5 h-3.5" />
+                      {t('modSettingsTab.modifiedFilter')}
+                      {modifiedModSettingsCount > 0 && (
+                        <Badge variant={modSettingsModifiedOnly ? 'secondary' : 'warning'} className="ml-0.5 h-4 px-1.5 py-0 text-xs">
+                          {modifiedModSettingsCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  </DisabledReason>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -3651,6 +3655,7 @@ export default function ServerConfig() {
                                               className="text-xs text-muted-foreground/50 hover:text-primary whitespace-nowrap flex items-center gap-1"
                                               onClick={() => opt.name && opt.default !== undefined && handleOptionChange(opt.name, opt.default, group.name)}
                                               disabled={isSaving}
+                                              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint naming the action + value; disables only transiently while a save is in flight (the adjacent spinner is the self-evident why). Triaged 2026-08-27. Note: the wrapping Radix Tooltip here has the same "no pointer/focus events on a disabled native button" limitation as this title, so its content is equally unreachable while isSaving -- out of scope for this rule (it only checks title+disabled), flagged here rather than fixed since isSaving is brief and self-evident.
                                               title={t('modSettingsTab.resetToDefaultTitle', { value: opt.default })}
                                             >
                                               <Undo2 className="w-3 h-3" />

@@ -81,6 +81,7 @@ export function AutoUpdateResultBanner() {
         disabled={dismissing}
         className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
         aria-label={t('autoUpdateResult.dismissAria')}
+        // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; disables only transiently while the dismiss action itself is in flight (self-evident, not a permission gate). Triaged 2026-08-27.
         title={t('autoUpdateResult.dismiss')}
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />

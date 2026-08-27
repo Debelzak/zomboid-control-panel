@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
 import { useConfirm } from '@/contexts/ConfirmContext'
+import { DisabledReason } from '@/components/DisabledReason'
 import { modsApi } from '@/lib/api'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { cn, copyText } from '@/lib/utils'
@@ -536,6 +537,7 @@ export function WorkshopCollectionPanel() {
               onClick={refresh}
               disabled={diffLoading}
               className="h-8 px-2 text-xs"
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the visible label; disables only transiently while re-reading is in flight (the spinning icon is the self-evident why). Triaged 2026-08-27.
               title={t('rereadTitle')}
             >
               <RefreshCw className={cn('w-3.5 h-3.5 mr-1.5', diffLoading && 'animate-spin')} />
@@ -729,6 +731,7 @@ export function WorkshopCollectionPanel() {
               className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={() => runBulk('remove-server')}
               disabled={!!bulkBusy || !canBulkRemoveServer}
+              // eslint-disable-next-line local/no-dead-disabled-title -- hint describing the button's purpose/use-case ("after they were removed from Steam"), not an instruction tied to canBulkRemoveServer or bulkBusy -- doesn't tell the user what to do to enable it. Read as pure hint, not a disabled-reason. Triaged 2026-08-27.
               title={t('removeServerBulkTitle')}
             >
               {bulkBusy === 'remove-server' ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Minus className="w-3 h-3 mr-1" />}
@@ -1021,6 +1024,7 @@ function Row({
               className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={() => onAction('remove-server')}
               disabled={!!busy}
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
               title={t('removeFromServerTitle')}
             >
               {busy === 'remove-server' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Server className="w-3 h-3" />}
@@ -1033,6 +1037,7 @@ function Row({
               className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
               onClick={() => onAction('add-server')}
               disabled={!!busy}
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
               title={t('addToServerTitle')}
             >
               {busy === 'add-server' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Server className="w-3 h-3" />}
@@ -1040,31 +1045,37 @@ function Row({
             </Button>
           )}
           {item.inCollection ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => onAction('remove')}
-              disabled={!!busy || !credsConfigured || tokenExpired}
-              title={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : t('removeFromCollectionTitle')}
-              aria-label={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : undefined}
-            >
-              {busy === 'remove' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
-              <span className="ml-1 hidden sm:inline">{t('remove')}</span>
-            </Button>
+            <DisabledReason reason={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : null}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => onAction('remove')}
+                disabled={!!busy || !credsConfigured || tokenExpired}
+                // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (REAL bug: title alone was never visible on a disabled native button -- Chromium shows no tooltip -- despite the ternary correctly selecting "Steam session expired"/"Need Steam cookies"; the aria-label carried the same text but that's an accessible-only channel, not a visual one). The disabled-reason now lives in the DisabledReason wrapper above; this title carries only the enabled-state action label.
+                title={tokenExpired || !credsConfigured ? undefined : t('removeFromCollectionTitle')}
+                aria-label={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : undefined}
+              >
+                {busy === 'remove' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
+                <span className="ml-1 hidden sm:inline">{t('remove')}</span>
+              </Button>
+            </DisabledReason>
           ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
-              onClick={() => onAction('add')}
-              disabled={!!busy || !credsConfigured || tokenExpired}
-              title={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : t('addToCollectionTitle')}
-              aria-label={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : undefined}
-            >
-              {busy === 'add' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-              <span className="ml-1 hidden sm:inline">{t('add')}</span>
-            </Button>
+            <DisabledReason reason={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : null}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px] text-success hover:text-success hover:bg-success/10"
+                onClick={() => onAction('add')}
+                disabled={!!busy || !credsConfigured || tokenExpired}
+                // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27, same real bug and fix as the remove-from-collection button above.
+                title={tokenExpired || !credsConfigured ? undefined : t('addToCollectionTitle')}
+                aria-label={tokenExpired ? t('sessionExpiredShort') : !credsConfigured ? t('needCookiesShort') : undefined}
+              >
+                {busy === 'add' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                <span className="ml-1 hidden sm:inline">{t('add')}</span>
+              </Button>
+            </DisabledReason>
           )}
           {item.inTracked ? (
             <Button
@@ -1073,6 +1084,7 @@ function Row({
               className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
               onClick={() => onAction('untrack')}
               disabled={!!busy}
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
               title={t('untrackAndUnsyncTitle')}
             >
               {busy === 'untrack' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
@@ -1085,6 +1097,7 @@ function Row({
               className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10"
               onClick={() => onAction('track')}
               disabled={!!busy}
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, disables only transiently while an action is in flight (the spinner is the self-evident why). Triaged 2026-08-27.
               title={t('trackLocallyTitle')}
             >
               {busy === 'track' ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookmarkPlus className="w-3 h-3" />}
@@ -1093,7 +1106,14 @@ function Row({
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" disabled={!!busy} title={t('moreTitle')}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                disabled={!!busy}
+                // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("More"), disables only transiently while an action is in flight. Triaged 2026-08-27.
+                title={t('moreTitle')}
+              >
                 <span className="text-base leading-none">⋯</span>
               </Button>
             </DropdownMenuTrigger>

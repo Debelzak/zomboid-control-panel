@@ -265,6 +265,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
             size="sm"
             onClick={handleScan}
             disabled={scanning || disabled}
+            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what Scan needs to succeed, unconditional regardless of disabled state; `disabled` here is a generic pass-through prop no current caller sets, and `scanning` is a self-evident transient busy state (the spinner). Not a disabled-reason. Triaged 2026-08-27, same shape as ItemPicker.tsx.
             title={t('scanTitle')}
             className="shrink-0"
           >
@@ -378,6 +379,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
               onClick={e => { e.stopPropagation(); handleScan() }}
               disabled={scanning}
               className="h-7 w-7 p-0 shrink-0"
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; disables only while a scan is already in flight (the spinner is the self-evident why). Triaged 2026-08-27.
               title={t('rescanTitle')}
               aria-label={t('rescanTitle')}
             >
