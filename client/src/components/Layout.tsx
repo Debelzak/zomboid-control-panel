@@ -728,6 +728,36 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
 
+        {/* No-server notice — the active-server strip below only renders once
+            a server exists, so without this a brand-new install shows nothing
+            between the header and a sidebar full of inert-looking nav items.
+            Visible without hovering, unlike the per-item tooltip/aria-label
+            (which stay in place for screen readers — this is additive, not a
+            replacement). Reuses SystemHealthBanner's warning-strip language
+            (border-warning/35, AlertCircle) rather than a new color. */}
+        {servers.length === 0 && !sidebarCollapsed && (
+          <div className="border-b border-border/40 bg-warning/[0.04] px-3 py-2.5 shadow-[inset_2px_0_0_hsl(var(--warning))]">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-warning mt-0.5" aria-hidden />
+              <div className="min-w-0">
+                <p className="text-[12.5px] font-semibold leading-tight text-foreground">
+                  {t('nav.noServerBanner.title')}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+                  {t('nav.noServerBanner.description')}
+                </p>
+                <NavLink
+                  to="/server-setup"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="mt-1.5 inline-flex items-center text-[11px] font-medium text-primary hover:underline"
+                >
+                  {t('nav.noServerBanner.cta')}
+                </NavLink>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Active server strip — tactical status bar */}
         {servers.length > 0 && !sidebarCollapsed && (
           <DropdownMenu>
