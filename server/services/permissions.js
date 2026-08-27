@@ -104,7 +104,7 @@ export const CAPABILITIES = [
     group: "Server Lifecycle",
     label: "Edit server configuration",
     description:
-      "Edit the server's .ini settings, RCON connection details, and network/path configuration.",
+      "Edit the server's .ini settings, RCON connection details, and network/path configuration, and reload the server's Lua scripts on a live server.",
   },
   {
     key: "server.wipe",
@@ -197,7 +197,8 @@ export const CAPABILITIES = [
     key: "mods.manage",
     group: "Mods",
     label: "Manage mods",
-    description: "Track, install and configure Workshop mods.",
+    description:
+      "Track, install and configure Workshop mods, and permanently delete mod files from disk.",
   },
 
   // --- Automation ---
@@ -243,13 +244,14 @@ export const CAPABILITIES = [
     group: "Panel Diagnostics & Settings",
     label: "View panel diagnostics",
     description:
-      "View logs, performance history and CORS diagnostics, and relocate the panel's own data/log directories.",
+      "View logs, performance history and CORS diagnostics, relocate the panel's own data/log directories, and clear stale lock files.",
   },
   {
     key: "panel.settings",
     group: "Panel Diagnostics & Settings",
     label: "Manage panel-wide settings",
-    description: "Change CORS policy, mod-check interval and other app-level settings.",
+    description:
+      "Change CORS policy, mod-check interval and other app-level settings, and configure SSO/OIDC login.",
   },
 ];
 
