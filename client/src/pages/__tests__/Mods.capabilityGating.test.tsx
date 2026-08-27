@@ -103,6 +103,22 @@ async function waitForLoaded() {
   await waitFor(() => expect(getTrackedMods).toHaveBeenCalled())
 }
 
+// bug-hunt-2026-08-27 follow-up: a plain fireEvent.click never opens a
+// Radix DropdownMenu -- it opens on pointerdown, not click (same quirk
+// family as TabsTrigger switching on mousedown). Pam's floor-wide finding:
+// "the menu won't open under fireEvent" was a wrong-event problem, not a
+// real tooling limitation -- Angela's Dashboard.capabilityGating.test.tsx
+// openMoreActionsMenu() already had the fix. Reused here rather than
+// re-deriving it, and used to click-through the "More actions" dropdown's
+// two dialog-opening items (Import Collection, Auto-Restart Settings) --
+// the earlier tests in this file never actually opened this menu.
+async function openMoreActionsMenu() {
+  const trigger = await screen.findByRole('button', { name: /more actions/i })
+  fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 })
+  fireEvent.click(trigger)
+  return screen.findByRole('menu')
+}
+
 function primeReadMocks() {
   getTrackedMods.mockResolvedValue({ mods: [] } as any)
   getStatus.mockResolvedValue({
@@ -204,6 +220,55 @@ describe('Mods.tsx capability gating -- mods.manage', () => {
     }
     await new Promise((r) => setTimeout(r, 0))
     expect(createPreset).not.toHaveBeenCalled()
+  })
+})
+
+describe('Mods.tsx capability gating -- "More actions" dropdown menu items', () => {
+  it('disables the menu items and never opens their dialogs when mods.manage is denied', async () => {
+    mockCan = (cap) => cap !== 'mods.manage'
+    primeReadMocks()
+    renderMods()
+    await waitForLoaded()
+
+    const menu = await openMoreActionsMenu()
+    const importItem = await screen.findByRole('menuitem', { name: /import collection/i })
+    const restartItem = await screen.findByRole('menuitem', { name: /auto-restart settings/i })
+    expect(importItem).toHaveAttribute('aria-disabled', 'true')
+    expect(restartItem).toHaveAttribute('aria-disabled', 'true')
+
+    // Radix marks these disabled, but per tonight's floor finding a
+    // DropdownMenuItem's disabled prop does not gate the onClick you pass
+    // in -- only the early-return guard inside the handler does. Fire the
+    // click directly against the item (not the whole menu) to prove the
+    // real gate holds even if Radix's own disabled short-circuit were
+    // ever bypassed.
+    fireEvent.click(importItem)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(restartItem)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    void menu
+  })
+
+  it('opens the Import Collection dialog when mods.manage is granted', async () => {
+    mockCan = () => true
+    primeReadMocks()
+    renderMods()
+    await waitForLoaded()
+
+    await openMoreActionsMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /import collection/i }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+  })
+
+  it('opens the Auto-Restart Settings dialog when mods.manage is granted', async () => {
+    mockCan = () => true
+    primeReadMocks()
+    renderMods()
+    await waitForLoaded()
+
+    await openMoreActionsMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /auto-restart settings/i }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
   })
 })
 
