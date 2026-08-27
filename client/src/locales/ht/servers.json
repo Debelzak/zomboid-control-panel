@@ -167,9 +167,11 @@
     "rconPortLabel": "Pò RCON:",
     "rconPasswordLabel": "Modpas RCON *",
     "rconPasswordPlaceholder": "Antre modpas RCON",
+    "rconPasswordImportPlaceholder": "Kite l vid pou enpòte l otomatikman",
     "rconPasswordAria": "Modpas RCON",
     "rconPasswordRequired": "Obligatwa pou kontwole sèvè a. Ou ka tou defini <1>RCONPassword=yourpassword</1> nan fichye {{iniName}}.ini ou a.",
     "passwordSet": "Modpas defini",
+    "passwordWillImport": "Enpòte otomatikman soti nan {{iniName}}.ini — kite l vid pou itilize l, oswa tape yon nouvo pou ranplase l.",
     "minMemoryLabel": "Memwa Min (GB)",
     "maxMemoryLabel": "Memwa Maks (GB)"
   },

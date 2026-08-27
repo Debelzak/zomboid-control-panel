@@ -55,6 +55,19 @@ function isValidDockerContainerRef(value) {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value);
 }
 
+// Run a requirePermission() check outside of route-level middleware, for a
+// capability that only applies to one branch of a handler (importIniFrom
+// below needs servers.discover -- the same capability that gates /auto-scan
+// and /detect's own filesystem reads -- in addition to this route's regular
+// servers.manage gate). Mirrors routes/scheduler.js's identical helper.
+async function requireCapabilityInline(capability, req, res) {
+  let passed = false;
+  await requirePermission(capability)(req, res, () => {
+    passed = true;
+  });
+  return passed;
+}
+
 async function mapWithConcurrency(items, limit, mapper) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -240,10 +253,15 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
   return results;
 }
 
-// Auto-scan a folder to find PZ server install paths and data paths
-// Reads arbitrary local server .ini files and returns their RCON passwords
-// in plaintext to prefill the "create server" form — admin-only, same
-// sensitivity tier as chunks delete / panel-bridge command execution.
+// Auto-scan a folder to find PZ server install paths and data paths.
+// Reads arbitrary local server .ini files -- admin-only, same sensitivity
+// tier as chunks delete / panel-bridge command execution -- but the RCON
+// password read off each ini is never put on the wire (hasRcon says
+// whether one is set). POST / re-reads it server-side at creation time via
+// importIniFrom, keyed off dataPath+serverName, instead of round-tripping
+// the real value through the browser. See docs follow-up: this duplicates
+// the ini-parsing in services/mountDiscovery.js's readServerIniSettings —
+// filed separately, not folded into this fix.
 router.post("/auto-scan", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { scanPath, maxDepth = 3 } = req.body || {};
@@ -330,7 +348,6 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
             serverName,
             iniFile,
             rconPort,
-            rconPassword: settings.RCONPassword || "",
             serverPort,
             publicName: settings.PublicName || serverName,
             hasRcon: !!settings.RCONPassword,
@@ -362,7 +379,8 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
 });
 
 // Detect server settings from data path (folder containing Server/, Saves/, Logs/)
-// Same as /auto-scan: exposes RCON passwords read straight off disk.
+// Same as /auto-scan: reads RCON passwords straight off disk but never
+// returns them -- see the comment above /auto-scan.
 router.post("/detect", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { dataPath, installPath } = req.body || {};
@@ -463,7 +481,6 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
             serverName,
             iniFile,
             rconPort,
-            rconPassword: settings.RCONPassword || "",
             serverPort,
             publicName: settings.PublicName || serverName,
             hasRcon: !!settings.RCONPassword,
@@ -681,6 +698,78 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
     log.info(
       `POST / — creating server: name=${config?.name}, remote=${!!config?.isRemote}`,
     );
+
+    // /auto-scan and /detect never put the ini's RCON password on the wire.
+    // A server created from one of their results instead sends back which
+    // config it picked (dataPath + serverName) and we re-read the password
+    // here, server-side, from that exact ini -- same shape as
+    // discovery.js's create-from-discovery, adapted for this route's scan
+    // being an arbitrary-path scan (gated by servers.discover) rather than
+    // discovery.js's fixed, pre-enumerated mount list: there's no discovered
+    // set to validate the reference against here, so the extra guard is
+    // requiring servers.discover again, inline, for this branch specifically
+    // -- the same capability that already gates reading arbitrary local ini
+    // files on /auto-scan and /detect. Without it, a servers.manage-only
+    // caller (who cannot call /auto-scan or /detect at all) could otherwise
+    // use this branch to make the server read any *.ini path on the host.
+    if (config.importIniFrom && typeof config.importIniFrom === "object") {
+      const allowed = await requireCapabilityInline("servers.discover", req, res);
+      if (!allowed) return;
+
+      const { dataPath: importDataPath, serverName: importServerName } =
+        config.importIniFrom;
+      if (
+        typeof importDataPath !== "string" ||
+        importDataPath.length > 500 ||
+        !path.isAbsolute(importDataPath)
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Invalid importIniFrom.dataPath" });
+      }
+      if (!isValidServerName(importServerName)) {
+        return res
+          .status(400)
+          .json({ error: "Invalid importIniFrom.serverName" });
+      }
+      const resolvedImportData = path.resolve(importDataPath);
+      const importServerConfigPath = path.join(resolvedImportData, "Server");
+      if (!fs.existsSync(importServerConfigPath)) {
+        return res.status(400).json({
+          error: "Not a valid Zomboid data folder (no Server subfolder found)",
+        });
+      }
+      const importIniPath = path.join(
+        importServerConfigPath,
+        `${importServerName}.ini`,
+      );
+      if (!fs.existsSync(importIniPath)) {
+        return res
+          .status(400)
+          .json({ error: `${importServerName}.ini not found` });
+      }
+      let importedSettings;
+      try {
+        const importedContent = fs
+          .readFileSync(importIniPath, "utf-8")
+          .replace(/\r\n/g, "\n");
+        importedSettings = parseIni(importedContent);
+      } catch (err) {
+        return res.status(400).json({
+          error: `Failed to read ${importServerName}.ini: ${sanitizeError(err.message)}`,
+        });
+      }
+      if (!importedSettings.RCONPassword) {
+        return res.status(400).json({
+          error: `RCON password not set in ${importServerName}.ini — set RCONPassword on the server, then retry.`,
+        });
+      }
+      // The freshly-read value always wins over anything the client sent
+      // directly, so a bogus client-supplied rconPassword paired with a
+      // valid importIniFrom can't stick.
+      config.rconPassword = importedSettings.RCONPassword;
+      if (!config.serverName) config.serverName = importServerName;
+    }
 
     // Fall back to env-configured paths (docker-compose PZ_SERVER_PATH /
     // PZ_SAVE_PATH) when the request body doesn't set them explicitly.

@@ -102,7 +102,6 @@ interface DetectedServerConfig {
   serverName: string
   iniFile: string
   rconPort: number
-  rconPassword: string
   serverPort: number
   publicName: string
   hasRcon: boolean
@@ -129,7 +128,6 @@ interface DetectedServer {
   serverName: string
   iniFile: string
   rconPort: number
-  rconPassword: string
   serverPort: number
   publicName: string
   hasRcon: boolean
@@ -309,6 +307,11 @@ export default function Servers() {
   const [detectResult, setDetectResult] = useState<DetectResult | null>(null)
   const [detectError, setDetectError] = useState<string | null>(null)
   const [selectedServerConfig, setSelectedServerConfig] = useState<string>('')
+  // Set when the selected detected config has a password (hasRcon) that was
+  // never sent to the browser -- POST /servers re-reads it server-side from
+  // this exact reference instead. Cleared whenever the operator types their
+  // own password, so a manual value always wins.
+  const [importIniFrom, setImportIniFrom] = useState<{ dataPath: string; serverName: string } | null>(null)
 
   // Auto-scan state
   const [autoScanning, setAutoScanning] = useState(false)
@@ -706,6 +709,7 @@ export default function Servers() {
     setDetectError(null)
     setDetectResult(null)
     setSelectedServerConfig('')
+    setImportIniFrom(null)
 
     try {
       const data = await serversDetectApi.detect({
@@ -797,10 +801,10 @@ export default function Servers() {
       zomboidDataPath: config.dataPath,
       installPath: effectiveInstallPath,
       rconPort: config.rconPort,
-      rconPassword: config.rconPassword,
       serverPort: config.serverPort,
     })
     setSelectedServerConfig(config.serverName)
+    setImportIniFrom(config.hasRcon ? { dataPath: config.dataPath, serverName: config.serverName } : null)
     setShowAutoScan(false)
 
     // Also set the detect result for consistency
@@ -815,7 +819,6 @@ export default function Servers() {
         serverName: config.serverName,
         iniFile: config.iniFile,
         rconPort: config.rconPort,
-        rconPassword: config.rconPassword,
         serverPort: config.serverPort,
         publicName: config.publicName,
         hasRcon: config.hasRcon
@@ -834,9 +837,14 @@ export default function Servers() {
       zomboidDataPath: res?.dataPath || prev.zomboidDataPath,
       serverConfigPath: res?.serverConfigPath || prev.serverConfigPath,
       rconPort: config.rconPort,
-      rconPassword: config.rconPassword,
+      rconPassword: '',
       serverPort: config.serverPort
     }))
+    setImportIniFrom(
+      config.hasRcon && res?.dataPath
+        ? { dataPath: res.dataPath, serverName: config.serverName }
+        : null,
+    )
 
     if (!config.hasRcon) {
       toast({
@@ -1222,7 +1230,7 @@ export default function Servers() {
         toast({ title: t('toasts.error'), description: t('toasts.detectFirst'), variant: 'destructive' })
         return
       }
-      if (!newServer.rconPassword.trim()) {
+      if (!newServer.rconPassword.trim() && !importIniFrom) {
         toast({ title: t('toasts.error'), description: t('toasts.rconPasswordRequiredIni'), variant: 'destructive' })
         return
       }
@@ -1243,6 +1251,14 @@ export default function Servers() {
 
     setAddingServer(true)
     try {
+      // Local mode with a detected config that has an ini password and no
+      // typed override: send a reference and let the server re-read the
+      // password itself, instead of round-tripping it through this form
+      // (which never held it in the first place -- /auto-scan and /detect
+      // don't return it).
+      const useIniImport =
+        addMode === 'local' && !!importIniFrom && !newServer.rconPassword.trim()
+
       const createResult = await serversApi.create({
         name: newServer.name || newServer.serverName,
         serverName: newServer.serverName,
@@ -1251,7 +1267,7 @@ export default function Servers() {
         serverConfigPath: newServer.serverConfigPath,
         rconHost: newServer.rconHost,
         rconPort: newServer.rconPort,
-        rconPassword: newServer.rconPassword,
+        ...(useIniImport ? { importIniFrom } : { rconPassword: newServer.rconPassword }),
         dockerContainerName: newServer.dockerContainerName || null,
         serverPort: newServer.serverPort,
         minMemory: newServer.minMemory,
@@ -1259,7 +1275,7 @@ export default function Servers() {
         useNoSteam: newServer.useNoSteam,
         useDebug: newServer.useDebug,
         isRemote: addMode === 'remote'
-      } as Partial<ServerInstance>)
+      } as Partial<ServerInstance> & { importIniFrom?: { dataPath: string; serverName: string } })
 
       if (createResult.server?.id) {
         await serversApi.activate(createResult.server.id)
@@ -1271,6 +1287,7 @@ export default function Servers() {
       setDetectResult(null)
       setDetectError(null)
       setSelectedServerConfig('')
+      setImportIniFrom(null)
       fetchServers()
     } catch (error) {
       toast({
@@ -1289,6 +1306,7 @@ export default function Servers() {
     setDetectResult(null)
     setDetectError(null)
     setSelectedServerConfig('')
+    setImportIniFrom(null)
     setAutoScanResult(null)
     setAutoScanPath('')
     setShowAutoScan(false)
@@ -1862,7 +1880,7 @@ export default function Servers() {
           {/* Mode Selector */}
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => { setAddMode('local'); setNewServer(defaultNewServer); setDetectResult(null); setDetectError(null); setSelectedServerConfig('') }}
+              onClick={() => { setAddMode('local'); setNewServer(defaultNewServer); setDetectResult(null); setDetectError(null); setSelectedServerConfig(''); setImportIniFrom(null) }}
               className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-[background-color,border-color,color] ${
                 addMode === 'local'
                   ? 'border-primary bg-primary/5'
@@ -1876,7 +1894,7 @@ export default function Servers() {
               </div>
             </button>
             <button
-              onClick={() => { setAddMode('remote'); setNewServer({ ...defaultNewServer, isRemote: true, rconHost: '' }); setDetectResult(null); setDetectError(null); setSelectedServerConfig('') }}
+              onClick={() => { setAddMode('remote'); setNewServer({ ...defaultNewServer, isRemote: true, rconHost: '' }); setDetectResult(null); setDetectError(null); setSelectedServerConfig(''); setImportIniFrom(null) }}
               className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-[background-color,border-color,color] ${
                 addMode === 'remote'
                   ? 'border-primary bg-primary/5'
@@ -2070,6 +2088,7 @@ export default function Servers() {
                       setNewServer({ ...newServer, zomboidDataPath: e.target.value })
                       setDetectResult(null)
                       setDetectError(null)
+                      setImportIniFrom(null)
                     }}
                     placeholder={t('localForm.dataPathPlaceholder')}
                     className="font-mono text-sm flex-1"
@@ -2196,13 +2215,20 @@ export default function Servers() {
                         <div className="space-y-2 mt-2">
                           <Label>{t('localForm.rconPasswordLabel')}</Label>
                           <PasswordInput
-                            placeholder={t('localForm.rconPasswordPlaceholder')}
+                            placeholder={importIniFrom ? t('localForm.rconPasswordImportPlaceholder') : t('localForm.rconPasswordPlaceholder')}
                             value={newServer.rconPassword}
                             className="bg-background"
-                            onChange={value => setNewServer({ ...newServer, rconPassword: value })}
+                            onChange={value => {
+                              setNewServer({ ...newServer, rconPassword: value })
+                              setImportIniFrom(null)
+                            }}
                             label={t('localForm.rconPasswordAria')}
                           />
-                          {!newServer.rconPassword ? (
+                          {!newServer.rconPassword && importIniFrom ? (
+                            <p className="flex items-center gap-1 text-xs text-primary">
+                              <CheckCircle className="w-3 h-3" /> {t('localForm.passwordWillImport', { iniName: newServer.serverName })}
+                            </p>
+                          ) : !newServer.rconPassword ? (
                             <p className="text-xs text-warning">
                               <Trans
                                 i18nKey="localForm.rconPasswordRequired"
@@ -2264,7 +2290,7 @@ export default function Servers() {
             </Button>
             <Button
               onClick={handleAddExistingServer}
-              disabled={addingServer || (addMode === 'local' ? (!selectedServerConfig || !newServer.rconPassword) : (!newServer.name || !newServer.rconHost || !newServer.rconPassword))}
+              disabled={addingServer || (addMode === 'local' ? (!selectedServerConfig || (!newServer.rconPassword && !importIniFrom)) : (!newServer.name || !newServer.rconHost || !newServer.rconPassword))}
             >
               {addingServer ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('addDialog.adding')}</>

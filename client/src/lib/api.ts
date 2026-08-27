@@ -1615,7 +1615,15 @@ export const serversApi = {
     }>,
   get: (id: string | number) =>
     apiGet(`/servers/${id}`) as Promise<{ server: ServerInstance }>,
-  create: (config: Partial<ServerInstance>) =>
+  create: (
+    config: Partial<ServerInstance> & {
+      // Set instead of rconPassword when importing a server detected by
+      // /auto-scan or /detect -- those never return the ini's RCON
+      // password, so the server re-reads it from this reference at
+      // creation time.
+      importIniFrom?: { dataPath: string; serverName: string };
+    },
+  ) =>
     apiPost("/servers", config) as Promise<{
       server: ServerInstance;
       message: string;

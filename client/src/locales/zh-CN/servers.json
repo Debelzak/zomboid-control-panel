@@ -166,9 +166,11 @@
     "rconPortLabel": "RCON 端口：",
     "rconPasswordLabel": "RCON 密码 *",
     "rconPasswordPlaceholder": "输入 RCON 密码",
+    "rconPasswordImportPlaceholder": "留空以自动导入",
     "rconPasswordAria": "RCON 密码",
     "rconPasswordRequired": "服务器控制功能需要此密码。你也可以在 {{iniName}}.ini 文件中设置 <1>RCONPassword=yourpassword</1>。",
     "passwordSet": "密码已设置",
+    "passwordWillImport": "将自动从 {{iniName}}.ini 导入——留空以使用该密码，或输入新密码以覆盖。",
     "minMemoryLabel": "最小内存（GB）",
     "maxMemoryLabel": "最大内存（GB）",
     "selectScannedConfigAria": "使用已检测到的服务器 {{name}}"

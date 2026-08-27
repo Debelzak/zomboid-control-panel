@@ -167,9 +167,11 @@
     "rconPortLabel": "RCON Port:",
     "rconPasswordLabel": "RCON Password *",
     "rconPasswordPlaceholder": "Enter RCON password",
+    "rconPasswordImportPlaceholder": "Leave blank to import automatically",
     "rconPasswordAria": "RCON password",
     "rconPasswordRequired": "Required for server control. You can also set <1>RCONPassword=yourpassword</1> in your {{iniName}}.ini file.",
     "passwordSet": "Password set",
+    "passwordWillImport": "Imported automatically from {{iniName}}.ini — leave blank to use it, or type a new one to override.",
     "minMemoryLabel": "Min Memory (GB)",
     "maxMemoryLabel": "Max Memory (GB)"
   },

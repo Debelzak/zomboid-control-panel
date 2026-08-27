@@ -166,9 +166,11 @@
     "rconPortLabel": "RCON-Port:",
     "rconPasswordLabel": "RCON-Passwort *",
     "rconPasswordPlaceholder": "RCON-Passwort eingeben",
+    "rconPasswordImportPlaceholder": "Leer lassen, um es automatisch zu importieren",
     "rconPasswordAria": "RCON-Passwort",
     "rconPasswordRequired": "Erforderlich für die Serversteuerung. Du kannst auch <1>RCONPassword=yourpassword</1> in deiner {{iniName}}.ini-Datei festlegen.",
     "passwordSet": "Passwort festgelegt",
+    "passwordWillImport": "Wird automatisch aus {{iniName}}.ini importiert — leer lassen, um es zu verwenden, oder ein neues eingeben, um es zu überschreiben.",
     "minMemoryLabel": "Min. Arbeitsspeicher (GB)",
     "maxMemoryLabel": "Max. Arbeitsspeicher (GB)",
     "selectScannedConfigAria": "Erkannten Server verwenden: {{name}}"
