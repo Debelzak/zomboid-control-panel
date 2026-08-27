@@ -51,7 +51,7 @@ export const CAPABILITIES = [
     group: "Users & Roles",
     label: "Manage user accounts",
     description:
-      "Create accounts, list them, and change which role each one holds.",
+      "Create accounts, list them, change which role each one holds, and permanently delete an account.",
   },
   {
     key: "roles.manage",
