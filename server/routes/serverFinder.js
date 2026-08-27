@@ -397,12 +397,17 @@ export function mapSteamServer(server) {
   const versionMatch = gametype.match(/VERSION:([0-9.]+)/);
   const gameVersion = versionMatch ? versionMatch[1] : "";
 
+  // port is derived (addr first, then the raw gameport field as a
+  // fallback) rather than read directly, so an unparseable value must stay
+  // null rather than default to a guessed port (16261 is PZ's default, but
+  // guessing it here would be indistinguishable downstream from a port
+  // that was actually read -- a fabricated plausible value is worse than a
+  // null, since null is at least detectable). Matches this file's own
+  // `ping: null` convention for "we don't have this value" elsewhere.
   const addrParts = server.addr?.split(":") || [];
   const portFromAddr = parseQueryPort(addrParts[1]);
   const port =
-    portFromAddr !== null
-      ? portFromAddr
-      : parseQueryPort(server.gameport) || 16261;
+    portFromAddr !== null ? portFromAddr : parseQueryPort(server.gameport);
 
   return {
     name: server.name || "Unknown",
