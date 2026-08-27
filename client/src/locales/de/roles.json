@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "Panel-Diagnose einsehen",
-        "description": "Protokolle, Leistungsverlauf und CORS-Diagnose einsehen, die eigenen Daten-/Protokollverzeichnisse des Panels verlagern, und veraltete Sperrdateien löschen."
+        "description": "Protokolle, Leistungsverlauf, CORS-Diagnose und Datenbankstatistiken einsehen, die Datenbank sichern, sie komprimieren — wobei alte Datensätze dauerhaft entfernt werden —, die eigenen Daten-/Protokollverzeichnisse des Panels verlagern, und veraltete Sperrdateien löschen."
       }
     },
     "panel": {

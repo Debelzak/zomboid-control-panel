@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "Gade dyagnostik panèl la",
-        "description": "Gade jounal, istorik pèfòmans ak dyagnostik CORS, deplase pwòp dosye done/jounal panèl la, epi efase fichye vye lok."
+        "description": "Gade jounal, istorik pèfòmans, dyagnostik CORS ak estatistik baz done, fè sovgad baz done a, konpakte li — sa vle di retire ansyen anrejistreman pou tout tan — , deplase pwòp dosye done/jounal panèl la, epi efase fichye vye lok."
       }
     },
     "panel": {

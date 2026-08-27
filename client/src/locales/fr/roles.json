@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "Voir les diagnostics du panneau",
-        "description": "Consulter les journaux, l'historique de performance et les diagnostics CORS, déplacer les répertoires de données/journaux propres au panneau, et supprimer les fichiers de verrouillage obsolètes."
+        "description": "Consulter les journaux, l'historique de performance, les diagnostics CORS et les statistiques de la base de données, sauvegarder la base de données, la compacter — ce qui supprime définitivement les anciens enregistrements —, déplacer les répertoires de données/journaux propres au panneau, et supprimer les fichiers de verrouillage obsolètes."
       }
     },
     "panel": {

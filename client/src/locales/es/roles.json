@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "Ver diagnóstico del panel",
-        "description": "Ver registros, historial de rendimiento y diagnóstico de CORS, reubicar los directorios propios de datos/registros del panel, y eliminar archivos de bloqueo obsoletos."
+        "description": "Ver registros, historial de rendimiento, diagnóstico de CORS y estadísticas de la base de datos, respaldar la base de datos, compactarla — lo cual elimina permanentemente registros antiguos —, reubicar los directorios propios de datos/registros del panel, y eliminar archivos de bloqueo obsoletos."
       }
     },
     "panel": {
