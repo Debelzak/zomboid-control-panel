@@ -1007,7 +1007,7 @@ export class RconService extends EventEmitter {
       }
 
       if (rejection) {
-        log.warn(`Server rejected command: ${command} (${rejection.response})`);
+        log.warn(`Server rejected command: ${redactRconCommandSecrets(command)} (${rejection.response})`);
         return { success: false, error: rejection.error, response: rejection.response };
       }
 
@@ -1087,7 +1087,7 @@ export class RconService extends EventEmitter {
               logCommand(command, rejection ? rejection.error : response, !rejection);
             }
             if (rejection) {
-              log.warn(`Server rejected command on retry: ${command} (${rejection.response})`);
+              log.warn(`Server rejected command on retry: ${redactRconCommandSecrets(command)} (${rejection.response})`);
               return { success: false, error: rejection.error, response: rejection.response };
             }
             return {
