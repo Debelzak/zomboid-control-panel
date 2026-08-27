@@ -59,6 +59,7 @@ import {
   Users,
   Lock,
   Trash2,
+  Info,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 
@@ -1647,6 +1648,14 @@ export default function Discord() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <Alert className="border-border/60 bg-muted/40 text-sm">
+              <Info className="h-4 w-4 text-primary" />
+              <AlertTitle>{t("management.commandPermissions.independenceTitle")}</AlertTitle>
+              <AlertDescription>
+                {t("management.commandPermissions.independenceDesc")}
+              </AlertDescription>
+            </Alert>
+
             {/* Tier legend */}
             <div className="flex flex-wrap gap-3 text-sm mb-2">
               <div className="flex items-center gap-1.5">
