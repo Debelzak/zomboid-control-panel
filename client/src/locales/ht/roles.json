@@ -185,7 +185,7 @@
       },
       "diagnostics": {
         "label": "Dyagnostik PanelBridge",
-        "description": "Gade jounal debogaj mod la ak estatistik, epi lanse eskanaj katalòg atik/veyikil."
+        "description": "Lanse eskanaj katalòg atik ak veyikil sou mod la."
       },
       "command": {
         "label": "Egzekite nenpòt aksyon PanelBridge",

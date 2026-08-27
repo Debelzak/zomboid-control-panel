@@ -185,7 +185,7 @@
       },
       "diagnostics": {
         "label": "Diagnostics PanelBridge",
-        "description": "Consulter le journal de débogage et les statistiques du mod, et lancer des analyses de catalogue d'objets/véhicules."
+        "description": "Lancer des analyses de catalogue d'objets et de véhicules sur le mod."
       },
       "command": {
         "label": "Exécuter n'importe quelle action PanelBridge",
