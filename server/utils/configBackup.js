@@ -13,6 +13,15 @@ import { writeFileAtomic } from "./fileWriteQueue.js";
 
 const log = createLogger("Utils:ConfigBackup");
 
+async function pathExists(candidatePath) {
+  try {
+    await fs.promises.access(candidatePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Backup directory for a given server config directory.
 export async function getBackupPath(configPath) {
   return path.join(configPath, "backups");
@@ -52,8 +61,18 @@ export async function createBackup(configPath, filename) {
     await fs.promises.mkdir(backupDir, { recursive: true });
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupName = `${filename}.${timestamp}.bak`;
-    const backupPath = path.join(backupDir, backupName);
+    // toISOString() is millisecond-resolution. Two backups of the same file
+    // detected close together (e.g. two saves in quick succession) can land
+    // in the same millisecond, which would make the second copyFile below
+    // silently overwrite the first -- the exact defect found and fixed in
+    // server.js's startup-script backups (2026-08-27). Disambiguate with a
+    // counter suffix so two backups from the same tick never collide.
+    let backupName = `${filename}.${timestamp}.bak`;
+    let backupPath = path.join(backupDir, backupName);
+    for (let suffix = 2; await pathExists(backupPath); suffix++) {
+      backupName = `${filename}.${timestamp}-${suffix}.bak`;
+      backupPath = path.join(backupDir, backupName);
+    }
 
     // Async copy — this is the actual safety net. Anything that throws
     // past this point means the backup did not happen.
