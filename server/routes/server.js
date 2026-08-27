@@ -367,7 +367,7 @@ function hasActiveSteamOperation(normalizedPath) {
 // reverted to default" after a restart). Mirrors getServerConfig()'s own
 // fallback chain exactly so both halves of the panel agree on where a
 // server's real INI is.
-function candidateIniPaths(serverConfigPath, zomboidDataPath, serverName) {
+export function candidateIniPaths(serverConfigPath, zomboidDataPath, serverName) {
   const candidates = [];
   if (serverConfigPath) {
     candidates.push(path.join(serverConfigPath, `${serverName}.ini`));
@@ -1088,6 +1088,89 @@ router.get("/network-interfaces", async (req, res) => {
   }
 });
 
+// Refresh everything PZ needs to launch correctly against this server's
+// CURRENT settings: RCON credentials in the ini, and the generated launch
+// script (which bakes -cachedir/-servername/memory/admin-password as
+// literal text at generation time -- see generateStartupScripts()). Shared
+// by the manual /start route below AND scheduler.js's performRestart(), so
+// a scheduled restart launches the server exactly the way a manual start
+// does instead of silently diverging on this. Before this existed, a
+// Settings-UI edit to zomboidDataPath/serverName updated the database
+// immediately but left the already-written launch script untouched until
+// the next MANUAL start regenerated it -- the next SCHEDULED restart in
+// between launched PZ against the OLD baked cachedir, PZ found no ini at
+// that (now-wrong) location, and generated itself a fresh default one
+// (2026-08-27, user-report-servertest-ini-and-sandbox-reverted-to-default-
+// after-restart, loonE/Discord -- root cause confirmed by Jim's
+// scheduledRestartStaleLaunchScript.test.js reproduction).
+//
+// `managedHandled` mirrors the /start route's own `managed.handled` check:
+// a container-managed server's image owns the launch command, so there is
+// no local script to regenerate.
+export async function refreshLaunchTargetBeforeStart(
+  activeServer,
+  { managedHandled = false } = {},
+) {
+  try {
+    const rconReady = await ensureRconConfigured();
+    if (rconReady) {
+      log.info("RCON pre-configured in INI before server start");
+    } else {
+      log.warn(
+        "Could not pre-configure RCON — will retry during startup polling",
+      );
+    }
+  } catch (rconErr) {
+    log.warn(`RCON pre-configuration failed: ${rconErr.message}`);
+  }
+
+  let scriptBackupWarnings = [];
+  if (
+    !managedHandled &&
+    activeServer &&
+    !activeServer.startCommand &&
+    activeServer.installPath
+  ) {
+    try {
+      const scripts = generateStartupScripts({
+        installPath: activeServer.installPath,
+        serverName: activeServer.serverName,
+        minMemory: activeServer.minMemory || 4,
+        maxMemory: activeServer.maxMemory || 8,
+        zomboidDataPath: activeServer.zomboidDataPath || "",
+        adminPassword: activeServer.adminPassword || "",
+        serverPort: activeServer.serverPort || 16261,
+        useNoSteam: activeServer.useNoSteam || false,
+        useDebug: activeServer.useDebug || false,
+      });
+      const batPath = path.join(
+        activeServer.installPath,
+        `StartServer_${activeServer.serverName}.bat`,
+      );
+      const shPath = path.join(
+        activeServer.installPath,
+        `start-server_${activeServer.serverName}.sh`,
+      );
+      scriptBackupWarnings = regenerateStartupScriptsWithBackup(
+        activeServer.installPath,
+        [
+          { path: batPath, content: scripts.bat },
+          { path: shPath, content: scripts.sh.replace(/\r\n/g, "\n") },
+        ],
+      );
+      if (scriptBackupWarnings.length > 0) {
+        log.warn(
+          `Startup script regeneration backed up existing content: ${scriptBackupWarnings.join(" ")}`,
+        );
+      }
+      log.info("Regenerated startup scripts with current server config");
+    } catch (scriptErr) {
+      log.warn(`Could not regenerate startup scripts: ${scriptErr.message}`);
+    }
+  }
+  return { scriptBackupWarnings };
+}
+
 // Start server
 router.post("/start", requirePermission("server.control"), async (req, res) => {
   try {
@@ -1138,68 +1221,14 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
       });
     }
 
-    // Pre-configure RCON in the INI BEFORE starting the server process.
-    // PZ reads the INI at startup, so we must write the password first.
-    // On first run this also pre-creates the INI file with RCON settings.
-    try {
-      const rconReady = await ensureRconConfigured();
-      if (rconReady) {
-        log.info("RCON pre-configured in INI before server start");
-      } else {
-        log.warn(
-          "Could not pre-configure RCON — will retry during startup polling",
-        );
-      }
-    } catch (rconErr) {
-      log.warn(`RCON pre-configuration failed: ${rconErr.message}`);
-    }
-
-    // Regenerate startup scripts so any config changes (admin password, memory, etc.) take effect.
-    // Skipped for a managed container: its image owns the launch command.
-    let scriptBackupWarnings = [];
-    if (
-      !managed.handled &&
-      activeServer &&
-      !activeServer.startCommand &&
-      activeServer.installPath
-    ) {
-      try {
-        const scripts = generateStartupScripts({
-          installPath: activeServer.installPath,
-          serverName: activeServer.serverName,
-          minMemory: activeServer.minMemory || 4,
-          maxMemory: activeServer.maxMemory || 8,
-          zomboidDataPath: activeServer.zomboidDataPath || "",
-          adminPassword: activeServer.adminPassword || "",
-          serverPort: activeServer.serverPort || 16261,
-          useNoSteam: activeServer.useNoSteam || false,
-          useDebug: activeServer.useDebug || false,
-        });
-        const batPath = path.join(
-          activeServer.installPath,
-          `StartServer_${activeServer.serverName}.bat`,
-        );
-        const shPath = path.join(
-          activeServer.installPath,
-          `start-server_${activeServer.serverName}.sh`,
-        );
-        scriptBackupWarnings = regenerateStartupScriptsWithBackup(
-          activeServer.installPath,
-          [
-            { path: batPath, content: scripts.bat },
-            { path: shPath, content: scripts.sh.replace(/\r\n/g, "\n") },
-          ],
-        );
-        if (scriptBackupWarnings.length > 0) {
-          log.warn(
-            `Startup script regeneration backed up existing content: ${scriptBackupWarnings.join(" ")}`,
-          );
-        }
-        log.info("Regenerated startup scripts with current server config");
-      } catch (scriptErr) {
-        log.warn(`Could not regenerate startup scripts: ${scriptErr.message}`);
-      }
-    }
+    // Pre-configure RCON in the INI and regenerate the launch script against
+    // this server's CURRENT settings BEFORE starting the process -- see
+    // refreshLaunchTargetBeforeStart()'s own comment. Skipped for a managed
+    // container: its image owns the launch command.
+    const { scriptBackupWarnings } = await refreshLaunchTargetBeforeStart(
+      activeServer,
+      { managedHandled: managed.handled },
+    );
 
     const result = managed.handled
       ? { success: true, message: managed.message || "Container starting" }

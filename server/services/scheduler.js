@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import cron from "node-cron";
 import { createLogger } from "../utils/logger.js";
@@ -7,6 +8,10 @@ import { RconService } from "./rcon.js";
 import { ServerManager } from "./serverManager.js";
 import { runManagedLifecycle } from "./managedContainer.js";
 import { createBackupIfChanged } from "../utils/configBackup.js";
+import {
+  candidateIniPaths,
+  refreshLaunchTargetBeforeStart,
+} from "../routes/server.js";
 import {
   getScheduledTasks,
   updateTaskLastRun,
@@ -443,26 +448,57 @@ export class Scheduler {
   // failure -- except unlike those, a failed *backup* specifically isn't
   // even something to fail the restart FOR, since skipping it only means
   // this one restart isn't covered, not that the restart itself is unsafe.
+  //
+  // Resolves the config directory/filenames via candidateIniPaths() --
+  // the SAME 4-way fallback ensureRconConfigured() uses (server.js), not
+  // the single serverConfigPath-or-zomboidDataPath/Server guess this
+  // method originally used. 2026-08-27, operator-flagged: the installs
+  // most likely to have their real ini at one of the legacy locations are
+  // exactly the ones the stale-launch-script defect (see
+  // refreshLaunchTargetBeforeStart()) is most likely to hit -- a backup
+  // step that only checks the default location would silently skip
+  // covering exactly the installs at risk. One shared resolver so this
+  // and ensureRconConfigured() cannot drift on where "the" ini is, same
+  // reasoning as listBackupsFor() in configBackup.js. The sandbox
+  // filename is derived from whichever ini was ACTUALLY found (its own
+  // basename, not necessarily server.serverName) -- PZ's own
+  // SandboxVars.lua naming follows the ini's basename, and the legacy
+  // fallback locations (servertest.ini, serveroptions.ini) use fixed
+  // names that can differ from the configured serverName.
+  //
+  // Returns the resolved server record (or null) so a caller needing the
+  // same record for a related pre-start step doesn't have to re-fetch it.
   async _backupConfigBeforeRestart(pinnedServerId) {
+    let server = null;
     try {
-      const server =
+      server =
         pinnedServerId != null
           ? await getServer(pinnedServerId)
           : await getActiveServer();
-      if (!server?.serverName) return;
+      if (!server?.serverName) return server;
 
-      const configDir =
+      const serverConfigPath =
         server.serverConfigPath ||
         (server.zomboidDataPath
           ? path.join(server.zomboidDataPath, "Server")
           : null);
-      if (!configDir) return;
+      if (!serverConfigPath) return server;
 
-      const targets = [
-        `${server.serverName}.ini`,
-        `${server.serverName}_SandboxVars.lua`,
-      ];
-      for (const filename of targets) {
+      const iniPath =
+        candidateIniPaths(
+          serverConfigPath,
+          server.zomboidDataPath,
+          server.serverName,
+        ).find((candidate) => fs.existsSync(candidate)) ||
+        path.join(serverConfigPath, `${server.serverName}.ini`);
+
+      const configDir = path.dirname(iniPath);
+      const iniFilename = path.basename(iniPath);
+      const sandboxFilename = iniFilename.toLowerCase().endsWith(".ini")
+        ? `${iniFilename.slice(0, -4)}_SandboxVars.lua`
+        : `${server.serverName}_SandboxVars.lua`;
+
+      for (const filename of [iniFilename, sandboxFilename]) {
         const result = await createBackupIfChanged(configDir, filename);
         if (result.reason === "failed") {
           log.warn(
@@ -473,6 +509,7 @@ export class Scheduler {
     } catch (error) {
       log.warn(`Pre-restart config backup failed: ${error.message}`);
     }
+    return server;
   }
 
   // Picks the RconService/ServerManager pair a task should run against.
@@ -936,11 +973,18 @@ export class Scheduler {
 
         // Server wasn't running - just start it. Already-stopped, so config
         // files are already static -- same coverage as the main branch
-        // below, see _backupConfigBeforeRestart()'s own comment.
+        // below, see _backupConfigBeforeRestart()'s own comment. Also
+        // refresh the launch target first, same as the manual /start route
+        // does, so this branch doesn't reintroduce the stale-script defect
+        // just because it takes a different path than the main one below --
+        // see refreshLaunchTargetBeforeStart()'s own comment.
         log.info(
           "Auto-restart triggered but server was not running - starting server",
         );
-        await this._backupConfigBeforeRestart(pinnedServerId);
+        const restartTarget = await this._backupConfigBeforeRestart(pinnedServerId);
+        await refreshLaunchTargetBeforeStart(restartTarget, {
+          managedHandled: false,
+        });
         const started = await serverManager.startServer();
         if (!started?.success) {
           log.warn(
@@ -1236,7 +1280,17 @@ export class Scheduler {
       // started yet), on both the managed-container and directly-spawned
       // paths below, so this runs unconditionally regardless of which one
       // this restart takes.
-      await this._backupConfigBeforeRestart(pinnedServerId);
+      const restartTarget = await this._backupConfigBeforeRestart(pinnedServerId);
+
+      // Refresh RCON config and the launch script against current settings,
+      // same as the manual /start route -- see
+      // refreshLaunchTargetBeforeStart()'s own comment. RCON always runs
+      // (matches the route); script regen is skipped for a managed
+      // container the same way the route skips it, since Docker owns the
+      // launch command there.
+      await refreshLaunchTargetBeforeStart(restartTarget, {
+        managedHandled: managed.handled,
+      });
 
       // Set flag to prevent RCON auto-reconnect from interfering during startup
       // Use setServerStarting which has a 5-minute failsafe timeout

@@ -157,17 +157,103 @@ describe("Scheduler._backupConfigBeforeRestart()", () => {
     expect(iniBackups).toHaveLength(2);
   });
 
-  it("no server configured (no zomboidDataPath/serverConfigPath): does not throw, backs up nothing", async () => {
-    getServer.mockResolvedValue({ id: 5, serverName: "servertest" });
+  it("no server configured (no zomboidDataPath/serverConfigPath): does not throw, backs up nothing, still returns the server record", async () => {
+    const server = { id: 5, serverName: "servertest" };
+    getServer.mockResolvedValue(server);
 
     const scheduler = makeScheduler();
-    await expect(scheduler._backupConfigBeforeRestart(5)).resolves.toBeUndefined();
+    await expect(scheduler._backupConfigBeforeRestart(5)).resolves.toEqual(server);
   });
 
-  it("a database failure while resolving the server never throws out of the restart flow", async () => {
+  it("a database failure while resolving the server never throws out of the restart flow, and returns null", async () => {
     getServer.mockRejectedValue(new Error("db unavailable"));
 
     const scheduler = makeScheduler();
-    await expect(scheduler._backupConfigBeforeRestart(5)).resolves.not.toThrow();
+    await expect(scheduler._backupConfigBeforeRestart(5)).resolves.toBeNull();
+  });
+
+  // 2026-08-27, operator-flagged limitation fix: this method originally
+  // only checked serverConfigPath-or-zomboidDataPath/Server, never the
+  // legacy fallback locations ensureRconConfigured() already knows about
+  // -- exactly the installs the stale-launch-script defect
+  // (refreshLaunchTargetBeforeStart) is most likely to hit, since an ini
+  // sitting at a legacy location is itself a sign this install's config
+  // resolution has already drifted from the default once.
+  it("an ini at the LEGACY location (directly under zomboidDataPath, no Server/ subdir) is found and backed up, not skipped", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-scheduler-backup-"));
+    const zomboidDataPath = path.join(root, "Zomboid");
+    fs.mkdirSync(zomboidDataPath, { recursive: true });
+    // Deliberately no Server/ subdirectory -- only the legacy path, same
+    // shape as the ensureRconConfigured() legacy-path regression test.
+    fs.writeFileSync(
+      path.join(zomboidDataPath, "servertest.ini"),
+      "PVP=true\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(zomboidDataPath, "servertest_SandboxVars.lua"),
+      "SandboxVars = {}\n",
+      "utf8",
+    );
+
+    getServer.mockResolvedValue({
+      id: 5,
+      serverName: "servertest",
+      zomboidDataPath,
+    });
+
+    const scheduler = makeScheduler();
+    await scheduler._backupConfigBeforeRestart(5);
+
+    const backupDir = path.join(zomboidDataPath, "backups");
+    const backups = fs.readdirSync(backupDir);
+    expect(backups.some((f) => f.startsWith("servertest.ini."))).toBe(true);
+    expect(
+      backups.some((f) => f.startsWith("servertest_SandboxVars.lua.")),
+    ).toBe(true);
+
+    // Nothing must have been created at the default Server/ path, which is
+    // what the pre-fix version of this method would have checked instead.
+    expect(fs.existsSync(path.join(zomboidDataPath, "Server"))).toBe(false);
+  });
+
+  // The sandbox filename must follow whichever ini was actually found, not
+  // blindly server.serverName -- the "serveroptions.ini" legacy fallback
+  // uses a fixed name that can differ from the configured server name.
+  it("the sandbox filename is derived from the ini that was actually found, not server.serverName, when they differ", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-scheduler-backup-"));
+    const zomboidDataPath = path.join(root, "Zomboid");
+    fs.mkdirSync(zomboidDataPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(zomboidDataPath, "serveroptions.ini"),
+      "PVP=true\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(zomboidDataPath, "serveroptions_SandboxVars.lua"),
+      "SandboxVars = {}\n",
+      "utf8",
+    );
+
+    // Configured serverName differs from the fixed legacy filename on disk.
+    getServer.mockResolvedValue({
+      id: 5,
+      serverName: "MyCoolServer",
+      zomboidDataPath,
+    });
+
+    const scheduler = makeScheduler();
+    await scheduler._backupConfigBeforeRestart(5);
+
+    const backupDir = path.join(zomboidDataPath, "backups");
+    const backups = fs.readdirSync(backupDir);
+    expect(
+      backups.some((f) => f.startsWith("serveroptions_SandboxVars.lua.")),
+    ).toBe(true);
+    // Must NOT have gone looking for a MyCoolServer_SandboxVars.lua that
+    // was never there.
+    expect(
+      backups.some((f) => f.startsWith("MyCoolServer_SandboxVars.lua.")),
+    ).toBe(false);
   });
 });
