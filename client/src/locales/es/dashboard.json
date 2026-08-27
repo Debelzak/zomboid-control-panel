@@ -95,7 +95,10 @@
     "addServerFirst": "Añadir o seleccionar un servidor primero",
     "notAvailableRemote": "No disponible para servidores remotos (solo RCON)",
     "forceStopTooltip": "Intenta un guardado rápido y luego detiene el juego de inmediato en cualquier caso",
-    "connectRconNeedsHostRunning": "Inicia el servidor primero"
+    "connectRconNeedsHostRunning": "Inicia el servidor primero",
+    "noPermissionControl": "Tu rol no tiene permiso para controlar el servidor.",
+    "noPermissionWipe": "Tu rol no tiene permiso para borrar el mundo.",
+    "wipeMustStopFirst": "Detén el servidor antes de borrar."
   },
   "confirm": {
     "cancel": "Cancelar",

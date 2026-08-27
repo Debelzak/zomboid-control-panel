@@ -95,7 +95,10 @@
     "addServerFirst": "先添加或选择一个服务器",
     "notAvailableRemote": "远程（仅 RCON）服务器不可用",
     "forceStopTooltip": "尝试快速保存，之后无论如何都会立即停止",
-    "connectRconNeedsHostRunning": "请先启动服务器"
+    "connectRconNeedsHostRunning": "请先启动服务器",
+    "noPermissionControl": "您的角色没有控制服务器的权限。",
+    "noPermissionWipe": "您的角色没有清除世界的权限。",
+    "wipeMustStopFirst": "请先停止服务器再清除。"
   },
   "confirm": {
     "cancel": "取消",

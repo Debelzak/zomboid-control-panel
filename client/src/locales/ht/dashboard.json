@@ -95,7 +95,10 @@
     "addServerFirst": "Ajoute oswa chwazi yon sèvè dabò",
     "notAvailableRemote": "Pa disponib pou sèvè aleka (RCON sèlman)",
     "forceStopTooltip": "Eseye fè yon sovgad rapid, epi sispann imedyatman kanmenm",
-    "connectRconNeedsHostRunning": "Demare sèvè a dabò"
+    "connectRconNeedsHostRunning": "Demare sèvè a dabò",
+    "noPermissionControl": "Wòl ou pa gen pèmisyon pou kontwole sèvè a.",
+    "noPermissionWipe": "Wòl ou pa gen pèmisyon pou efase mond lan.",
+    "wipeMustStopFirst": "Sispann sèvè a anvan ou efase l."
   },
   "confirm": {
     "cancel": "Anile",

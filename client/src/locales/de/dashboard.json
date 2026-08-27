@@ -95,7 +95,10 @@
     "addServerFirst": "Zuerst einen Server hinzufügen oder auswählen",
     "notAvailableRemote": "Nicht verfügbar für Remote-Server (nur RCON)",
     "forceStopTooltip": "Versucht eine kurze Speicherung, stoppt dann in jedem Fall sofort",
-    "connectRconNeedsHostRunning": "Zuerst den Server starten"
+    "connectRconNeedsHostRunning": "Zuerst den Server starten",
+    "noPermissionControl": "Ihre Rolle hat keine Berechtigung, den Server zu steuern.",
+    "noPermissionWipe": "Ihre Rolle hat keine Berechtigung, die Welt zu löschen.",
+    "wipeMustStopFirst": "Stoppen Sie den Server, bevor Sie ihn löschen."
   },
   "confirm": {
     "cancel": "Abbrechen",
