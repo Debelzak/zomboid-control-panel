@@ -20,11 +20,15 @@ updated_at: "2026-08-27T06:43:10-04:00"
   e966fe9` — unchanged, this is fixed history). Verified at the time to contain no `data/db.json`,
   no `data/backups/`, no `logs/`, no `node_modules`, and no `client/dist`.
 - **No V1 source file is modified by this commit.** CANNOT RE-VERIFY as written: the claim compares
-  against the `v1-source` remote, which is no longer configured locally (see Blockers) — there is
-  currently nothing to diff against.
-- **STALE, corrected 2026-08-27:** this section previously claimed "`git remote -v` shows only
-  `v1-source`... there is no `origin`." That is no longer true and may never have been true at the
-  same time as the rest of this section — see **Blockers** for the current, verified remote state.
+  against the `v1-source` remote, which no longer exists (see below) — there is currently nothing
+  to diff against.
+- **RULED, 2026-08-27:** this section previously claimed "`git remote -v` shows only `v1-source`...
+  there is no `origin`." That was true in 2026-08-22's local-only-fork model but is not true now,
+  **deliberately, not by accident**: the operator authorized pushing to `origin/main` as standing
+  policy ("you can always push, just not as a new version on github"), `main` now carries tagged
+  releases through `v1.2.4` and beyond, and `v1-source` was dropped entirely — confirmed via
+  `git remote -v`, which shows only `origin`. The local-only-fork model this whole section describes
+  was abandoned deliberately, over months, and this document simply never caught up. See **Blockers**.
 
 Worktree creation is now unblocked (RISK-005 cleared): the handoff files are tracked, so
 `create-worktree.ps1` will find them.
@@ -101,27 +105,20 @@ author its sign-off.
 
 ## Blockers
 
-**BLOCKER — local-only-fork remote invariant is violated in both directions, corrected 2026-08-27.**
-`bootstrap-plan.ps1` (`scripts/modernization/bootstrap-plan.ps1:51-53`) requires exactly the
-read-only remote `v1-source` to exist and `origin` to be absent. Verified 2026-08-27 via
-`git remote -v` and by actually running the script: **`v1-source` is not configured at all**, and
-**`origin` is configured** (fetch + push, `https://github.com/fpsacha/zomboid-control-panel.git`).
-The script throws on the *first* check it runs — `Required remote 'v1-source' is missing.` — so
-even removing `origin` alone would not clear this; `v1-source` would also need to be re-added.
-Removing/adding remotes requires explicit user approval; no remote action has been taken here.
-
-**CANNOT VERIFY, flagging rather than guessing:** the repo's actual history since 2026-08-22 (this
-document's own commit log shows releases through at least `Release v1.2.4`, on `main`, and this
-session's own hive record notes an operator-authorized push to `origin/main`) reads as inconsistent
-with a still-binding "local-only fork, never push, no `origin`" invariant. Either that invariant has
-been superseded by later operator direction not recorded anywhere in `docs/modernization/`, or the
-repo has been in a state this document would call a blocker for at least several days without
-anyone treating it as one. This is an architecture/intent question, not a counting one — routing
-rather than ruling on it.
+**None currently.** The remote-invariant question raised in an earlier draft of this section is
+**RULED, 2026-08-27, not a blocker**: `bootstrap-plan.ps1` (`scripts/modernization/bootstrap-plan.ps1:51-53`)
+still requires the read-only remote `v1-source` to exist and `origin` to be absent, and `git remote -v`
+still shows only `origin` — but that is because the local-only-fork model this check enforces was
+**deliberately abandoned months ago**, not because the invariant is being silently violated. The
+operator authorized pushing to `origin/main` as standing policy, and `main` carries tagged releases
+through `v1.2.4` and beyond. The check itself is now dead code checking for a dead invariant; see
+**Next Exact Action** for the corrected re-run instructions.
 
 There are no package dependency blockers after FND-001 and FND-005 acceptance. FND-002, FND-003,
 and DB-001 remain `ready` per `WORK_PACKAGES.md` (last touched 2026-08-22) but have not been picked
-up; nothing found in this repo shows the Foundation review gate being exercised since.
+up; nothing found in this repo shows the Foundation review gate being exercised since. **CANNOT
+VERIFY** whether that gate is itself still intended to apply — same open question as the remote
+invariant was, not yet separately ruled on.
 
 ## New This Session
 
@@ -138,6 +135,16 @@ were silently corrupted (missing the literal characters `\b` and `\v`, so they r
 previously-unnoticed instance of exactly the defect `RISK-011` already documents. Full claim-by-claim
 verdict list (TRUE / STALE / CANNOT VERIFY) delivered to the coordinator alongside this edit;
 not duplicated here to keep this section short-lived per its own "keep only latest" convention below.
+
+**2026-08-27 follow-up, same day:** two of the four CANNOT VERIFYs above got a ruling rather than
+staying open. (1) The coordinator swept 1390 source/doc/script files for the same control-byte
+corruption found in this file's old re-run commands; only two other hits, both legitimate (a
+gitignored bundled binary, and a deliberate ZIP-magic-number test fixture) — **this file's instance
+was the only real one**, now fixed. (2) The `v1-source`/`origin` remote question is **RULED, not
+CANNOT VERIFY**: the local-only-fork invariant was deliberately abandoned months ago on operator
+authorization, not silently violated — see the rewritten Checkpoint, Blockers, and Next Exact Action
+sections. The Foundation-review-gate question (are FND-002/003/DB-001 still meant to be picked up
+under that model) was **not** part of this ruling and remains CANNOT VERIFY.
 
 **2026-08-25 (uncommitted at the time, now folded into this update):** `current_sha` had been
 refreshed to `5d1082cf...` (`Release v1.2.4`); `Zomboid_Control_Panel_Modernized.code-workspace` was
@@ -169,18 +176,27 @@ verification evidence, correctly describing that day, not a current claim):
 
 ## Next Exact Action
 
-1. Get a decision on the remote-invariant question raised in Blockers: restore it (remove `origin`
-   *and* re-add `v1-source`), or record that the local-only-fork invariant is intentionally waived
-   now that the project pushes real releases to `origin/main`.
+1. **Retire or rewrite `bootstrap-plan.ps1`'s remote check.** It throws immediately
+   (`Required remote 'v1-source' is missing.`) on every run, because it enforces a local-only-fork
+   invariant the operator deliberately abandoned months ago (see Blockers) — the remote it depends
+   on no longer exists and is not coming back. Leaving it as-is means every future reader who runs
+   the "safe to re-run" command below hits an immediate, confusing throw. Out of scope for this
+   audit to fix the script itself (code, not this document) — flagged for whoever picks this up.
 2. Complete coordinator review of FND-006 and FND-007 without changing their `review` state by
    assumption.
-3. After the Foundation review gate, select one ready package: FND-002, FND-003, or DB-001. Do
-   not start dependent work in the same turn as package acceptance.
+3. **CANNOT VERIFY, decision needed:** whether the Foundation-review-gate model itself (select one
+   of FND-002 / FND-003 / DB-001, coordinator/verifier worktrees) is still intended to apply, or
+   whether it was abandoned alongside the remote invariant and nobody has said so yet. Do not start
+   dependent work in the same turn as package acceptance, if and when this resumes.
 
 ```powershell
-# Verify current state at any time. Safe to re-run; FND-005 made this repeatable.
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernization\bootstrap-plan.ps1
+# validate-handoff.ps1 is safe to re-run; FND-005 made this repeatable.
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernization\validate-handoff.ps1
+
+# bootstrap-plan.ps1 is OBSOLETE as of 2026-08-27: it throws immediately on a remote
+# ('v1-source') that no longer exists and is not coming back (see Blockers). Listed here for
+# reference only -- do not expect a clean run until the script itself is updated or retired.
+# pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\modernization\bootstrap-plan.ps1
 ```
 
 ## Recent Accepted Packages
