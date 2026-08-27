@@ -134,7 +134,7 @@ export async function testRconConnection({ host, port, password, timeoutMs = RCO
 // commands' real success text enumerated with confidence, which static
 // bytecode reading can't give, and would fail closed on every command
 // whose success text isn't in it.
-const KNOWN_RCON_REJECTIONS = [
+export const KNOWN_RCON_REJECTIONS = [
   {
     pattern: /^\s*Unknown command\b/i,
     describe: (text) => `${text}. This command is not available on this server build.`,
