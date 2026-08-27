@@ -121,6 +121,31 @@ describe("restoreBackup archive safety", () => {
     );
   });
 
+  // Regression: restoreBackup()'s own running-check used to be gated by
+  // `if (this.serverManager && ...)` -- no serverManager wired meant the
+  // ENTIRE check was skipped and the restore proceeded as if the server had
+  // already been confirmed stopped, rather than refusing. Not exploitable
+  // via the one production caller today (server/index.js wires the
+  // serverManager at boot, before routes/backup.js is reachable, and that
+  // route also runs its own independent running-check first) -- but this
+  // method must not depend on that call-graph coincidence to be safe.
+  it("refuses to restore when no server manager has been wired at all", async () => {
+    const service = new BackupService();
+    service.getSavesPath = async () => savesPath;
+    service.getBackupsPath = async () => backupsPath;
+    // Deliberately never call setServerManager().
+
+    const result = await service.restoreBackup("good.zip", {
+      createPreRestoreBackup: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/no server manager is available/i);
+    expect(fs.readFileSync(path.join(savesPath, "map_meta.bin"), "utf8")).toBe(
+      "LIVE",
+    );
+  });
+
   it("keeps the live save when the archive is corrupt", async () => {
     const corrupt = path.join(backupsPath, "corrupt.zip");
     // Valid zip signature, truncated body: fails partway through extraction.

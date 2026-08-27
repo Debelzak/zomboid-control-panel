@@ -930,7 +930,23 @@ export class BackupService {
     // holds the map files open, and writes its in-memory world back over
     // whatever we extract. Prefer the richer process-state API because the
     // boolean helper collapses a failed scan into a confirmed stop.
-    if (this.serverManager && options.force !== true) {
+    if (options.force !== true) {
+      if (!this.serverManager) {
+        // Same defect shape as the getServerProcessDetails-missing branch
+        // below, one level up: "the check isn't wired" must refuse, not
+        // silently skip straight to restore. Currently unreachable in
+        // production -- server/index.js calls setServerManager() at boot,
+        // before the only caller (routes/backup.js) is reachable, and that
+        // route also runs its own independent getServerProcessDetails check
+        // before ever calling here -- but both of those are call-graph
+        // coincidences, not guarantees this method can rely on by itself.
+        log.warn("Could not confirm server is stopped: no server manager wired");
+        return {
+          success: false,
+          message:
+            "Could not confirm the server is stopped because no server manager is available. Stop the server and try again.",
+        };
+      }
       try {
         let running;
         if (typeof this.serverManager.getServerProcessDetails === "function") {
