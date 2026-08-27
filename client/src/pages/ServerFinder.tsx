@@ -97,6 +97,29 @@ export function displayAddress(server: Pick<GameServer, 'ip' | 'port' | 'gamePor
   return port === null ? server.ip : `${server.ip}:${port}`
 }
 
+// Which locale key explains an empty server list, from GET /'s emptyReason
+// (see deriveEmptyReason in serverFinder.js) plus the pre-existing
+// apiKeyConfigured flag. 'master-unreachable' / 'no-servers-listed' /
+// 'no-servers-responded' used to all render as the same generic "no
+// servers found" -- three genuinely different next steps for the operator
+// collapsed into one unhelpful message.
+export function emptyServersDescKey(apiKeyConfigured: boolean, emptyReason?: string): string {
+  if (!apiKeyConfigured) return 'emptyState.noApiKeyDesc'
+  if (emptyReason === 'master-unreachable') return 'emptyState.noServersDescUnreachable'
+  if (emptyReason === 'no-servers-responded') return 'emptyState.noServersDescNoneResponded'
+  if (emptyReason === 'no-servers-listed') return 'emptyState.noServersDescGenuinelyEmpty'
+  return 'emptyState.noServersDesc'
+}
+
+// Which locale key explains a null ping, from GET /ping's reason field (or
+// 'request-failed' for a client-side fetch failure that never reached the
+// server). 'unparseable-response' means the server IS running and
+// reachable, just answered in a form the panel couldn't read -- a
+// completely different next step from "never answered at all".
+export function pingFailDescKey(reason?: string): string {
+  return reason === 'unparseable-response' ? 'serverItem.pingFailUnparseable' : 'serverItem.pingFailUnreachable'
+}
+
 export default function ServerFinder() {
   const { t, i18n } = useTranslation('serverFinder')
   const [servers, setServers] = useState<GameServer[]>([])
@@ -106,6 +129,12 @@ export default function ServerFinder() {
   const [source, setSource] = useState<string>('')
   const [cached, setCached] = useState(false)
   const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean>(true)
+  // 'master-unreachable' | 'no-servers-listed' | 'no-servers-responded' from
+  // GET /'s emptyReason -- undefined outside the empty master_server case.
+  // Distinguishes "we couldn't even ask" from "we asked and it's genuinely
+  // empty" from "we got a list but nothing on it replied", which used to
+  // all render as the same generic "no servers found".
+  const [emptyReason, setEmptyReason] = useState<string | undefined>(undefined)
   const [stats, setStats] = useState({ totalPlayers: 0, activeServers: 0, totalCapacity: 0 })
   const [currentPage, setCurrentPage] = useState(1)
   const { toast } = useToast()
@@ -127,6 +156,13 @@ export default function ServerFinder() {
   // Pinging
   const [pingingServers, setPingingServers] = useState<Set<string>>(new Set())
   const [serverPings, setServerPings] = useState<Record<string, number | null>>({})
+  // Why a null ping happened -- 'timeout' | 'socket-error' | 'unparseable-response'
+  // from GET /ping's reason field, or 'request-failed' for a client-side
+  // fetch failure that never reached the server at all. Server-computed and
+  // previously discarded entirely; a null ping used to render identically
+  // whether the server never answered or answered in a form the panel
+  // couldn't read -- two completely different next steps for the operator.
+  const [pingFailReasons, setPingFailReasons] = useState<Record<string, string>>({})
   
   // Pagination (client-side)
   const ITEMS_PER_PAGE = 50
@@ -149,6 +185,7 @@ export default function ServerFinder() {
       setSource(data.source || 'unknown')
       setCached(data.cached || false)
       setApiKeyConfigured(data.apiKeyConfigured !== false)
+      setEmptyReason(data.emptyReason)
       setStats({
         totalPlayers: data.totalPlayers || 0,
         activeServers: data.activeServers || 0,
@@ -345,11 +382,14 @@ export default function ServerFinder() {
 
       if (data.success && data.ping !== null) {
         setServerPings(prev => ({ ...prev, [key]: data.ping }))
+        setPingFailReasons(prev => { const { [key]: _drop, ...rest } = prev; return rest })
       } else {
         setServerPings(prev => ({ ...prev, [key]: null }))
+        setPingFailReasons(prev => ({ ...prev, [key]: data.reason || 'timeout' }))
       }
     } catch {
       setServerPings(prev => ({ ...prev, [key]: null }))
+      setPingFailReasons(prev => ({ ...prev, [key]: 'request-failed' }))
     } finally {
       setPingingServers(prev => {
         const next = new Set(prev)
@@ -679,7 +719,7 @@ export default function ServerFinder() {
                 <EmptyState
                   type="noResults"
                   title={apiKeyConfigured ? t('emptyState.noServersTitle') : t('emptyState.noApiKeyTitle')}
-                  description={apiKeyConfigured ? t('emptyState.noServersDesc') : t('emptyState.noApiKeyDesc')}
+                  description={t(emptyServersDescKey(apiKeyConfigured, emptyReason))}
                 />
               ) : (
                 <EmptyState
@@ -815,9 +855,22 @@ export default function ServerFinder() {
                         {isPinging ? (
                           <Loader2 className="h-4 w-4 animate-spin mx-auto text-muted-foreground" />
                         ) : ping !== undefined ? (
-                          <span className={`text-sm font-medium ${getPingColor(ping)}`}>
-                            {ping !== null ? t('serverItem.pingMs', { ping }) : t('serverItem.pingNa')}
-                          </span>
+                          ping !== null ? (
+                            <span className={`text-sm font-medium ${getPingColor(ping)}`}>
+                              {t('serverItem.pingMs', { ping })}
+                            </span>
+                          ) : (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm font-medium text-muted-foreground cursor-help">
+                                  {t('serverItem.pingNa')}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-56 text-left">
+                                {t(pingFailDescKey(pKey ? pingFailReasons[pKey] : undefined))}
+                              </TooltipContent>
+                            </Tooltip>
+                          )
                         ) : pKey === null ? (
                           // No known query port -- pinging would either send
                           // a request the server rejects or, worse, silently
