@@ -2169,6 +2169,16 @@ router.get("/current-config", async (req, res) => {
     const workshopIds = workshopMatch?.[1]?.split(";").filter(Boolean) || [];
     const maps = mapMatch?.[1]?.split(";").filter(Boolean) || ["Muldraugh, KY"];
 
+    // Everything above reads via content.match(/^Key=.../m) with no /g --
+    // the FIRST occurrence only. A duplicated key means this page is
+    // showing (and every write here edits) one of possibly several
+    // disagreeing blocks in the file, with nothing else telling the
+    // operator that. Additive, reported not thrown -- this is the route
+    // the Mods page actually loads on open (GET /current-config), so this
+    // is where an operator would actually see it. See
+    // utils/iniDuplicateKeys.js.
+    const duplicateKeys = findDuplicateIniKeys(content);
+
     // Build workshop → modId mapping from disk
     const serverPath = await getServerPath();
     const modIdSet = new Set(modIds);
@@ -2193,6 +2203,7 @@ router.get("/current-config", async (req, res) => {
       totalMods: modIds.length,
       iniPath,
       workshopModMap,
+      duplicateKeys,
     });
   } catch (error) {
     log.error(`Failed to get current mod config: ${error.message}`);

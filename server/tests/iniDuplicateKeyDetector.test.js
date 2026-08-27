@@ -15,6 +15,19 @@ import { findDuplicateIniKeys } from "../utils/iniDuplicateKeys.js";
 // mods.js's own GET /validate-config, the closest thing to a health check
 // either file has, read through the same non-global regex as everything
 // else and validated against the first block only.
+//
+// GET /validate-config is still fixed and still tested below (a route that
+// gets wired up later should not inherit a blind spot), but it is NOT the
+// operator-facing surface for this warning: `git log --all -S'validate-
+// config'` across the WHOLE repo, client included, at every point in
+// history, turns up exactly two commits -- the route's own introduction
+// (f34f313, 2026-02-10, added fresh mid-batch-fix with no corresponding
+// client work in the same commit or any other) and this file's. No client
+// caller ever existed for it, in this repo's entire history; it is not a
+// removed feature, it never had one. The real operator-facing surface is
+// GET /current-config (server/routes/mods.js), which IS what the Mods page
+// calls on load (client/src/pages/Mods.tsx -> modsApi.getCurrentConfig() ->
+// GET /mods/current-config) -- covered by its own test below.
 
 vi.mock("../database/init.js", () => ({
   getActiveServer: vi.fn(),
@@ -163,5 +176,39 @@ describe("GET /server-files/ini and GET /mods/validate-config surface a real dup
       ]),
     );
     expect(body.valid).toBe(false);
+  });
+
+  it("mods.js's GET /current-config -- what the Mods page actually loads on open -- reports duplicateKeys too", async () => {
+    vi.resetModules();
+    const { getActiveServer } = await import("../database/init.js");
+    dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ini-dup-current-config-"));
+    const configPath = path.join(dataRoot, "Server");
+    fs.mkdirSync(configPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(configPath, "TestServer.ini"),
+      "Mods=FirstBlockMods\nWorkshopItems=111\nMods=SecondBlockMods\nWorkshopItems=222\n",
+    );
+    getActiveServer.mockResolvedValue({
+      id: "server-1",
+      serverConfigPath: configPath,
+      serverName: "TestServer",
+      isRemote: false,
+    });
+
+    const { default: router } = await import("../routes/mods.js");
+    const res = await invokeLastHandler(router, "/current-config", "get", {});
+
+    expect(res.getStatusCode()).toBe(200);
+    const body = res.getBody();
+    expect(body.configured).toBe(true);
+    expect(body.duplicateKeys).toEqual(
+      expect.arrayContaining([
+        { key: "Mods", count: 2 },
+        { key: "WorkshopItems", count: 2 },
+      ]),
+    );
+    // First-occurrence-only, exactly as documented -- this page is showing
+    // the FIRST block, which is why the warning has to live here.
+    expect(body.modIds).toEqual(["FirstBlockMods"]);
   });
 });
