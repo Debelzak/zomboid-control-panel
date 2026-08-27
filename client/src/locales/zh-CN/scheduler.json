@@ -105,6 +105,7 @@
     "restartIn1Title": "1 分钟后重启——警告时间短，需要确认",
     "restartIn1DialogTitle": "确定在 1 分钟后重启服务器？",
     "restartIn1DialogDesc": "服务器关闭前，玩家仅会收到一次 1 分钟警告。如果有玩家正在战斗或驾驶，请使用更长的倒计时。",
+    "noPermission": "重启服务器需要 server.control 权限，而该角色没有此权限。",
     "cancel": "取消",
     "customCountdownLabel": "自定义倒计时（分钟）",
     "restartNow": "立即重启",

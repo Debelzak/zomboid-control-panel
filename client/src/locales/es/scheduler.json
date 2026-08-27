@@ -105,6 +105,7 @@
     "restartIn1Title": "Reiniciar en 1 minuto — aviso breve, requiere confirmación",
     "restartIn1DialogTitle": "¿Reiniciar el servidor en 1 minuto?",
     "restartIn1DialogDesc": "Los jugadores reciben un único aviso de 1 minuto antes de que el servidor se apague. Conviene usar cuentas regresivas más largas si alguien está en medio de una pelea o conduciendo.",
+    "noPermission": "Reiniciar el servidor requiere el permiso server.control, del cual este rol no dispone.",
     "cancel": "Cancelar",
     "customCountdownLabel": "Cuenta regresiva personalizada (minutos)",
     "restartNow": "Reiniciar ahora",

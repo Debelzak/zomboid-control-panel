@@ -105,6 +105,7 @@
     "restartIn1Title": "Neustart in 1 Minute — kurze Warnung, erfordert Bestätigung",
     "restartIn1DialogTitle": "Server in 1 Minute neu starten?",
     "restartIn1DialogDesc": "Spieler erhalten eine einzige 1-Minuten-Warnung, bevor der Server heruntergefahren wird. Verwende einen längeren Countdown, wenn jemand gerade kämpft oder fährt.",
+    "noPermission": "Ein Serverneustart erfordert die Berechtigung server.control, über die diese Rolle nicht verfügt.",
     "cancel": "Abbrechen",
     "customCountdownLabel": "Eigener Countdown (Minuten)",
     "restartNow": "Jetzt neu starten",

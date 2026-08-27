@@ -105,6 +105,7 @@
     "restartIn1Title": "Redémarrage dans 1 minute — avertissement court, confirmation requise",
     "restartIn1DialogTitle": "Redémarrer le serveur dans 1 minute ?",
     "restartIn1DialogDesc": "Les joueurs reçoivent un seul avertissement d'une minute avant l'arrêt du serveur. Utilisez un délai plus long si quelqu'un est en plein combat ou au volant.",
+    "noPermission": "Redémarrer le serveur nécessite la permission server.control, que ce rôle ne possède pas.",
     "cancel": "Annuler",
     "customCountdownLabel": "Compte à rebours personnalisé (minutes)",
     "restartNow": "Redémarrer maintenant",

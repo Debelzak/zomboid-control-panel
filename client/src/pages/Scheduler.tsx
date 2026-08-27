@@ -62,6 +62,8 @@ import { schedulerApi, rconApi, serverApi, serversApi, ScheduleHistoryEntry, Ser
 import { EmptyState } from '@/components/EmptyState'
 import { NumberInput } from '@/components/NumberInput'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { DisabledReason } from '@/components/DisabledReason'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface ScheduledTask {
   id: number
@@ -137,6 +139,15 @@ export default function Scheduler() {
   const [broadcastingKey, setBroadcastingKey] = useState<string | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const { toast } = useToast()
+  const { can } = useAuth()
+  // POST /scheduler/restart-now is an immediate, direct restart -- it
+  // requires server.control on the server (server/routes/scheduler.js),
+  // the same capability POST /server/restart requires, not just
+  // automation.manage (which merely gates this whole page). can() fails
+  // OPEN when capabilities are unknown/null, same convention as every
+  // other capability check in the app -- this only ever disables the
+  // button when the answer is a confirmed no.
+  const canRestartNow = can('server.control')
 
   // New task form
   const [newTaskName, setNewTaskName] = useState('')
@@ -918,47 +929,55 @@ export default function Scheduler() {
         <CardContent className="space-y-4">
           {/* Quick Restart Buttons — each triggers an immediate restart with that warning length */}
           <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => handleRestartWithWarning(15)}
-              disabled={loading || !serverRunning}
-              variant="outline"
-              size="sm"
-              title={t('manualRestart.restartIn15Title')}
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              {t('manualRestart.restartIn15')}
-            </Button>
-            <Button
-              onClick={() => handleRestartWithWarning(10)}
-              disabled={loading || !serverRunning}
-              variant="outline"
-              size="sm"
-              title={t('manualRestart.restartIn10Title')}
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              {t('manualRestart.restartIn10')}
-            </Button>
-            <Button
-              onClick={() => handleRestartWithWarning(5)}
-              disabled={loading || !serverRunning}
-              variant="outline"
-              size="sm"
-              title={t('manualRestart.restartIn5Title')}
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              {t('manualRestart.restartIn5')}
-            </Button>
+            <DisabledReason reason={!canRestartNow ? t('manualRestart.noPermission') : null}>
+              <Button
+                onClick={() => handleRestartWithWarning(15)}
+                disabled={loading || !serverRunning || !canRestartNow}
+                variant="outline"
+                size="sm"
+                title={t('manualRestart.restartIn15Title')}
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                {t('manualRestart.restartIn15')}
+              </Button>
+            </DisabledReason>
+            <DisabledReason reason={!canRestartNow ? t('manualRestart.noPermission') : null}>
+              <Button
+                onClick={() => handleRestartWithWarning(10)}
+                disabled={loading || !serverRunning || !canRestartNow}
+                variant="outline"
+                size="sm"
+                title={t('manualRestart.restartIn10Title')}
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                {t('manualRestart.restartIn10')}
+              </Button>
+            </DisabledReason>
+            <DisabledReason reason={!canRestartNow ? t('manualRestart.noPermission') : null}>
+              <Button
+                onClick={() => handleRestartWithWarning(5)}
+                disabled={loading || !serverRunning || !canRestartNow}
+                variant="outline"
+                size="sm"
+                title={t('manualRestart.restartIn5Title')}
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                {t('manualRestart.restartIn5')}
+              </Button>
+            </DisabledReason>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button
-                  disabled={loading || !serverRunning}
-                  variant="warning"
-                  size="sm"
-                  title={t('manualRestart.restartIn1Title')}
-                >
-                  <Clock className="w-4 h-4 mr-2" />
-                  {t('manualRestart.restartIn1')}
-                </Button>
+                <DisabledReason reason={!canRestartNow ? t('manualRestart.noPermission') : null}>
+                  <Button
+                    disabled={loading || !serverRunning || !canRestartNow}
+                    variant="warning"
+                    size="sm"
+                    title={t('manualRestart.restartIn1Title')}
+                  >
+                    <Clock className="w-4 h-4 mr-2" />
+                    {t('manualRestart.restartIn1')}
+                  </Button>
+                </DisabledReason>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
@@ -994,10 +1013,12 @@ export default function Scheduler() {
             {restartMinutes < 5 ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button disabled={loading || !serverRunning || !Number.isFinite(restartMinutes)} variant="warning">
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    {t('manualRestart.restartNow')}
-                  </Button>
+                  <DisabledReason reason={!canRestartNow ? t('manualRestart.noPermission') : null}>
+                    <Button disabled={loading || !serverRunning || !Number.isFinite(restartMinutes) || !canRestartNow} variant="warning">
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      {t('manualRestart.restartNow')}
+                    </Button>
+                  </DisabledReason>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -1015,14 +1036,16 @@ export default function Scheduler() {
                 </AlertDialogContent>
               </AlertDialog>
             ) : (
-              <Button
-                onClick={handleRestartNow}
-                disabled={loading || !serverRunning || !Number.isFinite(restartMinutes)}
-                variant="warning"
-              >
-                <RotateCcw className="w-4 h-4 mr-2" />
-                {t('manualRestart.restartNow')}
-              </Button>
+              <DisabledReason reason={!canRestartNow ? t('manualRestart.noPermission') : null}>
+                <Button
+                  onClick={handleRestartNow}
+                  disabled={loading || !serverRunning || !Number.isFinite(restartMinutes) || !canRestartNow}
+                  variant="warning"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  {t('manualRestart.restartNow')}
+                </Button>
+              </DisabledReason>
             )}
           </div>
           <p className="text-sm text-muted-foreground">

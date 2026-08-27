@@ -105,6 +105,7 @@
     "restartIn1Title": "Redemare nan 1 minit — avètisman kout, mande konfimasyon",
     "restartIn1DialogTitle": "Redemare sèvè a nan 1 minit?",
     "restartIn1DialogDesc": "Jwè yo resevwa yon sèl avètisman 1-minit anvan sèvè a tonbe. Itilize kontdaoun ki pi long si gen moun ki nan mitan yon konba oswa k ap kondwi.",
+    "noPermission": "Pou ou redemare sèvè a, ou bezwen pèmisyon server.control, e wòl sa a pa genyen li.",
     "cancel": "Anile",
     "customCountdownLabel": "Kontdaoun pèsonalize (minit)",
     "restartNow": "Redemare Kounye a",
