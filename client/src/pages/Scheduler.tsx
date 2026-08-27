@@ -279,14 +279,6 @@ export default function Scheduler() {
     return match ? (match.name || match.serverName || `Server ${serverId}`) : t('scheduledTasks.unknownServer')
   }
 
-  // Simple cron validation
-  const isValidCron = (cron: string): boolean => {
-    const parts = cron.trim().split(/\s+/)
-    if (parts.length !== 5) return false
-    // Each part should be a valid cron field (numbers, *, /, -, ,)
-    return parts.every(p => /^[\d*,\/-]+$/.test(p))
-  }
-
   // Shared by the submit path and the preview so they cannot disagree.
   const buildSimpleCron = (): string => {
     const clamp = (raw: string, min: number, max: number, fallback: number) => {
@@ -321,14 +313,33 @@ export default function Scheduler() {
       return
     }
 
-    // Validate cron expression
-    if (!isValidCron(cronToUse)) {
-      toast({
-        title: t('toasts.invalidScheduleTitle'),
-        description: t('toasts.invalidCronDesc', { cron: cronToUse }),
-        variant: 'destructive',
-      })
-      return
+    // Validate the cron expression against the server's own validator
+    // (scheduler-cron-client-validator-weaker-than-server) -- a local regex
+    // here used to diverge from node-cron's real rules in both directions:
+    // it accepted out-of-range/too-frequent/impossible-date expressions the
+    // server rejects (a green tick that fails one round-trip later), and it
+    // rejected named months/weekdays and L/W/#-token expressions the server
+    // happily accepts (denying the operator a schedule they were entitled
+    // to). Delegating to the same /validate-cron endpoint the live preview
+    // above already calls gets exact parity by construction instead of
+    // hand-porting node-cron's bounds/name tables and keeping them in sync.
+    try {
+      const cronCheck = await schedulerApi.validateCron(cronToUse)
+      if (!cronCheck.valid) {
+        toast({
+          title: t('toasts.invalidScheduleTitle'),
+          description:
+            (cronCheck.code && resolveRegisteredTranslation('errors', cronCheck.code, undefined)) ||
+            cronCheck.error ||
+            t('toasts.invalidCronDesc', { cron: cronToUse }),
+          variant: 'destructive',
+        })
+        return
+      }
+    } catch {
+      // Pre-check unreachable (network/500) -- fall through and let
+      // create/update's own server-side validation be the final word,
+      // same advisory-only philosophy as the live preview above.
     }
 
     setLoading(true)
