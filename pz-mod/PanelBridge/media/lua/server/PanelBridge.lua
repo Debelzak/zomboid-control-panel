@@ -1586,14 +1586,23 @@ local function tryResyncInboxCursor(nextSeq)
     return true
 end
 
+-- `scanned` bounds the loop below and counts every inbox file touched this
+-- tick, garbage included (empty / malformed / duplicate / expired) -- this
+-- is what keeps one tick's file I/O bounded no matter what's queued.
+-- `processed` counts only entries processSingleCommand actually attempted
+-- (its return true) and is what's returned, logged and reported -- reusing
+-- the loop bound for that purpose is what let 036a538 both undercount
+-- (double-counting garbage as processed) and, in fixing that, accidentally
+-- remove the ONLY bound on the loop (see panelBridgeQueueBudget.test.js).
 local function processQueuedCommands(budget)
     local processed = 0
-    if budget <= 0 then return processed end
+    local scanned = 0
+    if budget <= 0 then return processed, scanned end
 
     local nextSeq = (PanelBridge.queueState.lastCommandSeq or 0) + 1
     local advanced = false
 
-    while processed < budget do
+    while scanned < budget do
         local fileName = "inbox/cmd-" .. PanelBridge.formatSeq(nextSeq) .. ".json"
         local raw = PanelBridge.readFile(fileName)
 
@@ -1641,6 +1650,7 @@ local function processQueuedCommands(budget)
             end
 
             if shouldAdvance then
+                scanned = scanned + 1
                 PanelBridge.queueState.lastCommandSeq = nextSeq
                 PanelBridge.writeInboxCursor(nextSeq)
                 advanced = true
@@ -1653,7 +1663,7 @@ local function processQueuedCommands(budget)
         PanelBridge.writeQueueState()
     end
 
-    return processed
+    return processed, scanned
 end
 
 local function normalizeMessage(value, maxLen)
@@ -7466,7 +7476,16 @@ end
 
 function PanelBridge.processCommands()
     local processedCount = 0
-    processedCount = processedCount + processQueuedCommands(PanelBridge.MAX_COMMANDS_PER_TICK)
+    -- scannedCount is the shared per-tick I/O budget across BOTH intake
+    -- paths (numbered queue below, then legacy commands.json further down)
+    -- -- matches the combined bound this function has always enforced via
+    -- one counter; see processQueuedCommands' header comment for why that
+    -- counter had to split into scanned (bounds work) vs processed (honest
+    -- report) instead of continuing to serve both jobs.
+    local scannedCount = 0
+    local queueProcessed, queueScanned = processQueuedCommands(PanelBridge.MAX_COMMANDS_PER_TICK)
+    processedCount = processedCount + queueProcessed
+    scannedCount = scannedCount + queueScanned
 
     -- NOTE (audit L03): everything from here down is the LEGACY commands.json
     -- intake path — a fallback for a panel that hasn't negotiated
@@ -7501,13 +7520,14 @@ function PanelBridge.processCommands()
     PanelBridge.clearFile("commands.json")
 
     for idx, cmd in ipairs(commands.commands) do
-        if processedCount >= PanelBridge.MAX_COMMANDS_PER_TICK then
+        if scannedCount >= PanelBridge.MAX_COMMANDS_PER_TICK then
             deferredCommands = {}
             for j = idx, #commands.commands do
                 table.insert(deferredCommands, commands.commands[j])
             end
             PanelBridge.warn("Command batch limit reached; deferring remaining commands", {
                 processed = processedCount,
+                scanned = scannedCount,
                 maxPerTick = PanelBridge.MAX_COMMANDS_PER_TICK,
                 totalInFile = #commands.commands,
                 deferredCount = #deferredCommands
@@ -7515,6 +7535,7 @@ function PanelBridge.processCommands()
             break
         end
 
+        scannedCount = scannedCount + 1
         if processSingleCommand(cmd) then
             processedCount = processedCount + 1
         end
