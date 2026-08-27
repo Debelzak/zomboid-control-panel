@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Docker panel updates no longer stop after building with a duplicate container-name error.**
+  The updater now gracefully replaces an existing manually created panel container before Compose
+  recreates it, and uses the same safe replacement path during rollback.
 - **A server created by the setup wizard could not start at all.** The admin password you typed was
   never saved with the server, so the panel launched Project Zomboid without it - and on a brand new
   server, where the game has to create the admin account, it stopped and asked for the password on a
