@@ -540,6 +540,87 @@ describe("createBackup archive safety", () => {
 
 });
 
+// 2026-08-27, operator directive relayed by god: "make sure backups works" --
+// prove the whole create -> list -> restore lifecycle with actual content,
+// not status codes. Every test above either restores a hand-built archive
+// (writeValidBackup) or checks the archive's entry NAMES ("includes every
+// nested save entry") -- none of them exercise the real createBackup() on a
+// real multi-file, nested, binary-containing live save AND THEN compare the
+// restored bytes back against the original. A restore that silently wrote
+// the wrong file, truncated a binary entry, or mangled non-ASCII content
+// could pass every existing assertion in this file and still hand an
+// operator back the wrong world.
+describe("full lifecycle: create -> list -> restore, byte-for-byte", () => {
+  function listAllFiles(dir) {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...listAllFiles(full));
+      else out.push(full);
+    }
+    return out.sort();
+  }
+
+  it("a real createBackup() -> listBackups() -> restoreBackup() round trip reproduces every file's exact bytes, not just its name", async () => {
+    fs.rmSync(savesPath, { recursive: true, force: true });
+    const nested = path.join(savesPath, "map", "chunks");
+    fs.mkdirSync(nested, { recursive: true });
+
+    // Every byte value 0-255 once, so any single-byte corruption (a
+    // dropped high bit, a text-mode line-ending rewrite, an encoding
+    // round-trip) is guaranteed to be caught, not just "looks textually
+    // similar".
+    const binary = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+    const files = new Map([
+      [path.join(savesPath, "map_meta.bin"), binary],
+      [
+        path.join(savesPath, "worldstats.txt"),
+        Buffer.from("world stats content\r\nline two\nline three"),
+      ],
+      [path.join(nested, "0_0.bin"), Buffer.concat([binary, binary])],
+      [
+        path.join(nested, "1_1.bin"),
+        Buffer.from("chunk marker with unicode: café ☃ 日本", "utf8"),
+      ],
+      [path.join(nested, "empty.bin"), Buffer.alloc(0)],
+    ]);
+    for (const [filePath, content] of files) {
+      fs.writeFileSync(filePath, content);
+    }
+    const originalFileList = listAllFiles(savesPath);
+
+    const service = createService();
+
+    const createResult = await service.createBackup({
+      createPreRestoreBackup: false,
+    });
+    expect(createResult.success).toBe(true);
+
+    // What an operator actually sees and picks from -- not the raw create
+    // result, the listing endpoint everything else in the UI is driven by.
+    const listed = await service.listBackups();
+    const listedEntry = listed.find((b) => b.name === createResult.backup.name);
+    expect(listedEntry).toBeTruthy();
+
+    // Simulate real data loss: wipe the live save so a restored file can
+    // only be reconstructed from the archive, never coasting on a leftover
+    // copy already sitting in savesPath.
+    fs.rmSync(savesPath, { recursive: true, force: true });
+    expect(fs.existsSync(savesPath)).toBe(false);
+
+    const restoreResult = await service.restoreBackup(listedEntry.name, {
+      createPreRestoreBackup: false,
+    });
+    expect(restoreResult.success).toBe(true);
+
+    expect(listAllFiles(savesPath)).toEqual(originalFileList);
+    for (const [filePath, originalContent] of files) {
+      const restoredContent = fs.readFileSync(filePath);
+      expect(Buffer.compare(restoredContent, originalContent)).toBe(0);
+    }
+  });
+});
+
 describe("deleteBackupsOlderThan result contract", () => {
   it.each([0, -1])("rejects a non-positive retention age (%s)", async (days) => {
     const service = createService();
