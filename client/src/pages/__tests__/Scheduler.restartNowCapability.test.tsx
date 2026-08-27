@@ -118,4 +118,52 @@ describe('Scheduler.tsx: Restart Now buttons gate on server.control, not just pa
       expect(screen.getByRole('button', { name })).not.toBeDisabled()
     }
   })
+
+  // bug-hunt-2026-08-27 (Players.tsx follow-up): "not disabled" only proves
+  // the visual gate is open. Two of these six triggers put DisabledReason as
+  // the DIRECT child of an AlertDialogTrigger's asChild slot -- DisabledReason
+  // is a plain function component (no forwardRef), so Radix Slot's
+  // cloneElement can silently fail to attach its onClick/ref when reason is
+  // null. A composition bug there would leave the button LOOKING enabled
+  // while doing nothing on click -- the exact "gate hides a control from
+  // someone who should have it" failure, arriving from the wiring rather
+  // than the capability logic. These two tests click all the way through:
+  // open the confirm dialog, confirm, and assert the API actually fires.
+  it('actually opens the confirm dialog and calls the API when "Restart in 1m" is clicked with server.control granted', async () => {
+    mockCan = () => true
+    await setUpRunningServer()
+
+    renderScheduler()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restart in 1m' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Restart in 1m' }))
+
+    // Confirms the dialog actually opened (unique title text, unlike the
+    // button label which the trigger and confirm action share).
+    await screen.findByText('Restart server in 1 minute?')
+
+    // Trigger and confirm action share the identical label ("Restart in 1m"),
+    // but Radix hides the background (including the trigger) behind the open
+    // modal, so exactly one match is queryable now -- the confirm action.
+    fireEvent.click(screen.getByRole('button', { name: 'Restart in 1m' }))
+
+    await waitFor(() => expect(restartNow).toHaveBeenCalledWith(1))
+  })
+
+  it('actually opens the confirm dialog and calls the API for the short-countdown "Restart Now" path with server.control granted', async () => {
+    mockCan = () => true
+    await setUpRunningServer()
+
+    renderScheduler()
+
+    await waitFor(() => expect(screen.getByRole('spinbutton')).toBeInTheDocument())
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '2' } })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restart Now' })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Restart Now' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart in 2m' }))
+
+    await waitFor(() => expect(restartNow).toHaveBeenCalledWith(2))
+  })
 })
