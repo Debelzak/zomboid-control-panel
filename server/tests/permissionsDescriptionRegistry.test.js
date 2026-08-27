@@ -60,14 +60,14 @@ function normalizeDashes(value) {
 // bug-hunt-2026-08-26 (reported 2026-08-27) for the write-up. Remove an entry
 // the moment it's resolved, in either direction -- this allowlist existing at
 // all is itself a thing worth noticing, not a permanent home for drift.
-const KNOWN_CONTENT_DIVERGENCES = new Map([
-  [
-    "diagnostics.manage",
-    "server description includes \"and relocate the panel's own data/log " +
-      "directories\" (POST /api/debug/paths, called from Debug.tsx) -- the en " +
-      "locale entry omits that clause entirely",
-  ],
-]);
+//
+// Empty as of 2026-08-27: diagnostics.manage was the one entry here (server
+// described relocating data/log directories, en/roles.json didn't), resolved
+// in the same pass that also dropped diagnostics.manage's "database
+// maintenance tools" clause (POST/GET /api/debug/database* -- zero client
+// callers, same wholly-unreachable shape as bridge.diagnostics' debug-log/
+// stats promise).
+const KNOWN_CONTENT_DIVERGENCES = new Map([]);
 
 describe("permission capability descriptions: server/services/permissions.js vs client/src/locales/en/roles.json", () => {
   const roles = JSON.parse(fs.readFileSync(ROLES_EN_PATH, "utf8"));
