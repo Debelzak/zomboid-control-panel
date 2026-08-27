@@ -175,7 +175,8 @@ export const CAPABILITIES = [
     key: "players.moderate",
     group: "Player Authority",
     label: "Discipline players",
-    description: "Ban, unban, kick or whitelist a player.",
+    description:
+      "Ban, unban, kick or whitelist a player, and change a player's in-game access level -- including granting or revoking admin.",
   },
   {
     key: "players.gm_tools",
