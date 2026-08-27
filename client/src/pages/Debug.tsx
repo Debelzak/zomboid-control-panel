@@ -261,15 +261,24 @@ type TimeFormat = "relative" | "time" | "datetime";
 type DiagnosticsFixAction = {
   label: string;
   automated: boolean;
-  /** When true, ask the user before applying (used for bulk operations, not all of them destructive). */
-  requiresConfirm?: boolean;
-  /** Confirmation text shown in the native confirm dialog. */
-  confirmMessage?: string;
-  /** Styles the confirm button red when true. Explicit per action rather than
-   *  defaulting to red for every requiresConfirm action -- a bounded, reversible
-   *  INI toggle and an actual file deletion aren't the same severity, and
-   *  rendering both the same color flattens that distinction for the operator. */
-  destructive?: boolean;
+  /** Present only when the user must confirm before this automated fix runs.
+   *  destructive is required (not optional) inside this object on purpose:
+   *  requiresConfirm/confirmMessage/destructive used to be three independent
+   *  optional fields, so a fix could ask for confirmation without ever
+   *  deciding destructive, and destructive:true with no requiresConfirm was
+   *  silently inert (the only place destructive was read was gated behind
+   *  requiresConfirm). Folding them into one object makes "confirms but
+   *  never says whether it's destructive" a compile error instead of a trap
+   *  for the next fix added to the switch below. */
+  confirm?: {
+    /** Confirmation text shown in the native confirm dialog. */
+    message: string;
+    /** Styles the confirm button red when true. Explicit per action rather than
+     *  defaulting to red for every confirmed action -- a bounded, reversible
+     *  INI toggle and an actual file deletion aren't the same severity, and
+     *  rendering both the same color flattens that distinction for the operator. */
+    destructive: boolean;
+  };
   openServerConfig?: boolean;
   openMods?: boolean;
   /** Extra navigation buttons rendered next to the primary action. */
@@ -328,11 +337,15 @@ export function getDiagnosticsFixAction(
             ? t("fixActions.modsNumericInMods.labelWithCount", { count })
             : t("fixActions.modsNumericInMods.labelGeneric"),
         automated: true,
-        requiresConfirm: count > 10,
-        confirmMessage: t("fixActions.modsNumericInMods.confirmMessage", { count }),
-        // Disables INI entries, doesn't delete anything -- re-enabling is a
-        // toggle, not a rebuild. Bounded/reversible, not red.
-        destructive: false,
+        confirm:
+          count > 10
+            ? {
+                message: t("fixActions.modsNumericInMods.confirmMessage", { count }),
+                // Disables INI entries, doesn't delete anything -- re-enabling is a
+                // toggle, not a rebuild. Bounded/reversible, not red.
+                destructive: false,
+              }
+            : undefined,
         openServerConfig: true,
         note:
           count > 0
@@ -367,10 +380,14 @@ export function getDiagnosticsFixAction(
             ? t("fixActions.modsOrphanWorkshop.labelWithCount", { count })
             : t("fixActions.modsOrphanWorkshop.labelGeneric"),
         automated: true,
-        requiresConfirm: count > 10,
-        confirmMessage: t("fixActions.modsOrphanWorkshop.confirmMessage", { count }),
-        // Same class as numericInMods above -- an INI toggle, not a deletion.
-        destructive: false,
+        confirm:
+          count > 10
+            ? {
+                message: t("fixActions.modsOrphanWorkshop.confirmMessage", { count }),
+                // Same class as numericInMods above -- an INI toggle, not a deletion.
+                destructive: false,
+              }
+            : undefined,
         openServerConfig: true,
         openMods: true,
         note:
@@ -483,11 +500,12 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverStaleLocks.label"),
         automated: true,
-        requiresConfirm: true,
-        confirmMessage: t("fixActions.serverStaleLocks.confirmMessage"),
-        // Actually deletes files in the save-adjacent lock directory, unlike
-        // the two INI-toggle fixes above -- stays red deliberately.
-        destructive: true,
+        confirm: {
+          message: t("fixActions.serverStaleLocks.confirmMessage"),
+          // Actually deletes files in the save-adjacent lock directory, unlike
+          // the two INI-toggle fixes above -- stays red deliberately.
+          destructive: true,
+        },
         links: [{ to: "/chunks", label: L("openChunkCleaner") }],
         note: t("fixActions.serverStaleLocks.note"),
       };
@@ -928,18 +946,18 @@ export default function Debug() {
           return;
         }
 
-        if (action.requiresConfirm) {
+        if (action.confirm) {
           const message =
-            action.confirmMessage ||
+            action.confirm.message ||
             t("diagnostics.applyFixFallback", { label: action.label });
           const ok = await confirm({
             title: t("diagnostics.applyFixTitle"),
             description: message,
             confirmLabel: t("diagnostics.applyButton"),
-            // Deliberate per action (see DiagnosticsFixAction.destructive) --
-            // defaults to true only when an action doesn't set it, same as
-            // useConfirm's own default, not a silent downgrade.
-            destructive: action.destructive !== false,
+            // No `!== false` fallback needed any more -- destructive is a
+            // required field inside confirm, so this is always a real,
+            // deliberately-set boolean, never an absent one defaulting to true.
+            destructive: action.confirm.destructive,
           });
           if (!ok) {
             return;
