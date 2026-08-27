@@ -2,6 +2,10 @@
   "loading": "loading configuration…",
   "loadErrorTitle": "Configuration data could not be fully loaded",
   "retry": "Retry",
+  "noAccess": {
+    "title": "You don't have access to Server Configuration",
+    "description": "This page requires the \"Manage server files\" permission. Ask an administrator to grant it to your role if you need to edit server settings here."
+  },
   "pageHeader": {
     "title": "Server Configuration",
     "description": "Edit the live INI, sandbox, spawn, and mod settings for this server.",

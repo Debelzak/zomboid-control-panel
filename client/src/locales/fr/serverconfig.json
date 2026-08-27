@@ -1,4 +1,8 @@
 {
+  "noAccess": {
+    "title": "Vous n'avez pas accès à la configuration du serveur",
+    "description": "Cette page nécessite la permission « Gérer les fichiers du serveur ». Demandez à un administrateur de l'accorder à votre rôle si vous devez modifier la configuration du serveur ici."
+  },
   "loading": "chargement de la configuration…",
   "loadErrorTitle": "Les données de configuration n'ont pas pu être entièrement chargées",
   "retry": "Réessayer",

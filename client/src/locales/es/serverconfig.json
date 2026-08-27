@@ -1,4 +1,8 @@
 {
+  "noAccess": {
+    "title": "No tienes acceso a la configuración del servidor",
+    "description": "Esta página requiere el permiso «Administrar archivos del servidor». Pide a un administrador que se lo conceda a tu rol si necesitas editar la configuración del servidor aquí."
+  },
   "loading": "cargando configuración…",
   "loadErrorTitle": "No se pudieron cargar todos los datos de configuración",
   "retry": "Reintentar",

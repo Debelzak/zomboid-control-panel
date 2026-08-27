@@ -18,8 +18,16 @@ export default function Templates() {
   const { t } = useTranslation('templates')
   const { toast } = useToast()
   const confirm = useConfirm()
-  const { user, authEnabled } = useAuth()
-  const canManage = !authEnabled || user?.role === 'admin'
+  const { can, authEnabled } = useAuth()
+  // Was `user?.role === 'admin'` -- a hardcoded role literal where the
+  // server checks a capability (requirePermission("templates.manage") on
+  // POST/import/apply/delete in routes/templates.js). A default Technician
+  // role holds templates.manage and the server honors it, but that check
+  // hid every manage control from them anyway. can() already fails OPEN
+  // when capabilities are unknown -- see AuthContext's own doc comment --
+  // so this is strictly more permissive for anyone this could have wrongly
+  // blocked, never less.
+  const canManage = !authEnabled || can('templates.manage')
 
   const [templates, setTemplates] = useState<SimTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -116,7 +124,7 @@ export default function Templates() {
           type="empty"
           title={t('emptyState.noTemplatesTitle')}
           description={t('emptyState.noTemplatesDesc')}
-          action={{ label: t('pageHeader.saveCurrentConfig'), onClick: () => setCreateOpen(true) }}
+          action={canManage ? { label: t('pageHeader.saveCurrentConfig'), onClick: () => setCreateOpen(true) } : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

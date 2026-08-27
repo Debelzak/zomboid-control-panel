@@ -1,4 +1,8 @@
 {
+  "noAccess": {
+    "title": "Ou pa gen aksè nan Konfigirasyon Sèvè",
+    "description": "Paj sa a mande pèmisyon \"Jere fichye sèvè\". Mande yon administratè bay wòl ou pèmisyon sa a si ou bezwen modifye paramèt sèvè a isit la."
+  },
   "loading": "ap chaje konfigirasyon…",
   "loadErrorTitle": "Done konfigirasyon pa t kapab chaje nèt",
   "retry": "Eseye ankò",

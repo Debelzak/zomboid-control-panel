@@ -105,6 +105,7 @@ import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { formatModSettingDescription, formatModSettingLabel } from '@/lib/modSettingsLabels'
 import { EmptyState } from '@/components/EmptyState'
+import { useAuth } from '@/contexts/AuthContext'
 import {
   INI_SCHEMA,
   INI_CATEGORIES,
@@ -911,10 +912,20 @@ export default function ServerConfig() {
 
   const { toast } = useToast()
   const confirm = useConfirm()
+  const { can } = useAuth()
+  // Whole-router gate on the server: server/routes/serverFiles.js applies
+  // requirePermission("serverfiles.manage") to every route in the file, GET
+  // included -- there's no partial-access tier, so a page-level gate here is
+  // the correct grain, not a compromise (Settings.tsx's precedent gates
+  // whole TABS the same way, because that's the grain ITS capabilities come
+  // in). can() fails OPEN when capabilities are unknown/null -- see
+  // AuthContext's own doc comment -- so this only ever hides the page when
+  // the answer is a confirmed no, never while unsure.
+  const canManageServerFiles = can('serverfiles.manage')
 
   // Load initial data
   useEffect(() => {
-    loadData()
+    if (canManageServerFiles) loadData()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only init
 
   useEffect(() => {
@@ -1870,6 +1881,18 @@ export default function ServerConfig() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeTab, hasIniChanges, hasSandboxChanges])
+
+  if (!canManageServerFiles) {
+    return (
+      <div className="space-y-4 page-transition">
+        <EmptyState
+          type="noData"
+          title={t('noAccess.title')}
+          description={t('noAccess.description')}
+        />
+      </div>
+    )
+  }
 
   if (loading) {
     return (
