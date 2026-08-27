@@ -5,6 +5,11 @@
     "updated": "已更新 {{time}}",
     "refresh": "刷新"
   },
+  "permissions": {
+    "noModerate": "此操作需要 players.moderate 权限，而该角色没有此权限。",
+    "noGmTools": "此操作需要 players.gm_tools 权限，而该角色没有此权限。",
+    "noBridgeCommand": "此操作需要 bridge.command 权限，而该角色没有此权限。"
+  },
   "errorBanner": {
     "title": "玩家页面部分不可用",
     "retry": "重试"

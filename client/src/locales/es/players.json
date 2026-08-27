@@ -5,6 +5,11 @@
     "updated": "Actualizado {{time}}",
     "refresh": "Actualizar"
   },
+  "permissions": {
+    "noModerate": "Esta acción requiere el permiso players.moderate, del cual este rol no dispone.",
+    "noGmTools": "Esta acción requiere el permiso players.gm_tools, del cual este rol no dispone.",
+    "noBridgeCommand": "Esta acción requiere el permiso bridge.command, del cual este rol no dispone."
+  },
   "errorBanner": {
     "title": "La página de jugadores solo está disponible parcialmente",
     "retry": "Reintentar"

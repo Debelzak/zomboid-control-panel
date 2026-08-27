@@ -5,6 +5,11 @@
     "updated": "Mete ajou {{time}}",
     "refresh": "Rafrechi"
   },
+  "permissions": {
+    "noModerate": "Pou aksyon sa a, ou bezwen pèmisyon players.moderate, e wòl sa a pa genyen li.",
+    "noGmTools": "Pou aksyon sa a, ou bezwen pèmisyon players.gm_tools, e wòl sa a pa genyen li.",
+    "noBridgeCommand": "Pou aksyon sa a, ou bezwen pèmisyon bridge.command, e wòl sa a pa genyen li."
+  },
   "errorBanner": {
     "title": "Paj Jwè a pa disponib nèt",
     "retry": "Eseye ankò"

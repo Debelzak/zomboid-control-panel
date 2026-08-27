@@ -5,6 +5,11 @@
     "updated": "Updated {{time}}",
     "refresh": "Refresh"
   },
+  "permissions": {
+    "noModerate": "This action requires the players.moderate permission, which this role doesn't have.",
+    "noGmTools": "This action requires the players.gm_tools permission, which this role doesn't have.",
+    "noBridgeCommand": "This action requires the bridge.command permission, which this role doesn't have."
+  },
   "errorBanner": {
     "title": "Players page is partially unavailable",
     "retry": "Retry"

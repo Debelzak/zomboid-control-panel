@@ -5,6 +5,11 @@
     "updated": "Mis à jour {{time}}",
     "refresh": "Actualiser"
   },
+  "permissions": {
+    "noModerate": "Cette action nécessite la permission players.moderate, que ce rôle ne possède pas.",
+    "noGmTools": "Cette action nécessite la permission players.gm_tools, que ce rôle ne possède pas.",
+    "noBridgeCommand": "Cette action nécessite la permission bridge.command, que ce rôle ne possède pas."
+  },
   "errorBanner": {
     "title": "La page Joueurs est partiellement indisponible",
     "retry": "Réessayer"

@@ -5,6 +5,11 @@
     "updated": "Aktualisiert {{time}}",
     "refresh": "Aktualisieren"
   },
+  "permissions": {
+    "noModerate": "Diese Aktion erfordert die Berechtigung players.moderate, über die diese Rolle nicht verfügt.",
+    "noGmTools": "Diese Aktion erfordert die Berechtigung players.gm_tools, über die diese Rolle nicht verfügt.",
+    "noBridgeCommand": "Diese Aktion erfordert die Berechtigung bridge.command, über die diese Rolle nicht verfügt."
+  },
   "errorBanner": {
     "title": "Spielerseite ist teilweise nicht verfügbar",
     "retry": "Erneut versuchen"

@@ -92,6 +92,7 @@ import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { PageHeader } from '@/components/PageHeader'
 import { DisabledReason } from '@/components/DisabledReason'
+import { useAuth } from '@/contexts/AuthContext'
 import { cn, copyText } from '@/lib/utils'
 
 interface PerkChoice {
@@ -305,6 +306,16 @@ function ActionTile({
 export default function Players() {
   const { t, i18n } = useTranslation('players')
   const accessLevelLabels = useMemo(() => getAccessLevelLabels(t), [t])
+  // Three separate server gates, not one -- kick/ban/whitelist/access-level
+  // require players.moderate; teleport/spawn/character import-export require
+  // players.gm_tools; godmode/invisible/noclip/heal go through the generic
+  // PanelBridge passthrough (POST /panel-bridge/command) and its base gate,
+  // bridge.command, NOT players.gm_tools despite the action names -- see
+  // server/routes/panelBridge.js's BRIDGE_ACTION_CAPABILITY map.
+  const { can } = useAuth()
+  const canModerate = can('players.moderate')
+  const canGmTools = can('players.gm_tools')
+  const canBridgeCommand = can('bridge.command')
   const [players, setPlayers] = useState<Player[]>([])
   const [perks, setPerks] = useState<PerkChoice[]>([])
   const [selectedPlayer, setSelectedPlayer] = useState<string>('')
@@ -1167,10 +1178,12 @@ export default function Players() {
           caption={t('summary.rosterCaption')}
         />
         {bannedSteamIds.length > 0 && (
+          <DisabledReason className="flex-1" reason={!canModerate ? t('permissions.noModerate') : null}>
           <button
             type="button"
             onClick={() => setUnbanSteamIdDialogOpen(true)}
-            className="group relative flex flex-1 items-center gap-3 overflow-hidden rounded-md border border-border/55 bg-card/70 px-4 py-3 text-left shadow-sm transition-colors hover:border-destructive/45 hover:bg-destructive/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            disabled={!canModerate}
+            className="group relative flex flex-1 items-center gap-3 overflow-hidden rounded-md border border-border/55 bg-card/70 px-4 py-3 text-left shadow-sm transition-colors hover:border-destructive/45 hover:bg-destructive/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={t('summary.bannedAria', { count: bannedSteamIds.length })}
           >
             <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[2px] bg-destructive/60" />
@@ -1185,6 +1198,7 @@ export default function Players() {
               <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-destructive/80">{t('summary.bannedLabel')}</p>
             </div>
           </button>
+          </DisabledReason>
         )}
       </div>
 
@@ -1485,10 +1499,12 @@ export default function Players() {
                               </p>
                             )}
                           </div>
+                          <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                           <Button
                             variant="outline"
                             size="sm"
                             className="shrink-0"
+                            disabled={!canModerate}
                             onClick={() => {
                               setUnbanSteamId(ban.steamId)
                               setUnbanSteamIdDialogOpen(true)
@@ -1497,6 +1513,7 @@ export default function Players() {
                           >
                             {t('roster.unbanButton')}
                           </Button>
+                          </DisabledReason>
                         </div>
                       </div>
                     ))}
@@ -1540,17 +1557,19 @@ export default function Players() {
                                 <span>{online ? t('roster.whitelistOnline') : t('roster.whitelistOffline')}</span>
                               </div>
                             </div>
+                            <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                             <Button
                               variant="outline"
                               size="sm"
                               className="shrink-0"
                               onClick={() => handleAction(t('actions.removeFromWhitelist'), () => playersApi.removeFromWhitelist(account.username), () => { void fetchWhitelist() })}
-                              disabled={loading}
+                              disabled={loading || !canModerate}
                               title={t('roster.removeTitle', { username: account.username })}
                             >
                               <UserMinus className="mr-1.5 h-3.5 w-3.5" />
                               {t('roster.removeButton')}
                             </Button>
+                            </DisabledReason>
                           </div>
                         </div>
                       )
@@ -1574,23 +1593,27 @@ export default function Players() {
                       className="h-8 font-mono text-xs"
                       aria-label={t('roster.allowedSteamIdAria')}
                     />
-                    <Button onClick={handleAddAllowedSteamId} disabled={loading || allowedSteamIdInput.length !== 17} size="sm" className="shrink-0">
+                    <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
+                    <Button onClick={handleAddAllowedSteamId} disabled={loading || !canModerate || allowedSteamIdInput.length !== 17} size="sm" className="shrink-0">
                       <Plus className="mr-1.5 h-3.5 w-3.5" /> {t('roster.addButton')}
                     </Button>
+                    </DisabledReason>
                   </div>
                   {allowedSteamIds.filter(id => !playerSearchFilter.trim() || id.includes(playerSearchFilter.trim())).map((steamId) => (
                     <div key={steamId} className="flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 hover:border-border hover:bg-muted/30">
                       <span className="font-mono text-xs">{steamId}</span>
+                      <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                         onClick={() => handleAction(t('actions.removeAllowedSteamId'), () => playersApi.removeAllowedSteamId(steamId), () => { void fetchWhitelist() })}
-                        disabled={loading}
+                        disabled={loading || !canModerate}
                         title={t('roster.removeAllowedTitle', { steamId })}
                       >
                         <Trash2 className="mr-1 h-3.5 w-3.5" /> {t('roster.removeAllowedButton')}
                       </Button>
+                      </DisabledReason>
                     </div>
                   ))}
                 </div>
@@ -1721,26 +1744,32 @@ export default function Players() {
 
                         {/* Quick danger actions */}
                         <div className="flex shrink-0 items-center gap-1.5">
+                          <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setKickDialogOpen(true)}
+                            disabled={!canModerate}
                             className="h-8 gap-1.5 border-amber-500/40 text-xs font-medium text-amber-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-200"
                             title={t('dossier.kickTitle')}
                           >
                             <UserX className="h-3.5 w-3.5" />
                             <span className="hidden sm:inline">{t('dossier.kickButton')}</span>
                           </Button>
+                          </DisabledReason>
+                          <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setBanDialogOpen(true)}
+                            disabled={!canModerate}
                             className="h-8 gap-1.5 border-destructive/45 text-xs font-medium text-destructive hover:border-destructive/65 hover:bg-destructive/10"
                             title={t('dossier.banTitle')}
                           >
                             <Ban className="h-3.5 w-3.5" />
                             <span className="hidden sm:inline">{t('dossier.banButton')}</span>
                           </Button>
+                          </DisabledReason>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label={t('dossier.moreActionsAria')}>
@@ -1748,48 +1777,52 @@ export default function Players() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
-                                <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading || !bridgeConnected}>
+                              <DisabledReason className="w-full" reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                                <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading || !bridgeConnected || !canBridgeCommand}>
                                   <Ghost className="w-4 h-4 mr-2" />
                                   {selectedPlayerPowers?.godMode ? t('dossier.disableGodMode') : t('dossier.enableGodMode')}
                                 </DropdownMenuItem>
                               </DisabledReason>
-                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
-                                <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading || !bridgeConnected}>
+                              <DisabledReason className="w-full" reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                                <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading || !bridgeConnected || !canBridgeCommand}>
                                   <Eye className="w-4 h-4 mr-2" />
                                   {selectedPlayerPowers?.invisible ? t('dossier.disableInvisible') : t('dossier.enableInvisible')}
                                 </DropdownMenuItem>
                               </DisabledReason>
-                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
-                                <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading || !bridgeConnected}>
+                              <DisabledReason className="w-full" reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                                <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading || !bridgeConnected || !canBridgeCommand}>
                                   <Layers className="w-4 h-4 mr-2" />
                                   {selectedPlayerPowers?.noclip ? t('dossier.disableNoclip') : t('dossier.enableNoclip')}
                                 </DropdownMenuItem>
                               </DisabledReason>
                               <DropdownMenuSeparator />
+                              <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                               <DropdownMenuItem
                                 onClick={() => {
                                   setAddUserUsername(selectedPlayer)
                                   setAddUserPassword('')
                                   setAddUserDialogOpen(true)
                                 }}
-                                disabled={loading}
+                                disabled={loading || !canModerate}
                               >
                                 <UserPlus className="w-4 h-4 mr-2" />
                                 {t('dossier.addToWhitelist')}
                               </DropdownMenuItem>
+                              </DisabledReason>
+                              <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                               <DropdownMenuItem
                                 onClick={() => handleAction(t('actions.removeFromWhitelist'), () => playersApi.removeFromWhitelist(selectedPlayer), () => { void fetchWhitelist() })}
-                                disabled={loading || selectedPlayerConfirmedNotWhitelisted}
+                                disabled={loading || !canModerate || selectedPlayerConfirmedNotWhitelisted}
                               >
                                 <UserMinus className="w-4 h-4 mr-2" />
                                 {t('dossier.removeFromWhitelist')}
                               </DropdownMenuItem>
+                              </DisabledReason>
                               <DropdownMenuSeparator />
-                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                              <DisabledReason className="w-full" reason={!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                                 <DropdownMenuItem
                                   onClick={() => setImportExportOpen(true)}
-                                  disabled={!bridgeConnected}
+                                  disabled={!bridgeConnected || !canGmTools}
                                 >
                                   <Download className="w-4 h-4 mr-2" />
                                   {t('dossier.importExportCharacter')}
@@ -1835,9 +1868,10 @@ export default function Players() {
                 {selectedPlayer ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                   {/* Kick */}
+                  <DisabledReason className="w-full" reason={selectedPlayer && !canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!selectedPlayer || !canModerate} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserX className="w-4 h-4" />} label={t('dossier.kickButton')} description={t('actionTiles.kickDesc')} disabled={!selectedPlayer} emphasis="warning" />
                       </button>
                     </DialogTrigger>
@@ -1867,11 +1901,13 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* Ban */}
+                  <DisabledReason className="w-full" reason={selectedPlayer && !canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={banDialogOpen} onOpenChange={setBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!selectedPlayer || !canModerate} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<Ban className="w-4 h-4" />} label={t('dossier.banButton')} description={t('actionTiles.banDesc')} disabled={!selectedPlayer} emphasis="danger" />
                       </button>
                     </DialogTrigger>
@@ -1914,6 +1950,7 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* Ban Confirmation */}
                   <AlertDialog open={banConfirmOpen} onOpenChange={setBanConfirmOpen}>
@@ -1944,9 +1981,10 @@ export default function Players() {
                   </AlertDialog>
 
                   {/* Access Level */}
+                  <DisabledReason className="w-full" reason={selectedPlayer && !canModerate ? t('permissions.noModerate') : null}>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <button type="button" disabled={!selectedPlayer} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!selectedPlayer || !canModerate} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<Shield className="w-4 h-4" />} label={t('actionTiles.accessLevelLabel')} description={t('actionTiles.accessLevelDesc')} disabled={!selectedPlayer} emphasis="primary" />
                       </button>
                     </DialogTrigger>
@@ -1979,15 +2017,17 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* Teleport — requires PanelBridge; syncs via teleportTo + setNetworkTeleportEnabled.
                       Note: known unreliable in B42 multiplayer; we still surface the dialog so admins can try. */}
+                  <DisabledReason className="w-full" reason={!canGmTools ? t('permissions.noGmTools') : null}>
                   <Dialog open={teleportDialogOpen} onOpenChange={(open) => {
                     setTeleportDialogOpen(open)
                     if (open && !teleportTarget) setTeleportTarget(selectedPlayer)
                   }}>
                     <DialogTrigger asChild>
-                      <button type="button" className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!canGmTools} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<MapPin className="w-4 h-4" />} label={t('actionTiles.teleportLabel')} description={t('actionTiles.teleportDesc')} />
                       </button>
                     </DialogTrigger>
@@ -2081,6 +2121,7 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
                 </div>
                 ) : null}
 
@@ -2093,9 +2134,10 @@ export default function Players() {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {/* Voice Ban */}
+                  <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" title={t('actionTiles.voiceBanTooltip')} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!canModerate} title={t('actionTiles.voiceBanTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<MicOff className="w-4 h-4" />} label={t('actionTiles.voiceBanLabel')} compact />
                       </button>
                     </DialogTrigger>
@@ -2150,11 +2192,13 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* SteamID Ban */}
+                  <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={steamIdBanDialogOpen} onOpenChange={setSteamIdBanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" title={t('actionTiles.steamIdBanTooltip')} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!canModerate} title={t('actionTiles.steamIdBanTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<Ban className="w-4 h-4" />} label={t('actionTiles.steamIdBanLabel')} emphasis="danger" compact />
                       </button>
                     </DialogTrigger>
@@ -2201,11 +2245,13 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* Add User */}
+                  <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" title={t('actionTiles.addUserTooltip')} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!canModerate} title={t('actionTiles.addUserTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label={t('actionTiles.addUserLabel')} compact />
                       </button>
                     </DialogTrigger>
@@ -2251,11 +2297,13 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* Unban */}
+                  <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
                     <DialogTrigger asChild>
-                      <button type="button" title={t('actionTiles.unbanTooltip')} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!canModerate} title={t('actionTiles.unbanTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label={t('actionTiles.unbanLabel')} compact />
                       </button>
                     </DialogTrigger>
@@ -2279,15 +2327,17 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
 
                   {/* Unban SteamID */}
+                  <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={unbanSteamIdDialogOpen} onOpenChange={(open) => {
                     setUnbanSteamIdDialogOpen(open)
                     if (open) fetchBannedSteamIds()
                     else setUnbanSteamId('')
                   }}>
                     <DialogTrigger asChild>
-                      <button type="button" title={t('actionTiles.unbanSteamIdTooltip')} className="block h-auto w-full p-0 text-left">
+                      <button type="button" disabled={!canModerate} title={t('actionTiles.unbanSteamIdTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label={t('actionTiles.unbanSteamIdLabel')} compact />
                       </button>
                     </DialogTrigger>
@@ -2331,16 +2381,18 @@ export default function Players() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </DisabledReason>
                 </div>
                 </div>
               </TabsContent>
               {/* Spawn Tab — Items, Vehicles, XP */}
               <TabsContent value="spawn" className="space-y-3 mt-4">
                 {/* Give Item */}
+                <DisabledReason className="w-full" reason={selectedPlayer && !canGmTools ? t('permissions.noGmTools') : null}>
                 <button
                   type="button"
                   onClick={() => setItemBrowserOpen(true)}
-                  disabled={!selectedPlayer || loading}
+                  disabled={!selectedPlayer || loading || !canGmTools}
                   className={cn(
                     'group w-full rounded-xl border bg-card/50 p-4 text-left',
                     'motion-safe:transition-all duration-150',
@@ -2384,12 +2436,14 @@ export default function Players() {
                     </div>
                   </div>
                 </button>
+                </DisabledReason>
 
                 {/* Spawn Vehicle */}
+                <DisabledReason className="w-full" reason={!canGmTools ? t('permissions.noGmTools') : null}>
                 <button
                   type="button"
                   onClick={() => setVehicleBrowserOpen(true)}
-                  disabled={loading}
+                  disabled={loading || !canGmTools}
                   className={cn(
                     'group w-full rounded-xl border bg-card/50 p-4 text-left',
                     'motion-safe:transition-all duration-150',
@@ -2433,6 +2487,7 @@ export default function Players() {
                     </div>
                   </div>
                 </button>
+                </DisabledReason>
 
                 {/* Give XP */}
                 <div className="rounded-xl border border-border/60 bg-card/50 p-4 transition-colors">
@@ -2478,15 +2533,17 @@ export default function Players() {
                         max={10000}
                       />
                     </div>
+                    <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : null}>
                     <Button
                       onClick={handleAddXp}
-                      disabled={loading || !selectedPlayer || !selectedPerk || !Number.isFinite(xpAmount)}
+                      disabled={loading || !canGmTools || !selectedPlayer || !selectedPerk || !Number.isFinite(xpAmount)}
                       size="sm"
                       className="shrink-0 sm:min-w-[100px]"
                     >
                       <TrendingUp className="w-4 h-4 mr-2" />
                       {t('spawn.giveXpButton')}
                     </Button>
+                    </DisabledReason>
                   </div>
                 </div>
               </TabsContent>
@@ -2514,11 +2571,11 @@ export default function Players() {
                           {selectedPlayerPowers.godMode ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                      <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                         <Button
                           variant={selectedPlayerPowers?.godMode ? 'default' : 'outline'}
                           size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected}
+                          disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeCommand}
                           onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}
                         >
                           {selectedPlayerPowers?.godMode ? t('powers.disable') : t('powers.enable')}
@@ -2544,11 +2601,11 @@ export default function Players() {
                           {selectedPlayerPowers.invisible ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                      <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                         <Button
                           variant={selectedPlayerPowers?.invisible ? 'default' : 'outline'}
                           size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected}
+                          disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeCommand}
                           onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}
                         >
                           {selectedPlayerPowers?.invisible ? t('powers.disable') : t('powers.enable')}
@@ -2574,11 +2631,11 @@ export default function Players() {
                           {selectedPlayerPowers.noclip ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                      <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                         <Button
                           variant={selectedPlayerPowers?.noclip ? 'default' : 'outline'}
                           size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected}
+                          disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeCommand}
                           onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}
                         >
                           {selectedPlayerPowers?.noclip ? t('powers.disable') : t('powers.enable')}
@@ -2598,11 +2655,11 @@ export default function Players() {
                         <p className="text-xs text-muted-foreground">{t('powers.healDesc')}</p>
                       </div>
                     </div>
-                    <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                    <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={!selectedPlayer || loading || !bridgeConnected}
+                        disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeCommand}
                         onClick={handleHealPlayer}
                       >
                         {t('powers.healButton')}
@@ -2735,16 +2792,18 @@ export default function Players() {
                       </div>
                       <div className="flex gap-2">
                         {playerNotes[selectedPlayer] && (
+                          <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setDeleteNoteConfirmOpen(true)}
-                            disabled={savingNote}
+                            disabled={savingNote || !canModerate}
                             className="text-destructive hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4 mr-1" />
                             {t('notes.deleteButton')}
                           </Button>
+                          </DisabledReason>
                         )}
                         <AlertDialog open={deleteNoteConfirmOpen} onOpenChange={setDeleteNoteConfirmOpen}>
                           <AlertDialogContent>
@@ -2767,14 +2826,16 @@ export default function Players() {
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
+                        <DisabledReason reason={!canModerate ? t('permissions.noModerate') : null}>
                         <Button
                           size="sm"
                           onClick={handleSaveNote}
-                          disabled={savingNote || (!currentNote.trim() && currentTags.length === 0)}
+                          disabled={savingNote || !canModerate || (!currentNote.trim() && currentTags.length === 0)}
                         >
                           {savingNote ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
                           {t('notes.saveButton')}
                         </Button>
+                        </DisabledReason>
                       </div>
                     </div>
                   </div>
