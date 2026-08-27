@@ -1468,6 +1468,52 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
   }
 });
 
+// Force Stop is the escape hatch for when the normal Stop has already
+// failed or the server is wedged -- so unlike /stop, /restart and
+// docker.js's own action route (which all fail CLOSED: a failed save
+// blocks the stop entirely), a failed or slow save here must NEVER block
+// the stop, or this stops being an escape hatch and becomes a second way
+// to get stuck. But "must never block" doesn't mean "must never try": the
+// common case is RCON answers fine and the world gets saved anyway, and
+// skipping the attempt outright would throw that away for every operator,
+// not just the genuinely wedged one. Bounded to a few seconds -- shorter
+// than RconService's own 10s per-command timeout (this.commandTimeout in
+// rcon.js), because an operator reaching for Force Stop has already told
+// us something is wrong and a slow save is exactly the symptom, not
+// something worth waiting out to its normal limit.
+const FORCE_STOP_SAVE_TIMEOUT_MS = 3000;
+
+// Attempts a save before a force-stop, bounded and FAIL-OPEN: the caller
+// gets `saveOutcome` ("saved" | "failed" | "timedOut" | "skipped") but the
+// force-stop itself must proceed regardless of what this returns. Applies
+// identically on both the Docker-managed and native branches -- the RCON
+// save doesn't care how the process gets killed afterwards, and giving the
+// two branches different save behaviour would just be a smaller version of
+// the same "one button, two meanings depending on a deployment detail"
+// defect this whole fix exists to remove.
+async function attemptBoundedSaveBeforeForceStop(rconService) {
+  if (!rconService?.connected) return "skipped";
+  try {
+    const saveResult = await Promise.race([
+      rconService.save(),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Force-stop save timed out")),
+          FORCE_STOP_SAVE_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+    return saveResult?.success ? "saved" : "failed";
+  } catch {
+    // Either our own timeout above fired, or -- belt and braces, not an
+    // expected path -- rconService.save() itself rejected (it shouldn't:
+    // execute()'s own try/catch never rethrows). Either way this is the
+    // "did not get a confirmed save in time" outcome, not a real failure
+    // reason to report separately.
+    return "timedOut";
+  }
+}
+
 // Force stop server
 router.post("/force-stop", requirePermission("server.control"), async (req, res) => {
   try {
@@ -1481,21 +1527,25 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
       });
     }
 
+    const rconService = req.app.get("rconService");
+    const saveOutcome = await attemptBoundedSaveBeforeForceStop(rconService);
+    log.info(`POST /force-stop — pre-stop save attempt: ${saveOutcome}`);
+
     // Killing the PID of a containerized server just triggers its restart
     // policy. Docker's stop escalates SIGTERM to SIGKILL on its own and, unlike
     // a process kill, keeps the container down afterwards.
     const managed = await runManagedLifecycle("stop");
     if (managed.handled && !managed.success) {
-      return res.status(502).json({ error: sanitizeError(managed.error) });
+      return res
+        .status(502)
+        .json({ error: sanitizeError(managed.error), saveOutcome });
     }
 
     const serverManager = req.app.get("serverManager");
     const result = managed.handled
       ? {
           success: true,
-          message:
-            managed.message ||
-            "Container stopped. Docker ran the container's own shutdown handler before killing it.",
+          message: managed.message || "Container stopped.",
         }
       : await serverManager.stopServer(false);
 
@@ -1504,6 +1554,7 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
         ...result,
         success: false,
         error: result?.error || result?.message || "Force stop failed",
+        saveOutcome,
       });
     }
 
@@ -1512,7 +1563,7 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
     const io = req.app.get("io");
     if (io) io.emit("server:status", { running: false });
 
-    res.json(result);
+    res.json({ ...result, saveOutcome });
   } catch (error) {
     log.error(`Failed to force stop server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
