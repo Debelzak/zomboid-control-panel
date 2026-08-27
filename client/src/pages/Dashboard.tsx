@@ -1580,13 +1580,30 @@ export default function Dashboard() {
                   {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
                   {t('maintenance.createBackup')}
                 </Button>
-                <DisabledReason className="w-full" reason={online ? t('maintenance.wipeTooltipOnline') : null}>
+                <DisabledReason
+                  className="w-full"
+                  reason={
+                    // Same priority order and same Radix onClick-before-disabled
+                    // guard as the "..." dropdown's Wipe item -- this sidebar
+                    // button opens the identical destructive dialog and was
+                    // missing both, which let a role without server.wipe
+                    // open the wipe dialog only to strand on unexplained
+                    // disabled Preview/Wipe Now buttons inside it.
+                    !canWipeServer ? t('actions.noPermissionWipe')
+                    : online ? t('maintenance.wipeTooltipOnline')
+                    : null
+                  }
+                >
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 w-full justify-start gap-2 text-xs text-destructive hover:text-destructive"
-                    disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
-                    onClick={() => { setWipePreview(null); setWipeDialog(true) }}
+                    disabled={!hasServer || online || loading !== null || activeServer?.isRemote || !canWipeServer}
+                    onClick={() => {
+                      if (!canWipeServer) return
+                      setWipePreview(null)
+                      setWipeDialog(true)
+                    }}
                     title={online ? undefined : t('maintenance.wipeTooltipOffline')}
                   >
                     <Trash2 className="h-3 w-3" />

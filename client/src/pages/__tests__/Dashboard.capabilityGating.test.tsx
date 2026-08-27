@@ -393,4 +393,68 @@ describe('Dashboard.tsx: Wipe is gated on server.wipe, independently of server.c
 
     await waitFor(() => expect(wipe).toHaveBeenCalledTimes(1))
   })
+
+  // bug-hunt-2026-08-27, stock-role hunt: this sidebar Maintenance-panel
+  // button opens the exact same wipe dialog as the "..." dropdown item
+  // above, but was missing canWipeServer entirely -- neither disabled nor
+  // onClick-guarded -- so a role without server.wipe (both stock
+  // TECHNICIAN and MODERATOR) could open the destructive dialog and only
+  // hit unexplained disabled Preview/Wipe Now buttons inside it. Found by
+  // an independent capability-gate audit, not by a user report.
+  it('lacking server.wipe: the sidebar Maintenance Wipe Server button is disabled and never opens the dialog', async () => {
+    mockCanControl = true
+    mockCanWipe = false
+    await setUpCommon()
+    // Offline, not setUpOnlineServer() -- the button is already disabled
+    // while online for an unrelated reason (must stop first), which would
+    // mask whether canWipeServer is doing anything. An earlier draft of
+    // this test used the online fixture and stayed green even with the
+    // capability check removed entirely from the disabled prop -- caught
+    // by break-verify, fixed by isolating the actual condition under test.
+    const offline = makeServer()
+    getResolvedActive.mockResolvedValue({ server: offline })
+    getStatus.mockResolvedValue({
+      running: false, startTime: null, uptime: 0, serverPath: 'C:/servers/ashenwood',
+      configured: true, rcon: { host: '', port: 0, connected: false },
+    } as Awaited<ReturnType<typeof serverApi.getStatus>>)
+
+    renderDashboard()
+
+    const wipeButton = await screen.findByRole('button', { name: /wipe server/i })
+    expect(wipeButton).toBeDisabled()
+
+    fireEvent.click(wipeButton)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(wipePreview).not.toHaveBeenCalled()
+    expect(wipe).not.toHaveBeenCalled()
+  })
+
+  it('holding server.wipe: the sidebar Maintenance Wipe Server button opens the dialog and reaches the real wipe API end to end', async () => {
+    mockCanControl = true
+    mockCanWipe = true
+    await setUpCommon()
+    const offline = makeServer()
+    getResolvedActive.mockResolvedValue({ server: offline })
+    getStatus.mockResolvedValue({
+      running: false, startTime: null, uptime: 0, serverPath: 'C:/servers/ashenwood',
+      configured: true, rcon: { host: '', port: 0, connected: false },
+    } as Awaited<ReturnType<typeof serverApi.getStatus>>)
+    wipePreview.mockResolvedValue({ totalFiles: 5, totalSize: 1024, preview: {} })
+    wipe.mockResolvedValue({ success: true, backupCreated: false, backupName: null })
+
+    renderDashboard()
+
+    const wipeButton = await screen.findByRole('button', { name: /wipe server/i })
+    expect(wipeButton).not.toBeDisabled()
+
+    fireEvent.click(wipeButton)
+    const dialog = await screen.findByRole('alertdialog')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /^preview$/i }))
+    const wipeNowButton = await within(dialog).findByRole('button', { name: /wipe now/i })
+    expect(wipeNowButton).not.toBeDisabled()
+    fireEvent.click(wipeNowButton)
+
+    await waitFor(() => expect(wipe).toHaveBeenCalledTimes(1))
+  })
 })
