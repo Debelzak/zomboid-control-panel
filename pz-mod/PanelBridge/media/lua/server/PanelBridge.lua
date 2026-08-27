@@ -1,10 +1,18 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.38
+    Version: 1.7.39
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.39 Changes:
+                - getServerInfo now sends isAlive, isInfected and accessLevel
+                    per player. Previously absent from the wire entirely (not
+                    conditional) -- the panel rendered "alive, uninfected,
+                    non-admin" for every player regardless of actual state.
+                    Client gates these three fields on this bridge version so
+                    an older bridge is never misread as confidently-wrong data.
 
                 v1.7.38 Changes:
                 - Bundled with panel v1.1.54. No bridge protocol changes.
@@ -368,7 +376,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.38",
+    VERSION = "1.7.39",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -1818,16 +1826,21 @@ handlers.getServerInfo = function(args)
                 -- Wrap each player in pcall so one bad player doesn't break the whole list
                 local ok, playerData = pcall(function()
                     local health = 100
+                    local isInfected = false
                     local bodyDamage = player:getBodyDamage()
                     if bodyDamage then
                         health = bodyDamage:getOverallBodyHealth() or 100
+                        isInfected = bodyDamage:IsInfected() or false
                     end
                     return {
                         name = player:getUsername() or "Unknown",
                         x = math.floor(player:getX() or 0),
                         y = math.floor(player:getY() or 0),
                         z = math.floor(player:getZ() or 0),
-                        health = health
+                        health = health,
+                        isAlive = player:isAlive(),
+                        isInfected = isInfected,
+                        accessLevel = player:getAccessLevel() or ""
                     }
                 end)
                 if ok and playerData then
