@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import Mods from '../Mods'
 import { modsApi, serversApi, ApiError } from '@/lib/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ConfirmProvider } from '@/contexts/ConfirmContext'
 
 // bug-hunt-2026-08-27: mods.js gates every route (including reads) behind
 // mods.manage via a whole-file router.use, except GET /thumbnail/:workshopId
@@ -62,6 +63,7 @@ vi.mock('@/lib/api', async () => {
       saveModOrder: vi.fn(),
       checkUpdates: vi.fn(),
       syncFromServer: vi.fn(),
+      batchRemove: vi.fn(),
     },
     serversApi: {
       ...actual.serversApi,
@@ -94,6 +96,22 @@ function renderMods() {
     <MemoryRouter>
       <TooltipProvider>
         <Mods />
+      </TooltipProvider>
+    </MemoryRouter>
+  )
+}
+
+// ConfirmContext's own default (no Provider) always resolves false -- fine
+// for every other test in this file (none of them need the confirm step to
+// actually succeed), but the deactivated-tab delete flow's granted-case
+// test below needs a real confirm dialog to click through.
+function renderModsWithConfirm() {
+  return render(
+    <MemoryRouter>
+      <TooltipProvider>
+        <ConfirmProvider>
+          <Mods />
+        </ConfirmProvider>
       </TooltipProvider>
     </MemoryRouter>
   )
@@ -345,5 +363,69 @@ describe('Mods.tsx: a real 403 on every mount-time fetch shows a permission-deni
 
     await waitFor(() => expect(screen.queryByText(/temporarily unavailable/i)).toBeInTheDocument())
     expect(screen.queryByText("You can't view mods")).not.toBeInTheDocument()
+  })
+})
+
+// bug-hunt-2026-08-27 (Angela's stock-role hunt, second finding on this
+// page): the Deactivated tab's "Delete Selected/All" tracking-cleanup
+// button had NO capability check at all -- no disabled state, no
+// tooltip -- and handleBulkRemove's own guard (`if (... || !canManageMods)
+// return`) is a SILENT no-op with no toast, no error, nothing. A role
+// lacking mods.manage that reached it (moderator can't today, only
+// because the whole page now fails to load first per the empty-state fix
+// above -- this is a real, independent defect, not exposed by that fix
+// but not created by it either) would click confirm and see nothing
+// happen, with no indication why. Missed in the original mods.manage
+// gating pass; this is that pass's one gap.
+describe('Mods.tsx: Deactivated tab "Delete All" tracking-cleanup gates on mods.manage', () => {
+  async function primeDeactivatedFixture() {
+    getTrackedMods.mockResolvedValue({ mods: [{ workshop_id: '999', name: 'Deactivated Mod', last_checked: '2026-01-01' }] } as any)
+    getStatus.mockResolvedValue({ totalModsTracked: 1, workshopAcfConfigured: true, autoRestartEnabled: false } as any)
+    getCurrentConfig.mockResolvedValue({ configured: true, modIds: [], workshopIds: [], maps: [], totalMods: 0 } as any)
+    getIgnoredMods.mockResolvedValue([] as any)
+    getIgnoredModPairs.mockResolvedValue([] as any)
+    collectionDiff.mockResolvedValue({ ok: true, collectionId: null, toAdd: [], toRemove: [], autoSync: false } as any)
+    getPresets.mockResolvedValue([] as any)
+    getCachedConflicts.mockResolvedValue(null as any)
+    listDiskOnly.mockResolvedValue({ mods: [] } as any)
+    getActive.mockResolvedValue({ server: { id: 1, installPath: 'C:\\server', isRemote: false } } as any)
+  }
+
+  async function openDeactivatedTrackingCleanup() {
+    fireEvent.click(await screen.findByRole('button', { name: /deactivated/i }))
+    fireEvent.click(await screen.findByText('Tracking cleanup'))
+    return screen.findByRole('button', { name: /delete all/i })
+  }
+
+  it('disables "Delete All" and never calls batchRemove when mods.manage is denied', async () => {
+    mockCan = (cap) => cap !== 'mods.manage'
+    await primeDeactivatedFixture()
+    renderMods()
+    await waitForLoaded()
+
+    const deleteAllBtn = await openDeactivatedTrackingCleanup()
+    expect(deleteAllBtn).toBeDisabled()
+    fireEvent.click(deleteAllBtn)
+    await new Promise((r) => setTimeout(r, 0))
+
+    const batchRemove = vi.mocked(modsApi.batchRemove)
+    expect(batchRemove).not.toHaveBeenCalled()
+  })
+
+  it('reaches batchRemove when mods.manage is granted (click through the real confirm dialog)', async () => {
+    mockCan = () => true
+    await primeDeactivatedFixture()
+    const batchRemove = vi.mocked(modsApi.batchRemove)
+    batchRemove.mockResolvedValue({ success: true, total: 1, dbRemoved: 1, dbFailed: 0, iniRemoved: 1 } as any)
+    renderModsWithConfirm()
+    await waitForLoaded()
+
+    const deleteAllBtn = await openDeactivatedTrackingCleanup()
+    expect(deleteAllBtn).not.toBeDisabled()
+    fireEvent.click(deleteAllBtn)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(batchRemove).toHaveBeenCalledWith(['999']))
   })
 })

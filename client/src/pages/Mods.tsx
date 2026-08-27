@@ -5573,12 +5573,14 @@ export default function Mods() {
                               <p className="text-[11px] leading-4 text-muted-foreground">
                                 {t('deactivatedTab.deleteHint')}
                               </p>
+                              <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null}>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 className="self-start sm:self-auto"
-                                disabled={loading || (deactivatedIds.length === 0)}
+                                disabled={loading || (deactivatedIds.length === 0) || !canManageMods}
                                 onClick={async () => {
+                                  if (!canManageMods) return
                                   const ids = someSelected ? selectedDeactivated : deactivatedIds
                                   const label = someSelected
                                     ? t(ids.length === 1 ? 'deactivatedTab.deleteSelectedConfirm_one' : 'deactivatedTab.deleteSelectedConfirm_other', { count: ids.length })
@@ -5596,6 +5598,7 @@ export default function Mods() {
                                 <Trash2 className="w-4 h-4 mr-1.5" />
                                 {someSelected ? t('deactivatedTab.deleteSelected', { count: selectedDeactivated.length }) : t('deactivatedTab.deleteAll', { count: deactivatedIds.length })}
                               </Button>
+                              </DisabledReason>
                             </div>
                           </details>
                           {missingNameCount > 0 && (
