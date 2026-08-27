@@ -1040,17 +1040,18 @@ export default function Dashboard() {
           {/* primary controls — right-aligned */}
           <div className="order-2 ml-auto flex flex-wrap justify-end gap-1">
           {!online ? (
-            <Button
-              onClick={() => handleAction('Start server', serverApi.start)}
-              disabled={!hasServer || hostUnknown || loading !== null || activeServer?.isRemote}
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 rounded-md border border-emerald-500/30 px-2.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:border-border/50 disabled:text-muted-foreground"
-              title={!hasServer ? t('actions.addServerFirst') : activeServer?.isRemote ? t('actions.notAvailableRemote') : undefined}
-            >
-              {loading === 'Start server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-              {t('actions.start')}
-            </Button>
+            <DisabledReason reason={!hasServer ? t('actions.addServerFirst') : activeServer?.isRemote ? t('actions.notAvailableRemote') : null}>
+              <Button
+                onClick={() => handleAction('Start server', serverApi.start)}
+                disabled={!hasServer || hostUnknown || loading !== null || activeServer?.isRemote}
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-md border border-emerald-500/30 px-2.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:border-border/50 disabled:text-muted-foreground"
+              >
+                {loading === 'Start server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                {t('actions.start')}
+              </Button>
+            </DisabledReason>
           ) : (
             <>
               <Button
@@ -1075,39 +1076,42 @@ export default function Dashboard() {
                 {loading === 'Stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
                 {t('actions.stop')}
               </Button>
-              <Button
-                onClick={() => setConfirmAction({
-                  actionId: 'Force stop server',
-                  title: t('confirm.forceStopServer.title'),
-                  description: t('confirm.forceStopServer.description') + (players.length > 0 ? t('confirm.forceStopServer.descriptionPlayers', { count: players.length }) : ''),
-                  action: serverApi.forceStop,
-                  variant: 'destructive',
-                })}
-                disabled={loading !== null || !hostRunning || activeServer?.isRemote}
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1.5 rounded-md border border-red-500/30 px-2.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:border-border/50 disabled:text-muted-foreground"
-                title={activeServer?.isRemote ? t('actions.notAvailableRemote') : t('actions.forceStopTooltip')}
-              >
-                {loading === 'Force stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Skull className="h-3.5 w-3.5" />}
-                {t('actions.forceStop')}
-              </Button>
-              <Button
-                onClick={() => setConfirmAction({
-                  actionId: 'Restart server',
-                  title: t('confirm.restartServer.title'),
-                  description: t('confirm.restartServer.description'),
-                  action: () => serverApi.restart(5),
-                  variant: 'warning',
-                })}
-                disabled={loading !== null || !hostRunning || activeServer?.isRemote}
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1.5 rounded-md border border-amber-500/30 px-2.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 disabled:border-border/50 disabled:text-muted-foreground"
-                title={activeServer?.isRemote ? t('actions.notAvailableRemote') : undefined}
-              >
-                <RotateCcw className="h-3.5 w-3.5" /> {t('actions.restart')}
-              </Button>
+              <DisabledReason reason={activeServer?.isRemote ? t('actions.notAvailableRemote') : null}>
+                <Button
+                  onClick={() => setConfirmAction({
+                    actionId: 'Force stop server',
+                    title: t('confirm.forceStopServer.title'),
+                    description: t('confirm.forceStopServer.description') + (players.length > 0 ? t('confirm.forceStopServer.descriptionPlayers', { count: players.length }) : ''),
+                    action: serverApi.forceStop,
+                    variant: 'destructive',
+                  })}
+                  disabled={loading !== null || !hostRunning || activeServer?.isRemote}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 rounded-md border border-red-500/30 px-2.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:border-border/50 disabled:text-muted-foreground"
+                  title={activeServer?.isRemote ? undefined : t('actions.forceStopTooltip')}
+                >
+                  {loading === 'Force stop server' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Skull className="h-3.5 w-3.5" />}
+                  {t('actions.forceStop')}
+                </Button>
+              </DisabledReason>
+              <DisabledReason reason={activeServer?.isRemote ? t('actions.notAvailableRemote') : null}>
+                <Button
+                  onClick={() => setConfirmAction({
+                    actionId: 'Restart server',
+                    title: t('confirm.restartServer.title'),
+                    description: t('confirm.restartServer.description'),
+                    action: () => serverApi.restart(5),
+                    variant: 'warning',
+                  })}
+                  disabled={loading !== null || !hostRunning || activeServer?.isRemote}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 rounded-md border border-amber-500/30 px-2.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 disabled:border-border/50 disabled:text-muted-foreground"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> {t('actions.restart')}
+                </Button>
+              </DisabledReason>
               <Button
                 onClick={() => handleAction('Save world', serverApi.save)}
                 disabled={loading !== null || !rconConnected}
@@ -1498,17 +1502,19 @@ export default function Dashboard() {
                   {loading === 'Create backup' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
                   {t('maintenance.createBackup')}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full justify-start gap-2 text-xs text-destructive hover:text-destructive"
-                  disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
-                  onClick={() => { setWipePreview(null); setWipeDialog(true) }}
-                  title={online ? t('maintenance.wipeTooltipOnline') : t('maintenance.wipeTooltipOffline')}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  {t('maintenance.wipeServer')}
-                </Button>
+                <DisabledReason className="w-full" reason={online ? t('maintenance.wipeTooltipOnline') : null}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 w-full justify-start gap-2 text-xs text-destructive hover:text-destructive"
+                    disabled={!hasServer || online || loading !== null || activeServer?.isRemote}
+                    onClick={() => { setWipePreview(null); setWipeDialog(true) }}
+                    title={online ? undefined : t('maintenance.wipeTooltipOffline')}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {t('maintenance.wipeServer')}
+                  </Button>
+                </DisabledReason>
                 <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-border/30 px-1 pt-2">
                   <Checkbox
                     id="autoStartServer"
