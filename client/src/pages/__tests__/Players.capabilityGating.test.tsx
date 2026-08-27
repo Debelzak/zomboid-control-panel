@@ -150,6 +150,18 @@ async function selectTestPlayer() {
   await waitFor(() => expect(screen.getAllByText('TestPlayer').length).toBeGreaterThan(1), { timeout: 3000 })
 }
 
+// Radix's DropdownMenuTrigger opens on pointerdown, not click (same quirk
+// family as TabsTrigger switching on mousedown) -- a plain fireEvent.click
+// never dispatches pointerdown, so the menu never opens and a query against
+// its content sits at the suite's timeout instead of failing fast. Per
+// Dashboard.capabilityGating.test.tsx's openMoreActionsMenu precedent.
+async function openMoreActionsMenu() {
+  const trigger = await screen.findByRole('button', { name: 'More player actions' })
+  fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 })
+  fireEvent.click(trigger)
+  return screen.findByRole('menu')
+}
+
 describe('Players.tsx: capability gating', () => {
   it('disables every gated trigger, and clicking any of them never calls the API, when the role holds none of the three capabilities', async () => {
     mockCan = () => false
@@ -350,5 +362,37 @@ describe('Players.tsx: capability gating', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Heal' })).toBeInTheDocument(), { timeout: 3000 })
     screen.getAllByRole('button', { name: 'Enable' }).forEach(b => expect(b).toBeDisabled())
     expect(screen.getByRole('button', { name: 'Heal' })).toBeDisabled()
+  })
+
+  // bug-hunt-2026-08-27: Radix's DropdownMenuItem composes the caller's
+  // onClick with its own select handler and runs it UNCONDITIONALLY --
+  // the internal disabled check only guards Radix's own side effect, never
+  // the onClick prop. All six capability-gated items in the dossier "..."
+  // menu now carry an explicit `if (!canX) return` as the first line of
+  // their onClick body. This closes the residual gap from the earlier
+  // report: the menu opens correctly with fireEvent.pointerDown (Radix
+  // opens DropdownMenuTrigger on pointerdown, not click), so this exercises
+  // the guard THROUGH THE UI, not just as a direct function assertion.
+  it('the dossier "..." menu\'s six gated items never call their API when clicked, even though Radix runs onClick regardless of disabled', async () => {
+    mockCan = () => false
+    await setUpFixtures()
+    renderPlayers()
+    await selectTestPlayer()
+
+    await openMoreActionsMenu()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Enable God Mode' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Enable Invisible' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Enable Noclip' }))
+    expect(sendCommand).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add to Whitelist' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Whitelist' }))
+    expect(removeFromWhitelist).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Import/Export Character' }))
+    expect(screen.queryByText('Export Character')).not.toBeInTheDocument()
   })
 })
