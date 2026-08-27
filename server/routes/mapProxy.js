@@ -224,16 +224,29 @@ const B42_DIR_RETRY_MS = 5 * 60 * 1000; // ...but retry a failed resolve sooner
 // own base/map_info.json (skip:0 => scale 1<<0 = 1). Note x0 and scale both
 // differ from 42.19.0's, so the directory cannot be bumped on its own without
 // putting every player marker in the wrong place.
+// DELIBERATE EXCEPTION to the conservative maxLevel-6 floor (see
+// conservativeRenderedMaxLevel below, and its own comment) — this is NOT a
+// fourth call site of that rule, it's a verified override of it. The
+// fallback directory is 42.20.0, and the same inhabited-area probes used
+// by discovery resolve through level 22 -- confirmed when this was set
+// (df75b9a, 2026-08-24, replacing what used to be conservativeRenderedMaxLevel-
+// shaped: renderedMaxLevel: 16) and covered by mapProxyRenderedMaxLevel.
+// test.js's "keeps the verified fallback ceiling when curl itself is
+// unavailable" test. Keep the full DZI ceiling available when build
+// discovery is temporarily blocked; individual sparse/edge 404s still use
+// WorldMap's coarser-tile fallback. If this ever needs to revert to the
+// conservative floor, that's a real behaviour change (losing verified zoom
+// depth on a known-good build), not a mechanical unification -- don't fold
+// it into conservativeRenderedMaxLevel() without re-verifying live
+// coverage first.
+const B42_GEOMETRY_FALLBACK_VERIFIED_RENDERED_MAX_LEVEL = 22;
+
 const B42_GEOMETRY_FALLBACK = {
   tileSize: 2048,
   width: 2318656,
   height: 1019040,
   maxLevel: 22,
-  // The fallback directory is 42.20.0, and the same inhabited-area probes
-  // used by discovery resolve through level 22. Keep the full DZI ceiling
-  // available when build discovery is temporarily blocked. Individual
-  // sparse/edge 404s still use WorldMap's coarser-tile fallback.
-  renderedMaxLevel: 22,
+  renderedMaxLevel: B42_GEOMETRY_FALLBACK_VERIFIED_RENDERED_MAX_LEVEL,
   x0: 1040384,
   y0: -139296,
   sqr: 128,
@@ -344,6 +357,25 @@ let _b42ResolvePromise = null;
 let _b42Source = null; // "dynamic" | "fallback" — contract fixed in conv-mapbuild, shared with getB42ResolutionStatus()'s consumers
 let _b42FallbackReason = null; // why we're not on "dynamic", or null when the last resolution attempt succeeded
 
+// Same known-safe conservative floor as the client's own
+// conservativeRenderedMaxLevel() (client/src/pages/worldMapTileFallback.ts)
+// — duplicated here rather than shared as one module because client and
+// server are separate build targets (Vite-bundled React vs. this plain
+// Node route file). Single source of truth ON THIS SIDE of that boundary:
+// every server-side "deepest level probably safe to trust before real
+// discovery confirms otherwise" computation goes through this one
+// constant/function rather than repeating the literal `- 6` inline, so a
+// future change to the offset can't silently miss a site (bug-hunt-
+// 2026-08-27, the-maxlevel-minus-6-floor-is-one-rule-on-the-client-and-
+// four-literals-on-the-server card — this collapses three of those four
+// into one; the fourth, B42_GEOMETRY_FALLBACK below, is a DELIBERATE
+// exception to this rule, not a fourth call site of it — see its own
+// comment for why).
+const RENDERED_MAX_LEVEL_CONSERVATIVE_OFFSET = 6;
+function conservativeRenderedMaxLevel(maxLevel) {
+  return Math.max(0, maxLevel - RENDERED_MAX_LEVEL_CONSERVATIVE_OFFSET);
+}
+
 // A HEAD probe against a tile BYTE path, not a JSON/XML descriptor — this is
 // the one discovery request that's fine on plain Node fetch (see the
 // perf-regression note on CURL_DISCOVERY_UA above): tile bytes aren't behind
@@ -379,7 +411,7 @@ async function hasTileCoverage(directory, geometry) {
   return probeLevelHasCoverage(
     directory,
     geometry,
-    Math.max(0, geometry.maxLevel - 6),
+    conservativeRenderedMaxLevel(geometry.maxLevel),
   );
 }
 
@@ -400,7 +432,7 @@ async function hasTileCoverage(directory, geometry) {
 // resolves at, and report that as the depth a client should actually be
 // allowed to zoom to.
 async function discoverRenderedMaxLevel(directory, geometry) {
-  const floor = Math.max(0, geometry.maxLevel - 6);
+  const floor = conservativeRenderedMaxLevel(geometry.maxLevel);
   let lo = floor; // known covered — hasTileCoverage just confirmed it
   let hi = geometry.maxLevel;
   while (lo < hi) {
@@ -810,7 +842,7 @@ router.get("/resolve", async (req, res) => {
     // known-safe floor discoverRenderedMaxLevel's own search starts from —
     // NOT map.maxLevel, which is exactly the inflated, never-actually-
     // rendered ceiling this whole fix exists to stop trusting.
-    renderedMaxLevel: map.renderedMaxLevel ?? Math.max(0, map.maxLevel - 6),
+    renderedMaxLevel: map.renderedMaxLevel ?? conservativeRenderedMaxLevel(map.maxLevel),
     x0: map.x0,
     y0: map.y0,
     sqr: map.sqr,
