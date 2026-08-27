@@ -75,7 +75,7 @@ import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 import { bridgeSupportsPlayerStatus } from './worldMapBridgeVersion'
-import { diagnoseTileFailure } from './worldMapTileFailureDiagnosis'
+import { diagnoseTileFailure, tileFailureCopyKeys, type TileFailureDiagnosis } from './worldMapTileFailureDiagnosis'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
 
@@ -946,12 +946,14 @@ export default function WorldMap() {
   const [tileLoadFailing, setTileLoadFailing] = useState(false)
   const [tileFailureKind, setTileFailureKind] = useState<'network' | 'coverage'>('network')
   const tileCoverageFailRef = useRef(0)
-  // Sticky once true for the current failure episode (reset alongside
-  // tileCoverageFailRef on recovery, below) -- a positive gzip-magic-number
-  // identification on ANY failing tile is worth surfacing even if it wasn't
-  // the very first tile to fail, unlike tileFailureDetail's first-failure-
-  // only gate. See worldMapTileFailureDiagnosis.ts.
-  const [tileGzipConfirmed, setTileGzipConfirmed] = useState(false)
+  // The byte-level diagnosis of the most recent coverage-classified failure
+  // (gated the same way as tileFailureDetail below: first failure of a
+  // fresh episode). When present it fully replaces the generic coverage
+  // hedge in the banner -- see worldMapTileFailureDiagnosis.ts and
+  // tileFailureCopyKeys for what each signature means and why an
+  // unrecognised one still gets its own honest message instead of being
+  // rounded into a guess.
+  const [tileByteDiagnosis, setTileByteDiagnosis] = useState<TileFailureDiagnosis | null>(null)
   // The raw diagnostic code behind the most recent tile failure -- surfaced
   // in the banner itself so a report carries its own diagnosis (the X-Tile-
   // Cache header this reads was already on every tile response; nothing
@@ -976,7 +978,7 @@ export default function WorldMap() {
     const markFailed = (
       reason: 'network' | 'coverage' = 'network',
       detail: string = 'no-header',
-      gzipConfirmed: boolean = false,
+      diagnosis: TileFailureDiagnosis | null = null,
     ) => {
       if (floorRef.current !== f) return
       // Drop the pending entry so the per-tile backoff guard above is what
@@ -986,11 +988,6 @@ export default function WorldMap() {
       const count = (prev?.count ?? 0) + 1
       const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
       tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
-      // A positive gzip-magic-number identification is worth surfacing
-      // whichever tile it shows up on, not gated to the first failure of a
-      // batch like the counters below -- it's a definitive diagnosis, not
-      // an illustrative sample.
-      if (gzipConfirmed) setTileGzipConfirmed(true)
       // Surface a user-visible warning if many distinct tiles are failing.
       if (count === 1) {
         // Last-write-wins across whichever tile fails FIRST most recently --
@@ -999,6 +996,7 @@ export default function WorldMap() {
         // just below (first failure of a given tile only) to avoid a
         // re-render on every backoff retry of an already-known-failing tile.
         setTileFailureDetail(detail)
+        setTileByteDiagnosis(diagnosis)
         tileFailureCountRef.current++
         if (reason === 'coverage') tileCoverageFailRef.current++
         if (tileFailureCountRef.current >= 6) {
@@ -1024,7 +1022,7 @@ export default function WorldMap() {
             tileCoverageFailRef.current = 0
             setTileLoadFailing(false)
             setTileFailureDetail(null)
-            setTileGzipConfirmed(false)
+            setTileByteDiagnosis(null)
           }
         }
       }
@@ -1108,22 +1106,16 @@ export default function WorldMap() {
             // If they came from our own cache (hit-mem/hit-disk), the
             // corruption is local and upstream had no part in it.
             //
-            // Two cheap checks on the blob itself -- already fully in memory,
-            // no extra request, no operator devtools relay -- turn this from
-            // a hedge into either a positive identification or a size proof.
-            // See worldMapTileFailureDiagnosis.ts.
-            blob.slice(0, 2).arrayBuffer()
+            // Classifying the blob's own bytes -- already fully in memory,
+            // no extra request, no operator devtools relay -- turns this
+            // from a hedge into a positive identification of what the
+            // response actually was, or an honest "unrecognized, here are
+            // the bytes" when it's neither our nor the operator's most
+            // likely guess. See worldMapTileFailureDiagnosis.ts.
+            blob.slice(0, 4).arrayBuffer()
               .then((buf) => {
-                const bytes = new Uint8Array(buf)
-                const firstTwo: readonly [number, number] | null =
-                  bytes.length === 2 ? [bytes[0], bytes[1]] : null
-                const diagnosis = diagnoseTileFailure(firstTwo, blob.size, contentLengthHeader)
-                const detail = diagnosis.looksLikeStillGzipped
-                  ? 'still-gzipped'
-                  : diagnosis.looksLikeTruncated
-                    ? `truncated: received ${diagnosis.receivedBytes} of ${diagnosis.expectedBytes} bytes`
-                    : cacheTierRaw ?? 'no-header'
-                markFailed(upstreamParticipated ? 'coverage' : 'network', detail, diagnosis.looksLikeStillGzipped)
+                const diagnosis = diagnoseTileFailure(new Uint8Array(buf), blob.size, contentLengthHeader)
+                markFailed(upstreamParticipated ? 'coverage' : 'network', cacheTierRaw ?? 'no-header', diagnosis)
               })
               .catch(() => {
                 // Reading the blob's own already-in-memory bytes failed --
@@ -2851,15 +2843,21 @@ export default function WorldMap() {
                 <span className="text-warning/70">{t('tileFailure.tilesOffline')}</span>
               </div>
               <div className="px-3 py-2 text-xs leading-snug">
-                {tileGzipConfirmed ? (
-                  // A confirmed positive identification, not a hedge: the
-                  // received bytes start with the gzip magic number, so the
-                  // browser was handed a still-compressed body instead of a
-                  // decompressed image. See worldMapTileFailureDiagnosis.ts.
-                  <>
-                    <div className="font-semibold text-foreground">{t('tileFailure.gzipDetectedTitle')}</div>
-                    <div className="text-muted-foreground mt-0.5">{t('tileFailure.gzipDetectedDesc')}</div>
-                  </>
+                {tileByteDiagnosis ? (
+                  // Bytes already in hand were classified directly instead
+                  // of guessed at -- a recognised signature earns a
+                  // specific, paste-able statement; an unrecognised one
+                  // says so plainly with the raw bytes rather than being
+                  // forced into a guess. See tileFailureCopyKeys.
+                  (() => {
+                    const keys = tileFailureCopyKeys(tileByteDiagnosis)
+                    return (
+                      <>
+                        <div className="font-semibold text-foreground">{t(keys.titleKey)}</div>
+                        <div className="text-muted-foreground mt-0.5">{t(keys.descKey, keys.descParams)}</div>
+                      </>
+                    )
+                  })()
                 ) : tileFailureKind === 'coverage' ? (
                   <>
                     <div className="font-semibold text-foreground">{t('tileFailure.coverageTitle')}</div>
@@ -2883,15 +2881,16 @@ export default function WorldMap() {
                     </div>
                   </>
                 )}
-                {tileFailureDetail && !tileGzipConfirmed && (
-                  // The raw diagnostic code behind the most recent failure --
-                  // the X-Tile-Cache header value (hit-mem/hit-disk/miss/
-                  // http-<status>/unreachable), or a byte-count truncation
-                  // report when Content-Length disagreed with what arrived.
-                  // Shown as-is (not translated) so a screenshot carries the
-                  // same fact a devtools Network tab would have shown.
-                  // Suppressed when the gzip banner above is already showing
-                  // a more specific, translated statement of the same idea.
+                {tileFailureDetail && !tileByteDiagnosis && (
+                  // The raw X-Tile-Cache diagnostic code (hit-mem/hit-disk/
+                  // miss/http-<status>/unreachable) for network-classified
+                  // failures, which never go through the byte-level
+                  // classification above (no blob to inspect for those --
+                  // see loadViaProxy's .catch() branch). Shown as-is (not
+                  // translated) so a screenshot carries the same fact a
+                  // devtools Network tab would have shown. Suppressed
+                  // whenever the byte diagnosis above is already showing a
+                  // more specific, translated statement of the same idea.
                   <div className="mt-1 pt-1 border-t border-warning/20 font-mono text-[10px] text-muted-foreground/70">
                     {t('tileFailure.diagnostic', { detail: tileFailureDetail })}
                   </div>
