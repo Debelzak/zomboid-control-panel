@@ -22,6 +22,7 @@ import {
   writeIniWithBackup,
 } from "../utils/configBackup.js";
 import { escapeRegExp } from "../utils/regex.js";
+import { findDuplicateIniKeys } from "../utils/iniDuplicateKeys.js";
 import { confineToRoots } from "../utils/browseRoots.js";
 import {
   SFTP_CONFIG_PATH_KEY,
@@ -1181,13 +1182,27 @@ router.get("/ini", async (req, res) => {
     const content = fs.readFileSync(filePath, "utf-8");
     const parsed = parseIni(content);
 
+    // A key appearing more than once means `settings` below silently holds
+    // whichever occurrence parseIni()'s last-write-wins loop landed on --
+    // not necessarily the one the operator thinks they're editing, and not
+    // necessarily the one mods.js's own (first-occurrence) reads/writes
+    // agree with. Reported, not blocked: the file is still readable, and
+    // refusing to load it would lock the operator out of the only tool
+    // that could help them fix it. See utils/iniDuplicateKeys.js.
+    const duplicateKeys = findDuplicateIniKeys(content);
+
     // This is the LIVE config, unlike a template snapshot -- mask rather
     // than omit, since the structured editor's PUT /ini round-trips this
     // same object back and toIni() only preserves a key's original line
     // when the key is ABSENT from the submitted settings, not when it's
     // present-but-blank. Omitting here would make every unrelated field
     // edit look like "delete the RCON password" once it reached PUT.
-    res.json({ settings: maskSensitiveObject(parsed), path: filePath, serverName });
+    res.json({
+      settings: maskSensitiveObject(parsed),
+      path: filePath,
+      serverName,
+      duplicateKeys,
+    });
   } catch (error) {
     log.error("Failed to read INI:", error);
     res.status(500).json({ error: sanitizeError(error.message) });

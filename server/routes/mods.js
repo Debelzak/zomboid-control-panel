@@ -54,6 +54,7 @@ import { requirePermission } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { withFileLock } from "../utils/fileWriteQueue.js";
 import { writeIniWithBackup, backupWarningFor } from "../utils/configBackup.js";
+import { findDuplicateIniKeys } from "../utils/iniDuplicateKeys.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 
 const router = express.Router();
@@ -4800,6 +4801,23 @@ router.get("/validate-config", async (req, res) => {
 
     const warnings = [];
     const errors = [];
+
+    // 0. Check for a duplicated key. Everything below this reads via
+    // content.match(/^Key=.../m) with no /g -- the FIRST occurrence only
+    // -- so without this check, a duplicated Mods=/WorkshopItems=/Map=
+    // would validate cleanly against whichever block came first and never
+    // surface that a second, unreachable-to-this-route block exists.
+    // Found 2026-08-27 investigating an operator's corrupted ini: this
+    // route is the closest thing to a health check this file has, and it
+    // was structurally blind to the worst state its own file can be in.
+    for (const { key, count } of findDuplicateIniKeys(content)) {
+      errors.push({
+        type: "duplicate_key",
+        key,
+        count,
+        message: `"${key}=" appears ${count} times in this file. This tool reads and writes only the FIRST occurrence -- if the server itself reads a different one, changes here can appear to save while having no effect in-game. Open the raw INI editor to see and fix the duplicate.`,
+      });
+    }
 
     // 1. Check for Orphaned Mod IDs (Mods in list but no corresponding Workshop Item)
     // This requires scanning all configured workshop items to see what mods they provide
