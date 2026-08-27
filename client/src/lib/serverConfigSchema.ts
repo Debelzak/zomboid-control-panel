@@ -2920,11 +2920,13 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'How many generators spawn in the world.',
     type: 'select',
     options: [
-      { value: 1, label: 'Very Rare' },
-      { value: 2, label: 'Rare' },
-      { value: 3, label: 'Sometimes' },
-      { value: 4, label: 'Often' },
-      { value: 5, label: 'Very Often' }
+      { value: 1, label: 'None (not recommended)' },
+      { value: 2, label: 'Insanely Rare' },
+      { value: 3, label: 'Extremely Rare' },
+      { value: 4, label: 'Rare' },
+      { value: 5, label: 'Normal' },
+      { value: 6, label: 'Common' },
+      { value: 7, label: 'Abundant' }
     ],
     default: 4,
     category: 'survival',
