@@ -1,5 +1,7 @@
 import { reportClientWarning } from "./client-errors";
 import { clearAccessToken, getAccessToken, setAccessToken } from "./authToken";
+import { toast } from "@/components/ui/use-toast";
+import i18n from "@/i18n";
 
 const API_BASE = "/api";
 
@@ -386,6 +388,20 @@ async function handleResponse<T = any>(response: Response): Promise<T> {
   // resource) is untouched by this check and returns exactly as before.
   if ((data as { success?: unknown }).success === false) {
     throw buildResponseError(response, data);
+  }
+  // ~30 config-writing routes (mods.js, serverFiles.js) attach this when the
+  // edit itself succeeded but the pre-write backup couldn't be made -- the
+  // operator's change landed, but there is now no safety copy of what was
+  // there before. Surfaced here, once, through this shared choke point every
+  // mutating call already passes through, instead of requiring each of the
+  // ~30 call sites to individually remember to check for it.
+  const backupWarning = (data as { backupWarning?: unknown }).backupWarning;
+  if (typeof backupWarning === "string" && backupWarning) {
+    toast({
+      variant: "warning",
+      title: i18n.t("toastTitle", { ns: "backupWarning" }),
+      description: backupWarning,
+    });
   }
   return data as T;
 }
