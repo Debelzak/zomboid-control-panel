@@ -1138,7 +1138,7 @@ export default function Dashboard() {
                 <Link to="/settings" className="flex items-center"><Server className="mr-2 h-4 w-4" /> {t('actions.bridgeSettings')}</Link>
               </DropdownMenuItem>
               {!rconConnected && (
-                <DropdownMenuItem onClick={handleConnect} disabled={!hasServer || loading !== null}>
+                <DropdownMenuItem onClick={handleConnect} disabled={!hasServer || loading !== null || (!activeServer?.isRemote && !hostRunning)}>
                   <Wifi className="mr-2 h-4 w-4" /> {t('actions.connectRcon')}
                 </DropdownMenuItem>
               )}

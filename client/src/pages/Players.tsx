@@ -134,6 +134,26 @@ export function sanitizeSteamId(value: string): string {
   return value.replace(/\D/g, '').slice(0, 17);
 }
 
+// Whether the whitelist has loaded successfully and confirms the given
+// player is NOT on it -- used to gate "Remove from whitelist". Fails open
+// (returns false, leaving the control enabled) while the fetch is still in
+// flight or failed, since a wrong disable here costs a real capability
+// (can't remove someone who genuinely is whitelisted, no explanation)
+// while a wrong enable costs one failed click and an error message.
+export function isPlayerConfirmedNotWhitelisted(
+  selectedPlayer: string | null,
+  whitelistAccounts: Array<{ username: string }>,
+  whitelistLoading: boolean,
+  whitelistError: string | null,
+): boolean {
+  return (
+    !whitelistLoading &&
+    !whitelistError &&
+    !!selectedPlayer &&
+    !whitelistAccounts.some(account => account.username === selectedPlayer)
+  );
+}
+
 // The activity log table has no pagination -- when a fetch returns exactly
 // this many rows, older entries may exist and be silently excluded (the
 // server retains up to 1000, see server/database/init.js). Shown as a hint
@@ -1074,6 +1094,11 @@ export default function Players() {
     [selectedPlayer, playerPowers]
   )
 
+  const selectedPlayerConfirmedNotWhitelisted = useMemo(() =>
+    isPlayerConfirmedNotWhitelisted(selectedPlayer, whitelistAccounts, whitelistLoading, whitelistError),
+    [selectedPlayer, whitelistAccounts, whitelistLoading, whitelistError]
+  )
+
   return (
     <div className="space-y-6 page-transition">
       {/* Header */}
@@ -1748,7 +1773,7 @@ export default function Players() {
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleAction(t('actions.removeFromWhitelist'), () => playersApi.removeFromWhitelist(selectedPlayer), () => { void fetchWhitelist() })}
-                                disabled={loading}
+                                disabled={loading || selectedPlayerConfirmedNotWhitelisted}
                               >
                                 <UserMinus className="w-4 h-4 mr-2" />
                                 {t('dossier.removeFromWhitelist')}
@@ -2561,7 +2586,7 @@ export default function Players() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={!selectedPlayer || loading}
+                      disabled={!selectedPlayer || loading || !bridgeConnected}
                       onClick={handleHealPlayer}
                     >
                       {t('powers.healButton')}
