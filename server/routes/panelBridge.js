@@ -20,6 +20,7 @@ import {
   logBridgeCommand,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams, isMaskedSecret } from "../utils/sanitize.js";
+import { getDataPaths } from "../utils/paths.js";
 import { persistSandboxValues } from "./serverFiles.js";
 import { requirePermission } from "../services/permissions.js";
 import { parseClampedInteger } from "../utils/queryNumbers.js";
@@ -3419,13 +3420,46 @@ router.post("/character/import", requirePermission("players.gm_tools"), async (r
       params: sanitizeErrorParams({ sections: validSections.join(", ") }),
     });
   }
+  // Snapshot the target's CURRENT data before overwriting it. Unlike a
+  // config edit, another player's XP/perks/inventory can't be reconstructed
+  // by hand if the wrong file lands on the wrong player -- so a failed
+  // snapshot REFUSES the import rather than warning and proceeding, the
+  // opposite of this codebase's config-write backup policy (a false sense
+  // of safety is worse than an honest refusal here). Reuses the same bridge
+  // command GET /character/export already calls and writes into the same
+  // exports/<username>/ directory + filename convention autoExportPlayer
+  // (server/index.js) uses, so a successful snapshot is immediately visible
+  // and downloadable from Players.tsx's existing Saved Exports list with no
+  // client changes.
+  let snapshotPath;
+  try {
+    const snapshot = await bridge.sendCommand("exportPlayerData", { username });
+    const { dataDir } = getDataPaths();
+    const safeUsername = username.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const exportDir = path.join(dataDir, "exports", safeUsername);
+    fs.mkdirSync(exportDir, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    snapshotPath = path.join(
+      exportDir,
+      `${safeUsername}_pre-import_${timestamp}.json`,
+    );
+    fs.writeFileSync(
+      snapshotPath,
+      JSON.stringify(snapshot.data ?? snapshot, null, 2),
+    );
+  } catch (error) {
+    return res.status(502).json({
+      error: `Could not snapshot ${username}'s current data before import — refusing to overwrite without a recovery copy: ${sanitizeError(error.message)}`,
+    });
+  }
+
   try {
     const result = await bridge.sendCommand("importPlayerData", {
       username,
       data,
       options,
     });
-    res.json(result);
+    res.json({ ...result, snapshotFile: path.basename(snapshotPath) });
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
