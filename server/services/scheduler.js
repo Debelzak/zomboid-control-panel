@@ -1,3 +1,4 @@
+import path from "path";
 import cron from "node-cron";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("Scheduler");
@@ -5,12 +6,14 @@ import panelBridge from "./panelBridge.js";
 import { RconService } from "./rcon.js";
 import { ServerManager } from "./serverManager.js";
 import { runManagedLifecycle } from "./managedContainer.js";
+import { createBackupIfChanged } from "../utils/configBackup.js";
 import {
   getScheduledTasks,
   updateTaskLastRun,
   logServerEvent,
   logScheduleExecution,
   getActiveServer,
+  getServer,
 } from "../database/init.js";
 import {
   isCronTooFrequent,
@@ -408,6 +411,68 @@ export class Scheduler {
       `Auto-restart: active server changed mid-restart — re-targeting server ${pinnedServerId} so the restart finishes on the server it began on`,
     );
     await serverManager.reloadConfig(pinnedServerId);
+  }
+
+  // Config-backup coverage for the ONE call site every restart trigger
+  // funnels through -- manual (Dashboard/Scheduler-page "Restart Now",
+  // Discord command) and automated (the AUTO_RESTART_CRON job, a
+  // mod-update-triggered restart) alike, since they all call
+  // performRestart(). 2026-08-27 user report (loonE, Discord): config
+  // reverted to default after a SCHEDULED reboot -- and separately,
+  // confirmed by grep, that createBackup()/writeIniWithBackup() only ever
+  // fire from an explicit human edit-and-save action, never from any
+  // restart or the scheduled world-backup job. So the one event class most
+  // likely to silently replace a config (an unattended restart, at 4am,
+  // nobody watching) was also the one event class the config-backup net
+  // never covered. This closes that gap at the one place that reaches
+  // every restart trigger, using the existing createBackup() machinery
+  // (via createBackupIfChanged() -- see its own comment for why "if
+  // changed" specifically: an unconditional backup on every restart of a
+  // server that restarts on a schedule would fill the keep-10 quota with
+  // duplicate copies of unchanged content and evict the real,
+  // content-different human-edit backups instead).
+  //
+  // Called once the old process is confirmed stopped and before the new
+  // one starts -- config files are static in that window, on both the
+  // managed-container and directly-spawned paths, so this runs
+  // unconditionally regardless of which one this restart takes.
+  // Deliberately best-effort: a backup failure must never block the
+  // restart itself, matching every other pre-restart step in this
+  // function (RCON verify, world save) that logs and continues rather
+  // than throwing out of performRestart entirely for a housekeeping
+  // failure -- except unlike those, a failed *backup* specifically isn't
+  // even something to fail the restart FOR, since skipping it only means
+  // this one restart isn't covered, not that the restart itself is unsafe.
+  async _backupConfigBeforeRestart(pinnedServerId) {
+    try {
+      const server =
+        pinnedServerId != null
+          ? await getServer(pinnedServerId)
+          : await getActiveServer();
+      if (!server?.serverName) return;
+
+      const configDir =
+        server.serverConfigPath ||
+        (server.zomboidDataPath
+          ? path.join(server.zomboidDataPath, "Server")
+          : null);
+      if (!configDir) return;
+
+      const targets = [
+        `${server.serverName}.ini`,
+        `${server.serverName}_SandboxVars.lua`,
+      ];
+      for (const filename of targets) {
+        const result = await createBackupIfChanged(configDir, filename);
+        if (result.reason === "failed") {
+          log.warn(
+            `Pre-restart config backup of ${filename} failed: ${result.error}`,
+          );
+        }
+      }
+    } catch (error) {
+      log.warn(`Pre-restart config backup failed: ${error.message}`);
+    }
   }
 
   // Picks the RconService/ServerManager pair a task should run against.
@@ -869,10 +934,13 @@ export class Scheduler {
           return { success: false, wasRunning: false, message: errorMsg };
         }
 
-        // Server wasn't running - just start it
+        // Server wasn't running - just start it. Already-stopped, so config
+        // files are already static -- same coverage as the main branch
+        // below, see _backupConfigBeforeRestart()'s own comment.
         log.info(
           "Auto-restart triggered but server was not running - starting server",
         );
+        await this._backupConfigBeforeRestart(pinnedServerId);
         const started = await serverManager.startServer();
         if (!started?.success) {
           log.warn(
@@ -1162,6 +1230,13 @@ export class Scheduler {
         // (zombie processes on Linux, WMI cache on Windows)
         await this.sleep(3000);
       }
+
+      // See _backupConfigBeforeRestart()'s own comment: config files are
+      // static in this window (old process confirmed stopped, new one not
+      // started yet), on both the managed-container and directly-spawned
+      // paths below, so this runs unconditionally regardless of which one
+      // this restart takes.
+      await this._backupConfigBeforeRestart(pinnedServerId);
 
       // Set flag to prevent RCON auto-reconnect from interfering during startup
       // Use setServerStarting which has a 5-minute failsafe timeout

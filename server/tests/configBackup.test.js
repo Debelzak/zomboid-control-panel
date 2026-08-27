@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { createBackup } from "../utils/configBackup.js";
+import { createBackup, createBackupIfChanged } from "../utils/configBackup.js";
 
 // 2026-08-27: sibling of the startupScriptBackup.test.js collision fix.
 // createBackup() is the shared backup-before-overwrite safety net for
@@ -223,5 +223,105 @@ describe("createBackup() -- backup filename collisions", () => {
     } finally {
       toISOString.mockRestore();
     }
+  });
+});
+
+// 2026-08-27, operator directive ("make sure backups works") relayed by god,
+// safety-net follow-up: createBackup()/writeIniWithBackup() only ever fire
+// from an explicit human edit-and-save action -- no restart, scheduled or
+// manual, and no automated event of any kind ever took a config backup, so
+// the panel's backup screen had nothing to offer when a config reverted
+// unattended (loonE, Discord). createBackupIfChanged() is the piece that
+// lets an UNATTENDED caller use the same backup machinery safely: an
+// unconditional backup on every restart of a server that restarts on a
+// schedule would fill the keep-10 quota with duplicate copies of unchanged
+// content and evict the real, content-different human-edit backups instead
+// -- the same shape as the sort-order pruner bug fixed earlier tonight,
+// just reached by flooding the count instead of misordering it.
+describe("createBackupIfChanged() -- backup only when content actually differs", () => {
+  let root;
+
+  afterEach(() => {
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("no existing backup at all: backs up, same as createBackup()", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-configbackup-ifchanged-"));
+    const iniPath = path.join(root, "servertest.ini");
+    fs.writeFileSync(iniPath, "version 1", "utf8");
+
+    const result = await createBackupIfChanged(root, "servertest.ini");
+
+    expect(result.backedUp).toBe(true);
+    const backupDir = path.join(root, "backups");
+    const backups = fs.readdirSync(backupDir);
+    expect(backups).toHaveLength(1);
+    expect(fs.readFileSync(path.join(backupDir, backups[0]), "utf8")).toBe(
+      "version 1",
+    );
+  });
+
+  it("live content is byte-identical to the most recent backup: skips, writes nothing new", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-configbackup-ifchanged-"));
+    const iniPath = path.join(root, "servertest.ini");
+    fs.writeFileSync(iniPath, "unchanged content", "utf8");
+
+    const first = await createBackupIfChanged(root, "servertest.ini");
+    expect(first.backedUp).toBe(true);
+
+    // Nothing touched the live file in between -- exactly what an
+    // unattended scheduled restart looks like when the operator hasn't
+    // edited config since the last one.
+    const second = await createBackupIfChanged(root, "servertest.ini");
+    expect(second).toEqual({ backedUp: false, reason: "unchanged" });
+
+    const backupDir = path.join(root, "backups");
+    const backups = fs.readdirSync(backupDir);
+    expect(backups).toHaveLength(1); // still just the one -- no duplicate
+  });
+
+  it("live content differs from the most recent backup: backs up the new version", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-configbackup-ifchanged-"));
+    const iniPath = path.join(root, "servertest.ini");
+    fs.writeFileSync(iniPath, "version 1", "utf8");
+
+    const first = await createBackupIfChanged(root, "servertest.ini");
+    expect(first.backedUp).toBe(true);
+
+    fs.writeFileSync(iniPath, "version 2 -- an operator actually changed this", "utf8");
+    const second = await createBackupIfChanged(root, "servertest.ini");
+    expect(second.backedUp).toBe(true);
+    expect(second.name).not.toBe(first.name);
+
+    const backupDir = path.join(root, "backups");
+    const backups = fs.readdirSync(backupDir);
+    expect(backups).toHaveLength(2);
+  });
+
+  it("a real, repeated 'scheduled restart' pattern never floods the keep-10 quota with duplicates of unchanged content", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-configbackup-ifchanged-"));
+    const iniPath = path.join(root, "servertest.ini");
+    fs.writeFileSync(iniPath, "stable config, never touched by a human", "utf8");
+
+    // Simulate 15 scheduled restarts in a row with no human edit between
+    // any of them -- the exact scenario god flagged as a treadmill risk.
+    for (let i = 0; i < 15; i++) {
+      await createBackupIfChanged(root, "servertest.ini");
+    }
+
+    const backupDir = path.join(root, "backups");
+    const backups = fs.readdirSync(backupDir);
+    // Not 15, not even close to the keep-10 ceiling -- the unchanged
+    // content was recognized every time after the first.
+    expect(backups).toHaveLength(1);
+  });
+
+  it("no live file at all: delegates to createBackup()'s own no-source result", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-configbackup-ifchanged-"));
+    // Nothing written at all -- source genuinely doesn't exist.
+
+    const result = await createBackupIfChanged(root, "servertest.ini");
+
+    expect(result).toEqual({ backedUp: false, reason: "no-source" });
   });
 });

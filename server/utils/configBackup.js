@@ -27,6 +27,38 @@ export async function getBackupPath(configPath) {
   return path.join(configPath, "backups");
 }
 
+// Existing backups of `filename` inside `configPath`, newest first --
+// sorted by real fs birthtime, not by parsing the filename's embedded
+// timestamp (see createBackup()'s own comment on why a string sort of the
+// collision-suffixed name gets that backwards). Shared by createBackup()'s
+// own pruning and by createBackupIfChanged()'s "is this actually new
+// content" check below, so both agree on what "most recent" means.
+async function listBackupsFor(backupDir, filename) {
+  let files;
+  try {
+    files = await fs.promises.readdir(backupDir);
+  } catch {
+    return [];
+  }
+  const candidateNames = files.filter(
+    (f) => f.startsWith(filename + ".") && f.endsWith(".bak"),
+  );
+  const candidates = await Promise.all(
+    candidateNames.map(async (name) => {
+      try {
+        const stats = await fs.promises.stat(path.join(backupDir, name));
+        return { name, birthtimeMs: stats.birthtimeMs };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return candidates
+    .filter((c) => c !== null)
+    .sort((a, b) => b.birthtimeMs - a.birthtimeMs) // newest first
+    .map((c) => c.name);
+}
+
 // Create a backup of `filename` (a file directly inside `configPath`) before
 // an edit overwrites it.
 //
@@ -84,31 +116,7 @@ export async function createBackup(configPath, filename) {
     // regardless of whether pruning old ones succeeds, so a cleanup
     // failure must not flip this call's result to backedUp:false.
     try {
-      const files = await fs.promises.readdir(backupDir);
-      const candidateNames = files.filter(
-        (f) => f.startsWith(filename + ".") && f.endsWith(".bak"),
-      );
-      // Sort by actual file creation time, not by the filename string --
-      // the collision suffix above (2026-08-27) inserts "-2" etc. right
-      // before ".bak", and "-2.bak" sorts LEXICOGRAPHICALLY BEFORE ".bak"
-      // ('-' < '.'), which reverses the intended newest-first order for
-      // exactly the same-millisecond pair the suffix exists to
-      // disambiguate. Same fix backupService.js's listBackups() already
-      // uses for the world-backup pruner.
-      const candidates = await Promise.all(
-        candidateNames.map(async (name) => {
-          try {
-            const stats = await fs.promises.stat(path.join(backupDir, name));
-            return { name, birthtimeMs: stats.birthtimeMs };
-          } catch {
-            return null;
-          }
-        }),
-      );
-      const backups = candidates
-        .filter((c) => c !== null)
-        .sort((a, b) => b.birthtimeMs - a.birthtimeMs) // newest first
-        .map((c) => c.name);
+      const backups = await listBackupsFor(backupDir, filename);
 
       if (backups.length > 10) {
         const filesToDelete = backups.slice(10);
@@ -133,6 +141,60 @@ export async function createBackup(configPath, filename) {
     log.error(`Backup creation failed: ${error.message}`);
     return { backedUp: false, reason: "failed", error: error.message };
   }
+}
+
+// Same contract as createBackup(), but for an UNATTENDED caller (a
+// scheduled restart, or any future automated event) rather than a human
+// edit: skips taking a new backup when the live file's content is
+// byte-identical to the most recent existing backup of it.
+//
+// Why this exists and createBackup() itself doesn't just always dedupe:
+// a human edit-and-save is, by definition, a content change already (the
+// route only calls createBackup() because something is about to be
+// written) -- the check would never trigger there and would just be a
+// wasted read on every save. An automated event fires whether or not
+// anything actually changed (every scheduled restart, whether or not the
+// operator touched config since the last one), so a naive
+// backup-every-time here silently fills the keep-10 quota with duplicate
+// copies of an unchanged file and EVICTS the real, content-different
+// human-edit backups that are the ones actually worth keeping -- the same
+// shape as the sort-order pruner bug fixed earlier tonight, just reached
+// by flooding the count instead of misordering it. This is the fix's own
+// answer to that risk, not a follow-up: nothing new is written, so
+// nothing enters the retention count, so nothing gets evicted.
+//
+// Returns createBackup()'s own shape, plus one more reason:
+//   { backedUp: false, reason: "unchanged" } -- a backup of this exact
+//     content already exists as the most recent one; nothing written.
+export async function createBackupIfChanged(configPath, filename) {
+  const filePath = path.join(configPath, filename);
+  let liveContent;
+  try {
+    liveContent = await fs.promises.readFile(filePath);
+  } catch {
+    // No live file (or unreadable) -- let createBackup() produce its own
+    // standard no-source/failed classification rather than guessing here.
+    return createBackup(configPath, filename);
+  }
+
+  const backupDir = await getBackupPath(configPath);
+  const existing = await listBackupsFor(backupDir, filename);
+  if (existing.length > 0) {
+    try {
+      const mostRecent = await fs.promises.readFile(
+        path.join(backupDir, existing[0]),
+      );
+      if (Buffer.compare(liveContent, mostRecent) === 0) {
+        return { backedUp: false, reason: "unchanged" };
+      }
+    } catch (e) {
+      log.debug(
+        `Could not compare against most recent backup of ${filename}, backing up anyway: ${e.message}`,
+      );
+    }
+  }
+
+  return createBackup(configPath, filename);
 }
 
 // For an ordinary, intentional config edit (as opposed to /sandbox/repair's
