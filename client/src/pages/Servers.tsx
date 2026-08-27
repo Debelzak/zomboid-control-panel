@@ -87,6 +87,7 @@ import { getInstallProgressMessage } from '@/lib/installProgressMessage'
 import { ServerStatusBadge } from '@/components/ServerStatusBadge'
 import { SocketContext } from '@/contexts/SocketContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { PasswordInput } from '@/components/PasswordInput'
@@ -94,6 +95,7 @@ import { NumberInput } from '@/components/NumberInput'
 import { RconTestConnection } from '@/components/RconTestConnection'
 import { MountDiscoveryBanner } from '@/components/MountDiscoveryBanner'
 import { DiscoverySetup } from '@/components/DiscoverySetup'
+import { DisabledReason } from '@/components/DisabledReason'
 
 interface DetectedServerConfig {
   dataPath: string
@@ -232,6 +234,23 @@ export function resolveDockerCardHostStatus(
 export default function Servers() {
   const { t, i18n } = useTranslation('servers')
   const confirm = useConfirm()
+  const { can } = useAuth()
+  // bug-hunt-2026-08-27 (Tier 3 gating sweep): six distinct capabilities
+  // gate this one page's privileged actions -- see the mapping sent to god
+  // (dwight-tier3-table) for the full route-by-route trace. Open/true when
+  // capabilities are unknown/null, same convention as every other capability
+  // check in the app.
+  const canDockerManage = can('docker.manage')
+  const canServersManage = can('servers.manage')
+  const canServerControl = can('server.control')
+  const canServerWipe = can('server.wipe')
+  const canServerInstall = can('server.install')
+  const canServersDiscover = can('servers.discover')
+  // Inline Start/Stop fires activate (servers.manage) THEN start/stop
+  // (server.control) in sequence -- a role holding only one gets a PARTIAL
+  // execution today (activate succeeds and the server record changes state,
+  // then start/stop 403s), not a clean refusal. Gate on both present.
+  const canInlineStartStop = canServersManage && canServerControl
   const [servers, setServers] = useState<ServerInstance[]>([])
   const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
   const [rconStatuses, setRconStatuses] = useState<Record<string, string>>({})
@@ -417,6 +436,7 @@ export default function Servers() {
     container: DockerContainerSummary,
     action: 'start' | 'stop' | 'restart',
   ) => {
+    if (!canDockerManage) return
     setDockerActionPending(`${action}-${container.id}`)
     try {
       const server = servers.find((item) => item.dockerContainerName === container.name || item.dockerContainerName === container.id)
@@ -436,9 +456,10 @@ export default function Servers() {
     } finally {
       setDockerActionPending(null)
     }
-  }, [fetchDockerState, servers, toast, t])
+  }, [fetchDockerState, servers, toast, t, canDockerManage])
 
   const handleConfigureRemoteBridge = useCallback(async (server: ServerInstance) => {
+    if (!canServersManage) return
     try {
       if (!server.isActive) {
         await serversApi.activate(server.id)
@@ -452,7 +473,7 @@ export default function Servers() {
         variant: 'destructive',
       })
     }
-  }, [fetchServers, navigate, toast, t])
+  }, [fetchServers, navigate, toast, t, canServersManage])
 
   // Provider-aware host/RCON/bridge status for whichever server is active —
   // shown on its card via ServerStatusBadge instead of a single Running/
@@ -533,6 +554,7 @@ export default function Servers() {
   }, [])
 
   const handleScanMounts = async () => {
+    if (!canServersDiscover) return
     setScanningMounts(true)
     try {
       const data = await serversApi.discoverMounts()
@@ -700,6 +722,7 @@ export default function Servers() {
 
   // Detect server settings from data path
   const handleDetectServer = async () => {
+    if (!canServersDiscover) return
     if (!newServer.zomboidDataPath.trim()) {
       toast({ title: t('toasts.error'), description: t('toasts.enterDataPathFirst'), variant: 'destructive' })
       return
@@ -748,6 +771,7 @@ export default function Servers() {
 
   // Auto-scan a folder to find all PZ server paths
   const handleAutoScan = async () => {
+    if (!canServersDiscover) return
     if (!autoScanPath.trim()) {
       toast({ title: t('toasts.error'), description: t('toasts.enterScanFolder'), variant: 'destructive' })
       return
@@ -865,6 +889,7 @@ export default function Servers() {
 
   const handleActivateServer = useCallback(async (server: ServerInstance) => {
     if (server.isActive) return
+    if (!canServersManage) return
 
     setActivating(server.id)
     try {
@@ -883,7 +908,7 @@ export default function Servers() {
     } finally {
       setActivating(null)
     }
-  }, [toast, fetchServers, t])
+  }, [toast, fetchServers, t, canServersManage])
 
   // Inline Start/Stop on server cards. The Node side `serverApi.start/stop`
   // operate on the currently-active instance only, so for inactive servers
@@ -905,6 +930,7 @@ export default function Servers() {
   }, [])
 
   const handleInlineStart = useCallback(async (server: ServerInstance) => {
+    if (!canInlineStartStop) return
     setServerActionPending(`start-${server.id}`)
     try {
       if (!server.isActive) {
@@ -930,9 +956,10 @@ export default function Servers() {
     } finally {
       setServerActionPending(null)
     }
-  }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t])
+  }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t, canInlineStartStop])
 
   const handleInlineStop = useCallback(async (server: ServerInstance) => {
+    if (!canInlineStartStop) return
     // Unlike the Dashboard's Stop button (which gates behind a confirm
     // dialog), this inline card button ran the stop immediately on click --
     // a single misclick disconnects everyone on the server with no chance
@@ -970,10 +997,11 @@ export default function Servers() {
     } finally {
       setServerActionPending(null)
     }
-  }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t, confirm])
+  }, [toast, fetchServers, fetchServerStatuses, waitForActionState, t, confirm, canInlineStartStop])
 
   const handleDeleteServer = async () => {
     if (!deleteServer) return
+    if (!canServersManage) return
 
     setDeleting(true)
     setDeleteProgress(0)
@@ -997,8 +1025,13 @@ export default function Servers() {
     let filesActuallyDeleted = false
 
     try {
-      // If deleteFiles is checked and server has an installPath, delete the files first
-      if (deleteFiles && deleteServer.installPath) {
+      // If deleteFiles is checked and server has an installPath, delete the files first.
+      // The checkbox itself is gated on server.wipe (can't be checked without it) --
+      // this canServerWipe re-check is defense-in-depth per Angela's Console.tsx
+      // lesson (disabled control != gate), and skips the file-delete step rather
+      // than aborting the whole action: panel-record-only deletion is a
+      // legitimately lower bar than servers.manage already grants.
+      if (deleteFiles && deleteServer.installPath && canServerWipe) {
         try {
           const result = await serversDetectApi.deleteFiles(deleteServer.installPath) as { error?: string }
           if (result?.error) {
@@ -1051,6 +1084,7 @@ export default function Servers() {
 
   const handleSaveEdit = async () => {
     if (!editingServer || savingEdit) return
+    if (!canServersManage) return
 
     // Validate port range
     if (!isValidPort(editingServer.rconPort)) {
@@ -1101,6 +1135,7 @@ export default function Servers() {
 
   // Start Steam update/verify operation
   const handleStartSteamOperation = async () => {
+    if (!canServerInstall) return
     if (!steamOperation || !steamcmdPath.trim()) {
       toast({ title: t('toasts.error'), description: t('toasts.steamcmdPathRequired'), variant: 'destructive' })
       return
@@ -1146,6 +1181,7 @@ export default function Servers() {
   // Delete Everything" flow uses (requires PZ marker files to be present,
   // refuses to delete folders it doesn't recognize as a PZ install).
   const handleClearInstallFolder = async () => {
+    if (!canServerWipe) return
     if (!steamOperation) return
     const installFolder = getInstallFolder(steamOperation.server.installPath)
     if (!installFolder) {
@@ -1218,6 +1254,7 @@ export default function Servers() {
   }
 
   const handleAddExistingServer = async () => {
+    if (!canServersManage) return
     // For remote servers, only need name, rcon credentials
     if (addMode === 'remote') {
       if (!newServer.name.trim()) {
@@ -1340,21 +1377,23 @@ export default function Servers() {
         icon={<Server className="w-5 h-5 text-primary" />}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9"
-              onClick={handleScanMounts}
-              disabled={scanningMounts}
-              aria-label={t('pageHeader.scanAria')}
-              title={t('pageHeader.scanTitle')}
-            >
-              {scanningMounts ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Search className="h-4 w-4" aria-hidden="true" />
-              )}
-            </Button>
+            <DisabledReason reason={!canServersDiscover ? t('pageHeader.scanNoPermission') : null}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                onClick={handleScanMounts}
+                disabled={scanningMounts || !canServersDiscover}
+                aria-label={t('pageHeader.scanAria')}
+                title={t('pageHeader.scanTitle')}
+              >
+                {scanningMounts ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Search className="h-4 w-4" aria-hidden="true" />
+                )}
+              </Button>
+            </DisabledReason>
             <Button variant="outline" onClick={() => { setAddMode('remote'); setShowAddDialog(true) }}>
               <Globe className="w-4 h-4 mr-2" /> {t('pageHeader.addRemote')}
             </Button>
@@ -1567,9 +1606,11 @@ export default function Servers() {
                         <Edit2 className="w-4 h-4 mr-2" /> {t('card.edit')}
                       </DropdownMenuItem>
                       {!server.isActive && (
-                        <DropdownMenuItem onClick={() => handleActivateServer(server)} disabled={activating !== null}>
-                          <Power className="w-4 h-4 mr-2" /> {t('card.setActive')}
-                        </DropdownMenuItem>
+                        <DisabledReason reason={!canServersManage ? t('card.noPermissionManage') : null} className="w-full">
+                          <DropdownMenuItem onClick={() => handleActivateServer(server)} disabled={activating !== null || !canServersManage}>
+                            <Power className="w-4 h-4 mr-2" /> {t('card.setActive')}
+                          </DropdownMenuItem>
+                        </DisabledReason>
                       )}
                       {!server.isRemote && (
                         <>
@@ -1638,17 +1679,20 @@ export default function Servers() {
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
+                          <DisabledReason reason={!canDockerManage ? t('card.noPermissionDocker') : null}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button size="iconDense" variant="ghost" disabled={pending || isRunning} onClick={() => handleDockerAction(container, 'start')} aria-label={t('card.startContainerAria', { name: container.name })}>
+                              <Button size="iconDense" variant="ghost" disabled={pending || isRunning || !canDockerManage} onClick={() => handleDockerAction(container, 'start')} aria-label={t('card.startContainerAria', { name: container.name })}>
                                 {dockerActionPending === `start-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>{t('card.startContainer')}</TooltipContent>
                           </Tooltip>
+                          </DisabledReason>
+                          <DisabledReason reason={!canDockerManage ? t('card.noPermissionDocker') : null}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button size="iconDense" variant="ghost" disabled={pending || !isRunning} onClick={async () => {
+                              <Button size="iconDense" variant="ghost" disabled={pending || !isRunning || !canDockerManage} onClick={async () => {
                                 // Traced via Dwight: this route saves via RCON first and
                                 // refuses outright if that save fails (stricter than plain
                                 // process Stop), but the actual termination is Docker
@@ -1670,14 +1714,17 @@ export default function Servers() {
                             </TooltipTrigger>
                             <TooltipContent>{t('card.stopContainer')}</TooltipContent>
                           </Tooltip>
+                          </DisabledReason>
+                          <DisabledReason reason={!canDockerManage ? t('card.noPermissionDocker') : null}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button size="iconDense" variant="ghost" disabled={pending} onClick={() => handleDockerAction(container, 'restart')} aria-label={t('card.restartContainerAria', { name: container.name })}>
+                              <Button size="iconDense" variant="ghost" disabled={pending || !canDockerManage} onClick={() => handleDockerAction(container, 'restart')} aria-label={t('card.restartContainerAria', { name: container.name })}>
                                 {dockerActionPending === `restart-${container.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>{t('card.restartContainer')}</TooltipContent>
                           </Tooltip>
+                          </DisabledReason>
                         </div>
                       </div>
                       {stats && (
@@ -1775,44 +1822,51 @@ export default function Servers() {
                     const hasManagedContainer = dockerAvailable && server.dockerContainerName && dockerContainers.some((item) => item.name === server.dockerContainerName || item.id === server.dockerContainerName)
                     if (server.isRemote || hasManagedContainer) return null
                     return isRunning ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleInlineStop(server)}
-                        disabled={stopPending || serverActionPending !== null}
-                        title={t('card.stopThisServer')}
-                      >
-                        {stopPending ? (
-                          <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.stopping')}</>
-                        ) : (
-                          <><Square className="w-4 h-4 mr-1.5" /> {t('card.stop')}</>
-                        )}
-                      </Button>
+                      <DisabledReason reason={!canInlineStartStop ? t('card.noPermissionStartStop') : null}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleInlineStop(server)}
+                          disabled={stopPending || serverActionPending !== null || !canInlineStartStop}
+                          title={t('card.stopThisServer')}
+                        >
+                          {stopPending ? (
+                            <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.stopping')}</>
+                          ) : (
+                            <><Square className="w-4 h-4 mr-1.5" /> {t('card.stop')}</>
+                          )}
+                        </Button>
+                      </DisabledReason>
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleInlineStart(server)}
-                        disabled={startPending || serverActionPending !== null}
-                        title={server.isActive ? t('card.startThisServer') : t('card.switchAndStart')}
-                      >
-                        {startPending ? (
-                          <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.starting')}</>
-                        ) : (
-                          <><Play className="w-4 h-4 mr-1.5" /> {t('card.start')}</>
-                        )}
-                      </Button>
+                      <DisabledReason reason={!canInlineStartStop ? t('card.noPermissionStartStop') : null}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleInlineStart(server)}
+                          disabled={startPending || serverActionPending !== null || !canInlineStartStop}
+                          title={server.isActive ? t('card.startThisServer') : t('card.switchAndStart')}
+                        >
+                          {startPending ? (
+                            <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.starting')}</>
+                          ) : (
+                            <><Play className="w-4 h-4 mr-1.5" /> {t('card.start')}</>
+                          )}
+                        </Button>
+                      </DisabledReason>
                     )
                   })()}
                   {server.isRemote && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleConfigureRemoteBridge(server)}
-                      title={t('card.configureSftpTitle')}
-                    >
-                      <Link className="w-4 h-4 mr-1.5" /> {t('card.configureSftp')}
-                    </Button>
+                    <DisabledReason reason={!canServersManage ? t('card.noPermissionManage') : null}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleConfigureRemoteBridge(server)}
+                        disabled={!canServersManage}
+                        title={t('card.configureSftpTitle')}
+                      >
+                        <Link className="w-4 h-4 mr-1.5" /> {t('card.configureSftp')}
+                      </Button>
+                    </DisabledReason>
                   )}
                   {hasUpdate && (
                     <Button
@@ -1824,19 +1878,21 @@ export default function Servers() {
                     </Button>
                   )}
                   {!server.isActive && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => handleActivateServer(server)}
-                      disabled={activating === server.id}
-                    >
-                      {activating === server.id ? (
-                        <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.activating')}</>
-                      ) : (
-                        <><Power className="w-4 h-4 mr-1.5" /> {t('card.switchToThisServer')}</>
-                      )}
-                    </Button>
+                    <DisabledReason reason={!canServersManage ? t('card.noPermissionManage') : null}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleActivateServer(server)}
+                        disabled={activating === server.id || !canServersManage}
+                      >
+                        {activating === server.id ? (
+                          <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.activating')}</>
+                        ) : (
+                          <><Power className="w-4 h-4 mr-1.5" /> {t('card.switchToThisServer')}</>
+                        )}
+                      </Button>
+                    </DisabledReason>
                   )}
                 </div>
 
@@ -2016,16 +2072,18 @@ export default function Servers() {
                       placeholder={t('localForm.scanPathPlaceholder')}
                       className="font-mono text-sm flex-1"
                     />
-                    <Button
-                      onClick={handleAutoScan}
-                      disabled={autoScanning || !autoScanPath.trim()}
-                    >
-                      {autoScanning ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <><Search className="w-4 h-4 mr-1" /> {t('localForm.scan')}</>
-                      )}
-                    </Button>
+                    <DisabledReason reason={!canServersDiscover ? t('localForm.discoverNoPermission') : null}>
+                      <Button
+                        onClick={handleAutoScan}
+                        disabled={autoScanning || !autoScanPath.trim() || !canServersDiscover}
+                      >
+                        {autoScanning ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <><Search className="w-4 h-4 mr-1" /> {t('localForm.scan')}</>
+                        )}
+                      </Button>
+                    </DisabledReason>
                   </div>
 
                   {/* Auto Scan Results */}
@@ -2102,17 +2160,19 @@ export default function Servers() {
                     className="font-mono text-sm flex-1"
                     maxLength={260}
                   />
-                  <Button
-                    variant="secondary"
-                    onClick={handleDetectServer}
-                    disabled={detecting || !newServer.zomboidDataPath.trim()}
-                  >
-                    {detecting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <><Search className="w-4 h-4 mr-1" /> {t('localForm.detect')}</>
-                    )}
-                  </Button>
+                  <DisabledReason reason={!canServersDiscover ? t('localForm.discoverNoPermission') : null}>
+                    <Button
+                      variant="secondary"
+                      onClick={handleDetectServer}
+                      disabled={detecting || !newServer.zomboidDataPath.trim() || !canServersDiscover}
+                    >
+                      {detecting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <><Search className="w-4 h-4 mr-1" /> {t('localForm.detect')}</>
+                      )}
+                    </Button>
+                  </DisabledReason>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {t('localForm.dataPathHint')}
@@ -2296,16 +2356,18 @@ export default function Servers() {
             <Button variant="outline" onClick={resetAddDialog}>
               {t('addDialog.cancel')}
             </Button>
-            <Button
-              onClick={handleAddExistingServer}
-              disabled={addingServer || (addMode === 'local' ? (!selectedServerConfig || (!newServer.rconPassword && !importIniFrom)) : (!newServer.name || !newServer.rconHost || !newServer.rconPassword))}
-            >
-              {addingServer ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('addDialog.adding')}</>
-              ) : (
-                <><Plus className="w-4 h-4 mr-2" /> {t('addDialog.addServer')}</>
-              )}
-            </Button>
+            <DisabledReason reason={!canServersManage ? t('addDialog.noPermission') : null}>
+              <Button
+                onClick={handleAddExistingServer}
+                disabled={addingServer || !canServersManage || (addMode === 'local' ? (!selectedServerConfig || (!newServer.rconPassword && !importIniFrom)) : (!newServer.name || !newServer.rconHost || !newServer.rconPassword))}
+              >
+                {addingServer ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('addDialog.adding')}</>
+                ) : (
+                  <><Plus className="w-4 h-4 mr-2" /> {t('addDialog.addServer')}</>
+                )}
+              </Button>
+            </DisabledReason>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2536,9 +2598,11 @@ export default function Servers() {
             <Button variant="outline" onClick={() => setEditingServer(null)}>
               {t('editDialog.cancel')}
             </Button>
-            <Button onClick={handleSaveEdit} disabled={savingEdit}>
-              <Check className="w-4 h-4 mr-2" /> {savingEdit ? t('editDialog.saving') : t('editDialog.saveChanges')}
-            </Button>
+            <DisabledReason reason={!canServersManage ? t('editDialog.noPermission') : null}>
+              <Button onClick={handleSaveEdit} disabled={savingEdit || !canServersManage}>
+                <Check className="w-4 h-4 mr-2" /> {savingEdit ? t('editDialog.saving') : t('editDialog.saveChanges')}
+              </Button>
+            </DisabledReason>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2554,13 +2618,21 @@ export default function Servers() {
 
                 {deleteServer?.installPath && (
                   <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/50">
-                    <Checkbox
-                      id="deleteFiles"
-                      checked={deleteFiles}
-                      onCheckedChange={(checked) => setDeleteFiles(checked === true)}
-                      disabled={deleting}
-                      className="mt-1"
-                    />
+                    {/* Gated on server.wipe independently of the base Delete
+                        button (servers.manage) -- panel-record-only deletion
+                        is a legitimately lower bar, so a role missing
+                        server.wipe can still delete the record, just not
+                        check this box. The granularity goes where the
+                        capability boundary is, not where the button is. */}
+                    <DisabledReason reason={!canServerWipe ? t('deleteDialog.deleteFilesNoPermission') : null}>
+                      <Checkbox
+                        id="deleteFiles"
+                        checked={deleteFiles}
+                        onCheckedChange={(checked) => setDeleteFiles(checked === true)}
+                        disabled={deleting || !canServerWipe}
+                        className="mt-1"
+                      />
+                    </DisabledReason>
                     <label htmlFor="deleteFiles" className="text-sm cursor-pointer">
                       <span className="font-medium text-destructive">{t('deleteDialog.alsoDeleteFilesLabel')}</span>
                       <p className="text-muted-foreground mt-1">
@@ -2611,15 +2683,17 @@ export default function Servers() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>{t('deleteDialog.cancel')}</AlertDialogCancel>
-            <Button
-              onClick={handleDeleteServer}
-              disabled={deleting}
-              className={deleteFiles ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
-            >
-              {deleting ? (
-                <><Loader2 className="w-4 h-4 animate-spin mr-2" />{t('deleteDialog.removing')}</>
-              ) : deleteFiles ? t('deleteDialog.deleteEverything') : t('deleteDialog.removeFromPanel')}
-            </Button>
+            <DisabledReason reason={!canServersManage ? t('deleteDialog.noPermission') : null}>
+              <Button
+                onClick={handleDeleteServer}
+                disabled={deleting || !canServersManage}
+                className={deleteFiles ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+              >
+                {deleting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" />{t('deleteDialog.removing')}</>
+                ) : deleteFiles ? t('deleteDialog.deleteEverything') : t('deleteDialog.removeFromPanel')}
+              </Button>
+            </DisabledReason>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -2750,18 +2824,20 @@ export default function Servers() {
               {steamRunning ? t('steamDialog.running') : steamCompleted ? t('steamDialog.close') : t('steamDialog.cancel')}
             </Button>
             {!steamCompleted && (
-              <Button
-                onClick={handleStartSteamOperation}
-                disabled={steamRunning || !steamcmdPath.trim()}
-              >
-                {steamRunning ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('steamDialog.running')}</>
-                ) : steamOperation?.type === 'verify' ? (
-                  <><ShieldCheck className="w-4 h-4 mr-2" /> {t('steamDialog.startVerify')}</>
-                ) : (
-                  <><RefreshCw className="w-4 h-4 mr-2" /> {t('steamDialog.startUpdate')}</>
-                )}
-              </Button>
+              <DisabledReason reason={!canServerInstall ? t('steamDialog.noPermission') : null}>
+                <Button
+                  onClick={handleStartSteamOperation}
+                  disabled={steamRunning || !steamcmdPath.trim() || !canServerInstall}
+                >
+                  {steamRunning ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('steamDialog.running')}</>
+                  ) : steamOperation?.type === 'verify' ? (
+                    <><ShieldCheck className="w-4 h-4 mr-2" /> {t('steamDialog.startVerify')}</>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4 mr-2" /> {t('steamDialog.startUpdate')}</>
+                  )}
+                </Button>
+              </DisabledReason>
             )}
             {steamCompleted === 'success' && (
               <Button
@@ -2772,12 +2848,14 @@ export default function Servers() {
               </Button>
             )}
             {steamCompleted === 'error' && (
-              <Button
-                onClick={() => { setSteamCompleted(null); handleStartSteamOperation(); }}
-                disabled={!steamcmdPath.trim()}
-              >
-                <RefreshCw className="w-4 h-4 mr-2" /> {t('steamDialog.retry')}
-              </Button>
+              <DisabledReason reason={!canServerInstall ? t('steamDialog.noPermission') : null}>
+                <Button
+                  onClick={() => { setSteamCompleted(null); handleStartSteamOperation(); }}
+                  disabled={!steamcmdPath.trim() || !canServerInstall}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" /> {t('steamDialog.retry')}
+                </Button>
+              </DisabledReason>
             )}
           </DialogFooter>
         </DialogContent>
@@ -2798,17 +2876,19 @@ export default function Servers() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={clearingInstall}>{t('clearInstallDialog.cancel')}</AlertDialogCancel>
-            <Button
-              onClick={handleClearInstallFolder}
-              disabled={clearingInstall}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {clearingInstall ? (
-                <><Loader2 className="w-4 h-4 animate-spin mr-2" />{t('clearInstallDialog.clearing')}</>
-              ) : (
-                <><Trash2 className="w-4 h-4 mr-2" />{t('clearInstallDialog.clearFolder')}</>
-              )}
-            </Button>
+            <DisabledReason reason={!canServerWipe ? t('clearInstallDialog.noPermission') : null}>
+              <Button
+                onClick={handleClearInstallFolder}
+                disabled={clearingInstall || !canServerWipe}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {clearingInstall ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" />{t('clearInstallDialog.clearing')}</>
+                ) : (
+                  <><Trash2 className="w-4 h-4 mr-2" />{t('clearInstallDialog.clearFolder')}</>
+                )}
+              </Button>
+            </DisabledReason>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -5,6 +5,7 @@
     "eyebrow": "Flotte",
     "scanAria": "Nach Servern suchen",
     "scanTitle": "Nach Servern suchen",
+    "scanNoPermission": "Das Scannen nach Bind-Mount-Installationen erfordert die Berechtigung servers.discover, über die diese Rolle nicht verfügt.",
     "addRemote": "Remote-Server hinzufügen",
     "addExisting": "Bestehenden Server hinzufügen",
     "installNew": "Neuen Server installieren"
@@ -77,6 +78,9 @@
     "activating": "Wird aktiviert...",
     "switchToThisServer": "Zu diesem Server wechseln",
     "added": "Hinzugefügt am {{date}}",
+    "noPermissionDocker": "Die Verwaltung dieses Containers erfordert die Berechtigung docker.manage, über die diese Rolle nicht verfügt.",
+    "noPermissionManage": "Diese Aktion erfordert die Berechtigung servers.manage, über die diese Rolle nicht verfügt.",
+    "noPermissionStartStop": "Erfordert sowohl servers.manage als auch server.control — ein unvollständiger Berechtigungssatz würde den Server aktiviert, aber nicht gestartet/gestoppt lassen.",
     "restartContainerAria": "Neu starten: {{name}}"
   },
   "tandem": {
@@ -118,7 +122,8 @@
     "rconOnlyDesc": "Funktionen wie das Bearbeiten der Konfiguration, die Mod-Verwaltung, Backups, Start/Stopp des Servers und Dateioperationen stehen nicht zur Verfügung. Du kannst weiterhin die Konsole nutzen, Spieler verwalten, Chatnachrichten senden, Wetter und Ereignisse steuern und geplante Befehle ausführen.",
     "cancel": "Abbrechen",
     "adding": "Wird hinzugefügt...",
-    "addServer": "Server hinzufügen"
+    "addServer": "Server hinzufügen",
+    "noPermission": "Das Hinzufügen eines Servers erfordert die Berechtigung servers.manage, über die diese Rolle nicht verfügt."
   },
   "remoteForm": {
     "displayNameLabel": "Anzeigename des Servers *",
@@ -173,7 +178,8 @@
     "passwordWillImport": "Wird automatisch aus {{iniName}}.ini importiert — leer lassen, um es zu verwenden, oder ein neues eingeben, um es zu überschreiben.",
     "minMemoryLabel": "Min. Arbeitsspeicher (GB)",
     "maxMemoryLabel": "Max. Arbeitsspeicher (GB)",
-    "selectScannedConfigAria": "Erkannten Server verwenden: {{name}}"
+    "selectScannedConfigAria": "Erkannten Server verwenden: {{name}}",
+    "discoverNoPermission": "Das Erkennen oder Scannen nach Servern erfordert die Berechtigung servers.discover, über die diese Rolle nicht verfügt."
   },
   "editDialog": {
     "title": "Server bearbeiten",
@@ -213,7 +219,8 @@
     "maxMemoryLabel": "Max. Arbeitsspeicher (GB)",
     "cancel": "Abbrechen",
     "saving": "Wird gespeichert...",
-    "saveChanges": "Änderungen speichern"
+    "saveChanges": "Änderungen speichern",
+    "noPermission": "Das Speichern der Servereinstellungen erfordert die Berechtigung servers.manage, über die diese Rolle nicht verfügt."
   },
   "deleteDialog": {
     "title": "Server aus dem Panel entfernen?",
@@ -228,7 +235,9 @@
     "cancel": "Abbrechen",
     "removing": "Wird entfernt...",
     "deleteEverything": "Alles löschen",
-    "removeFromPanel": "Aus Panel entfernen"
+    "removeFromPanel": "Aus Panel entfernen",
+    "noPermission": "Das Entfernen eines Servers erfordert die Berechtigung servers.manage, über die diese Rolle nicht verfügt.",
+    "deleteFilesNoPermission": "Das Löschen von Serverdateien erfordert die Berechtigung server.wipe, über die diese Rolle nicht verfügt. Das alleinige Entfernen des Paneleintrags ist weiterhin erlaubt."
   },
   "steamDialog": {
     "verifyTitle": "Spieldateien überprüfen",
@@ -256,7 +265,8 @@
     "startVerify": "Überprüfung starten",
     "startUpdate": "Update starten",
     "done": "Fertig",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "noPermission": "Das Aktualisieren oder Überprüfen von Serverdateien erfordert die Berechtigung server.install, über die diese Rolle nicht verfügt."
   },
   "clearInstallDialog": {
     "title": "Installationsordner leeren?",
@@ -264,7 +274,8 @@
     "descriptionAfter": "— einschließlich der Spieldateien, des Downloadstatus von SteamCMD und aller dort installierten Mods. Verwende dies, um dich von einem SteamCMD-Update zu erholen, das immer wieder fehlschlägt (beschädigte oder hängende Installation). Danach musst du erneut auf „Update starten“ klicken, um von Grund auf neu zu installieren. Deine Spielstände sind davon nicht betroffen.",
     "cancel": "Abbrechen",
     "clearing": "Wird geleert...",
-    "clearFolder": "Ordner leeren"
+    "clearFolder": "Ordner leeren",
+    "noPermission": "Das Leeren des Installationsordners erfordert die Berechtigung server.wipe, über die diese Rolle nicht verfügt."
   },
   "branches": {
     "public": "Public (Stabil)",

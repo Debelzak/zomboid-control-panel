@@ -5,6 +5,7 @@
     "eyebrow": "集群",
     "scanAria": "扫描服务器",
     "scanTitle": "扫描服务器",
+    "scanNoPermission": "扫描绑定挂载安装需要 servers.discover 权限，而该角色没有此权限。",
     "addRemote": "添加远程服务器",
     "addExisting": "添加现有服务器",
     "installNew": "安装新服务器"
@@ -77,6 +78,9 @@
     "activating": "正在激活…",
     "switchToThisServer": "切换到此服务器",
     "added": "添加于 {{date}}",
+    "noPermissionDocker": "管理此容器需要 docker.manage 权限，而该角色没有此权限。",
+    "noPermissionManage": "此操作需要 servers.manage 权限，而该角色没有此权限。",
+    "noPermissionStartStop": "需要同时拥有 servers.manage 和 server.control 权限——只拥有其中一个会导致服务器被激活但无法启动/停止。",
     "restartContainerAria": "重启 {{name}}"
   },
   "tandem": {
@@ -118,7 +122,8 @@
     "rconOnlyDesc": "配置编辑、模组管理、备份、服务器启动/停止以及文件操作等功能将不可用。你仍可使用控制台、管理玩家、发送聊天消息、控制天气与事件，以及运行计划任务命令。",
     "cancel": "取消",
     "adding": "正在添加…",
-    "addServer": "添加服务器"
+    "addServer": "添加服务器",
+    "noPermission": "添加服务器需要 servers.manage 权限，而该角色没有此权限。"
   },
   "remoteForm": {
     "displayNameLabel": "服务器显示名称 *",
@@ -173,7 +178,8 @@
     "passwordWillImport": "将自动从 {{iniName}}.ini 导入——留空以使用该密码，或输入新密码以覆盖。",
     "minMemoryLabel": "最小内存（GB）",
     "maxMemoryLabel": "最大内存（GB）",
-    "selectScannedConfigAria": "使用已检测到的服务器 {{name}}"
+    "selectScannedConfigAria": "使用已检测到的服务器 {{name}}",
+    "discoverNoPermission": "检测或扫描服务器需要 servers.discover 权限，而该角色没有此权限。"
   },
   "editDialog": {
     "title": "编辑服务器",
@@ -213,7 +219,8 @@
     "maxMemoryLabel": "最大内存（GB）",
     "cancel": "取消",
     "saving": "正在保存…",
-    "saveChanges": "保存更改"
+    "saveChanges": "保存更改",
+    "noPermission": "保存服务器设置需要 servers.manage 权限，而该角色没有此权限。"
   },
   "deleteDialog": {
     "title": "从面板中移除服务器？",
@@ -228,7 +235,9 @@
     "cancel": "取消",
     "removing": "正在移除…",
     "deleteEverything": "全部删除",
-    "removeFromPanel": "从面板中移除"
+    "removeFromPanel": "从面板中移除",
+    "noPermission": "移除服务器需要 servers.manage 权限，而该角色没有此权限。",
+    "deleteFilesNoPermission": "删除服务器文件需要 server.wipe 权限，而该角色没有此权限。仍然可以仅从面板中移除该记录。"
   },
   "steamDialog": {
     "verifyTitle": "校验游戏文件",
@@ -256,7 +265,8 @@
     "startVerify": "开始校验",
     "startUpdate": "开始更新",
     "done": "完成",
-    "retry": "重试"
+    "retry": "重试",
+    "noPermission": "更新或校验服务器文件需要 server.install 权限，而该角色没有此权限。"
   },
   "clearInstallDialog": {
     "title": "清除安装文件夹？",
@@ -264,7 +274,8 @@
     "descriptionAfter": "——包括游戏文件、SteamCMD 的下载状态，以及安装在此处的所有模组。当 SteamCMD 更新持续失败（安装损坏或卡住）时，可用此方式恢复。之后你需要再次点击「开始更新」以从头重新安装。这不会影响你的存档数据。",
     "cancel": "取消",
     "clearing": "正在清除…",
-    "clearFolder": "清除文件夹"
+    "clearFolder": "清除文件夹",
+    "noPermission": "清空安装文件夹需要 server.wipe 权限，而该角色没有此权限。"
   },
   "branches": {
     "public": "公共版（稳定）",

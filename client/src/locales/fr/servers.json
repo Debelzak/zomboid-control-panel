@@ -5,6 +5,7 @@
     "eyebrow": "Flotte",
     "scanAria": "Rechercher des serveurs",
     "scanTitle": "Rechercher des serveurs",
+    "scanNoPermission": "La recherche d'installations bind-mount nécessite la permission servers.discover, que ce rôle ne possède pas.",
     "addRemote": "Ajouter un serveur distant",
     "addExisting": "Ajouter un serveur existant",
     "installNew": "Installer un nouveau serveur"
@@ -77,6 +78,9 @@
     "activating": "Activation...",
     "switchToThisServer": "Basculer sur ce serveur",
     "added": "Ajouté le {{date}}",
+    "noPermissionDocker": "La gestion de ce conteneur nécessite la permission docker.manage, que ce rôle ne possède pas.",
+    "noPermissionManage": "Cette action nécessite la permission servers.manage, que ce rôle ne possède pas.",
+    "noPermissionStartStop": "Nécessite à la fois servers.manage et server.control — un ensemble de permissions partiel laisserait le serveur activé mais non démarré/arrêté.",
     "restartContainerAria": "Redémarrer {{name}}"
   },
   "tandem": {
@@ -118,7 +122,8 @@
     "rconOnlyDesc": "Les fonctionnalités comme l'édition de configuration, la gestion des mods, les sauvegardes, le démarrage/arrêt du serveur et les opérations sur les fichiers ne seront pas disponibles. Vous pouvez tout de même utiliser la console, gérer les joueurs, envoyer des messages de chat, contrôler la météo et les événements, et exécuter des commandes planifiées.",
     "cancel": "Annuler",
     "adding": "Ajout...",
-    "addServer": "Ajouter le serveur"
+    "addServer": "Ajouter le serveur",
+    "noPermission": "Ajouter un serveur nécessite la permission servers.manage, que ce rôle ne possède pas."
   },
   "remoteForm": {
     "displayNameLabel": "Nom d'affichage du serveur *",
@@ -173,7 +178,8 @@
     "passwordWillImport": "Importé automatiquement depuis {{iniName}}.ini — laissez vide pour l'utiliser, ou saisissez-en un nouveau pour le remplacer.",
     "minMemoryLabel": "Mémoire min. (Go)",
     "maxMemoryLabel": "Mémoire max. (Go)",
-    "selectScannedConfigAria": "Utiliser le serveur détecté {{name}}"
+    "selectScannedConfigAria": "Utiliser le serveur détecté {{name}}",
+    "discoverNoPermission": "Détecter ou rechercher des serveurs nécessite la permission servers.discover, que ce rôle ne possède pas."
   },
   "editDialog": {
     "title": "Modifier le serveur",
@@ -213,7 +219,8 @@
     "maxMemoryLabel": "Mémoire max. (Go)",
     "cancel": "Annuler",
     "saving": "Enregistrement...",
-    "saveChanges": "Enregistrer les modifications"
+    "saveChanges": "Enregistrer les modifications",
+    "noPermission": "Enregistrer les paramètres du serveur nécessite la permission servers.manage, que ce rôle ne possède pas."
   },
   "deleteDialog": {
     "title": "Retirer le serveur du panneau ?",
@@ -228,7 +235,9 @@
     "cancel": "Annuler",
     "removing": "Retrait...",
     "deleteEverything": "Tout supprimer",
-    "removeFromPanel": "Retirer du panneau"
+    "removeFromPanel": "Retirer du panneau",
+    "noPermission": "Supprimer un serveur nécessite la permission servers.manage, que ce rôle ne possède pas.",
+    "deleteFilesNoPermission": "Supprimer les fichiers du serveur nécessite la permission server.wipe, que ce rôle ne possède pas. Le retrait de la seule fiche du panneau reste autorisé."
   },
   "steamDialog": {
     "verifyTitle": "Vérifier les fichiers du jeu",
@@ -256,7 +265,8 @@
     "startVerify": "Lancer la vérification",
     "startUpdate": "Lancer la mise à jour",
     "done": "Terminé",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "noPermission": "Mettre à jour ou vérifier les fichiers du serveur nécessite la permission server.install, que ce rôle ne possède pas."
   },
   "clearInstallDialog": {
     "title": "Vider le dossier d'installation ?",
@@ -264,7 +274,8 @@
     "descriptionAfter": "— y compris les fichiers du jeu, l'état de téléchargement de SteamCMD, et tous les mods qui y sont installés. Utilisez ceci pour récupérer d'une mise à jour SteamCMD qui échoue en boucle (installation corrompue ou bloquée). Vous devrez relancer la mise à jour ensuite pour réinstaller depuis zéro. Cela n'affecte pas vos données de sauvegarde.",
     "cancel": "Annuler",
     "clearing": "Suppression...",
-    "clearFolder": "Vider le dossier"
+    "clearFolder": "Vider le dossier",
+    "noPermission": "Vider le dossier d'installation nécessite la permission server.wipe, que ce rôle ne possède pas."
   },
   "branches": {
     "public": "Public (stable)",

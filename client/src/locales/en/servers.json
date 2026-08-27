@@ -5,6 +5,7 @@
     "eyebrow": "Fleet",
     "scanAria": "Scan for servers",
     "scanTitle": "Scan for servers",
+    "scanNoPermission": "Scanning for bind-mount installs requires the servers.discover permission, which this role doesn't have.",
     "addRemote": "Add Remote Server",
     "addExisting": "Add Existing Server",
     "installNew": "Install New Server"
@@ -77,7 +78,10 @@
     "updateNow": "Update Now",
     "activating": "Activating...",
     "switchToThisServer": "Switch to This Server",
-    "added": "Added {{date}}"
+    "added": "Added {{date}}",
+    "noPermissionDocker": "Managing this container requires the docker.manage permission, which this role doesn't have.",
+    "noPermissionManage": "This action requires the servers.manage permission, which this role doesn't have.",
+    "noPermissionStartStop": "Requires both servers.manage and server.control — a partial permission set would leave the server activated but not started/stopped."
   },
   "tandem": {
     "sectionTitle": "Running a second server alongside the first",
@@ -118,7 +122,8 @@
     "rconOnlyDesc": "Features like config editing, mod management, backups, server start/stop, and file operations will be unavailable. You can still use the console, manage players, send chat messages, control weather and events, and run scheduled commands.",
     "cancel": "Cancel",
     "adding": "Adding...",
-    "addServer": "Add Server"
+    "addServer": "Add Server",
+    "noPermission": "Adding a server requires the servers.manage permission, which this role doesn't have."
   },
   "remoteForm": {
     "displayNameLabel": "Server Display Name *",
@@ -173,7 +178,8 @@
     "passwordSet": "Password set",
     "passwordWillImport": "Imported automatically from {{iniName}}.ini — leave blank to use it, or type a new one to override.",
     "minMemoryLabel": "Min Memory (GB)",
-    "maxMemoryLabel": "Max Memory (GB)"
+    "maxMemoryLabel": "Max Memory (GB)",
+    "discoverNoPermission": "Detecting or scanning for servers requires the servers.discover permission, which this role doesn't have."
   },
   "editDialog": {
     "title": "Edit Server",
@@ -213,7 +219,8 @@
     "maxMemoryLabel": "Max Memory (GB)",
     "cancel": "Cancel",
     "saving": "Saving...",
-    "saveChanges": "Save Changes"
+    "saveChanges": "Save Changes",
+    "noPermission": "Saving server settings requires the servers.manage permission, which this role doesn't have."
   },
   "deleteDialog": {
     "title": "Remove Server from Panel?",
@@ -228,7 +235,9 @@
     "cancel": "Cancel",
     "removing": "Removing...",
     "deleteEverything": "Delete Everything",
-    "removeFromPanel": "Remove from Panel"
+    "removeFromPanel": "Remove from Panel",
+    "noPermission": "Removing a server requires the servers.manage permission, which this role doesn't have.",
+    "deleteFilesNoPermission": "Deleting server files requires the server.wipe permission, which this role doesn't have. Removing the panel record alone is still allowed."
   },
   "steamDialog": {
     "verifyTitle": "Verify Game Files",
@@ -256,7 +265,8 @@
     "startVerify": "Start Verify",
     "startUpdate": "Start Update",
     "done": "Done",
-    "retry": "Retry"
+    "retry": "Retry",
+    "noPermission": "Updating or verifying server files requires the server.install permission, which this role doesn't have."
   },
   "clearInstallDialog": {
     "title": "Clear Installation Folder?",
@@ -264,7 +274,8 @@
     "descriptionAfter": "— including the game files, SteamCMD's download state, and any mods installed there. Use this to recover from a SteamCMD update that keeps failing (corrupted or stuck installation). You'll need to run Start Update again afterward to reinstall from scratch. This does not affect your save data.",
     "cancel": "Cancel",
     "clearing": "Clearing...",
-    "clearFolder": "Clear Folder"
+    "clearFolder": "Clear Folder",
+    "noPermission": "Clearing the installation folder requires the server.wipe permission, which this role doesn't have."
   },
   "branches": {
     "public": "Public (Stable)",

@@ -47,6 +47,24 @@ import en from '../../locales/en/servers.json'
 // Added the same toast (verbatim copy, reused rather than re-written) to
 // the auto-scan path and pinned it below.
 
+// bug-hunt-2026-08-27 (Tier 3 gating sweep): Servers.tsx never called
+// useAuth() before this sweep, so this suite never needed an AuthProvider.
+// Adding capability gating makes it throw outside one -- can() fails open
+// (true) here since this file's assertions are about credential precedence,
+// not capability gating (that's Servers.capabilityGating.test.tsx).
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: { id: 'u1', username: 'someone', role: 'admin', capabilities: [] },
+    authEnabled: true,
+    isAuthenticated: true,
+    isLoading: false,
+    needsSetup: false,
+    logout: vi.fn(),
+    getToken: () => 'fake-token',
+    can: () => true,
+  }),
+}))
+
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
   return {
