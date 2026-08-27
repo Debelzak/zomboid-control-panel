@@ -12,6 +12,7 @@ import {
   redactRconSecretsForWrite,
   deleteServerSecret,
 } from "../utils/serverRconSecrets.js";
+import { redactRconCommandSecrets } from "../utils/rconCommandRedaction.js";
 const log = createLogger("DB");
 
 // ============================================
@@ -946,14 +947,21 @@ function generateNumericId(collection) {
 
 export async function logCommand(command, response, success = true) {
   const db = await getDb();
+  // Redact BEFORE persisting, not on read -- see rconCommandRedaction.js
+  // for what this catches and why. Applied to both fields: `command` is
+  // the confirmed leak (adduser embeds the password directly), `response`
+  // is defense-in-depth in case a verbose RCON reply ever echoes the
+  // command it's replying to.
+  const redactedCommand = redactRconCommandSecrets(command);
+  const redactedResponse = redactRconCommandSecrets(response);
   const truncatedResponse =
-    response && response.length > 4096
-      ? response.substring(0, 4096) + "... [truncated]"
-      : response;
+    redactedResponse && redactedResponse.length > 4096
+      ? redactedResponse.substring(0, 4096) + "... [truncated]"
+      : redactedResponse;
 
   const entry = {
     id: generateId(),
-    command,
+    command: redactedCommand,
     response: truncatedResponse,
     success: success ? 1 : 0,
     executed_at: new Date().toISOString(),
