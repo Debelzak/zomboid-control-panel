@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import noRawErrorMessage from '../eslint-rules/no-raw-error-message.js'
 import noDuplicateInterfaceName from '../eslint-rules/no-duplicate-interface-name.js'
+import noDeadDisabledTitle from '../eslint-rules/no-dead-disabled-title.js'
 
 export default tseslint.config(
   {
@@ -24,6 +25,7 @@ export default tseslint.config(
         rules: {
           'no-raw-error-message': noRawErrorMessage,
           'no-duplicate-interface-name': noDuplicateInterfaceName,
+          'no-dead-disabled-title': noDeadDisabledTitle,
         },
       },
     },
@@ -50,6 +52,18 @@ export default tseslint.config(
       // silently unioned them into a type requiring fields neither producer
       // returns. See eslint-rules/no-duplicate-interface-name.js.
       'local/no-duplicate-interface-name': 'error',
+
+      // 2026-08-27 disabled-reason sweep (Dashboard/Players/Events): a
+      // `title` on an element that can be `disabled` is invisible while
+      // disabled (Chromium shows no native tooltip there, confirmed
+      // empirically) -- see eslint-rules/no-dead-disabled-title.js. `warn`,
+      // not `error`: the tree had dozens of hits the night this landed,
+      // split across a confirmed-defect shape and an ambiguous shape the
+      // rule honestly can't resolve without a human reading the copy. An
+      // `error` here would force either fixing all of them immediately or
+      // maintaining a per-file exemption list -- the exact grandfather-list
+      // liability already removed elsewhere in this file tonight.
+      'local/no-dead-disabled-title': 'warn',
     },
   },
   {
