@@ -149,7 +149,7 @@
       },
       "wipe": {
         "label": "Efase mond lan nèt",
-        "description": "Efase pou tout tan done kat, jwè oswa mond sovgad."
+        "description": "Efase pou tout tan done kat, jwè oswa mond sovgad — epi, atravè aksyon « vide dosye enstalasyon an », nenpòt lòt dosye sou lame a ki senpleman pase yon verifikasyon fichye make enstalasyon PZ, pa sèlman pwòp dosye sèvè konfigire a."
       },
       "world_events": {
         "label": "Lanse evènman mond",
@@ -159,7 +159,7 @@
     "rcon": {
       "execute": {
         "label": "Egzekite kòmand RCON",
-        "description": "Konekte ak RCON epi egzekite nenpòt kòmand konsòl."
+        "description": "Konekte ak RCON epi egzekite nenpòt kòmand konsòl, ki gen ladan sa ki ka sispann sèvè a. Sa bay tou aksè pou li tout istorik kòmand RCON — ki gen ladan vrè modpas jwè ki te tape nan kòmand lis blan tankou adduser."
       }
     },
     "servers": {
@@ -169,7 +169,7 @@
       },
       "discover": {
         "label": "Otomatikman dekouvri sèvè sou machin sa a",
-        "description": "Eskane sistèm fichye lame a pou jwenn enstalasyon sèvè PZ ki egziste deja."
+        "description": "Eskane nenpòt chemen nan sistèm fichye lame a ou presize pou jwenn enstalasyon sèvè PZ, ki gen ladan li ak analize kontni fichye konfigirasyon .ini li jwenn la."
       }
     },
     "templates": {
@@ -181,7 +181,7 @@
     "bridge": {
       "setup": {
         "label": "Konekte & konfigire PanelBridge",
-        "description": "Konekte oswa rekonfigire pon mod nan jwèt la, transpò SFTP li, epi enstale mod la."
+        "description": "Konekte oswa rekonfigire pon mod nan jwèt la — ki gen ladan antre epi konsève modpas koneksyon SFTP ki itilize pou rive sou yon sèvè aleka, eskane nenpòt chemen sou sèvè sa a atravè SFTP, epi voye pon lokal la sou nenpòt chemen absoli sou lame a ki pa nan yon ti lis dosye ki bloke. Li enstale mod la tou."
       },
       "diagnostics": {
         "label": "Dyagnostik PanelBridge",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "Jere mod",
-        "description": "Swiv, enstale epi konfigire mod Workshop, epi efase fichye mod yo pou tout tan sou disk la."
+        "description": "Swiv, enstale, konfigire epi efase mod Workshop yo pou tout tan sou disk la — ki gen ladan pran oswa ekrase sesyon koneksyon Steam ki itilize pou anvoye bagay sou Workshop, jiskaske li pran l dirèkteman nan depo cookie yon navigatè ki enstale sou machin sa a."
       }
     },
     "automation": {
@@ -233,7 +233,7 @@
     "chunks": {
       "manage": {
         "label": "Jere chunk kat",
-        "description": "Netwaye oswa efase zòn chunk kat, epi konfigire chemen sovgad chunk la."
+        "description": "Netwaye oswa efase zòn chunk kat, ki gen ladan yon dosye abitrè sou lame a ou presize — pa sèlman kote sovgad konfigire pou sèvè sa a — epi konfigire chemen sovgad chunk la."
       }
     },
     "serverfiles": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "Gade dyagnostik panèl la",
-        "description": "Gade jounal, istorik pèfòmans, dyagnostik CORS ak estatistik baz done, fè sovgad baz done a, konpakte li — sa vle di retire ansyen anrejistreman pou tout tan — , deplase pwòp dosye done/jounal panèl la, epi efase fichye vye lok."
+        "description": "Gade jounal, istorik pèfòmans, dyagnostik CORS ak estatistik baz done, fè sovgad baz done a, konpakte li — sa vle di retire ansyen anrejistreman pou tout tan — epi efase fichye vye lok. Li deplase tou dosye done ak jounal panèl la nan nenpòt chemen sou lame a ki ka ekri (bloke sèlman pou dosye sistèm OS ak pwòp dosye yon sèvè konfigire), epi li ka deplase tout sa ki deja la nan pwosesis la — ki gen ladan kle siyati JWT la, modpas RCON chak sèvè konsève, ak baz done prensipal la."
       }
     },
     "panel": {
       "settings": {
         "label": "Jere paramèt panèl la an antye",
-        "description": "Chanje politik CORS, entèval verifikasyon mod ak lòt paramèt nivo aplikasyon, epi konfigire koneksyon SSO/OIDC."
+        "description": "Chanje politik CORS, entèval verifikasyon mod ak lòt paramèt nivo aplikasyon — ki gen ladan mete koneksyon HTTPS panèl la sou nenpòt fichye sètifika/kle sou lame a — epi konfigire koneksyon SSO/OIDC (ki gen ladan sekrè kliyan an)."
       }
     }
   }

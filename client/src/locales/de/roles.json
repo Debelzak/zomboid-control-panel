@@ -149,7 +149,7 @@
       },
       "wipe": {
         "label": "Welt unwiderruflich löschen",
-        "description": "Karten-, Spieler- oder Weltspielstanddaten unwiderruflich löschen."
+        "description": "Karten-, Spieler- oder Weltspielstanddaten unwiderruflich löschen — und über die Aktion „Installationsordner leeren” auch jedes andere Verzeichnis auf dem Host, das lediglich eine PZ-Installations-Markerdatei-Prüfung besteht, nicht nur den Ordner des konfigurierten Servers selbst."
       },
       "world_events": {
         "label": "Weltereignisse auslösen",
@@ -159,7 +159,7 @@
     "rcon": {
       "execute": {
         "label": "RCON-Befehle ausführen",
-        "description": "Mit RCON verbinden und beliebige Konsolenbefehle ausführen."
+        "description": "Mit RCON verbinden und beliebige Konsolenbefehle ausführen, einschließlich solcher, die den Server stoppen können. Gewährt außerdem Lesezugriff auf den vollständigen RCON-Befehlsverlauf — einschließlich echter Spielerpasswörter, die in Whitelist-Befehlen wie adduser eingegeben wurden."
       }
     },
     "servers": {
@@ -169,7 +169,7 @@
       },
       "discover": {
         "label": "Server auf dieser Maschine automatisch erkennen",
-        "description": "Das Dateisystem des Hosts nach bestehenden PZ-Serverinstallationen durchsuchen."
+        "description": "Einen beliebigen von Ihnen angegebenen Pfad im Dateisystem des Hosts nach bestehenden PZ-Serverinstallationen durchsuchen, einschließlich des Lesens und Auswertens des Inhalts der dabei gefundenen .ini-Konfigurationsdateien."
       }
     },
     "templates": {
@@ -181,7 +181,7 @@
     "bridge": {
       "setup": {
         "label": "PanelBridge verbinden & konfigurieren",
-        "description": "Die Ingame-Mod-Brücke, ihren SFTP-Transport verbinden oder neu konfigurieren und die Mod installieren."
+        "description": "Die Ingame-Mod-Brücke verbinden oder neu konfigurieren — einschließlich der Eingabe und Speicherung des SFTP-Anmeldepassworts für den Zugriff auf einen entfernten Server, dem Durchsuchen beliebiger Pfade auf diesem Server per SFTP und dem Verweisen der lokalen Brücke auf einen beliebigen absoluten Host-Pfad außerhalb einer kleinen Liste gesperrter Verzeichnisse. Installiert außerdem die Mod."
       },
       "diagnostics": {
         "label": "PanelBridge-Diagnose",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "Mods verwalten",
-        "description": "Workshop-Mods verfolgen, installieren und konfigurieren, sowie Mod-Dateien dauerhaft von der Festplatte löschen."
+        "description": "Workshop-Mods verfolgen, installieren, konfigurieren und dauerhaft von der Festplatte löschen — einschließlich des Extrahierens oder Überschreibens der für Workshop-Uploads verwendeten Steam-Anmeldesitzung, bis hin zum direkten Auslesen aus dem Cookie-Speicher eines installierten Browsers auf diesem Rechner."
       }
     },
     "automation": {
@@ -233,7 +233,7 @@
     "chunks": {
       "manage": {
         "label": "Kartenchunks verwalten",
-        "description": "Kartenchunk-Regionen bereinigen oder löschen und den Speicherpfad für Chunks konfigurieren."
+        "description": "Kartenchunk-Regionen bereinigen oder löschen, auch aus einem beliebigen von Ihnen angegebenen Host-Verzeichnis — nicht beschränkt auf den konfigurierten Speicherort dieses Servers — und den Speicherpfad für Chunks konfigurieren."
       }
     },
     "serverfiles": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "Panel-Diagnose einsehen",
-        "description": "Protokolle, Leistungsverlauf, CORS-Diagnose und Datenbankstatistiken einsehen, die Datenbank sichern, sie komprimieren — wobei alte Datensätze dauerhaft entfernt werden —, die eigenen Daten-/Protokollverzeichnisse des Panels verlagern, und veraltete Sperrdateien löschen."
+        "description": "Protokolle, Leistungsverlauf, CORS-Diagnose und Datenbankstatistiken einsehen, die Datenbank sichern, sie komprimieren — wobei alte Datensätze dauerhaft entfernt werden — und veraltete Sperrdateien löschen. Verlagert außerdem die Daten- und Protokollverzeichnisse des Panels an einen beliebigen beschreibbaren Pfad auf dem Host (nur Systemverzeichnisse des Betriebssystems und die Ordner eines konfigurierten Servers sind gesperrt) und kann dabei alles bereits Vorhandene mitverschieben — einschließlich des JWT-Signaturschlüssels, der gespeicherten RCON-Passwörter aller Server und der Hauptdatenbank."
       }
     },
     "panel": {
       "settings": {
         "label": "Panelweite Einstellungen verwalten",
-        "description": "CORS-Richtlinie, Mod-Prüfintervall und andere App-weite Einstellungen ändern, sowie SSO/OIDC-Anmeldung konfigurieren."
+        "description": "CORS-Richtlinie, Mod-Prüfintervall und andere App-weite Einstellungen ändern — einschließlich der Möglichkeit, den HTTPS-Listener des Panels auf eine beliebige Zertifikats-/Schlüsseldatei auf dem Host zu verweisen — sowie SSO/OIDC-Anmeldung konfigurieren (einschließlich Client-Secret)."
       }
     }
   }
