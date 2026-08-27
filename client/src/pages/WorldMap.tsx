@@ -74,6 +74,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
+import { bridgeSupportsPlayerStatus } from './worldMapBridgeVersion'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
 
@@ -624,6 +625,13 @@ export default function WorldMap() {
   const [selectedPlayer, setSelectedPlayer] = useState<MapPlayer | null>(null)
   const [bridgeConnected, setBridgeConnected] = useState(false)
   const [bridgeLoading, setBridgeLoading] = useState(false)
+  // Bridge's self-reported PanelBridge.VERSION -- gates the player-status
+  // fields (isAlive/isInfected/accessLevel) added in bridge v1.7.39. See
+  // worldMapBridgeVersion.ts for why this is a real version comparison
+  // rather than inferring support from field presence.
+  const [bridgeVersion, setBridgeVersion] = useState<string | null>(null)
+  const bridgeVersionRef = useRef<string | null>(null)
+  useEffect(() => { bridgeVersionRef.current = bridgeVersion }, [bridgeVersion])
   const [hasActiveServer, setHasActiveServer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [hoveredPlayer, setHoveredPlayer] = useState<string | null>(null)
@@ -1209,6 +1217,13 @@ export default function WorldMap() {
         : null
       if (rawPlayers) {
         setBridgeConnected(true)
+        // isAlive/isInfected/accessLevel only exist on the wire from bridge
+        // v1.7.39 onward -- an older bridge simply omits the keys. Gate on
+        // the bridge's own reported version rather than defaulting/passing
+        // the (possibly absent) raw value through: an older bridge must
+        // read as unknown, never as a specific alive/uninfected/non-admin
+        // value we don't actually have.
+        const statusFieldsSupported = bridgeSupportsPlayerStatus(bridgeVersionRef.current)
         setPlayers((prev) => {
           const prevMap = new globalThis.Map(prev.map((p) => [p.username || p.displayName, p]))
           return rawPlayers.map((p: RawBridgePlayer) => {
@@ -1219,9 +1234,9 @@ export default function WorldMap() {
               displayName: p.displayName || key,
               x: p.x, y: p.y, z: p.z ?? 0,
               health: p.health,
-              isAlive: p.isAlive ?? true,
-              isInfected: p.isInfected,
-              accessLevel: p.accessLevel,
+              isAlive: statusFieldsSupported ? p.isAlive : undefined,
+              isInfected: statusFieldsSupported ? p.isInfected : undefined,
+              accessLevel: statusFieldsSupported ? p.accessLevel : undefined,
               hunger: p.hunger, thirst: p.thirst, fatigue: p.fatigue,
               prevX: old ? old.x : p.x,
               prevY: old ? old.y : p.y,
@@ -1241,6 +1256,7 @@ export default function WorldMap() {
   const checkBridgeStatus = useCallback(async () => {
     if (!hasActiveServer) {
       setBridgeConnected(false)
+      setBridgeVersion(null)
       setBridgeLoading(false)
       return
     }
@@ -1249,8 +1265,10 @@ export default function WorldMap() {
     try {
       const res = await panelBridgeApi.getStatus()
       setBridgeConnected(res.modConnected === true)
+      setBridgeVersion(res.modStatus?.version || null)
     } catch {
       setBridgeConnected(false)
+      setBridgeVersion(null)
     } finally {
       setBridgeLoading(false)
     }
@@ -3994,7 +4012,10 @@ function ContextMenuSection({ label, icon, tone = 'muted' }: {
 }
 
 function getPlayerColor(player: MapPlayer, alpha: number): string {
-  if (!player.isAlive && player.isAlive !== undefined) return hslToken('--muted-foreground', alpha)
+  // isAlive is undefined (not false) when the bridge doesn't send it --
+  // an older bridge or a mid-connect gap must render as the default
+  // (unknown) color below, never as muted/"known dead".
+  if (player.isAlive === false) return hslToken('--muted-foreground', alpha)
   if (player.isInfected) return hslToken('--destructive', alpha)
   if (player.accessLevel && player.accessLevel !== '' && player.accessLevel !== 'none' && player.accessLevel !== 'user')
     return hslToken('--warning', alpha)
