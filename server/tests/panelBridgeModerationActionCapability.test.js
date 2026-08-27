@@ -23,6 +23,11 @@ const ROLES = {
   // Holds bridge.command (passes the route's own gate) and NOTHING else --
   // the exact custom-role shape this fix exists to stop.
   bridge_command_only: { capabilities: ["bridge.command"] },
+  // Holds bridge.command and players.gm_tools but NOT players.moderate --
+  // the legitimate "GM/world-event automation" role the header comment
+  // describes, used by the setGodMode/setInvisible/setNoclip/healPlayer
+  // block below.
+  gm_tools_admin: { capabilities: ["bridge.command", "players.gm_tools"] },
 };
 const getRoleByName = vi.fn(async (name) => ROLES[name] || null);
 
@@ -118,4 +123,72 @@ describe("POST /panel-bridge/command -- moderation actions require players.moder
     // a non-mapped action must never trigger a second role lookup at all.
     expect(getRoleByName).not.toHaveBeenCalled();
   });
+});
+
+// bug-hunt-2026-08-27, were-the-dedicated-gm-tools-routes-ever-wired: unlike
+// the moderation four, setGodMode/setInvisible/setNoclip/healPlayer each
+// have their own dedicated, correctly-gated players.gm_tools route
+// (players.js's /godmode, /invisible, /noclip; this file's own
+// /players/:username/heal) -- but Players.tsx hasn't called any of them
+// since commit 8bd0edc ("Release v1.0.2") silently moved three of the four
+// onto this passthrough (and built the fourth, heal, against the
+// passthrough from the start) as a side effect of an unrelated UI-overhaul
+// release commit. Same shape as the moderation four: whichever client path
+// is actually live, the server-side gate has to hold.
+describe("POST /panel-bridge/command -- setGodMode/setInvisible/setNoclip/healPlayer require players.gm_tools in addition to bridge.command", () => {
+  let sendCommand;
+
+  beforeEach(() => {
+    bridge.isRunning = true;
+    bridge.bridgePath = "/fake/bridge/path";
+    sendCommand = vi.spyOn(bridge, "sendCommand").mockResolvedValue({ success: true });
+    getRoleByName.mockClear();
+    logBridgeCommand.mockClear();
+  });
+
+  afterEach(() => {
+    sendCommand.mockRestore();
+    bridge.isRunning = false;
+    bridge.bridgePath = null;
+  });
+
+  const GM_TOOLS_ACTIONS = ["setGodMode", "setInvisible", "setNoclip", "healPlayer"];
+  const argsFor = (action) =>
+    action === "healPlayer"
+      ? { username: "Survivor" }
+      : { username: "Survivor", enabled: true };
+
+  it.each(GM_TOOLS_ACTIONS)(
+    "refuses %s for a caller who holds bridge.command but not players.gm_tools",
+    async (action) => {
+      const res = await postCommand(action, argsFor(action), "bridge_command_only");
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "PANELBRIDGE_ACTION_CAPABILITY_REQUIRED" }),
+      );
+      expect(sendCommand).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(GM_TOOLS_ACTIONS)(
+    "allows %s for a caller who holds both bridge.command and players.gm_tools",
+    async (action) => {
+      const args = argsFor(action);
+      const res = await postCommand(action, args, "gm_tools_admin");
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      expect(sendCommand).toHaveBeenCalledWith(action, args);
+    },
+  );
+
+  it.each(GM_TOOLS_ACTIONS)(
+    "still refuses %s for a caller who holds players.moderate but not players.gm_tools (the moderation grant doesn't leak into GM tools)",
+    async (action) => {
+      const res = await postCommand(action, argsFor(action), "admin");
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(sendCommand).not.toHaveBeenCalled();
+    },
+  );
 });

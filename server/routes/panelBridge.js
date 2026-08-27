@@ -233,11 +233,28 @@ export const VALID_ACTIONS = new Set([
 // automation, but never granted players.moderate, gets full kick/ban/
 // ban-by-IP/ban-by-SteamID power as an undocumented side effect.
 // bug-hunt-2026-08-27: Pam's cross-route-family capability sweep.
+//
+// setGodMode/setInvisible/setNoclip/healPlayer are the SAME shape, found the
+// same day (bug-hunt-2026-08-27, were-the-dedicated-gm-tools-routes-ever-wired):
+// unlike the moderation four, these DO each have a dedicated, correctly-
+// gated players.gm_tools route (players.js's /godmode, /invisible, /noclip;
+// this file's /players/:username/heal) -- but Players.tsx has not called any
+// of them since commit 8bd0edc ("Release v1.0.2"), which silently swapped
+// three of the four onto this passthrough (and built the fourth, heal,
+// against the passthrough from the start) as an incidental side effect of an
+// unrelated 641-line UI-overhaul release commit, with no comment anywhere in
+// that diff acknowledging the capability implication. Whichever client path
+// is actually live, the server-side gate here has to hold -- same reasoning
+// as the moderation four, so they get the same treatment.
 export const BRIDGE_ACTION_CAPABILITY = {
   moderationKickUser: "players.moderate",
   moderationBanUser: "players.moderate",
   moderationBanIP: "players.moderate",
   moderationBanSteamID: "players.moderate",
+  setGodMode: "players.gm_tools",
+  setInvisible: "players.gm_tools",
+  setNoclip: "players.gm_tools",
+  healPlayer: "players.gm_tools",
 };
 
 // Username validation for PanelBridge player endpoints.
@@ -1247,10 +1264,12 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
   }
 
   // See BRIDGE_ACTION_CAPABILITY's own comment above: the four moderation
-  // actions need players.moderate in addition to this route's own
-  // bridge.command gate, since they have no dedicated route of their own
-  // to carry that check the way every other kick/ban entry point
-  // (players.js) does.
+  // actions need players.moderate, and setGodMode/setInvisible/setNoclip/
+  // healPlayer need players.gm_tools, each in addition to this route's own
+  // bridge.command gate -- either because they have no dedicated route of
+  // their own (moderation), or because a dedicated gated route exists but
+  // this passthrough is the path Players.tsx actually calls today (the GM
+  // four).
   const requiredCapability = BRIDGE_ACTION_CAPABILITY[action];
   if (requiredCapability) {
     const role = req.user ? await getRoleByName(req.user.role) : null;
