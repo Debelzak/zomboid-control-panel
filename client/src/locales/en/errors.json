@@ -428,6 +428,7 @@
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "Could not reschedule the task: {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Cannot restart a remote server. The process is not managed by this panel",
   "CONFIG_APP_SETTINGS_REQUIRED": "Settings are required",
+  "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "Cannot change {{detail}} without holding that capability yourself.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",
   "CONFIG_INVALID_SERVER_NAME": "Server name may only contain letters, numbers, spaces, underscores and hyphens (and can't start or end with a space)",
   "CONFIG_INVALID_MOD_CHECK_INTERVAL": "The mod-check interval must be a whole number of minutes from 1 to 120",

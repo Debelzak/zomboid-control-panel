@@ -428,6 +428,7 @@
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "Aufgabe konnte nicht neu geplant werden: {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Ein Remote-Server kann nicht neu gestartet werden. Der Prozess wird nicht von diesem Panel verwaltet",
   "CONFIG_APP_SETTINGS_REQUIRED": "Einstellungen sind erforderlich",
+  "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "Kann {{detail}} nicht ändern, ohne diese Berechtigung selbst zu besitzen.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",
   "CONFIG_INVALID_SERVER_NAME": "Der Servername darf nur Buchstaben, Zahlen, Leerzeichen, Unterstriche und Bindestriche enthalten (und darf nicht mit einem Leerzeichen beginnen oder enden)",
   "CONFIG_INVALID_MOD_CHECK_INTERVAL": "Das Mod-Prüfintervall muss eine ganze Zahl von Minuten zwischen 1 und 120 sein",

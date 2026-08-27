@@ -20,6 +20,29 @@ vi.mock("../database/init.js", () => ({
   setSetting: vi.fn(async (key, value) => {
     settingsStore[key] = value;
   }),
+  // This file bypasses requirePermission("panel.settings") entirely (see
+  // getRouteHandler below -- it invokes only the last handler in the
+  // route's stack, on purpose, since gate coverage lives in
+  // configRoutesRoleSweep.test.js and this file exercises validation logic
+  // directly). The per-key capability partition added in the 2026-08-26
+  // capability-description-sweep fix runs INSIDE that last handler though,
+  // so every save here needs a real, fully-privileged caller behind it --
+  // same shape as any other request this file sends, just one more field
+  // that now matters.
+  getRoleByName: vi.fn(async (name) =>
+    name === "admin"
+      ? {
+          capabilities: [
+            "panel.settings",
+            "server.configure",
+            "server.install",
+            "bridge.setup",
+            "integrations.manage",
+            "mods.manage",
+          ],
+        }
+      : null,
+  ),
 }));
 
 function createResponse() {
@@ -53,7 +76,11 @@ async function putAppSettings(settings) {
   const { default: router } = await import("../routes/config.js");
   const res = createResponse();
   await getRouteHandler(router, "/app-settings", "put")(
-    { body: { settings }, app: { get: () => undefined } },
+    {
+      body: { settings },
+      user: { role: "admin" },
+      app: { get: () => undefined },
+    },
     res,
   );
   return res;

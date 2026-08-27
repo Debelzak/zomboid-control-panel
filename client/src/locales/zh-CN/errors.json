@@ -428,6 +428,7 @@
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "无法重新安排任务：{{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "无法重启远程服务器。该进程不由此面板管理",
   "CONFIG_APP_SETTINGS_REQUIRED": "需要设置",
+  "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "无法更改 {{detail}}，因为你自己没有该权限。",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",
   "CONFIG_INVALID_SERVER_NAME": "服务器名称只能包含字母、数字、空格、下划线和连字符（且不能以空格开头或结尾）",
   "CONFIG_INVALID_MOD_CHECK_INTERVAL": "模组检查间隔必须是 1 到 120 之间的整数分钟数",

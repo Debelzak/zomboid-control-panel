@@ -428,6 +428,7 @@
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "Pa t kapab repwograme tach la: {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Pa ka fè yon sèvè adistans redemare. Panel sa a pa jere pwosesis la",
   "CONFIG_APP_SETTINGS_REQUIRED": "Paramèt yo obligatwa",
+  "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "Pa ka chanje {{detail}} si ou pa gen kapasite sa a ou menm.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",
   "CONFIG_INVALID_SERVER_NAME": "Non sèvè a ka gen sèlman lèt, chif, espas, tiret ba, ak tiret (epi li pa ka kòmanse oswa fini ak yon espas)",
   "CONFIG_INVALID_MOD_CHECK_INTERVAL": "Entèval verifikasyon mod la dwe yon nonm antye minit ant 1 ak 120",

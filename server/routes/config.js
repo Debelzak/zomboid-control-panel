@@ -11,7 +11,7 @@ import {
   maskSensitiveObject,
 } from "../utils/sanitize.js";
 import net from "net";
-import { requirePermission } from "../services/permissions.js";
+import { requirePermission, getRoleByName } from "../services/permissions.js";
 import {
   MOD_CHECK_INTERVAL_MINUTES_MAX,
   MOD_CHECK_INTERVAL_MINUTES_MIN,
@@ -132,6 +132,39 @@ const VALID_SETTINGS_KEYS = [
   "panelBridgeSftpLogPath",
   "panelBridgeSftpConfigPath",
 ];
+
+// PUT /app-settings is gated by panel.settings alone, but its real reach
+// spans five OTHER capabilities' territory: rconPassword/rconHost/rconPort
+// (server.configure), Steam credentials (server.install), PanelBridge SFTP
+// including its password (bridge.setup), the Discord guild ID
+// (integrations.manage), and Workshop session cookies (mods.manage). A
+// panel.settings holder cannot silently rewrite any of these through this
+// one door without also holding the capability that actually governs it --
+// found in the 2026-08-26 capability-description sweep. Every key NOT
+// listed here is the genuinely app-level remainder (CORS, dark mode, mod
+// check interval, HTTPS bind config, ...) and needs nothing beyond
+// panel.settings itself, which the route is already gated on.
+const SETTINGS_KEY_CAPABILITY = {
+  rconHost: "server.configure",
+  rconPort: "server.configure",
+  rconPassword: "server.configure",
+  steamApiKey: "server.install",
+  steamUpdateAccount: "server.install",
+  steamcmdPath: "server.install",
+  panelBridgeSftpEnabled: "bridge.setup",
+  panelBridgeSftpHost: "bridge.setup",
+  panelBridgeSftpPort: "bridge.setup",
+  panelBridgeSftpUsername: "bridge.setup",
+  panelBridgeSftpPassword: "bridge.setup",
+  panelBridgeSftpBridgePath: "bridge.setup",
+  panelBridgeSftpPollIntervalSeconds: "bridge.setup",
+  panelBridgeSftpLogPath: "bridge.setup",
+  panelBridgeSftpConfigPath: "bridge.setup",
+  discordGuildId: "integrations.manage",
+  workshopCollectionId: "mods.manage",
+  steamSessionId: "mods.manage",
+  steamLoginSecure: "mods.manage",
+};
 
 const ORIGIN_DELIMITER_REGEX = /[\n,;]+/;
 const MAX_CORS_ALLOWED_ORIGINS_LENGTH = 5000;
@@ -670,6 +703,50 @@ router.put("/app-settings", requirePermission("panel.settings"), async (req, res
       }
       return true;
     });
+
+    // A key whose real, effective value would actually CHANGE requires the
+    // capability that governs it, not just panel.settings. Compared against
+    // the CURRENTLY STORED value (via getAllSettings(), not the masked
+    // response GET returns) rather than mere presence in the request:
+    // Settings.tsx's Save button resends the entire settings object on
+    // every save, so gating on presence alone would refuse every save by
+    // anyone who isn't already an admin -- Angela hit this identical trap
+    // in the ini editor a few hours earlier tonight. `filtered` already
+    // excludes a masked-placeholder resend of an untouched secret, so this
+    // only ever fires for a value genuinely different from what's stored.
+    const touchesGovernedKey = filtered.some(
+      ([key]) => key in SETTINGS_KEY_CAPABILITY,
+    );
+    const currentSettings = touchesGovernedKey ? await getAllSettings() : null;
+    const missingCapabilities = [];
+    let callerCapabilities = null;
+    for (const [key, value] of filtered) {
+      const requiredCapability = SETTINGS_KEY_CAPABILITY[key];
+      if (!requiredCapability) continue;
+      if (JSON.stringify(currentSettings[key]) === JSON.stringify(value)) {
+        continue;
+      }
+      if (callerCapabilities === null) {
+        const role = req.user ? await getRoleByName(req.user.role) : null;
+        callerCapabilities = Array.isArray(role?.capabilities)
+          ? role.capabilities
+          : [];
+      }
+      if (!callerCapabilities.includes(requiredCapability)) {
+        missingCapabilities.push({ key, requiredCapability });
+      }
+    }
+    if (missingCapabilities.length > 0) {
+      const detail = missingCapabilities
+        .map((m) => `"${m.key}" needs ${m.requiredCapability}`)
+        .join(", ");
+      return res.status(403).json({
+        error: `Cannot change ${detail} without holding that capability yourself.`,
+        code: ErrorCode.CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED,
+        params: sanitizeErrorParams({ detail }),
+        missing: missingCapabilities,
+      });
+    }
 
     for (const [key, value] of filtered) {
       if (key === "modCheckInterval") continue;

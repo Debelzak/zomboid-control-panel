@@ -428,6 +428,7 @@
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "No se pudo reprogramar la tarea: {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "No se puede reiniciar un servidor remoto. El proceso no está gestionado por este panel",
   "CONFIG_APP_SETTINGS_REQUIRED": "Se requieren los ajustes",
+  "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "No se puede cambiar {{detail}} sin tener tú mismo esa capacidad.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",
   "CONFIG_INVALID_SERVER_NAME": "El nombre del servidor solo puede contener letras, números, espacios, guiones bajos y guiones (y no puede empezar ni terminar con un espacio)",
   "CONFIG_INVALID_MOD_CHECK_INTERVAL": "El intervalo de comprobación de mods debe ser un número entero de minutos entre 1 y 120",
