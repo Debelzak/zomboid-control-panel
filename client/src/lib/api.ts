@@ -843,7 +843,11 @@ export const schedulerApi = {
   deleteTask: (id: number) => apiDelete(`/scheduler/tasks/${id}`),
   runTask: (id: number) => apiPost(`/scheduler/tasks/${id}/run`),
   restartNow: (warningMinutes?: number) =>
-    apiPost("/scheduler/restart-now", { warningMinutes }),
+    apiPost("/scheduler/restart-now", { warningMinutes }) as Promise<{
+      success: boolean;
+      message: string;
+      warningMinutes: number;
+    }>,
   getCronPresets: () => apiGet("/scheduler/cron-presets"),
   validateCron: (cronExpression: string) =>
     apiPost("/scheduler/validate-cron", { cronExpression }) as Promise<{

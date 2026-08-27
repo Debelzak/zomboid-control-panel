@@ -506,12 +506,33 @@ export default function Scheduler() {
   const handleRestartNow = async () => {
     setLoading(true)
     try {
-      await schedulerApi.restartNow(restartMinutes)
-      toast({
-        title: t('toasts.restartInitiatedTitle'),
-        description: t('toasts.restartInitiatedDesc', { minutes: restartMinutes }),
-        variant: 'success' as const,
-      })
+      const result = await schedulerApi.restartNow(restartMinutes)
+      const applied = result.warningMinutes
+      // The NumberInput's min/max are decorative (native <input> attrs
+      // only, no client-side clamp function passed) -- an operator can type
+      // past them, and the server silently caps at 60. Compare what was
+      // requested against what the server actually used instead of just
+      // echoing back the client's own state, which used to say e.g. "500
+      // minutes" when the real countdown was 60.
+      if (applied !== restartMinutes) {
+        toast({
+          title: t('toasts.restartInitiatedTitle'),
+          description: t('toasts.restartMinutesClampedDesc', { requested: restartMinutes, applied }),
+          variant: 'warning' as const,
+        })
+      } else {
+        toast({
+          title: t('toasts.restartInitiatedTitle'),
+          // Pre-existing bug, caught while touching this code (2026-08-27):
+          // restartInitiatedDesc/_WithWarningsDesc are pluralized keys
+          // (_one/_other), which i18next only resolves via a `count` param
+          // -- passing `minutes` alone silently returned the raw key
+          // string, invisible until something actually asserted on the
+          // rendered toast text.
+          description: t('toasts.restartInitiatedDesc', { count: applied, minutes: applied }),
+          variant: 'success' as const,
+        })
+      }
     } catch (error) {
       toast({
         title: t('toasts.errorTitle'),
@@ -526,10 +547,10 @@ export default function Scheduler() {
   const handleRestartWithWarning = async (minutes: number) => {
     setLoading(true)
     try {
-      await schedulerApi.restartNow(minutes)
+      const result = await schedulerApi.restartNow(minutes)
       toast({
         title: t('toasts.restartInitiatedTitle'),
-        description: t('toasts.restartInitiatedWithWarningsDesc', { minutes }),
+        description: t('toasts.restartInitiatedWithWarningsDesc', { count: result.warningMinutes, minutes: result.warningMinutes }),
         variant: 'success' as const,
       })
     } catch (error) {

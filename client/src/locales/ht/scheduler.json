@@ -203,6 +203,7 @@
     "restartInitiatedDesc_other": "Sèvè a ap redemare nan {{minutes}} minit",
     "restartInitiatedWithWarningsDesc_one": "Sèvè a ap redemare nan {{minutes}} minit ak avètisman kontdaoun",
     "restartInitiatedWithWarningsDesc_other": "Sèvè a ap redemare nan {{minutes}} minit ak avètisman kontdaoun",
+    "restartMinutesClampedDesc": "Ou antre {{requested}} minit, men kontdaoun avètisman an limite a {{applied}}. Sèvè a pral redemare nan {{applied}} minit olye de sa.",
     "restartFailedFallback": "Echwe pou lanse redemaraj",
     "broadcastSentTitle": "Difizyon Voye",
     "broadcastFailedFallback": "Echwe pou difize",

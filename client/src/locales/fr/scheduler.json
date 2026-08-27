@@ -203,6 +203,7 @@
     "restartInitiatedDesc_other": "Le serveur redémarrera dans {{minutes}} minutes",
     "restartInitiatedWithWarningsDesc_one": "Le serveur redémarrera dans {{minutes}} minute avec avertissements de compte à rebours",
     "restartInitiatedWithWarningsDesc_other": "Le serveur redémarrera dans {{minutes}} minutes avec avertissements de compte à rebours",
+    "restartMinutesClampedDesc": "Vous avez saisi {{requested}} minutes, mais le compte à rebours d'avertissement est plafonné à {{applied}}. Le serveur redémarrera dans {{applied}} minutes à la place.",
     "restartFailedFallback": "Échec du lancement du redémarrage",
     "broadcastSentTitle": "Diffusion envoyée",
     "broadcastFailedFallback": "Échec de la diffusion",

@@ -156,6 +156,52 @@ describe("scheduler:action_result socket emission", () => {
     });
   });
 
+  // bug-hunt-2026-08-26 backlog, dispatched 2026-08-27 (Jim's ranked #2):
+  // the operator could type a custom restart-warning time above the
+  // server's 60-minute cap, and the immediate response never said the
+  // value was substituted -- the client's toast just echoed back whatever
+  // was typed. Fixed by reporting the value actually used, not just the
+  // raw request, so the client can tell the operator when/what it clamped.
+  it("POST /restart-now reports the clamped value, not the raw request, when the operator's warningMinutes exceeds the 60-minute cap", async () => {
+    const emit = vi.fn();
+    const performRestart = vi.fn().mockResolvedValue({ success: true, message: "Restarted successfully" });
+    const response = createResponse();
+
+    await getHandler("/restart-now", "post")(
+      {
+        user: { role: "automation_and_control" },
+        body: { warningMinutes: 500 },
+        app: { get: (key) => (key === "scheduler" ? { performRestart } : key === "io" ? { emit } : null) },
+      },
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, warningMinutes: 60 }),
+    );
+    expect(performRestart).toHaveBeenCalledWith(60, expect.anything());
+  });
+
+  it("POST /restart-now reports the request value unchanged when it's already within the 60-minute cap", async () => {
+    const emit = vi.fn();
+    const performRestart = vi.fn().mockResolvedValue({ success: true, message: "Restarted successfully" });
+    const response = createResponse();
+
+    await getHandler("/restart-now", "post")(
+      {
+        user: { role: "automation_and_control" },
+        body: { warningMinutes: 20 },
+        app: { get: (key) => (key === "scheduler" ? { performRestart } : key === "io" ? { emit } : null) },
+      },
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, warningMinutes: 20 }),
+    );
+    expect(performRestart).toHaveBeenCalledWith(20, expect.anything());
+  });
+
   it("does not throw when app.get('io') returns something without a real emit function (defends the existing simplified test mocks elsewhere)", async () => {
     const performRestart = vi.fn().mockResolvedValue({ success: true, message: "ok" });
     const response = createResponse();

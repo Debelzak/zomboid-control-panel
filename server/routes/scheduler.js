@@ -586,7 +586,12 @@ router.post('/restart-now', async (req, res) => {
         });
       });
 
-    res.json({ success: true, message: 'Restart initiated' });
+    // Report the value actually used, not just the request -- the operator
+    // may have typed something above the 60-minute cap above (the client's
+    // own NumberInput min/max are decorative, not a client-side clamp), and
+    // the toast this feeds should say what really happened, not echo back
+    // whatever they typed.
+    res.json({ success: true, message: 'Restart initiated', warningMinutes: parsedWarningMinutes });
   } catch (error) {
     log.error(`Failed to trigger restart: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

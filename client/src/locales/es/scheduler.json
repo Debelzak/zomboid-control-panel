@@ -203,6 +203,7 @@
     "restartInitiatedDesc_other": "El servidor se reiniciará en {{minutes}} minutos",
     "restartInitiatedWithWarningsDesc_one": "El servidor se reiniciará en {{minutes}} minuto con avisos de cuenta regresiva",
     "restartInitiatedWithWarningsDesc_other": "El servidor se reiniciará en {{minutes}} minutos con avisos de cuenta regresiva",
+    "restartMinutesClampedDesc": "Introdujiste {{requested}} minutos, pero la cuenta regresiva de aviso está limitada a {{applied}}. El servidor se reiniciará en {{applied}} minutos en su lugar.",
     "restartFailedFallback": "No se pudo iniciar el reinicio",
     "broadcastSentTitle": "Difusión enviada",
     "broadcastFailedFallback": "No se pudo difundir",

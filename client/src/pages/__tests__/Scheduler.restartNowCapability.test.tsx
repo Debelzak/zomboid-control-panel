@@ -81,6 +81,15 @@ async function setUpRunningServer() {
   getHistory.mockResolvedValue({ history: [] })
   serversGetAll.mockResolvedValue({ servers: [] })
   serverGetStatus.mockResolvedValue({ running: true } as Awaited<ReturnType<typeof serverApi.getStatus>>)
+  // Echoes the requested value back as warningMinutes -- matches production
+  // for every value this test file ever requests (1, 2), all well under the
+  // server's 60-minute clamp. The clamped-value path itself has its own
+  // dedicated test (Scheduler.restartMinutesClamp.test.tsx).
+  restartNow.mockImplementation(async (minutes) => ({
+    success: true,
+    message: 'Restart initiated',
+    warningMinutes: minutes ?? 0,
+  }))
 }
 
 describe('Scheduler.tsx: Restart Now buttons gate on server.control, not just page access', () => {

@@ -203,6 +203,7 @@
     "restartInitiatedDesc_other": "Server startet in {{minutes}} Minuten neu",
     "restartInitiatedWithWarningsDesc_one": "Server startet in {{minutes}} Minute mit Countdown-Warnungen neu",
     "restartInitiatedWithWarningsDesc_other": "Server startet in {{minutes}} Minuten mit Countdown-Warnungen neu",
+    "restartMinutesClampedDesc": "Du hast {{requested}} Minuten eingegeben, aber der Warn-Countdown ist auf {{applied}} begrenzt. Der Server startet stattdessen in {{applied}} Minuten neu.",
     "restartFailedFallback": "Neustart konnte nicht eingeleitet werden",
     "broadcastSentTitle": "Broadcast gesendet",
     "broadcastFailedFallback": "Broadcast fehlgeschlagen",

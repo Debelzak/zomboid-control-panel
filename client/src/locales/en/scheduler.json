@@ -203,6 +203,7 @@
     "restartInitiatedDesc_other": "Server will restart in {{minutes}} minutes",
     "restartInitiatedWithWarningsDesc_one": "Server will restart in {{minutes}} minute with countdown warnings",
     "restartInitiatedWithWarningsDesc_other": "Server will restart in {{minutes}} minutes with countdown warnings",
+    "restartMinutesClampedDesc": "You entered {{requested}} minutes, but the warning countdown is capped at {{applied}}. Server will restart in {{applied}} minutes instead.",
     "restartFailedFallback": "Failed to initiate restart",
     "broadcastSentTitle": "Broadcast Sent",
     "broadcastFailedFallback": "Failed to broadcast",

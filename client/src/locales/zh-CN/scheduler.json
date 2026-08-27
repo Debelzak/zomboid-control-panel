@@ -203,6 +203,7 @@
     "restartInitiatedDesc_other": "服务器将在 {{minutes}} 分钟后重启",
     "restartInitiatedWithWarningsDesc_one": "服务器将在 {{minutes}} 分钟后重启，期间显示倒计时警告",
     "restartInitiatedWithWarningsDesc_other": "服务器将在 {{minutes}} 分钟后重启，期间显示倒计时警告",
+    "restartMinutesClampedDesc": "您输入的是 {{requested}} 分钟，但警告倒计时上限为 {{applied}} 分钟。服务器将改为在 {{applied}} 分钟后重启。",
     "restartFailedFallback": "发起重启失败",
     "broadcastSentTitle": "广播已发送",
     "broadcastFailedFallback": "广播发送失败",
