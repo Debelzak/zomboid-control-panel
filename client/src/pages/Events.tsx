@@ -848,6 +848,28 @@ interface EventSectionMeta {
 // Sections whose commands act on a chosen player rather than the whole world.
 const TARGETED_SECTIONS: EventSectionKey[] = ['quickSounds', 'targetedSounds', 'horde', 'teleport']
 
+// getClimateFloats() reports the real, server-authoritative min/max for each
+// ClimateFloat (PanelBridge.lua handlers.getClimateFloats -> cf:getMin()/cf:getMax()).
+// Binding the sliders to a hardcoded 0-100 (or -30..45 for temperature) instead of this
+// data lets an operator either request a value the game will never honour, or hides
+// legitimate values the real range allows. `scale` converts the raw float range into
+// the same units the slider/state already use (the five percent-style floats are
+// stored as value*100; temperature is stored unscaled).
+interface ClimateFloatRange {
+  min: number
+  max: number
+}
+
+function climateSliderBounds(
+  range: ClimateFloatRange | undefined,
+  fallbackMin: number,
+  fallbackMax: number,
+  scale: number,
+): { min: number; max: number } {
+  if (!range) return { min: fallbackMin, max: fallbackMax }
+  return { min: Math.round(range.min * scale), max: Math.round(range.max * scale) }
+}
+
 interface ActivityEntry {
   key: number
   label: string
@@ -943,6 +965,9 @@ export default function Events() {
   const [cloudIntensity, setCloudIntensity] = useState(0)
   const [humidity, setHumidity] = useState(50)
   const [precipitationIntensity, setPrecipitationIntensity] = useState(0)
+  // Real per-float min/max from getClimateFloats, keyed by ClimateFloat id. Populated
+  // once the bridge reports them; sliders fall back to the old hardcoded range until then.
+  const [climateRanges, setClimateRanges] = useState<Record<number, ClimateFloatRange>>({})
 
   // Game time controls
   const [gameHour, setGameHour] = useState(12)
@@ -1031,16 +1056,28 @@ export default function Events() {
         if (!mountedRef.current) return
 
         if (floatsRes.status === 'fulfilled' && floatsRes.value.success && floatsRes.value.data?.floats) {
+          const floats = floatsRes.value.data.floats
+          const findFloat = (id: number) => floats.find((f: { id: number; value: number; min: number; max: number }) => f.id === id)
+
+          // The server reports each ClimateFloat's real min/max alongside its value;
+          // capture it so the sliders below can bind to it instead of a hardcoded range.
+          setClimateRanges((prev) => {
+            const next = { ...prev }
+            for (const id of [3, 4, 5, 6, 8, 12]) {
+              const f = findFloat(id)
+              if (f) next[id] = { min: f.min, max: f.max }
+            }
+            return next
+          })
+
           // Don't clobber sliders the user is currently dragging.
           if (Date.now() >= climateDirtyUntilRef.current) {
-            const floats = floatsRes.value.data.floats
-            const findFloat = (id: number) => floats.find((f: { id: number; value: number }) => f.id === id)?.value
-            setFogIntensity(Math.round((findFloat(5) ?? 0) * 100))
-            setWindIntensity(Math.round((findFloat(6) ?? 0) * 100))
-            setTemperature(Math.round(findFloat(4) ?? 20))
-            setCloudIntensity(Math.round((findFloat(8) ?? 0) * 100))
-            setHumidity(Math.round((findFloat(12) ?? 0.5) * 100))
-            setPrecipitationIntensity(Math.round((findFloat(3) ?? 0) * 100))
+            setFogIntensity(Math.round((findFloat(5)?.value ?? 0) * 100))
+            setWindIntensity(Math.round((findFloat(6)?.value ?? 0) * 100))
+            setTemperature(Math.round(findFloat(4)?.value ?? 20))
+            setCloudIntensity(Math.round((findFloat(8)?.value ?? 0) * 100))
+            setHumidity(Math.round((findFloat(12)?.value ?? 0.5) * 100))
+            setPrecipitationIntensity(Math.round((findFloat(3)?.value ?? 0) * 100))
           }
         }
 
@@ -1715,6 +1752,13 @@ export default function Events() {
     .filter((group) => group.items.length > 0)
   const activeMeta = EVENT_SECTION_INDEX[activeSection]
 
+  const fogBounds = climateSliderBounds(climateRanges[5], 0, 100, 100)
+  const windBounds = climateSliderBounds(climateRanges[6], 0, 100, 100)
+  const temperatureBounds = climateSliderBounds(climateRanges[4], -30, 45, 1)
+  const cloudBounds = climateSliderBounds(climateRanges[8], 0, 100, 100)
+  const humidityBounds = climateSliderBounds(climateRanges[12], 0, 100, 100)
+  const precipitationBounds = climateSliderBounds(climateRanges[3], 0, 100, 100)
+
   return (
     <div className="mx-auto max-w-[1180px] space-y-5 pb-8 page-transition">
       <PageHeader
@@ -2074,7 +2118,7 @@ export default function Events() {
                     </Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{fogIntensity}%</span>
                   </div>
-                  <Slider aria-label={t('climate.fogAria')} value={[fogIntensity]} onValueChange={([val]) => { markClimateDirty(); setFogIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
+                  <Slider aria-label={t('climate.fogAria')} value={[fogIntensity]} onValueChange={([val]) => { markClimateDirty(); setFogIntensity(val) }} min={fogBounds.min} max={fogBounds.max} step={5} disabled={!bridgeConnected} />
                 </div>
 
                 <div className="space-y-2">
@@ -2085,7 +2129,7 @@ export default function Events() {
                     </Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{windIntensity}%</span>
                   </div>
-                  <Slider aria-label={t('climate.windAria')} value={[windIntensity]} onValueChange={([val]) => { markClimateDirty(); setWindIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
+                  <Slider aria-label={t('climate.windAria')} value={[windIntensity]} onValueChange={([val]) => { markClimateDirty(); setWindIntensity(val) }} min={windBounds.min} max={windBounds.max} step={5} disabled={!bridgeConnected} />
                 </div>
 
                 <div className="space-y-2">
@@ -2096,7 +2140,7 @@ export default function Events() {
                     </Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{temperature}°C</span>
                   </div>
-                  <Slider aria-label={t('climate.temperatureAria')} value={[temperature]} onValueChange={([val]) => { markClimateDirty(); setTemperature(val) }} min={-30} max={45} step={1} disabled={!bridgeConnected} />
+                  <Slider aria-label={t('climate.temperatureAria')} value={[temperature]} onValueChange={([val]) => { markClimateDirty(); setTemperature(val) }} min={temperatureBounds.min} max={temperatureBounds.max} step={1} disabled={!bridgeConnected} />
                 </div>
 
                 <div className="space-y-2">
@@ -2107,7 +2151,7 @@ export default function Events() {
                     </Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{cloudIntensity}%</span>
                   </div>
-                  <Slider aria-label={t('climate.cloudsAria')} value={[cloudIntensity]} onValueChange={([val]) => { markClimateDirty(); setCloudIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
+                  <Slider aria-label={t('climate.cloudsAria')} value={[cloudIntensity]} onValueChange={([val]) => { markClimateDirty(); setCloudIntensity(val) }} min={cloudBounds.min} max={cloudBounds.max} step={5} disabled={!bridgeConnected} />
                 </div>
 
                 <div className="space-y-2">
@@ -2118,7 +2162,7 @@ export default function Events() {
                     </Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{humidity}%</span>
                   </div>
-                  <Slider aria-label={t('climate.humidityAria')} value={[humidity]} onValueChange={([val]) => { markClimateDirty(); setHumidity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
+                  <Slider aria-label={t('climate.humidityAria')} value={[humidity]} onValueChange={([val]) => { markClimateDirty(); setHumidity(val) }} min={humidityBounds.min} max={humidityBounds.max} step={5} disabled={!bridgeConnected} />
                 </div>
 
                 <div className="space-y-2">
@@ -2129,7 +2173,7 @@ export default function Events() {
                     </Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{precipitationIntensity}%</span>
                   </div>
-                  <Slider aria-label={t('climate.precipitationAria')} value={[precipitationIntensity]} onValueChange={([val]) => { markClimateDirty(); setPrecipitationIntensity(val) }} min={0} max={100} step={5} disabled={!bridgeConnected} />
+                  <Slider aria-label={t('climate.precipitationAria')} value={[precipitationIntensity]} onValueChange={([val]) => { markClimateDirty(); setPrecipitationIntensity(val) }} min={precipitationBounds.min} max={precipitationBounds.max} step={5} disabled={!bridgeConnected} />
                 </div>
               </div>
 
