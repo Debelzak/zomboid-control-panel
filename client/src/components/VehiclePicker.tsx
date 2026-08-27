@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { panelBridgeApi } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { useToast } from '@/components/ui/use-toast'
 
 export interface CatalogVehicle {
@@ -141,7 +142,7 @@ export function VehiclePicker({ value, onChange, disabled, placeholder }: Vehicl
       setScannedAt(data.scannedAt)
       toast({ title: t('toastCatalogUpdatedTitle'), description: t('toastCatalogUpdatedDesc', { count: data.count || 0 }) })
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('scanFailed')
+      const msg = getUserErrorMessage(err, t('scanFailed'))
       setScanError(msg)
       toast({
         title: t('toastScanFailedTitle'),

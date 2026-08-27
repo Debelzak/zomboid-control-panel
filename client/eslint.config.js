@@ -60,8 +60,6 @@ export default tseslint.config(
       'src/components/DiscoverySetup.tsx',
       'src/components/FolderBrowser.tsx',
       'src/components/mods/ConflictsPanel.tsx',
-      'src/components/templates/CreateTemplateDialog.tsx',
-      'src/components/templates/TemplatePreviewDialog.tsx',
     ],
     rules: {
       'local/no-raw-error-message': 'warn',

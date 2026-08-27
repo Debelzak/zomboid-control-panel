@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { NumberInput } from '@/components/NumberInput'
 import { cn } from '@/lib/utils'
 import { panelBridgeApi } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { useToast } from '@/components/ui/use-toast'
 import {
   getItemGroup, GROUP_META, VEHICLE_CATEGORIES, fmtWeight,
@@ -165,7 +166,7 @@ export function SpawnBrowser({ mode, open, onOpenChange, playerName, onSpawn }: 
         toast({ title: t('toastCatalogUpdatedTitle', { ns: 'vehiclePicker' }), description: t('toastCatalogUpdatedDesc', { ns: 'vehiclePicker', count: data.count || 0 }) })
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('scanFailed', { ns: isItems ? 'itemPicker' : 'vehiclePicker' })
+      const msg = getUserErrorMessage(err, t('scanFailed', { ns: isItems ? 'itemPicker' : 'vehiclePicker' }))
       setScanError(msg)
       toast({
         title: t('toastScanFailedTitle', { ns: isItems ? 'itemPicker' : 'vehiclePicker' }),
