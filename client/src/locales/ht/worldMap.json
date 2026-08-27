@@ -2,7 +2,8 @@
   "permissions": {
     "noBridgeCommand": "Aksyon anndan jwèt sa a bezwen pèmisyon bridge.command, e wòl sa a pa genyen li.",
     "noWorldEvents": "Pou ou deklanche evènman mond, ou bezwen pèmisyon server.world_events, e wòl sa a pa genyen li.",
-    "noGmTools": "Pou ou fè yon veyikil parèt, ou bezwen pèmisyon players.gm_tools, e wòl sa a pa genyen li."
+    "noGmTools": "Pou ou fè yon veyikil parèt, ou bezwen pèmisyon players.gm_tools, e wòl sa a pa genyen li.",
+    "noGmToolsBridgeAction": "Aksyon sa a bezwen ni pèmisyon bridge.command ni players.gm_tools, e wòl sa a pa genyen yo."
   },
   "pageHeader": {
     "title": "Kat Mond",
