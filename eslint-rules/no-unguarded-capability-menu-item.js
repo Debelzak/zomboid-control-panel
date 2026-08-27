@@ -43,6 +43,63 @@
  * bypass on Console.tsx. This rule makes a future omission of that guard
  * unwritable rather than relying on someone re-reading Radix's source again.
  *
+ * === 0/10: THE FIRST FULL-CLIENT RUN WAS ALL FALSE POSITIVES ===
+ *
+ * God hand-verified all ten hits from this rule's first run and found ZERO
+ * real defects among them -- two distinct structural causes, both fixed
+ * below, both real lessons about "one JSX element, no cross-file inference"
+ * being a narrower promise than it first looked:
+ *
+ * CAUSE 1 (nine hits, WorldMap.tsx): the file does NOT import
+ * `ContextMenuItem` from `@/components/ui/context-menu` -- it DECLARES ITS
+ * OWN local `function ContextMenuItem(...)` (same file, module scope) that
+ * renders a real native `<button role="menuitem" disabled={...}>`. The
+ * rule matched on the JSX TAG NAME alone and had no way to know the name
+ * was shadowed by a completely different, native-rendering component. Fix:
+ * before treating an element as a Radix item or a native button, resolve
+ * its tag name via the ESLint scope manager; if it resolves to a LOCAL
+ * (non-import) declaration in this file, skip it entirely -- we can't
+ * safely assume what a locally-declared component renders, and "skip" is
+ * strictly safer than "assume Radix" or "assume native." This is still
+ * single-file, same-AST analysis, not cross-file inference: the shadowing
+ * declaration lives in the exact file being linted.
+ *
+ * CAUSE 2 (the tenth hit, Servers.tsx:1610): a genuine Radix
+ * `DropdownMenuItem` gated on `canServersManage` with no guard VISIBLE
+ * INSIDE onClick -- but `onClick={() => handleActivateServer(server)}` is
+ * an arrow that immediately delegates to `handleActivateServer`, a
+ * `useCallback`-wrapped handler DECLARED IN THE SAME FILE whose own body
+ * opens with `if (server.isActive) return; if (!canServersManage) return`.
+ * The gap this rule's own header used to document -- `onClick={someName}`,
+ * a BARE identifier reference, not analyzed -- missed this by exactly one
+ * character: the real shape is `onClick={() => someName(arg)}`, an arrow
+ * that calls a same-file function rather than referencing it bare. Fix:
+ * when the onClick body's ONLY statement is a call to an Identifier callee
+ * (`() => helper(x)` or `() => { helper(x) }`), resolve that callee via
+ * the scope manager and, if it's a same-file function/useCallback-wrapped
+ * function with EXACTLY one definition, check ITS leading statements for
+ * the same guard shape this rule already knows how to recognize -- one hop,
+ * not general data-flow, same philosophy as `no-raw-error-message.js`'s own
+ * one-hop widening (a7138e1), which this implementation is modeled on
+ * rather than reinvented from scratch.
+ *
+ * FALLBACK POLICY WHEN THE ONE HOP CAN'T BE RESOLVED (imported callee,
+ * member-expression call, multiple definitions, delegate body isn't a bare
+ * call, ...): SKIP, do not flag. A missed detection is survivable; a wrong
+ * warning -- especially the FIRST warning a brand-new rule ever produces --
+ * is not. This is a deliberately asymmetric choice: the rule would rather
+ * stay silent on an unprovable case than risk teaching the floor to ignore
+ * it, the same reasoning that killed three other rule proposals tonight for
+ * being "too subtle to encode."
+ *
+ * The guard-recognition shape ALSO widened as part of this fix: it used to
+ * require the capability check be literally `body[0]`; `handleActivateServer`
+ * puts it SECOND, after an unrelated `if (server.isActive) return`. Both the
+ * direct check and the one-hop check now look at the LEADING RUN of
+ * `if (...) return`-shaped statements (stopping at the first statement that
+ * isn't one) rather than only the very first statement -- a strict
+ * generalization, so nothing that passed before stops passing.
+ *
  * === THE HEURISTIC, AND WHY IT STAYS MECHANICAL ===
  *
  * "A capability binding" is defined PURELY BY NAME: an `Identifier` whose
@@ -52,39 +109,42 @@
  * 16 pages, checked 2026-08-27 before writing this rule) is a `const can*`
  * bound from `useAuth().can(...)`, and nothing else in the tree is named
  * that way. The rule never resolves what a `can*` identifier actually IS
- * (no scope/type analysis, no cross-file lookup) -- it only compares two
- * expressions ON THE SAME JSX ELEMENT by the names appearing in them, which
- * is exactly the "mechanical, not cross-file inference" shape this floor
- * has been willing to ship rules for tonight.
+ * (no type analysis, no reading its initializer) -- it only compares names
+ * that appear in two (now, with the one-hop check, up to three) different
+ * expressions, resolved via the file's own scope tree, never leaving the
+ * file being linted.
  *
  * TWO SEPARATE CHECKS, one per element category:
  *
- * MISSING-GUARD (RADIX_ITEM_COMPONENTS only) -- a violation requires ALL of:
- *   1. The JSX element's tag name is one of RADIX_ITEM_COMPONENTS.
+ * MISSING-GUARD (RADIX_ITEM_COMPONENTS only, after the Cause-1 shadow
+ * check) -- a violation requires ALL of:
+ *   1. The JSX element's tag name is one of RADIX_ITEM_COMPONENTS and does
+ *      NOT resolve to a local (non-import) declaration in this file.
  *   2. It has a `disabled={...}` expression container that references at
  *      least one `can*`-named identifier anywhere in its expression tree
  *      (through `!`, `&&`, `||`, ternaries, and call arguments).
  *   3. It has an `onClick={...}` expression container whose value is an
  *      inline arrow/function expression (see gap below for anything else).
- *   4. That function's body is NOT a block whose FIRST statement is an
- *      `if (...)` testing at least one of the SAME `can*` names found in
- *      (2), with a consequent that returns (a bare `return`, or a block
- *      containing one). A guard testing an unrelated `can*` name (not in
- *      the disabled set) also fails this check -- there is no separate
- *      "mismatch" message for this category, since it's just as testable
- *      through the UI as an outright-missing guard (see 981d827's
- *      click-through coverage), so one message covers both.
+ *   4. That function's body is a block whose LEADING RUN of `if (...)
+ *      return`-shaped statements does NOT include one testing at least one
+ *      of the SAME `can*` names found in (2) -- AND, if the whole onClick
+ *      body is a single delegating call to a same-file function/useCallback
+ *      handler, that function's OWN leading run doesn't either (see Cause 2
+ *      above). An unresolvable delegate is NOT flagged (fallback policy
+ *      above).
  *
- * MISMATCH-ONLY (NATIVE_BUTTON_COMPONENTS only) -- a violation requires ALL
- * of:
- *   1. The JSX element's tag name is one of NATIVE_BUTTON_COMPONENTS.
+ * MISMATCH-ONLY (NATIVE_BUTTON_COMPONENTS only, after the same Cause-1
+ * shadow check) -- a violation requires ALL of:
+ *   1. The JSX element's tag name is one of NATIVE_BUTTON_COMPONENTS and
+ *      does not resolve to a local (non-import) declaration in this file.
  *   2. Same `disabled` requirement as above.
- *   3. Same inline-function `onClick` requirement as above.
- *   4. That function's body IS a block whose FIRST statement is an
- *      `if (...)` that DOES reference at least one `can*` name (i.e. a
- *      capability guard was clearly attempted) but NONE of those names
+ *   3. Same inline-function `onClick` requirement as above (no one-hop
+ *      delegate resolution on this side -- see known gaps below).
+ *   4. That function's leading run of `if (...) return`-shaped statements
+ *      DOES reference at least one `can*` name (i.e. a capability guard was
+ *      clearly attempted) but NONE of the names across that whole run
  *      overlap the `disabled` set. A native button with NO guard at all,
- *      or whose first `if` doesn't reference any `can*` name (ordinary
+ *      or whose leading run doesn't reference any `can*` name (ordinary
  *      loading-state logic, unrelated to capabilities), is NOT flagged --
  *      demanding a guard where `disabled` already blocks the click is the
  *      noise this rule exists to avoid.
@@ -92,42 +152,48 @@
  * === KNOWN GAPS, ACCEPTED RATHER THAN CHASED (same policy as this
  * directory's other rules) ===
  *
- *   - `onClick={someNamedHandler}` (a bare identifier reference, rather
- *     than an inline function) is NOT analyzed -- the guard might live
- *     inside that function, defined elsewhere, and confirming that would
- *     require resolving the binding across scope, which is exactly the
- *     cross-file inference this rule is built to avoid. No real site in
- *     this codebase uses that shape for a gated menu item as of landing
- *     (every one is an inline arrow) -- if one appears, it silently passes.
+ *   - `onClick={someNamedHandler}` (a BARE identifier reference, with no
+ *     call at all -- `onClick={handleClick}`, not `onClick={() =>
+ *     handleClick()}`) is still not analyzed. The one-hop check only
+ *     follows an inline arrow/function whose body IS the delegating call;
+ *     a bare identifier never gives the rule an inline function to inspect
+ *     in the first place, so there's no `onClick` body to extract a callee
+ *     from. No real site uses this exact bare shape for a gated menu item
+ *     as of landing.
+ *   - The one-hop resolution is exactly one hop: `onClick={() =>
+ *     helper(x)}` where `helper` itself delegates to a SECOND same-file
+ *     function is not traced further, same "one hop, not general data-flow"
+ *     boundary `no-raw-error-message.js`'s own widening drew for the
+ *     identical reason. No real site does this for a gated menu item as of
+ *     landing.
+ *   - The one-hop check only unwraps a SINGLE `useCallback(fn, deps)` /
+ *     `useMemo(fn, deps)` layer around the target function's own
+ *     declaration (`const helper = useCallback((x) => {...}, [...])`) --
+ *     any other wrapping (a custom HOC, a `.bind()`, an IIFE) is not
+ *     recognized and the delegate resolves as "unresolved" (fallback: not
+ *     flagged, per the policy above).
  *   - Direct `can('capability.name')` calls inlined into `disabled`
  *     (instead of a precomputed `const canX = can(...)`) are invisible to
  *     this rule -- the `/^can[A-Z]/` name check does not match a bare
  *     lowercase `can` call. Every gated site in this codebase precomputes
  *     the boolean as of landing; if that convention is ever broken, this
  *     rule will not catch it.
- *   - A guard whose `if` test references a DIFFERENT `can*` name than the
+ *   - A guard whose leading run references a DIFFERENT `can*` name than the
  *     one(s) in `disabled` (rather than none at all) is accepted as
- *     "guarded" as long as the two name-sets overlap at all -- the rule
- *     does not require the sets to match exactly. A `disabled={!canA ||
- *     !canB}` guarded only by `if (!canA) return` passes here even though
- *     `canB` alone could still let the click through. No real site combines
- *     two capability names in one `disabled` as of landing.
+ *     "guarded"/"not mismatched" as long as the two name-sets overlap at
+ *     all -- the rule does not require the sets to match exactly.
+ *     `disabled={!canA || !canB}` guarded only by `if (!canA) return`
+ *     passes here even though `canB` alone could still let the click
+ *     through. No real site combines two capability names in one
+ *     `disabled` as of landing.
  *   - Only `DropdownMenuItem`, `ContextMenuItem`, `MenubarItem`,
- *     `SelectItem`, `CommandItem` are checked for missing guards -- any
- *     other Radix non-native item primitive (a checkbox/radio item variant,
- *     a custom wrapper around one) is invisible unless added to
- *     RADIX_ITEM_COMPONENTS below.
- *   - Only literal `<button>` and `<Button>` are checked for mismatched
- *     guards -- another native-rendering wrapper component under a
- *     different name is invisible unless added to NATIVE_BUTTON_COMPONENTS.
- *   - The mismatch check passes on ANY overlap between the guard's `can*`
- *     names and the `disabled` set, same policy as the missing-guard
- *     check's own accepted gap above: `disabled={!canA || !canB}` guarded
- *     by `if (!canA) return` is NOT flagged even though `canB` alone could
- *     still let the click through, since a native button also has
- *     `disabled` blocking it structurally. Kept symmetric with the
- *     missing-guard side rather than holding one category to a stricter
- *     standard.
+ *     `SelectItem`, `CommandItem` are checked for missing guards, and only
+ *     `<button>`/`<Button>` for mismatched ones -- any other component
+ *     under a different name (a checkbox/radio item variant, another native-
+ *     rendering wrapper) is invisible unless added to the relevant Set
+ *     below. The Cause-1 shadow check protects against a WRONG conclusion
+ *     from a name collision; it doesn't discover components under names
+ *     this rule was never told to look for.
  */
 
 const RADIX_ITEM_COMPONENTS = new Set([
@@ -189,27 +255,124 @@ function consequentReturns(node) {
   return false;
 }
 
-// If `fn`'s body opens with `if (<expr>) <consequent>`, returns the set of
-// can*-named identifiers referenced in that `if`'s test (possibly empty).
-// Returns null when there's no qualifying opening `if` at all (expression
-// body, empty block, or first statement isn't an IfStatement).
-function firstIfGuardTestNames(fn) {
-  if (fn.body.type !== "BlockStatement") return null;
-  const first = fn.body.body[0];
-  if (!first || first.type !== "IfStatement") return null;
-  const testNames = new Set();
-  collectCapabilityNames(first.test, testNames);
-  return { testNames, consequent: first.consequent };
+// Walks the LEADING RUN of `if (...) return`-shaped statements at the start
+// of a block (stops at the first statement that isn't one), collecting
+// every can*-named identifier referenced across the whole run. Models
+// "early exits before real work starts" -- a capability check doesn't have
+// to be literally the first statement, just part of that leading guard
+// sequence, before any side effect (handleActivateServer's own shape:
+// `if (server.isActive) return; if (!canServersManage) return; ...`).
+function collectLeadingGuardNames(blockStatement) {
+  const names = new Set();
+  for (const stmt of blockStatement.body) {
+    if (stmt.type !== "IfStatement" || !consequentReturns(stmt.consequent)) break;
+    collectCapabilityNames(stmt.test, names);
+  }
+  return names;
 }
 
-// True when `fn`'s body opens with `if (<references one of capabilityNames>)
-// return...` -- the two-layer guard the MISSING-GUARD check requires.
+// True when `fn`'s body opens with a leading guard run referencing at
+// least one of `capabilityNames` -- the two-layer guard the MISSING-GUARD
+// check requires.
 function isGuardedAtEntry(fn, capabilityNames) {
-  const guard = firstIfGuardTestNames(fn);
-  if (!guard) return false;
-  const overlaps = [...guard.testNames].some((name) => capabilityNames.has(name));
-  if (!overlaps) return false;
-  return consequentReturns(guard.consequent);
+  if (fn.body.type !== "BlockStatement") return false;
+  const guardNames = collectLeadingGuardNames(fn.body);
+  return [...guardNames].some((name) => capabilityNames.has(name));
+}
+
+// Finds `name` in `scope` or any enclosing scope -- a plain lexical lookup,
+// not full data-flow, same helper (and same restraint) as
+// no-raw-error-message.js's own one-hop widening (a7138e1).
+function findVariableInScope(scope, name) {
+  let current = scope;
+  while (current) {
+    const found = current.variables.find((v) => v.name === name);
+    if (found) return found;
+    current = current.upper;
+  }
+  return null;
+}
+
+// If `onClickExpr`'s ENTIRE body is a single call to an Identifier callee
+// (`() => helper(x)` or `() => { helper(x) }`), returns that callee
+// Identifier node. Returns null for anything else -- this is deliberately
+// narrow (exactly the real Servers.tsx shape), not a general "does this
+// function eventually call something" search.
+function extractSoleDelegateCallee(onClickExpr) {
+  if (onClickExpr.body.type === "CallExpression") {
+    return onClickExpr.body.callee;
+  }
+  if (onClickExpr.body.type === "BlockStatement" && onClickExpr.body.body.length === 1) {
+    const stmt = onClickExpr.body.body[0];
+    if (stmt.type === "ExpressionStatement" && stmt.expression.type === "CallExpression") {
+      return stmt.expression.callee;
+    }
+  }
+  return null;
+}
+
+// Unwraps exactly one `useCallback(fn, deps)` / `useMemo(fn, deps)` layer
+// around a variable's initializer -- the common React-memoization shape
+// this codebase's own handlers use (handleActivateServer's real shape).
+function unwrapCallbackWrapper(node) {
+  if (node.type === "CallExpression" && node.arguments.length > 0) {
+    const first = node.arguments[0];
+    if (first.type === "ArrowFunctionExpression" || first.type === "FunctionExpression") return first;
+  }
+  return node;
+}
+
+// Given an eslint-scope Definition for a resolved variable, returns the
+// function node it points to (unwrapping one useCallback/useMemo layer),
+// or null if the definition isn't a function/const-function shape this
+// rule knows how to follow.
+function getFunctionFromDefinition(def) {
+  if (def.type === "FunctionName") return def.node;
+  if (def.type === "Variable") {
+    const init = def.node.init;
+    if (!init) return null;
+    const unwrapped = unwrapCallbackWrapper(init);
+    if (unwrapped.type === "ArrowFunctionExpression" || unwrapped.type === "FunctionExpression") return unwrapped;
+  }
+  return null;
+}
+
+// Resolves the ONE-HOP delegate case for the MISSING-GUARD check. Returns:
+//   "not-a-delegate" -- onClick's body isn't a single delegating call at
+//       all; caller should judge guardedness from onClick's own body only.
+//   "unresolved"     -- IS a delegate shape, but the callee couldn't be
+//       resolved to exactly one same-file function (imported, a member
+//       expression call, multiple definitions, unsupported wrapper, ...).
+//       Per this rule's fallback policy, callers must NOT flag this case.
+//   "guarded"         -- resolved, and the target function's own leading
+//       guard run references one of capabilityNames.
+//   "unguarded"       -- resolved, and it does not.
+function resolveDelegateGuardState(context, onClickExpr, capabilityNames) {
+  const callee = extractSoleDelegateCallee(onClickExpr);
+  if (!callee) return "not-a-delegate";
+  if (callee.type !== "Identifier") return "unresolved";
+
+  const scope = context.sourceCode.getScope(onClickExpr);
+  const variable = findVariableInScope(scope, callee.name);
+  if (!variable || variable.defs.length !== 1) return "unresolved";
+
+  const fn = getFunctionFromDefinition(variable.defs[0]);
+  if (!fn) return "unresolved";
+
+  return isGuardedAtEntry(fn, capabilityNames) ? "guarded" : "unguarded";
+}
+
+// Cause 1: does `tagName` resolve to a LOCAL (non-import) declaration
+// visible from `node`'s scope? If so, the JSX tag is shadowing a Radix or
+// native-button name with an unknown, file-local component -- we cannot
+// safely assume it renders either shape, so the caller must skip it
+// entirely (WorldMap.tsx's own `function ContextMenuItem(...)`, which
+// renders a real `<button>`, is the real case this protects against).
+function isShadowedByLocalDeclaration(context, node, tagName) {
+  const scope = context.sourceCode.getScope(node);
+  const variable = findVariableInScope(scope, tagName);
+  if (!variable) return false;
+  return variable.defs.some((def) => def.type !== "ImportBinding");
 }
 
 export default {
@@ -229,6 +392,8 @@ export default {
   },
 
   create(context) {
+    const candidates = [];
+
     return {
       JSXOpeningElement(node) {
         if (node.name.type !== "JSXIdentifier") return;
@@ -250,38 +415,65 @@ export default {
         const onClickExpr = onClickAttr.value.expression;
         if (onClickExpr.type !== "ArrowFunctionExpression" && onClickExpr.type !== "FunctionExpression") return;
 
-        const bindings = [...capabilityNames];
+        candidates.push({ node, tag, isRadixItem, onClickAttr, onClickExpr, capabilityNames });
+      },
 
-        if (isRadixItem) {
-          if (isGuardedAtEntry(onClickExpr, capabilityNames)) return;
+      // Deferred so every candidate's scope tree (and any function it might
+      // one-hop-delegate to, wherever in the file that's declared) is fully
+      // resolvable regardless of source-order relative to its JSX usage --
+      // same reasoning as no-raw-error-message.js's own Program:exit
+      // deferral (a7138e1), even though this rule's checks don't need
+      // `.parent` links the way that one's sink walk does; kept consistent
+      // with the proven pattern rather than relying on an unverified belief
+      // that scope resolution alone never needs it.
+      "Program:exit"() {
+        for (const c of candidates) {
+          const { node, tag, isRadixItem, onClickAttr, onClickExpr, capabilityNames } = c;
+
+          if (isShadowedByLocalDeclaration(context, node, tag)) continue;
+
+          const bindings = [...capabilityNames];
+
+          if (isRadixItem) {
+            if (isGuardedAtEntry(onClickExpr, capabilityNames)) continue;
+
+            const delegateState = resolveDelegateGuardState(context, onClickExpr, capabilityNames);
+            if (delegateState === "guarded" || delegateState === "unresolved") continue;
+
+            context.report({
+              node: onClickAttr,
+              messageId: "unguarded",
+              data: {
+                tag,
+                bindings: bindings.map((name) => `!${name}`).join(" / "),
+                firstBinding: bindings[0],
+              },
+            });
+            continue;
+          }
+
+          // Native button: missing guard is fine (disabled already blocks
+          // the click for real); a PRESENT guard testing the wrong binding
+          // is not. No one-hop delegate resolution on this side (see file
+          // header) -- a delegating body naturally has no local leading
+          // `if`, so it already reads as "no guard attempted" and is
+          // correctly left unflagged without needing one.
+          if (onClickExpr.body.type !== "BlockStatement") continue;
+          const guardNames = collectLeadingGuardNames(onClickExpr.body);
+          if (guardNames.size === 0) continue;
+          const overlaps = [...guardNames].some((name) => capabilityNames.has(name));
+          if (overlaps) continue;
+
           context.report({
             node: onClickAttr,
-            messageId: "unguarded",
+            messageId: "mismatchedGuard",
             data: {
               tag,
               bindings: bindings.map((name) => `!${name}`).join(" / "),
-              firstBinding: bindings[0],
+              guardBindings: [...guardNames].map((name) => `!${name}`).join(" / "),
             },
           });
-          return;
         }
-
-        // isNativeButton: missing guard is fine (disabled already blocks the
-        // click for real); a PRESENT guard testing the wrong binding is not.
-        const guard = firstIfGuardTestNames(onClickExpr);
-        if (!guard || guard.testNames.size === 0) return;
-        const overlaps = [...guard.testNames].some((name) => capabilityNames.has(name));
-        if (overlaps) return;
-
-        context.report({
-          node: onClickAttr,
-          messageId: "mismatchedGuard",
-          data: {
-            tag,
-            bindings: bindings.map((name) => `!${name}`).join(" / "),
-            guardBindings: [...guard.testNames].map((name) => `!${name}`).join(" / "),
-          },
-        });
       },
     };
   },

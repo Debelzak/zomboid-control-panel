@@ -39,15 +39,44 @@ describe("no-unguarded-capability-menu-item", () => {
         "<DropdownMenuItem disabled={!canModerate} />",
         // onClick is a bare identifier reference -- can't verify locally, accepted gap, not flagged.
         "<DropdownMenuItem disabled={!canModerate} onClick={handleClick} />",
+        // Cause 1 (0/10 run, WorldMap.tsx): the JSX tag resolves to a LOCAL
+        // declaration in this file, not an import -- can't assume it renders
+        // a Radix div, so it's skipped entirely regardless of its own
+        // disabled/onClick shape.
+        "function ContextMenuItem({ disabled, onClick }) { return <button disabled={disabled} onClick={onClick} />; } <ContextMenuItem disabled={!canWorldEvents} onClick={() => doThing()} />;",
+        // Same shadow protection for a locally-declared native-button-named component.
+        "function Button({ disabled, onClick }) { return <button disabled={disabled} onClick={onClick} />; } <Button disabled={!canModerate} onClick={() => { if (!canGmTools) return; doThing() }} />;",
+        // An IMPORTED name of the same tag is NOT a local declaration --
+        // still analyzed normally (this is the ordinary Radix-import case).
+        "import { DropdownMenuItem } from '@/components/ui/dropdown-menu'; <DropdownMenuItem disabled={!canModerate} onClick={() => { if (!canModerate) return; doThing() }} />;",
+        // Cause 2 (0/10 run, Servers.tsx:1610): onClick delegates in a
+        // single call to a same-file function whose OWN leading guard run
+        // references the right binding -- one hop, resolved, guarded.
+        "function handleActivate() { if (loading) return; if (!canServersManage) return; doThing(); } <DropdownMenuItem disabled={!canServersManage} onClick={() => handleActivate()} />;",
+        // Same shape, block-bodied arrow instead of expression-bodied.
+        "function handleActivate() { if (!canServersManage) return; doThing(); } <DropdownMenuItem disabled={!canServersManage} onClick={() => { handleActivate() }} />;",
+        // Same shape, target wrapped in useCallback -- the real Servers.tsx shape.
+        "const handleActivate = useCallback(() => { if (!canServersManage) return; doThing(); }, []); <DropdownMenuItem disabled={!canServersManage} onClick={() => handleActivate()} />;",
+        // Delegate target can't be resolved locally (imported) -- fallback
+        // policy: skip rather than flag, since it might be guarded elsewhere.
+        "import { handleActivate } from './handlers'; <DropdownMenuItem disabled={!canServersManage} onClick={() => handleActivate()} />;",
+        // Guard present but not literally the first statement -- still
+        // counts as long as it's in the LEADING run before any real work.
+        "<DropdownMenuItem disabled={!canModerate} onClick={() => { if (loading) return; if (!canModerate) return; doThing() }} />",
       ],
       invalid: [
         {
-          code: "<DropdownMenuItem disabled={!canModerate} onClick={() => doThing()} />",
+          // A bare single-call expression body IS the one-hop delegate
+          // shape, but the callee resolves to a same-file function with no
+          // guard at all -- a CONFIRMED finding (see the two dedicated
+          // one-hop cases further down for the general shape).
+          code: "function doThing() { performMutation() } <DropdownMenuItem disabled={!canModerate} onClick={() => doThing()} />;",
           errors: [{ messageId: "unguarded" }],
         },
         {
-          // Expression-bodied arrow -- structurally has no room for a guard statement.
-          code: "<DropdownMenuItem disabled={loading || !canGmTools} onClick={() => doThing()} />",
+          // Two statements -- structurally outside the one-hop "sole call"
+          // delegate shape either way, has no room for a guard statement.
+          code: "<DropdownMenuItem disabled={loading || !canGmTools} onClick={() => { doThing(); doOther() }} />",
           errors: [{ messageId: "unguarded" }],
         },
         {
@@ -66,8 +95,9 @@ describe("no-unguarded-capability-menu-item", () => {
           errors: [{ messageId: "unguarded" }],
         },
         {
-          // No guard at all, function expression form.
-          code: "<SelectItem disabled={!canGmTools} onClick={function () { doThing() }} />",
+          // No guard at all, function expression form, and the sole-call
+          // body's callee resolves locally with no guard of its own either.
+          code: "function doThing() { performMutation() } <SelectItem disabled={!canGmTools} onClick={function () { doThing() }} />;",
           errors: [{ messageId: "unguarded" }],
         },
         {
@@ -81,6 +111,20 @@ describe("no-unguarded-capability-menu-item", () => {
         {
           code: "<button disabled={!canModerate} onClick={() => { if (!canGmTools) return; doThing() }} />",
           errors: [{ messageId: "mismatchedGuard" }],
+        },
+        {
+          // One-hop delegate resolves to a same-file function, but that
+          // function genuinely has no guard at all -- a confirmed finding,
+          // not an uncertain one, so it IS flagged (the fallback-skip
+          // policy only applies when resolution itself fails).
+          code: "function handleActivate() { doThing(); } <DropdownMenuItem disabled={!canServersManage} onClick={() => handleActivate()} />;",
+          errors: [{ messageId: "unguarded" }],
+        },
+        {
+          // One-hop delegate resolves, and its leading guard run tests the
+          // WRONG capability -- also a confirmed finding.
+          code: "function handleActivate() { if (!canGmTools) return; doThing(); } <DropdownMenuItem disabled={!canServersManage} onClick={() => handleActivate()} />;",
+          errors: [{ messageId: "unguarded" }],
         },
       ],
     });
