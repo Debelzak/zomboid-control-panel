@@ -317,6 +317,7 @@
   "PANELBRIDGE_ACTION_REQUIRED": "action ist erforderlich",
   "PANELBRIDGE_UNKNOWN_ACTION": "Unbekannte oder ungültige Aktion",
   "PANELBRIDGE_ARGS_MUST_BE_OBJECT": "args muss ein Objekt sein",
+  "PANELBRIDGE_ACTION_CAPABILITY_REQUIRED": "Diese Aktion erfordert zusätzlich zu bridge.command auch players.moderate.",
   "PANELBRIDGE_INVALID_VEHICLE_SCRIPT_NAME": "Ungültiger Fahrzeugskriptname",
   "PANELBRIDGE_SPAWN_VEHICLE_INVALID_COORDS": "Ungültige Koordinaten (x/y: 0–24000, z: 0–8)",
   "PANELBRIDGE_AIRDROP_INVALID_COORDS": "Ungültige Luftabwurf-Koordinaten (gültig: 0–24000)",

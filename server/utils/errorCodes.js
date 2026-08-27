@@ -1215,6 +1215,12 @@ export const ErrorCode = Object.freeze({
   /** server/routes/panelBridge.js -- POST /command, `args` provided but
    * isn't a plain object. */
   PANELBRIDGE_ARGS_MUST_BE_OBJECT: "PANELBRIDGE_ARGS_MUST_BE_OBJECT",
+  /** server/routes/panelBridge.js -- POST /command, `action` is one of the
+   * four moderation actions (BRIDGE_ACTION_CAPABILITY) and the caller holds
+   * bridge.command but not the specific capability (players.moderate) that
+   * governs discipline actions everywhere else in the app.
+   * bug-hunt-2026-08-27: Pam's cross-route-family capability sweep. */
+  PANELBRIDGE_ACTION_CAPABILITY_REQUIRED: "PANELBRIDGE_ACTION_CAPABILITY_REQUIRED",
   /** server/routes/panelBridge.js -- POST /command action=spawnVehicleAt,
    * `vehicle`/`scriptName` fails VEHICLE_SCRIPT_REGEX. */
   PANELBRIDGE_INVALID_VEHICLE_SCRIPT_NAME: "PANELBRIDGE_INVALID_VEHICLE_SCRIPT_NAME",

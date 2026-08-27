@@ -18,6 +18,7 @@ import {
   getDb,
   commitNow,
   logBridgeCommand,
+  getRoleByName,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams, isMaskedSecret } from "../utils/sanitize.js";
 import { getDataPaths } from "../utils/paths.js";
@@ -208,6 +209,36 @@ const VALID_ACTIONS = new Set([
   "getItemCatalog",
   "getVehicleCatalog",
 ]);
+
+// POST /command is gated bridge.command alone -- deliberately, as the
+// generic passthrough for every action above, including the ~30 with no
+// dedicated route at all (vehicles, safehouses, factions, sandbox reads,
+// time-speed, infrastructure snapshot, event sequences). That breadth is
+// intentional and documented at the route below: those actions are all
+// GM-tool/world-management flavored, the same risk tier as
+// players.gm_tools or server.world_events, which bridge.command -- an
+// admin-only-by-default, deliberately-granted capability -- already
+// legitimately subsumes.
+//
+// The four moderation actions are different in kind, not just degree.
+// "Discipline a player" is carved out into its OWN capability
+// (players.moderate) everywhere else this app reaches it -- players.js's
+// own header comment names exactly why: kick/ban carries a
+// favouritism/griefing risk distinct from a GM tool's risk, which is the
+// entire reason the matrix splits players.moderate from players.gm_tools
+// in the first place. These four have no dedicated route of their own (the
+// only caller is Events.tsx's "Moderation Automation" panel, via this
+// exact endpoint), so bridge.command is currently their ONLY gate -- a
+// custom role granted bridge.command for legitimate GM/world-event
+// automation, but never granted players.moderate, gets full kick/ban/
+// ban-by-IP/ban-by-SteamID power as an undocumented side effect.
+// bug-hunt-2026-08-27: Pam's cross-route-family capability sweep.
+const BRIDGE_ACTION_CAPABILITY = {
+  moderationKickUser: "players.moderate",
+  moderationBanUser: "players.moderate",
+  moderationBanIP: "players.moderate",
+  moderationBanSteamID: "players.moderate",
+};
 
 // Username validation for PanelBridge player endpoints.
 // Allow normal in-game names (spaces/symbols) while blocking control chars and quote/backslash.
@@ -1213,6 +1244,23 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
       error: "args must be an object",
       code: ErrorCode.PANELBRIDGE_ARGS_MUST_BE_OBJECT,
     });
+  }
+
+  // See BRIDGE_ACTION_CAPABILITY's own comment above: the four moderation
+  // actions need players.moderate in addition to this route's own
+  // bridge.command gate, since they have no dedicated route of their own
+  // to carry that check the way every other kick/ban entry point
+  // (players.js) does.
+  const requiredCapability = BRIDGE_ACTION_CAPABILITY[action];
+  if (requiredCapability) {
+    const role = req.user ? await getRoleByName(req.user.role) : null;
+    const capabilities = Array.isArray(role?.capabilities) ? role.capabilities : [];
+    if (!capabilities.includes(requiredCapability)) {
+      return res.status(403).json({
+        error: `"${action}" also requires ${requiredCapability}.`,
+        code: ErrorCode.PANELBRIDGE_ACTION_CAPABILITY_REQUIRED,
+      });
+    }
   }
 
   // Build 42 does not expose a Lua vehicle-spawn API. The RCON command is
