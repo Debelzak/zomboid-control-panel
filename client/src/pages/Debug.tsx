@@ -87,9 +87,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { useConfirm } from "@/contexts/ConfirmContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { SocketContext } from "@/contexts/SocketContext";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
+import { DisabledReason } from "@/components/DisabledReason";
 import { cn, copyText } from "@/lib/utils";
 import {
   apiFetch,
@@ -677,6 +679,49 @@ export function getDiagnosticsFixAction(
   }
 }
 
+// Each automated fix POSTs to its own route, and those routes are gated by
+// SEVEN DIFFERENT capabilities, not one page-level concern -- read directly
+// from server/routes/*.js rather than assumed from the page's own admin-only
+// read endpoints:
+//   mods.numericInMods / mods.orphanWorkshop / mods.maps / mods.duplicates
+//     -> mods.manage (mods.js's router.use, whole router)
+//   server.process -> server.control (server.js POST /start)
+//   rcon.connected -> rcon.execute (rcon.js POST /connect)
+//   db.backup -> backups.manage (backup.js POST /create)
+//   server.staleLocks -> diagnostics.manage (debug.js POST /clear-stale-locks)
+//   bridge.configured / worldmap.bridge.configured -> bridge.setup
+//     (panelBridge.js POST /auto-configure)
+//   server.sandboxCorrupt -> serverfiles.manage (serverFiles.js's router.use)
+// server.recentCrash makes no API call at all (it only switches tabs), so it
+// needs no capability. Every other check.id is either non-automated (manual
+// fix: a toast or a navigation, never an API call) or falls to the `default`
+// case in getDiagnosticsFixAction, which is also never automated -- neither
+// needs a capability either.
+export function getRequiredCapabilityForCheck(checkId: string): string | null {
+  switch (checkId) {
+    case "mods.numericInMods":
+    case "mods.orphanWorkshop":
+    case "mods.maps":
+    case "mods.duplicates":
+      return "mods.manage";
+    case "server.process":
+      return "server.control";
+    case "rcon.connected":
+      return "rcon.execute";
+    case "db.backup":
+      return "backups.manage";
+    case "server.staleLocks":
+      return "diagnostics.manage";
+    case "bridge.configured":
+    case "worldmap.bridge.configured":
+      return "bridge.setup";
+    case "server.sandboxCorrupt":
+      return "serverfiles.manage";
+    default:
+      return null;
+  }
+}
+
 const DebugPerformanceCharts = lazy(
   () => import("@/components/DebugPerformanceCharts"),
 );
@@ -793,6 +838,7 @@ export default function Debug() {
   const { toast } = useToast();
   const confirm = useConfirm();
   const socket = useContext(SocketContext);
+  const { can } = useAuth();
 
   const authFetch = useCallback((url: string, options: RequestInit = {}) => {
     const endpoint = url.startsWith("/api") ? url.slice(4) : url;
@@ -922,6 +968,16 @@ export default function Debug() {
     async (check: DiagCheck) => {
       const action = getDiagnosticsFixAction(check, t);
       if (!action) return;
+
+      // The button's own disabled state (below, in the render) is an
+      // affordance -- this is the actual gate, same two-layer pattern as
+      // every other capability check tonight. Manual fixes (a toast or a
+      // navigation) call no API and need no capability; only look this up
+      // for the automated ones that actually reach a gated route.
+      if (action.automated) {
+        const requiredCapability = getRequiredCapabilityForCheck(check.id);
+        if (requiredCapability && !can(requiredCapability)) return;
+      }
 
       setFixingDiagnosticsCheckId(check.id);
       setDiagnosticsFixErrors((prev) => {
@@ -1197,7 +1253,7 @@ export default function Debug() {
         setFixingDiagnosticsCheckId(null);
       }
     },
-    [fetchDiagnostics, toast, authFetch, confirm, t, i18n.language],
+    [fetchDiagnostics, toast, authFetch, confirm, t, i18n.language, can],
   );
 
   // Fetch world-map specific diagnostics
@@ -2635,6 +2691,14 @@ export default function Debug() {
                           // translated display copy.
                           const fixAction = getDiagnosticsFixAction(check, t);
                           const translated = translateDiagnosticCheck(check);
+                          // Manual fixes call no API (a toast or a
+                          // navigation) and need no capability -- only an
+                          // automated fix can be blocked here.
+                          const requiredCapability = fixAction?.automated
+                            ? getRequiredCapabilityForCheck(check.id)
+                            : null;
+                          const canRunFix =
+                            !requiredCapability || can(requiredCapability);
                           return (
                             <li
                               key={check.id}
@@ -2681,28 +2745,38 @@ export default function Debug() {
                                 )}
                                 {fixAction && (
                                   <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                                    <Button
-                                      size="sm"
-                                      className="h-7 px-2 text-[11px]"
-                                      variant={
-                                        fixAction.automated
-                                          ? "default"
-                                          : "outline"
-                                      }
-                                      onClick={() => {
-                                        void handleDiagnosticsFix(check);
-                                      }}
-                                      disabled={
-                                        !!fixingDiagnosticsCheckId &&
-                                        fixingDiagnosticsCheckId !== check.id
+                                    <DisabledReason
+                                      reason={
+                                        !canRunFix
+                                          ? t("diagnostics.noPermissionFix")
+                                          : null
                                       }
                                     >
-                                      {fixingDiagnosticsCheckId ===
-                                        check.id && (
-                                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                      )}
-                                      {fixAction.label}
-                                    </Button>
+                                      <Button
+                                        size="sm"
+                                        className="h-7 px-2 text-[11px]"
+                                        variant={
+                                          fixAction.automated
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        onClick={() => {
+                                          void handleDiagnosticsFix(check);
+                                        }}
+                                        disabled={
+                                          (!!fixingDiagnosticsCheckId &&
+                                            fixingDiagnosticsCheckId !==
+                                              check.id) ||
+                                          !canRunFix
+                                        }
+                                      >
+                                        {fixingDiagnosticsCheckId ===
+                                          check.id && (
+                                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                        )}
+                                        {fixAction.label}
+                                      </Button>
+                                    </DisabledReason>
                                     {fixAction.openServerConfig && (
                                       <Button
                                         asChild

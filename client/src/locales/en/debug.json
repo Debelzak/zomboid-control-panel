@@ -233,6 +233,7 @@
     "allChecksPassDesc": "Nothing to show with passing checks hidden. Uncheck 'Hide passing' to see the full report.",
     "manualFixTitle": "Manual fix recommended",
     "manualFixFallback": "Open the suggested page and apply the listed fix.",
+    "noPermissionFix": "Your role doesn't have permission to apply this fix.",
     "applyFixTitle": "Apply fix?",
     "applyFixFallback": "Apply {{label}}?",
     "applyButton": "Apply",

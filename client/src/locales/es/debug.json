@@ -233,6 +233,7 @@
     "allChecksPassDesc": "No hay nada que mostrar con las comprobaciones correctas ocultas. Desactivar «Ocultar correctas» para ver el informe completo.",
     "manualFixTitle": "Se recomienda una solución manual",
     "manualFixFallback": "Abrir la página sugerida y aplicar la solución indicada.",
+    "noPermissionFix": "Tu rol no tiene permiso para aplicar esta solución.",
     "applyFixTitle": "¿Aplicar solución?",
     "applyFixFallback": "¿Aplicar {{label}}?",
     "applyButton": "Aplicar",

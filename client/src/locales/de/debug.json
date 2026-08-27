@@ -233,6 +233,7 @@
     "allChecksPassDesc": "Es gibt nichts anzuzeigen, wenn bestandene Prüfungen ausgeblendet sind. Deaktiviere „Bestandene ausblenden“, um den vollständigen Bericht zu sehen.",
     "manualFixTitle": "Manuelle Korrektur empfohlen",
     "manualFixFallback": "Öffne die vorgeschlagene Seite und wende die aufgeführte Korrektur an.",
+    "noPermissionFix": "Ihre Rolle hat keine Berechtigung, diese Korrektur anzuwenden.",
     "applyFixTitle": "Korrektur anwenden?",
     "applyFixFallback": "{{label}} anwenden?",
     "applyButton": "Anwenden",

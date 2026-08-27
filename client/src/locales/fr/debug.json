@@ -233,6 +233,7 @@
     "allChecksPassDesc": "Rien à afficher avec les réussites masquées. Décochez « Masquer les réussites » pour voir le rapport complet.",
     "manualFixTitle": "Correction manuelle recommandée",
     "manualFixFallback": "Ouvrez la page suggérée et appliquez la correction indiquée.",
+    "noPermissionFix": "Votre rôle n'a pas la permission d'appliquer cette correction.",
     "applyFixTitle": "Appliquer la correction ?",
     "applyFixFallback": "Appliquer {{label}} ?",
     "applyButton": "Appliquer",

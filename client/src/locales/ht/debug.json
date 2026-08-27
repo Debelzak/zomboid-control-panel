@@ -233,6 +233,7 @@
     "allChecksPassDesc": "Anyen pou montre ak verifikasyon ki pase kache yo. Dekoche 'Kache sa ki pase' pou wè rapò konplè a.",
     "manualFixTitle": "Repara manyèl rekòmande",
     "manualFixFallback": "Louvri paj sijere a epi aplike repara ki nan lis la.",
+    "noPermissionFix": "Wòl ou pa gen pèmisyon pou aplike repara sa a.",
     "applyFixTitle": "Aplike repara?",
     "applyFixFallback": "Aplike {{label}}?",
     "applyButton": "Aplike",
