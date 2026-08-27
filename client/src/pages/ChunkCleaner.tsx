@@ -62,6 +62,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { chunksApi, serversApi, panelBridgeApi, ApiError } from "@/lib/api";
+import { getUserErrorMessage } from "@/lib/errorMessage";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSocket } from "@/contexts/SocketContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -650,10 +651,7 @@ export default function ChunkCleaner() {
       if (thisLoadId !== loadIdRef.current) return;
       toast({
         title: t("toasts.errorTitle"),
-        description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.loadChunksFailedFallback"),
+        description: getUserErrorMessage(error, t("toasts.loadChunksFailedFallback")),
         variant: "destructive",
       });
     } finally {
@@ -2001,7 +1999,7 @@ export default function ChunkCleaner() {
             // User cancelled — surface the original message and bail out.
             toast({
               title: t("toasts.serverRunningTitle"),
-              description: err.message,
+              description: getUserErrorMessage(err, t("toasts.deleteChunksFailedFallback")),
               variant: "destructive",
             });
             return;
@@ -2048,10 +2046,7 @@ export default function ChunkCleaner() {
     } catch (error) {
       toast({
         title: t("toasts.errorTitle"),
-        description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.deleteChunksFailedFallback"),
+        description: getUserErrorMessage(error, t("toasts.deleteChunksFailedFallback")),
         variant: "destructive",
       });
     } finally {

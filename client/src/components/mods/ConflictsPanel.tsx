@@ -4,6 +4,7 @@ import { RefreshCw, Plus, Trash2, ExternalLink, AlertTriangle, CheckCircle, Sear
 import type { ConflictScanResult, ScanStreamConflictFound } from '@/types'
 import { modsApi } from '@/lib/api'
 import { reportClientError } from '@/lib/client-errors'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1233,7 +1234,7 @@ export function ConflictsPanel({
                     } catch (err) {
                       toast({
                         title: t('undoFailedTitle'),
-                        description: err instanceof Error ? err.message : t('couldNotRemoveMod'),
+                        description: getUserErrorMessage(err, t('couldNotRemoveMod')),
                         variant: 'destructive',
                       });
                     } finally {
@@ -1256,7 +1257,7 @@ export function ConflictsPanel({
                       })
                       setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: res.results || [], error: null, searchUrl: res.searchUrl, variantsTried: res.variantsTried, steamSearchEnabled: res.steamSearchEnabled } }))
                     } catch (err: any) {
-                      setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: err?.message || t('searchFailed'), searchUrl: null } }))
+                      setDepSearchData(prev => ({ ...prev, [key]: { loading: false, results: [], error: getUserErrorMessage(err, t('searchFailed')), searchUrl: null } }))
                     }
                   }
                   const toggleDepSearch = (row: typeof rows[number]) => {

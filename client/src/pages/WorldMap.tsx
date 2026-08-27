@@ -72,6 +72,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { panelBridgeApi, updateApi, serversApi, mapApi, playersApi } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { useToast } from '@/components/ui/use-toast'
 import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
@@ -2527,7 +2528,7 @@ export default function WorldMap() {
         })
       } catch (err) {
         if (!mountedRef.current) return
-        const msg = err instanceof Error ? err.message : t('toasts.areaNotLoaded')
+        const msg = getUserErrorMessage(err, t('toasts.areaNotLoaded'))
         toast({ title: t('toasts.airdropFailedTitle'), description: msg, variant: 'destructive' })
       } finally {
         actionLoadingRef.current = null
@@ -2634,7 +2635,7 @@ export default function WorldMap() {
         })
       } catch (err) {
         if (!mountedRef.current) return
-        const msg = err instanceof Error ? err.message : t('toasts.areaNotLoaded')
+        const msg = getUserErrorMessage(err, t('toasts.areaNotLoaded'))
         toast({ title: t('toasts.dropFailedTitle'), description: msg, variant: 'destructive' })
       } finally {
         actionLoadingRef.current = null
@@ -2688,7 +2689,7 @@ export default function WorldMap() {
         fetchPlayerPositions()
       } catch (err) {
         if (!mountedRef.current) return
-        const msg = err instanceof Error ? err.message : t('toasts.teleportErrorFallback')
+        const msg = getUserErrorMessage(err, t('toasts.teleportErrorFallback'))
         toast({ title: t('toasts.teleportErrorTitle'), description: msg, variant: 'destructive' })
       } finally {
         if (mountedRef.current) setActionLoading(null)
@@ -3313,7 +3314,7 @@ export default function WorldMap() {
                         toast({ title: t('toasts.vehicleRepaired') })
                         fetchOverlays()
                       })
-                      .catch((err) => toast({ title: t('toasts.repairFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.repairFailed'), description: getUserErrorMessage(err, t('toasts.unknownError')), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3339,7 +3340,7 @@ export default function WorldMap() {
                         }
                         fetchOverlays()
                       })
-                      .catch((err) => toast({ title: t('toasts.fuelFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.fuelFailed'), description: getUserErrorMessage(err, t('toasts.unknownError')), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3365,7 +3366,7 @@ export default function WorldMap() {
                         }
                         fetchOverlays()
                       })
-                      .catch((err) => toast({ title: t('toasts.batteryFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.batteryFailed'), description: getUserErrorMessage(err, t('toasts.unknownError')), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3400,7 +3401,7 @@ export default function WorldMap() {
                       .then(() => {
                         toast({ title: t('toasts.vehicleHotwired'), description: t('toasts.engineStarted') })
                       })
-                      .catch((err) => toast({ title: t('toasts.hotwireFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                      .catch((err) => toast({ title: t('toasts.hotwireFailed'), description: getUserErrorMessage(err, t('toasts.unknownError')), variant: 'destructive' }))
                       .finally(() => { setActionLoading(null); setContextMenu(null) })
                       }}
                     />
@@ -3650,7 +3651,7 @@ export default function WorldMap() {
                     fetchOverlays()
                     setSpawnDialog(null)
                   })
-                  .catch((err) => toast({ title: t('toasts.spawnFailedTitle'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                  .catch((err) => toast({ title: t('toasts.spawnFailedTitle'), description: getUserErrorMessage(err, t('toasts.unknownError')), variant: 'destructive' }))
                   .finally(() => setActionLoading(null))
               }}
             >
@@ -4052,7 +4053,7 @@ export default function WorldMap() {
                     toast({ title: t('toasts.vehicleRemoved') })
                     fetchOverlays()
                   })
-                  .catch((err) => toast({ title: t('toasts.removeFailed'), description: err instanceof Error ? err.message : t('toasts.unknownError'), variant: 'destructive' }))
+                  .catch((err) => toast({ title: t('toasts.removeFailed'), description: getUserErrorMessage(err, t('toasts.unknownError')), variant: 'destructive' }))
                   .finally(() => { setActionLoading(null); setRemoveVehicleTarget(null) })
               }}
             >
