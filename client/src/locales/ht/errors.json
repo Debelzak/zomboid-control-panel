@@ -165,6 +165,7 @@
   "PATH_NOT_FOUND": "Chemen an pa egziste",
   "DELETE_FILES_NOT_PZ_INSTALL": "Sa a pa sanble ak yon enstalasyon sèvè Project Zomboid. Refize efase pou sekirite.",
   "DELETE_FILES_DATA_PATH_NESTED": "Refize efase: dosye done Zomboid sèvè sa a nan anndan dosye ou sou pwen efase a, kidonk sa ap detwi sovgad mond lan tou. Deplase chemen done a andeyò dosye enstalasyon an nan Paramèt, oswa fè pwòp kopi sovgad ou dabò.",
+  "DELETE_FILES_NOT_CONFIGURED_SERVER": "Chemen sa a pa koresponn ak yon sèvè panèl la genyen nan dosye li. Refize efase pou sekirite.",
   "DELETE_FILES_CONFIRM_REQUIRED": "Efase fichye sa yo bezwen confirm: true",
   "PATH_NOT_A_DIRECTORY": "Chemen an se pa yon dosye",
   "DIRECTORY_READ_FAILED": "Pa ka li {{path}} ({{code}}). {{guidance}}",

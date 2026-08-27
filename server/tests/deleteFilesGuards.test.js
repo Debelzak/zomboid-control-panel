@@ -8,9 +8,11 @@ vi.mock("../database/init.js", () => ({
   setSetting: vi.fn(),
   getSetting: vi.fn(),
   getActiveServer: vi.fn(),
+  getServers: vi.fn(),
 }));
 
 const { default: router } = await import("../routes/server.js");
+const { getServers } = await import("../database/init.js");
 
 function createResponse() {
   const response = { status: vi.fn(), json: vi.fn() };
@@ -45,6 +47,14 @@ describe("POST /api/server/delete-files safety guards", () => {
       loadConfig: async () => {},
       getServerProcessDetails: async () => ({ running: false, scanFailed: false }),
     };
+    // bug-hunt-2026-08-27: deletePath must now also match a configured
+    // server's own installPath -- the marker-file check alone was
+    // trivially satisfiable. Default every test to a configured server
+    // pointing at installDir, so the existing guard tests (which exercise
+    // everything ELSE about this route) keep exercising just that, not
+    // this new check too; the new check gets its own tests below.
+    getServers.mockReset();
+    getServers.mockResolvedValue([{ id: 1, installPath: installDir }]);
   });
 
   afterEach(() => {
@@ -119,6 +129,76 @@ describe("POST /api/server/delete-files safety guards", () => {
       expect.objectContaining({ success: true }),
     );
     expect(fs.existsSync(installDir)).toBe(false);
+  });
+
+  // bug-hunt-2026-08-27: hasPzInstallMarker() only checked whether a
+  // marker FILENAME exists in the target directory -- trivially satisfied
+  // by creating an empty file with that name anywhere on the host. This
+  // was never an authorization check, just a "does this look like a PZ
+  // folder" sanity check. deletePath must now also exactly match a
+  // configured server's own installPath.
+  describe("refuses a directory with real PZ markers that isn't a configured server's installPath", () => {
+    it("refuses when no configured server points at this path (the marker file alone is not enough)", async () => {
+      getServers.mockResolvedValue([]);
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "DELETE_FILES_NOT_CONFIGURED_SERVER" }),
+      );
+      // The whole point: a real PZ marker file was present (see beforeEach)
+      // and it must not be enough on its own -- the install must survive.
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+
+    it("refuses when configured servers exist but none of them point at this exact path", async () => {
+      getServers.mockResolvedValue([
+        { id: 1, installPath: path.join(os.tmpdir(), "some-other-server") },
+      ]);
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "DELETE_FILES_NOT_CONFIGURED_SERVER" }),
+      );
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+
+    it("refuses when the only configured server has no installPath set", async () => {
+      getServers.mockResolvedValue([{ id: 1, installPath: null }]);
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "DELETE_FILES_NOT_CONFIGURED_SERVER" }),
+      );
+      expect(fs.existsSync(installDir)).toBe(true);
+    });
+
+    it("still deletes when a DIFFERENT configured server's installPath happens to also match, not just the first one", async () => {
+      getServers.mockResolvedValue([
+        { id: 1, installPath: path.join(os.tmpdir(), "some-other-server") },
+        { id: 2, installPath: installDir },
+      ]);
+      const handler = getDeleteFilesHandler();
+      const response = createResponse();
+
+      await handler(buildRequest({ confirm: true }), response);
+
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+      expect(fs.existsSync(installDir)).toBe(false);
+    });
   });
 
   // 2026-08-26 bug hunt round 2, Pam's finding 2: the entry check happens

@@ -628,6 +628,21 @@ export const ErrorCode = Object.freeze({
    * backing the data up first: the backups folder lives inside the same
    * doomed tree. */
   DELETE_FILES_DATA_PATH_NESTED: "DELETE_FILES_DATA_PATH_NESTED",
+  /** server/routes/server.js -- POST /api/server/delete-files. The prior
+   * safety check here (hasPzInstallMarker) only confirmed a handful of
+   * marker FILENAMES exist in the target directory -- trivially satisfied
+   * by creating an empty file with one of those names anywhere on the host,
+   * not an authorization check (bug-hunt-2026-08-27, filed alongside the
+   * server.wipe capability-description undersell it made real). Both real
+   * callers (Servers.tsx's "Delete Everything" and "Clear Install Folder")
+   * only ever pass a path already sitting in a configured server record's
+   * own installPath -- so deletePath is now required to exactly match one,
+   * turning "any directory with a spoofable marker file" into "must be a
+   * server the panel already has on record" (which itself requires
+   * servers.manage to create, a capability distinct from server.wipe). The
+   * marker check stays as a second, narrower layer on top, not a
+   * replacement. */
+  DELETE_FILES_NOT_CONFIGURED_SERVER: "DELETE_FILES_NOT_CONFIGURED_SERVER",
   /** server/routes/server.js -- POST /api/server/delete-files, caller didn't
    * pass `confirm: true`. Split from WIPE_CONFIRM_REQUIRED below (2026-08-26
    * bug hunt round 2, Angela's find) rather than continuing to share it: that

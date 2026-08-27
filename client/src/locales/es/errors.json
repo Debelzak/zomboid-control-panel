@@ -165,6 +165,7 @@
   "PATH_NOT_FOUND": "La ruta no existe",
   "DELETE_FILES_NOT_PZ_INSTALL": "Esto no parece ser una instalación de servidor de Project Zomboid. Se rechaza la eliminación por seguridad.",
   "DELETE_FILES_DATA_PATH_NESTED": "Eliminación rechazada: la carpeta de datos de Zomboid de este servidor está dentro de la carpeta que estás a punto de eliminar, así que esto también destruiría la partida guardada del mundo. Mueve la ruta de datos fuera de la carpeta de instalación en Ajustes, o haz tú mismo una copia de seguridad primero.",
+  "DELETE_FILES_NOT_CONFIGURED_SERVER": "Esta ruta no coincide con ningún servidor registrado en el panel. Se rechaza la eliminación por seguridad.",
   "DELETE_FILES_CONFIRM_REQUIRED": "Eliminar estos archivos requiere confirm: true",
   "PATH_NOT_A_DIRECTORY": "La ruta no es un directorio",
   "DIRECTORY_READ_FAILED": "No se puede leer {{path}} ({{code}}). {{guidance}}",

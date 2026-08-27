@@ -165,6 +165,7 @@
   "PATH_NOT_FOUND": "Le chemin n'existe pas",
   "DELETE_FILES_NOT_PZ_INSTALL": "Ceci ne ressemble pas à une installation de serveur Project Zomboid. Suppression refusée par sécurité.",
   "DELETE_FILES_DATA_PATH_NESTED": "Suppression refusée : le dossier de données Zomboid de ce serveur se trouve à l'intérieur du dossier que vous êtes sur le point de supprimer, ce qui détruirait aussi la sauvegarde du monde. Déplacez le chemin des données hors du dossier d'installation dans Paramètres, ou sauvegardez-le vous-même au préalable.",
+  "DELETE_FILES_NOT_CONFIGURED_SERVER": "Ce chemin ne correspond à aucun serveur enregistré dans le panneau. Suppression refusée par sécurité.",
   "DELETE_FILES_CONFIRM_REQUIRED": "La suppression de ces fichiers nécessite confirm : true",
   "PATH_NOT_A_DIRECTORY": "Le chemin n'est pas un dossier",
   "DIRECTORY_READ_FAILED": "Impossible de lire {{path}} ({{code}}). {{guidance}}",

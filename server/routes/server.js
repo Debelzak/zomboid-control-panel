@@ -13,6 +13,7 @@ import {
   setSetting,
   getSetting,
   getActiveServer,
+  getServers,
 } from "../database/init.js";
 import { sanitizeError, sanitizeIniValue } from "../utils/sanitize.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
@@ -4070,6 +4071,31 @@ router.post("/delete-files", requirePermission("server.wipe"), async (req, res) 
         error:
           "This does not appear to be a Project Zomboid server installation. Refusing to delete for safety.",
         code: ErrorCode.DELETE_FILES_NOT_PZ_INSTALL,
+      });
+    }
+
+    // hasPzInstallMarker() above only confirms a handful of marker
+    // FILENAMES exist -- trivially satisfied by creating an empty file
+    // with one of those names anywhere on the host, not an authorization
+    // check (bug-hunt-2026-08-27). The two real callers of this route
+    // (Servers.tsx's "Delete Everything" and "Clear Install Folder") only
+    // ever pass a path that's already a configured server's own
+    // installPath, so require an exact match against one -- turning
+    // "any directory with a spoofable marker file" into "must be a server
+    // the panel already has on record" (creating that record requires
+    // servers.manage, a capability distinct from server.wipe). This is a
+    // second, narrower layer on top of the marker check, not a
+    // replacement for it.
+    const resolvedDeletePath = path.resolve(deletePath);
+    const configuredServers = await getServers();
+    const matchesConfiguredServer = configuredServers.some(
+      (s) => s.installPath && path.resolve(s.installPath) === resolvedDeletePath,
+    );
+    if (!matchesConfiguredServer) {
+      return res.status(400).json({
+        error:
+          "This path doesn't match a server the panel has on record. Refusing to delete for safety.",
+        code: ErrorCode.DELETE_FILES_NOT_CONFIGURED_SERVER,
       });
     }
 

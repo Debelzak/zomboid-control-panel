@@ -165,6 +165,7 @@
   "PATH_NOT_FOUND": "Pfad existiert nicht",
   "DELETE_FILES_NOT_PZ_INSTALL": "Dies scheint keine Project-Zomboid-Serverinstallation zu sein. Löschung aus Sicherheitsgründen verweigert.",
   "DELETE_FILES_DATA_PATH_NESTED": "Löschung verweigert: Der Zomboid-Datenordner dieses Servers liegt innerhalb des Ordners, den du löschen möchtest, wodurch auch der Welt-Spielstand zerstört würde. Verschiebe den Datenpfad in den Einstellungen außerhalb des Installationsordners oder sichere ihn zuerst selbst.",
+  "DELETE_FILES_NOT_CONFIGURED_SERVER": "Dieser Pfad entspricht keinem im Panel hinterlegten Server. Löschung wird aus Sicherheitsgründen verweigert.",
   "DELETE_FILES_CONFIRM_REQUIRED": "Für das Löschen dieser Dateien ist confirm: true erforderlich",
   "PATH_NOT_A_DIRECTORY": "Pfad ist kein Ordner",
   "DIRECTORY_READ_FAILED": "{{path}} kann nicht gelesen werden ({{code}}). {{guidance}}",
