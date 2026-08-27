@@ -1722,15 +1722,15 @@ export default function Players() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading}>
+                              <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading || !bridgeConnected}>
                                 <Ghost className="w-4 h-4 mr-2" />
                                 {selectedPlayerPowers?.godMode ? t('dossier.disableGodMode') : t('dossier.enableGodMode')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading}>
+                              <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading || !bridgeConnected}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 {selectedPlayerPowers?.invisible ? t('dossier.disableInvisible') : t('dossier.enableInvisible')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading}>
+                              <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading || !bridgeConnected}>
                                 <Layers className="w-4 h-4 mr-2" />
                                 {selectedPlayerPowers?.noclip ? t('dossier.disableNoclip') : t('dossier.enableNoclip')}
                               </DropdownMenuItem>
@@ -2483,7 +2483,7 @@ export default function Players() {
                       <Button
                         variant={selectedPlayerPowers?.godMode ? 'default' : 'outline'}
                         size="sm"
-                        disabled={!selectedPlayer || loading}
+                        disabled={!selectedPlayer || loading || !bridgeConnected}
                         onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}
                       >
                         {selectedPlayerPowers?.godMode ? t('powers.disable') : t('powers.enable')}
@@ -2511,7 +2511,7 @@ export default function Players() {
                       <Button
                         variant={selectedPlayerPowers?.invisible ? 'default' : 'outline'}
                         size="sm"
-                        disabled={!selectedPlayer || loading}
+                        disabled={!selectedPlayer || loading || !bridgeConnected}
                         onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}
                       >
                         {selectedPlayerPowers?.invisible ? t('powers.disable') : t('powers.enable')}
@@ -2539,7 +2539,7 @@ export default function Players() {
                       <Button
                         variant={selectedPlayerPowers?.noclip ? 'default' : 'outline'}
                         size="sm"
-                        disabled={!selectedPlayer || loading}
+                        disabled={!selectedPlayer || loading || !bridgeConnected}
                         onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}
                       >
                         {selectedPlayerPowers?.noclip ? t('powers.disable') : t('powers.enable')}
