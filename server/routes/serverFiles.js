@@ -5,7 +5,12 @@ import os from "os";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Files");
 import { getActiveServer, getAllSettings } from "../database/init.js";
-import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
+import {
+  sanitizeError,
+  sanitizeErrorParams,
+  SENSITIVE_FIELD_RE,
+  omitSensitiveFields,
+} from "../utils/sanitize.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import {
   getBackupPath,
@@ -394,6 +399,35 @@ export function parseIni(content) {
   }
 
   return result;
+}
+
+// Drop any `Key=Value` line whose key looks secret-like (SENSITIVE_FIELD_RE
+// -- same regex GET /app-settings already trusts, not a second hand-kept
+// list) from a raw .ini file's text, preserving every other line -- comments,
+// blank lines, formatting -- byte for byte. Used only when SAVING a template
+// snapshot (POST /templates): that snapshot's `iniRaw` is later written
+// VERBATIM into the live .ini on apply (writeFileAtomic(iniPath,
+// template.iniRaw), no merge), so a masked placeholder string here would
+// land in the live RCON/join password field on apply and break RCON --
+// omitting the line entirely just means the applied server has no RCON
+// password configured afterward (a normal, working, fixable state), not a
+// bogus one. Line-level rather than parse-then-reserialize: reusing
+// parseIni()/toIni() here would rewrite every OTHER line too, and toIni()'s
+// own merge semantics keep an omitted key's ORIGINAL line untouched --
+// exactly the opposite of what a strip needs.
+export function stripSensitiveIniLines(content) {
+  const lines = content.split(/\r?\n/);
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      return true;
+    }
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex <= 0) return true;
+    const key = trimmed.substring(0, eqIndex).trim();
+    return !SENSITIVE_FIELD_RE.test(key);
+  });
+  return kept.join("\n");
 }
 
 // Convert object back to INI format
@@ -2037,13 +2071,20 @@ router.post("/templates", async (req, res) => {
       serverName,
     };
 
-    // Read current INI settings
+    // Read current INI settings. A saved template is a persisted snapshot
+    // with no exclusion list and no expiry -- unlike a live GET, this copy
+    // outlives the credential it was taken from and survives a later
+    // password rotation, so secret-shaped keys (RCONPassword, the server
+    // join Password, ...) are stripped here rather than masked: see
+    // stripSensitiveIniLines()'s own comment for why omission, not a
+    // placeholder, is the safe choice given how POST /templates/:id/apply
+    // writes iniRaw back.
     if (includeIni) {
       const iniPath = path.join(configPath, `${serverName}.ini`);
       if (fs.existsSync(iniPath)) {
         const iniContent = fs.readFileSync(iniPath, "utf-8");
-        template.ini = parseIni(iniContent);
-        template.iniRaw = iniContent;
+        template.ini = omitSensitiveFields(parseIni(iniContent));
+        template.iniRaw = stripSensitiveIniLines(iniContent);
       }
     }
 
