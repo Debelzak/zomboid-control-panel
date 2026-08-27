@@ -185,7 +185,7 @@
       },
       "diagnostics": {
         "label": "Diagnóstico de PanelBridge",
-        "description": "Ejecutar análisis del catálogo de objetos y vehículos contra el mod."
+        "description": "Ver el registro de depuración y las estadísticas del mod, inspeccionar su API, sus manejadores disponibles y los scripts de objetos, ejecutar análisis del catálogo de objetos y vehículos, alternar su modo de depuración, y borrar su registro de errores."
       },
       "command": {
         "label": "Ejecutar cualquier acción de PanelBridge",

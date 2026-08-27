@@ -185,7 +185,7 @@
       },
       "diagnostics": {
         "label": "PanelBridge-Diagnose",
-        "description": "Item- und Fahrzeugkatalog-Scans gegen die Mod ausführen."
+        "description": "Das Debug-Protokoll und die Statistiken der Mod einsehen, ihre API, verfügbaren Handler und Item-Skripte untersuchen, Item-/Fahrzeugkatalog-Scans ausführen, ihren Debug-Modus umschalten und ihr Fehlerprotokoll löschen."
       },
       "command": {
         "label": "Beliebige PanelBridge-Aktion ausführen",

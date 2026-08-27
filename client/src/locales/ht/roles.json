@@ -185,7 +185,7 @@
       },
       "diagnostics": {
         "label": "Dyagnostik PanelBridge",
-        "description": "Lanse eskanaj katalòg atik ak veyikil sou mod la."
+        "description": "Gade jounal debogaj mod la ak estatistik li, egzamine API li, manyè disponib li yo ak script atik yo, lanse eskanaj katalòg atik ak veyikil, chanje mòd debogaj li, epi efase jounal erè li."
       },
       "command": {
         "label": "Egzekite nenpòt aksyon PanelBridge",

@@ -185,7 +185,7 @@
       },
       "diagnostics": {
         "label": "PanelBridge 诊断",
-        "description": "对该模组运行物品和载具目录扫描。"
+        "description": "查看该模组的调试日志与统计信息，检查其 API、可用处理程序及物品脚本，运行物品和载具目录扫描，切换其调试模式，并清除其错误日志。"
       },
       "command": {
         "label": "执行任意 PanelBridge 操作",
