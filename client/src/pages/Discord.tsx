@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { discordApi } from "@/lib/api";
 import { getUserErrorMessage } from "@/lib/errorMessage";
 import { useConfirm } from "@/contexts/ConfirmContext";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   MessageSquare,
   Bot,
@@ -229,6 +230,15 @@ export default function Discord() {
   const eventLabels = useMemo(() => getEventLabels(t), [t]);
   const SETUP_STEPS = useMemo(() => getSetupSteps(t), [t]);
   const confirm = useConfirm();
+  // Every mutating route on this page sits behind one whole-file server
+  // gate -- router.use(requirePermission("integrations.manage")) in
+  // server/routes/discord.js:41, no per-route override anywhere -- so a
+  // single capability covers the entire page (verified against the live
+  // route list, bug-hunt-2026-08-27 Tier-3 sweep). Open/true when
+  // capabilities are unknown/null, same convention as every other
+  // capability check in the app.
+  const { can } = useAuth();
+  const canManageIntegrations = can("integrations.manage");
   const [status, setStatus] = useState<DiscordStatus | null>(null);
   const [config, setConfig] = useState<DiscordConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -399,6 +409,10 @@ export default function Discord() {
   );
 
   const handleSaveConfig = async (andStart = false) => {
+    // The disabled attribute on the buttons below is only the affordance --
+    // this early return is the real gate, in case another path ever calls
+    // this handler directly (bug-hunt-2026-08-27 floor rule).
+    if (!canManageIntegrations) return;
     try {
       setSaving(true);
       setConfigMessage(null);
@@ -495,6 +509,7 @@ export default function Discord() {
   };
 
   const handleTestToken = async () => {
+    if (!canManageIntegrations) return;
     try {
       setTesting(true);
       setConfigMessage(null);
@@ -527,7 +542,7 @@ export default function Discord() {
   const [resetting, setResetting] = useState(false);
 
   const handleStart = async () => {
-    if (starting) return;
+    if (starting || !canManageIntegrations) return;
     try {
       setStarting(true);
       setConfigMessage(null);
@@ -544,7 +559,7 @@ export default function Discord() {
   };
 
   const handleStop = async () => {
-    if (stopping) return;
+    if (stopping || !canManageIntegrations) return;
     try {
       setStopping(true);
       setConfigMessage(null);
@@ -560,7 +575,7 @@ export default function Discord() {
   };
 
   const handleSendTestMessage = async () => {
-    if (sendingTest) return;
+    if (sendingTest || !canManageIntegrations) return;
     try {
       setSendingTest(true);
       setConfigMessage(null);
@@ -579,7 +594,7 @@ export default function Discord() {
   };
 
   const handleResetConfig = async () => {
-    if (resetting) return;
+    if (resetting || !canManageIntegrations) return;
 
     const confirmed = await confirm({
       title: t("toasts.wipeConfirmTitle"),
@@ -640,6 +655,7 @@ export default function Discord() {
   };
 
   const handleSaveWebhookEvents = async () => {
+    if (!canManageIntegrations) return;
     try {
       setSavingEvents(true);
       await discordApi.updateWebhookEvents(webhookEvents);
@@ -883,9 +899,10 @@ export default function Discord() {
                         )}
                       </Button>
                     </div>
+                    <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
                     <Button
                       onClick={handleTestToken}
-                      disabled={testing || !token}
+                      disabled={testing || !token || !canManageIntegrations}
                       className="min-w-[100px]"
                     >
                       {testing ? (
@@ -896,6 +913,7 @@ export default function Discord() {
                         </>
                       )}
                     </Button>
+                    </DisabledReason>
                   </div>
                 </div>
 
@@ -1337,10 +1355,11 @@ export default function Discord() {
                     <ChevronLeft className="w-4 h-4 mr-1" /> {t("wizard.step5.back")}
                   </Button>
                   <div className="flex gap-2">
+                    <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
                     <Button
                       variant="outline"
                       onClick={() => handleSaveConfig(false)}
-                      disabled={saving || !canSaveConfig}
+                      disabled={saving || !canSaveConfig || !canManageIntegrations}
                     >
                       {saving ? (
                         <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1349,9 +1368,11 @@ export default function Discord() {
                       )}
                       {t("wizard.step5.saveDraft")}
                     </Button>
+                    </DisabledReason>
+                    <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
                     <Button
                       onClick={() => handleSaveConfig(true)}
-                      disabled={saving || !canSaveConfig}
+                      disabled={saving || !canSaveConfig || !canManageIntegrations}
                     >
                       {saving ? (
                         <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1360,6 +1381,7 @@ export default function Discord() {
                       )}
                       {t("wizard.step5.saveAndStart")}
                     </Button>
+                    </DisabledReason>
                   </div>
                 </div>
               </div>
@@ -1557,6 +1579,7 @@ export default function Discord() {
 
             <div className="flex gap-2">
               {status?.running ? (
+                <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null} className="flex-1">
                 <Button
                   // Reversible -- the bot restarts on demand, same as
                   // Servers.tsx's own Stop button (variant="outline" there
@@ -1565,7 +1588,7 @@ export default function Discord() {
                   variant="outline"
                   onClick={handleStop}
                   className="flex-1"
-                  disabled={stopping}
+                  disabled={stopping || !canManageIntegrations}
                 >
                   {stopping ? (
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1574,11 +1597,13 @@ export default function Discord() {
                   )}
                   {stopping ? t("management.botStatus.stopping") : t("management.botStatus.stop")}
                 </Button>
+                </DisabledReason>
               ) : (
+                <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null} className="flex-1">
                 <Button
                   onClick={handleStart}
                   className="flex-1"
-                  disabled={starting}
+                  disabled={starting || !canManageIntegrations}
                 >
                   {starting ? (
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1587,13 +1612,15 @@ export default function Discord() {
                   )}
                   {starting ? t("management.botStatus.starting") : t("management.botStatus.start")}
                 </Button>
+                </DisabledReason>
               )}
 
               {status?.running && config?.channelId && (
+                <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
                 <Button
                   variant="outline"
                   onClick={handleSendTestMessage}
-                  disabled={sendingTest}
+                  disabled={sendingTest || !canManageIntegrations}
                 >
                   {sendingTest ? (
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1602,6 +1629,7 @@ export default function Discord() {
                   )}
                   {sendingTest ? t("management.botStatus.sendingTest") : t("management.botStatus.sendTest")}
                 </Button>
+                </DisabledReason>
               )}
             </div>
           </CardContent>
@@ -1727,8 +1755,10 @@ export default function Discord() {
             </div>
 
             <div className="flex justify-end pt-2">
+              <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
               <Button
                 onClick={async () => {
+                  if (!canManageIntegrations) return;
                   try {
                     setSavingPermissions(true);
                     await discordApi.updatePermissions(commandPermissions);
@@ -1743,7 +1773,7 @@ export default function Discord() {
                     setSavingPermissions(false);
                   }
                 }}
-                disabled={savingPermissions}
+                disabled={savingPermissions || !canManageIntegrations}
               >
                 {savingPermissions ? (
                   <>
@@ -1754,6 +1784,7 @@ export default function Discord() {
                   t("management.commandPermissions.save")
                 )}
               </Button>
+              </DisabledReason>
             </div>
             <InlineFeedback message={permissionsMessage} className="mt-3" />
           </CardContent>
@@ -1815,10 +1846,11 @@ export default function Discord() {
                   )}
                 </Button>
               </div>
+              <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
               <Button
                 variant="outline"
                 onClick={handleTestToken}
-                disabled={testing || !token}
+                disabled={testing || !token || !canManageIntegrations}
               >
                 {testing ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -1828,6 +1860,7 @@ export default function Discord() {
                   </>
                 )}
               </Button>
+              </DisabledReason>
             </div>
             {botInfo && (
               <div className="flex items-center gap-2 text-sm text-primary">
@@ -2034,10 +2067,11 @@ export default function Discord() {
               {t("management.configuration.wipeNote")}
             </div>
             <div className="flex justify-end gap-2">
+              <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
               <Button
                 variant="destructive"
                 onClick={handleResetConfig}
-                disabled={resetting}
+                disabled={resetting || !canManageIntegrations}
               >
                 {resetting ? (
                   <>
@@ -2050,12 +2084,14 @@ export default function Discord() {
                   </>
                 )}
               </Button>
+              </DisabledReason>
               <Button variant="outline" onClick={loadData}>
                 {t("management.configuration.cancel")}
               </Button>
+              <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
               <Button
                 onClick={() => handleSaveConfig(false)}
-                disabled={saving || !canSaveConfig}
+                disabled={saving || !canSaveConfig || !canManageIntegrations}
               >
                 {saving ? (
                   <>
@@ -2066,6 +2102,7 @@ export default function Discord() {
                   t("management.configuration.saveChanges")
                 )}
               </Button>
+              </DisabledReason>
             </div>
           </div>
         </CardContent>
@@ -2132,7 +2169,8 @@ export default function Discord() {
             },
           )}
           <div className="flex justify-end">
-            <Button onClick={handleSaveWebhookEvents} disabled={savingEvents}>
+            <DisabledReason reason={!canManageIntegrations ? t("shared.noPermission") : null}>
+            <Button onClick={handleSaveWebhookEvents} disabled={savingEvents || !canManageIntegrations}>
               {savingEvents ? (
                 <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> {t("management.webhookEvents.saving")}
@@ -2141,6 +2179,7 @@ export default function Discord() {
                 t("management.webhookEvents.save")
               )}
             </Button>
+            </DisabledReason>
           </div>
           <InlineFeedback message={eventsMessage} className="mt-3" />
         </CardContent>

@@ -3,6 +3,7 @@
     "copied": "Copié !",
     "copy": "Copier",
     "errorTitle": "Erreur",
+    "noPermission": "Vous n'avez pas la permission de gérer l'intégration Discord.",
     "successTitle": "Succès",
     "unknownError": "erreur inconnue"
   },

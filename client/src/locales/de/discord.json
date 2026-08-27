@@ -3,6 +3,7 @@
     "copied": "Kopiert!",
     "copy": "Kopieren",
     "errorTitle": "Fehler",
+    "noPermission": "Sie haben keine Berechtigung, die Discord-Integration zu verwalten.",
     "successTitle": "Erfolg",
     "unknownError": "unbekannter Fehler"
   },

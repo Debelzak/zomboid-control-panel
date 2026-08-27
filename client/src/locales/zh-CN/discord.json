@@ -3,6 +3,7 @@
     "copied": "已复制！",
     "copy": "复制",
     "errorTitle": "错误",
+    "noPermission": "您没有权限管理 Discord 集成。",
     "successTitle": "成功",
     "unknownError": "未知错误"
   },
