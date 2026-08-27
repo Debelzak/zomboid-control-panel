@@ -59,6 +59,7 @@ import { rconApi, serverApi, playersApi, panelBridgeApi } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
+import { DisabledReason } from '@/components/DisabledReason'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { useConfirm } from '@/contexts/ConfirmContext'
@@ -2346,22 +2347,30 @@ export default function Events() {
                   {t('quickSounds.hint')}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => handleAction('Helicopter', triggerChopper)} disabled={loading !== null || players.length === 0} title={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : undefined} className="h-9 gap-2 text-xs font-medium">
-                    {loading === 'Helicopter' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5" />}
-                    {t('quickSounds.helicopter')}
-                  </Button>
-                  <Button variant="outline" onClick={() => handleAction('Gunshot', triggerGunshot)} disabled={loading !== null || players.length === 0} title={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : undefined} className="h-9 gap-2 text-xs font-medium">
-                    {loading === 'Gunshot' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
-                    {t('quickSounds.gunshot')}
-                  </Button>
-                  <Button variant="outline" onClick={() => handleAction('Lightning', () => triggerLightning(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : t('quickSounds.lightningTooltip')} className="h-9 gap-2 text-xs font-medium text-amber-400/90 hover:text-amber-400 hover:border-amber-400/40">
-                    {loading === 'Lightning' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                    {t('quickSounds.lightning')}
-                  </Button>
-                  <Button variant="outline" onClick={() => handleAction('Thunder', () => triggerThunder(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : t('quickSounds.thunderTooltip')} className="h-9 gap-2 text-xs font-medium">
-                    {loading === 'Thunder' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudLightning className="w-3.5 h-3.5" />}
-                    {t('quickSounds.thunder')}
-                  </Button>
+                  <DisabledReason reason={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : null}>
+                    <Button variant="outline" onClick={() => handleAction('Helicopter', triggerChopper)} disabled={loading !== null || players.length === 0} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Helicopter' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5" />}
+                      {t('quickSounds.helicopter')}
+                    </Button>
+                  </DisabledReason>
+                  <DisabledReason reason={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : null}>
+                    <Button variant="outline" onClick={() => handleAction('Gunshot', triggerGunshot)} disabled={loading !== null || players.length === 0} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Gunshot' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                      {t('quickSounds.gunshot')}
+                    </Button>
+                  </DisabledReason>
+                  <DisabledReason reason={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : null}>
+                    <Button variant="outline" onClick={() => handleAction('Lightning', () => triggerLightning(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? undefined : t('quickSounds.lightningTooltip')} className="h-9 gap-2 text-xs font-medium text-amber-400/90 hover:text-amber-400 hover:border-amber-400/40">
+                      {loading === 'Lightning' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                      {t('quickSounds.lightning')}
+                    </Button>
+                  </DisabledReason>
+                  <DisabledReason reason={players.length === 0 ? t('quickSounds.noPlayersOnlineTitle') : null}>
+                    <Button variant="outline" onClick={() => handleAction('Thunder', () => triggerThunder(pickStrikeTarget()))} disabled={loading !== null || players.length === 0} title={players.length === 0 ? undefined : t('quickSounds.thunderTooltip')} className="h-9 gap-2 text-xs font-medium">
+                      {loading === 'Thunder' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudLightning className="w-3.5 h-3.5" />}
+                      {t('quickSounds.thunder')}
+                    </Button>
+                  </DisabledReason>
                   <Button variant="outline" onClick={() => handleAction('Alarm', triggerAlarm)} disabled={loading !== null} title={t('quickSounds.alarmTooltip')} className="h-9 gap-2 text-xs font-medium">
                     {loading === 'Alarm' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                     {t('quickSounds.alarm')}
@@ -2478,31 +2487,37 @@ export default function Events() {
                   </div>
                   <Slider aria-label={t('horde.sizeAria')} value={[hordeCount]} onValueChange={([val]) => setHordeCount(val)} min={10} max={500} step={10} />
                 </div>
-                <Button variant="outline" onClick={() => handleAction('Create horde', () => createHorde(hordeCount, pickStrikeTarget()))} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} title={players.length === 0 ? t('horde.noPlayersOnlineTitle') : !bridgeConnected ? t('horde.bridgeOfflineTitle') : undefined} className="h-9 gap-2 text-xs font-medium">
-                  {loading === 'Create horde' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
-                  {t('horde.spawnNear', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
-                </Button>
-                <Button variant="outline" onClick={() => handleAction('Create horde (behind)', () => createHorde2(hordeCount, pickStrikeTarget()))} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} title={players.length === 0 ? t('horde.noPlayersOnlineTitle') : !bridgeConnected ? t('horde.bridgeOfflineTitle') : undefined} className="h-9 gap-2 text-xs font-medium">
-                  {loading === 'Create horde (behind)' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
-                  {t('horde.spawnBehind', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
-                </Button>
-                <Button variant="outline" onClick={async () => {
-                  // Instant, world-wide, and every player on the server feels
-                  // it -- reversible (zombies respawn) doesn't undo whatever
-                  // someone was mid-fight against. Affects-others-but-
-                  // reversible tier: warning, not destructive-red, not silent.
-                  const ok = await confirm({
-                    title: t('horde.removeAllConfirmTitle'),
-                    description: t('horde.removeAllConfirmDescription'),
-                    confirmLabel: t('horde.clearLoadedZombies'),
-                    variant: 'warning',
-                  })
-                  if (!ok) return
-                  handleAction('Remove all zombies', removeZombies)
-                }} disabled={loading !== null || !bridgeConnected} title={!bridgeConnected ? t('horde.bridgeOfflineTitle') : undefined} className="h-9 gap-2 text-xs font-medium text-warning hover:text-warning hover:border-warning/50 hover:bg-warning/10">
-                  {loading === 'Remove all zombies' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-                  {t('horde.clearLoadedZombies')}
-                </Button>
+                <DisabledReason reason={players.length === 0 ? t('horde.noPlayersOnlineTitle') : !bridgeConnected ? t('horde.bridgeOfflineTitle') : null}>
+                  <Button variant="outline" onClick={() => handleAction('Create horde', () => createHorde(hordeCount, pickStrikeTarget()))} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Create horde' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
+                    {t('horde.spawnNear', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
+                  </Button>
+                </DisabledReason>
+                <DisabledReason reason={players.length === 0 ? t('horde.noPlayersOnlineTitle') : !bridgeConnected ? t('horde.bridgeOfflineTitle') : null}>
+                  <Button variant="outline" onClick={() => handleAction('Create horde (behind)', () => createHorde2(hordeCount, pickStrikeTarget()))} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} className="h-9 gap-2 text-xs font-medium">
+                    {loading === 'Create horde (behind)' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Skull className="w-3.5 h-3.5" />}
+                    {t('horde.spawnBehind', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
+                  </Button>
+                </DisabledReason>
+                <DisabledReason reason={!bridgeConnected ? t('horde.bridgeOfflineTitle') : null}>
+                  <Button variant="outline" onClick={async () => {
+                    // Instant, world-wide, and every player on the server feels
+                    // it -- reversible (zombies respawn) doesn't undo whatever
+                    // someone was mid-fight against. Affects-others-but-
+                    // reversible tier: warning, not destructive-red, not silent.
+                    const ok = await confirm({
+                      title: t('horde.removeAllConfirmTitle'),
+                      description: t('horde.removeAllConfirmDescription'),
+                      confirmLabel: t('horde.clearLoadedZombies'),
+                      variant: 'warning',
+                    })
+                    if (!ok) return
+                    handleAction('Remove all zombies', removeZombies)
+                  }} disabled={loading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium text-warning hover:text-warning hover:border-warning/50 hover:bg-warning/10">
+                    {loading === 'Remove all zombies' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                    {t('horde.clearLoadedZombies')}
+                  </Button>
+                </DisabledReason>
               </div>
             </TacticalPanel>
         )}
@@ -2530,9 +2545,11 @@ export default function Events() {
                     {players.length === 0 ? (
                       <p className="font-mono text-[11px] text-muted-foreground/70 italic">{t('vehicles.noPlayersOnline')}</p>
                     ) : players.map((player) => (
-                      <Button key={player.name} variant="outline" size="sm" onClick={() => handleAction('Spawn vehicle', () => spawnVehicle(selectedVehicle, player.name))} disabled={loading !== null || !selectedVehicle} title={!selectedVehicle ? t('vehicles.selectVehicleFirstTitle') : undefined} className="h-8 gap-1.5 text-xs font-medium">
-                        <Car className="w-3 h-3" /> {player.name}
-                      </Button>
+                      <DisabledReason key={player.name} reason={!selectedVehicle ? t('vehicles.selectVehicleFirstTitle') : null}>
+                        <Button variant="outline" size="sm" onClick={() => handleAction('Spawn vehicle', () => spawnVehicle(selectedVehicle, player.name))} disabled={loading !== null || !selectedVehicle} className="h-8 gap-1.5 text-xs font-medium">
+                          <Car className="w-3 h-3" /> {player.name}
+                        </Button>
+                      </DisabledReason>
                     ))}
                   </div>
                 </div>
