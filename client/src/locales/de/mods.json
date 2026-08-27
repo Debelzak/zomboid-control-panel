@@ -1,4 +1,8 @@
 {
+  "permissions": {
+    "noModsManage": "Ihre Rolle hat keine Berechtigung, Mods zu verwalten.",
+    "noServersManage": "Ihre Rolle hat keine Berechtigung, Server zu verwalten."
+  },
   "fetchError": {
     "title": "Mod-Daten konnten nicht geladen werden",
     "retry": "Erneut versuchen"

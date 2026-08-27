@@ -1,4 +1,8 @@
 {
+  "permissions": {
+    "noModsManage": "Your role does not have permission to manage mods.",
+    "noServersManage": "Your role does not have permission to manage servers."
+  },
   "fetchError": {
     "title": "Mod data could not be loaded",
     "retry": "Retry"

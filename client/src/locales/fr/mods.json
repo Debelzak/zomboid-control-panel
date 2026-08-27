@@ -1,4 +1,8 @@
 {
+  "permissions": {
+    "noModsManage": "Votre rôle ne permet pas de gérer les mods.",
+    "noServersManage": "Votre rôle ne permet pas de gérer les serveurs."
+  },
   "fetchError": {
     "title": "Les données des mods n'ont pas pu être chargées",
     "retry": "Réessayer"

@@ -1,4 +1,8 @@
 {
+  "permissions": {
+    "noModsManage": "您的角色没有管理模组的权限。",
+    "noServersManage": "您的角色没有管理服务器的权限。"
+  },
   "fetchError": {
     "title": "无法加载模组数据",
     "retry": "重试"
