@@ -271,6 +271,12 @@
     "description": "Vorlage „{{name}}“ löschen? Dies kann nicht rückgängig gemacht werden.",
     "confirmLabel": "Löschen"
   },
+  "applyTemplateConfirm": {
+    "title": "Vorlage „{{name}}“ anwenden?",
+    "description": "Die aktuellen Servereinstellungen durch diese Vorlage ersetzen? Das Panel sichert zuerst die aktive Konfiguration, sodass du dies bei Bedarf über „Wiederherstellen“ rückgängig machen kannst.",
+    "rconWarning": "Das RCON-Passwort wird nicht in Vorlagen gespeichert. Beim Anwenden dieser Vorlage wird das RCON-Passwort deines Servers entfernt — du musst es danach erneut eingeben.",
+    "confirmLabel": "Anwenden"
+  },
   "fileBrowserDialog": {
     "title": "Bilddatei auswählen",
     "description": "Durchsuche deine Dateien nach einer PNG-Bilddatei für deinen Server.",

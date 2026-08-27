@@ -271,6 +271,12 @@
     "description": "Delete template \"{{name}}\"? This cannot be undone.",
     "confirmLabel": "Delete"
   },
+  "applyTemplateConfirm": {
+    "title": "Apply template \"{{name}}\"?",
+    "description": "Replace your current server settings with this template? The panel backs up what's live first, so Restore can undo it if needed.",
+    "rconWarning": "The RCON password isn't stored in templates, so applying this template will remove your server's RCON password — you'll need to re-enter it afterward.",
+    "confirmLabel": "Apply"
+  },
   "restoreBackupConfirm": {
     "title": "Restore this backup?",
     "description": "Replace the current file with \"{{filename}}\"? Unsaved changes to the live config will be lost.",

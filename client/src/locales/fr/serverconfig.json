@@ -271,6 +271,12 @@
     "description": "Supprimer le modèle « {{name}} » ? Cette action est irréversible.",
     "confirmLabel": "Supprimer"
   },
+  "applyTemplateConfirm": {
+    "title": "Appliquer le modèle « {{name}} » ?",
+    "description": "Remplacer les paramètres actuels du serveur par ce modèle ? Le panneau sauvegarde d'abord la configuration active, vous pourrez donc annuler avec Restaurer si besoin.",
+    "rconWarning": "Le mot de passe RCON n'est pas enregistré dans les modèles : appliquer ce modèle supprimera le mot de passe RCON de votre serveur, il faudra le ressaisir ensuite.",
+    "confirmLabel": "Appliquer"
+  },
   "fileBrowserDialog": {
     "title": "Sélectionner un fichier image",
     "description": "Parcourez pour trouver un fichier image PNG pour votre serveur.",

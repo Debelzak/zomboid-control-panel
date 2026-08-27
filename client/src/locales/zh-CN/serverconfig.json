@@ -271,6 +271,12 @@
     "description": "删除模板“{{name}}”？此操作无法撤销。",
     "confirmLabel": "删除"
   },
+  "applyTemplateConfirm": {
+    "title": "应用模板“{{name}}”？",
+    "description": "用此模板替换当前的服务器设置？面板会先备份当前生效的配置，如有需要可通过“恢复”撤销。",
+    "rconWarning": "模板不会保存 RCON 密码，因此应用此模板会移除服务器当前的 RCON 密码——之后需要重新输入。",
+    "confirmLabel": "应用"
+  },
   "fileBrowserDialog": {
     "title": "选择图片文件",
     "description": "浏览并选择服务器要使用的 PNG 图片文件。",

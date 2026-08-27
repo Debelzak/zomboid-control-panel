@@ -10,6 +10,8 @@ import {
   sanitizeErrorParams,
   SENSITIVE_FIELD_RE,
   omitSensitiveFields,
+  maskSensitiveObject,
+  isMaskedSecret,
 } from "../utils/sanitize.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import {
@@ -1085,7 +1087,13 @@ router.get("/ini", async (req, res) => {
     const content = fs.readFileSync(filePath, "utf-8");
     const parsed = parseIni(content);
 
-    res.json({ settings: parsed, path: filePath, serverName });
+    // This is the LIVE config, unlike a template snapshot -- mask rather
+    // than omit, since the structured editor's PUT /ini round-trips this
+    // same object back and toIni() only preserves a key's original line
+    // when the key is ABSENT from the submitted settings, not when it's
+    // present-but-blank. Omitting here would make every unrelated field
+    // edit look like "delete the RCON password" once it reached PUT.
+    res.json({ settings: maskSensitiveObject(parsed), path: filePath, serverName });
   } catch (error) {
     log.error("Failed to read INI:", error);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -1125,6 +1133,22 @@ router.put("/ini", async (req, res) => {
       });
     }
 
+    // GET /ini masks secret-shaped values, so an unmodified field echoes
+    // back here as the "••••••••1234" placeholder rather than the real
+    // password -- never let that placeholder overwrite the stored value.
+    // Same skip-write-if-masked-echoed-back guard as config.js/oidc.js/
+    // servers.js already use; dropping the key here (rather than passing
+    // it through) is what makes toIni() below preserve the live line
+    // unchanged, since toIni() only overwrites keys present in `settings`.
+    const submittedSettings = {};
+    for (const [key, value] of Object.entries(settings)) {
+      if (SENSITIVE_FIELD_RE.test(key) && isMaskedSecret(value)) {
+        log.info(`Preserving stored value for sensitive key "${key}" (masked input ignored)`);
+        continue;
+      }
+      submittedSettings[key] = value;
+    }
+
     // Read original to preserve comments/structure. Locked per-path so two
     // overlapping PUTs to the same INI can't interleave their read-modify-write.
     let backupWarning = null;
@@ -1135,11 +1159,11 @@ router.put("/ini", async (req, res) => {
         backupWarning = backupWarningFor(await createBackup(configPath, `${serverName}.ini`));
       }
 
-      const content = toIni(settings, originalContent);
+      const content = toIni(submittedSettings, originalContent);
       writeFileAtomic(filePath, content, "utf-8");
       const persisted = parseIni(fs.readFileSync(filePath, "utf-8"));
       const original = parseIni(originalContent);
-      for (const [key, value] of Object.entries(settings)) {
+      for (const [key, value] of Object.entries(submittedSettings)) {
         const isExistingKey = Object.prototype.hasOwnProperty.call(original, key);
         const isNewNonEmptyKey = value !== "" && value !== null && value !== undefined;
         if ((isExistingKey || isNewNonEmptyKey) && persisted[key] !== String(value).replace(/[\r\n]/g, "")) {
@@ -1154,7 +1178,7 @@ router.put("/ini", async (req, res) => {
       success: true,
       message: "Settings saved",
       path: filePath,
-      settings: persistedSettings,
+      settings: maskSensitiveObject(persistedSettings),
       ...(backupWarning ? { backupWarning } : {}),
       ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });

@@ -271,6 +271,12 @@
     "description": "Efase modèl \"{{name}}\"? Sa a pa ka anile.",
     "confirmLabel": "Efase"
   },
+  "applyTemplateConfirm": {
+    "title": "Aplike modèl \"{{name}}\"?",
+    "description": "Ranplase paramèt sèvè aktyèl ou yo ak modèl sa a? Panèl la fè yon sovgad anvan, kidonk ou ka anile sa ak Restore si w bezwen l.",
+    "rconWarning": "Modèl yo pa konsève modpas RCON, kidonk aplike modèl sa a ap retire modpas RCON sèvè ou a — w ap bezwen antre l ankò apre.",
+    "confirmLabel": "Aplike"
+  },
   "restoreBackupConfirm": {
     "title": "Retabli kopi sovgad sa a?",
     "description": "Ranplase fichye aktyèl la ak \"{{filename}}\"? Chanjman ki pa sove nan konfigirasyon aktif la ap pèdi.",

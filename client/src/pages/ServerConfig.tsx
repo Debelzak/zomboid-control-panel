@@ -1703,10 +1703,24 @@ export default function ServerConfig() {
   }
 
   // Apply template
-  const handleApplyTemplate = async (id: string) => {
+  const handleApplyTemplate = async (template: ConfigTemplate) => {
+    // Templates never store the RCON/join password (POST /templates strips
+    // it at save time -- see stripSensitiveIniLines() in serverFiles.js), so
+    // applying an INI section always removes it from the live config rather
+    // than leaving it untouched. That's an accident-shaped surprise unless
+    // it's said out loud before the click, not after.
+    const ok = await confirm({
+      title: t('applyTemplateConfirm.title', { name: template.name }),
+      description: template.hasIni
+        ? `${t('applyTemplateConfirm.description')}\n\n${t('applyTemplateConfirm.rconWarning')}`
+        : t('applyTemplateConfirm.description'),
+      confirmLabel: t('applyTemplateConfirm.confirmLabel'),
+    })
+    if (!ok) return
+
     setTemplateLoading(true)
     try {
-      const result = await serverFilesApi.applyTemplate(id)
+      const result = await serverFilesApi.applyTemplate(template.id)
       toast({
         title: t('toasts.appliedTitle'),
         description: result.message
@@ -3839,7 +3853,7 @@ export default function ServerConfig() {
                                 variant="default"
                                 size="sm"
                                 disabled={templateLoading}
-                                onClick={() => handleApplyTemplate(template.id)}
+                                onClick={() => handleApplyTemplate(template)}
                               >
                                 {templateLoading ? (
                                   <Loader2 className="w-4 h-4 animate-spin" />
