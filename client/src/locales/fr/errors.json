@@ -32,6 +32,7 @@
   "INI_FILE_NOT_FOUND": "Fichier INI introuvable",
   "INI_SETTINGS_REQUIRED": "Objet de paramètres requis",
   "INI_SETTINGS_INVALID": "Paramètres invalides",
+  "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE": "Ce fichier contient une clé dupliquée dans deux blocs de configuration. Enregistrer depuis l'éditeur structuré supprimerait définitivement la valeur d'une des copies. Utilisez l'onglet de l'éditeur brut pour corriger le doublon d'abord.",
   "SANDBOXVARS_FILE_NOT_FOUND": "Fichier SandboxVars introuvable",
   "SANDBOX_OBJECT_REQUIRED": "Objet sandbox requis",
   "SANDBOX_DATA_INVALID": "Données sandbox invalides",

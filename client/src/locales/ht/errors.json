@@ -32,6 +32,7 @@
   "INI_FILE_NOT_FOUND": "Fichye INI pa jwenn",
   "INI_SETTINGS_REQUIRED": "Objè paramèt obligatwa",
   "INI_SETTINGS_INVALID": "Paramèt envalid",
+  "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE": "Fichye sa a gen yon kle ki double nan de blòk konfigirasyon. Si w sove nan editè estriktire a, sa ap efase valè youn nan kopi yo pou tout tan. Sèvi ak onglè editè brit la pou korije doub la anvan.",
   "SANDBOXVARS_FILE_NOT_FOUND": "Fichye SandboxVars pa jwenn",
   "SANDBOX_OBJECT_REQUIRED": "Objè sandbox obligatwa",
   "SANDBOX_DATA_INVALID": "Done sandbox envalid",

@@ -32,6 +32,7 @@
   "INI_FILE_NOT_FOUND": "未找到 INI 文件",
   "INI_SETTINGS_REQUIRED": "需要设置对象",
   "INI_SETTINGS_INVALID": "设置无效",
+  "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE": "此文件中有一个键在两个配置块中重复出现。从结构化编辑器保存将永久丢弃其中一份副本的值。请先使用原始编辑器标签页修复该重复项。",
   "SANDBOXVARS_FILE_NOT_FOUND": "未找到 SandboxVars 文件",
   "SANDBOX_OBJECT_REQUIRED": "需要沙盒对象",
   "SANDBOX_DATA_INVALID": "沙盒数据无效",

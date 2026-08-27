@@ -32,6 +32,7 @@
   "INI_FILE_NOT_FOUND": "No se encontró el archivo INI",
   "INI_SETTINGS_REQUIRED": "Se requiere un objeto de ajustes",
   "INI_SETTINGS_INVALID": "Ajustes no válidos",
+  "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE": "Este archivo tiene una clave duplicada en dos bloques de configuración. Guardar desde el editor estructurado descartaría permanentemente el valor de una de las copias. Usa la pestaña del editor sin formato para corregir el duplicado primero.",
   "SANDBOXVARS_FILE_NOT_FOUND": "No se encontró el archivo SandboxVars",
   "SANDBOX_OBJECT_REQUIRED": "Se requiere un objeto de sandbox",
   "SANDBOX_DATA_INVALID": "Datos de sandbox no válidos",

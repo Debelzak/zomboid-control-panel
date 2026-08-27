@@ -151,6 +151,15 @@ export const ErrorCode = Object.freeze({
   /** server/routes/serverFiles.js -- PUT /ini, `settings` carries a
    * __proto__/constructor/prototype key (prototype-pollution guard). */
   INI_SETTINGS_INVALID: "INI_SETTINGS_INVALID",
+  /** server/routes/serverFiles.js -- PUT /ini, the live file has a key
+   * duplicated across two config blocks (utils/iniDuplicateKeys.js). The
+   * structured save reconstructs the file from a flat settings object, so
+   * every key present gets ALL of its lines rewritten to one value --
+   * permanently discarding the other copy on every save, even one that
+   * never touched that key. Refused rather than allowed; the raw tab
+   * round-trips the file byte-for-byte and stays available to fix it.
+   * bug-hunt-2026-08-27, Angela's structured-save destructive-write trace. */
+  INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE: "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE",
   /** server/routes/serverFiles.js (3 sites: GET /sandbox, GET
    * /sandbox/validate, POST /sandbox/repair) -- no <serverName>_SandboxVars.
    * lua at the resolved config path. Identical wording/meaning all three,

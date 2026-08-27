@@ -32,6 +32,7 @@
   "INI_FILE_NOT_FOUND": "INI file not found",
   "INI_SETTINGS_REQUIRED": "Settings object required",
   "INI_SETTINGS_INVALID": "Invalid settings",
+  "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE": "This file has a key duplicated across two config blocks. Saving from the structured editor would permanently discard one copy's value. Use the raw editor tab to fix the duplicate first.",
   "SANDBOXVARS_FILE_NOT_FOUND": "SandboxVars file not found",
   "SANDBOX_OBJECT_REQUIRED": "Sandbox object required",
   "SANDBOX_DATA_INVALID": "Invalid sandbox data",

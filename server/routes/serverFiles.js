@@ -1259,6 +1259,32 @@ router.put("/ini", async (req, res) => {
       });
     }
 
+    // A key duplicated across two config blocks makes the structured save
+    // silently destructive (see utils/iniDuplicateKeys.js's own header):
+    // toIni() below reconstructs the file from this flat settings object,
+    // rewriting EVERY line matching a submitted key to that key's one
+    // value -- and since every key is always present (the client resends
+    // the whole object on every save), that fires on EVERY save, even one
+    // that never touched this key, permanently discarding whichever copy
+    // parseIni()'s last-occurrence-wins didn't surface. Refuse outright
+    // rather than risk it; the raw tab is a genuine escape hatch for the
+    // exact same caller (same serverfiles.manage gate, no extra
+    // restriction, mirrored identically for a remote/SFTP server -- not in
+    // LOCAL_ONLY_PATHS) and round-trips the file byte-for-byte instead of
+    // reconstructing it, so it stays available to fix the duplicate first.
+    const currentIniContent = fs.existsSync(filePath)
+      ? fs.readFileSync(filePath, "utf-8")
+      : "";
+    const duplicateKeysOnDisk = findDuplicateIniKeys(currentIniContent);
+    if (duplicateKeysOnDisk.length > 0) {
+      return res.status(409).json({
+        error:
+          "This file has a key duplicated across two config blocks. Saving from the structured editor would permanently discard one copy's value. Use the raw editor tab to fix the duplicate first.",
+        duplicateKeys: duplicateKeysOnDisk,
+        code: ErrorCode.INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE,
+      });
+    }
+
     // GET /ini masks secret-shaped values, so an unmodified field echoes
     // back here as the "••••••••1234" placeholder rather than the real
     // password -- never let that placeholder overwrite the stored value.
@@ -1285,10 +1311,7 @@ router.put("/ini", async (req, res) => {
       (key) => key in INI_KEY_CAPABILITY,
     );
     if (touchesGovernedIniKey) {
-      const currentContent = fs.existsSync(filePath)
-        ? fs.readFileSync(filePath, "utf-8")
-        : "";
-      const currentIni = parseIni(currentContent);
+      const currentIni = parseIni(currentIniContent);
       const missingCapabilities = [];
       let callerCapabilities = null;
       for (const [key, value] of Object.entries(submittedSettings)) {

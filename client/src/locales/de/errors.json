@@ -32,6 +32,7 @@
   "INI_FILE_NOT_FOUND": "INI-Datei nicht gefunden",
   "INI_SETTINGS_REQUIRED": "Einstellungsobjekt erforderlich",
   "INI_SETTINGS_INVALID": "Ungültige Einstellungen",
+  "INI_DUPLICATE_KEY_BLOCKS_STRUCTURED_SAVE": "Diese Datei enthält einen Schlüssel, der in zwei Konfigurationsblöcken doppelt vorkommt. Ein Speichern über den strukturierten Editor würde den Wert einer Kopie dauerhaft verwerfen. Beheben Sie das Duplikat zuerst über den Roh-Editor.",
   "SANDBOXVARS_FILE_NOT_FOUND": "SandboxVars-Datei nicht gefunden",
   "SANDBOX_OBJECT_REQUIRED": "Sandbox-Objekt erforderlich",
   "SANDBOX_DATA_INVALID": "Ungültige Sandbox-Daten",
