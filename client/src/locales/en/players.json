@@ -262,7 +262,8 @@
     "on": "ON",
     "off": "OFF",
     "enable": "Enable",
-    "disable": "Disable"
+    "disable": "Disable",
+    "bridgeRequiredTooltip": "Requires PanelBridge to be connected"
   },
   "notes": {
     "selectPlayerEmpty": "Select a player to view or add notes",

@@ -94,7 +94,8 @@
     "moreActionsAria": "Weitere Serveraktionen",
     "addServerFirst": "Zuerst einen Server hinzufügen oder auswählen",
     "notAvailableRemote": "Nicht verfügbar für Remote-Server (nur RCON)",
-    "forceStopTooltip": "Versucht eine kurze Speicherung, stoppt dann in jedem Fall sofort"
+    "forceStopTooltip": "Versucht eine kurze Speicherung, stoppt dann in jedem Fall sofort",
+    "connectRconNeedsHostRunning": "Zuerst den Server starten"
   },
   "confirm": {
     "cancel": "Abbrechen",

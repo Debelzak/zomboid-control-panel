@@ -91,6 +91,7 @@ import { NumberInput } from '@/components/NumberInput'
 import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { PageHeader } from '@/components/PageHeader'
+import { DisabledReason } from '@/components/DisabledReason'
 import { cn, copyText } from '@/lib/utils'
 
 interface PerkChoice {
@@ -1747,18 +1748,24 @@ export default function Players() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading || !bridgeConnected}>
-                                <Ghost className="w-4 h-4 mr-2" />
-                                {selectedPlayerPowers?.godMode ? t('dossier.disableGodMode') : t('dossier.enableGodMode')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading || !bridgeConnected}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                {selectedPlayerPowers?.invisible ? t('dossier.disableInvisible') : t('dossier.enableInvisible')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading || !bridgeConnected}>
-                                <Layers className="w-4 h-4 mr-2" />
-                                {selectedPlayerPowers?.noclip ? t('dossier.disableNoclip') : t('dossier.enableNoclip')}
-                              </DropdownMenuItem>
+                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                                <DropdownMenuItem onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)} disabled={loading || !bridgeConnected}>
+                                  <Ghost className="w-4 h-4 mr-2" />
+                                  {selectedPlayerPowers?.godMode ? t('dossier.disableGodMode') : t('dossier.enableGodMode')}
+                                </DropdownMenuItem>
+                              </DisabledReason>
+                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                                <DropdownMenuItem onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)} disabled={loading || !bridgeConnected}>
+                                  <Eye className="w-4 h-4 mr-2" />
+                                  {selectedPlayerPowers?.invisible ? t('dossier.disableInvisible') : t('dossier.enableInvisible')}
+                                </DropdownMenuItem>
+                              </DisabledReason>
+                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                                <DropdownMenuItem onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)} disabled={loading || !bridgeConnected}>
+                                  <Layers className="w-4 h-4 mr-2" />
+                                  {selectedPlayerPowers?.noclip ? t('dossier.disableNoclip') : t('dossier.enableNoclip')}
+                                </DropdownMenuItem>
+                              </DisabledReason>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => {
@@ -1779,13 +1786,15 @@ export default function Players() {
                                 {t('dossier.removeFromWhitelist')}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => setImportExportOpen(true)}
-                                disabled={!bridgeConnected}
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                {t('dossier.importExportCharacter')}
-                              </DropdownMenuItem>
+                              <DisabledReason className="w-full" reason={!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                                <DropdownMenuItem
+                                  onClick={() => setImportExportOpen(true)}
+                                  disabled={!bridgeConnected}
+                                >
+                                  <Download className="w-4 h-4 mr-2" />
+                                  {t('dossier.importExportCharacter')}
+                                </DropdownMenuItem>
+                              </DisabledReason>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -2505,14 +2514,16 @@ export default function Players() {
                           {selectedPlayerPowers.godMode ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <Button
-                        variant={selectedPlayerPowers?.godMode ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!selectedPlayer || loading || !bridgeConnected}
-                        onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}
-                      >
-                        {selectedPlayerPowers?.godMode ? t('powers.disable') : t('powers.enable')}
-                      </Button>
+                      <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                        <Button
+                          variant={selectedPlayerPowers?.godMode ? 'default' : 'outline'}
+                          size="sm"
+                          disabled={!selectedPlayer || loading || !bridgeConnected}
+                          onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}
+                        >
+                          {selectedPlayerPowers?.godMode ? t('powers.disable') : t('powers.enable')}
+                        </Button>
+                      </DisabledReason>
                     </div>
                   </div>
 
@@ -2533,14 +2544,16 @@ export default function Players() {
                           {selectedPlayerPowers.invisible ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <Button
-                        variant={selectedPlayerPowers?.invisible ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!selectedPlayer || loading || !bridgeConnected}
-                        onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}
-                      >
-                        {selectedPlayerPowers?.invisible ? t('powers.disable') : t('powers.enable')}
-                      </Button>
+                      <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                        <Button
+                          variant={selectedPlayerPowers?.invisible ? 'default' : 'outline'}
+                          size="sm"
+                          disabled={!selectedPlayer || loading || !bridgeConnected}
+                          onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}
+                        >
+                          {selectedPlayerPowers?.invisible ? t('powers.disable') : t('powers.enable')}
+                        </Button>
+                      </DisabledReason>
                     </div>
                   </div>
 
@@ -2561,14 +2574,16 @@ export default function Players() {
                           {selectedPlayerPowers.noclip ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <Button
-                        variant={selectedPlayerPowers?.noclip ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!selectedPlayer || loading || !bridgeConnected}
-                        onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}
-                      >
-                        {selectedPlayerPowers?.noclip ? t('powers.disable') : t('powers.enable')}
-                      </Button>
+                      <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                        <Button
+                          variant={selectedPlayerPowers?.noclip ? 'default' : 'outline'}
+                          size="sm"
+                          disabled={!selectedPlayer || loading || !bridgeConnected}
+                          onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}
+                        >
+                          {selectedPlayerPowers?.noclip ? t('powers.disable') : t('powers.enable')}
+                        </Button>
+                      </DisabledReason>
                     </div>
                   </div>
 
@@ -2583,14 +2598,16 @@ export default function Players() {
                         <p className="text-xs text-muted-foreground">{t('powers.healDesc')}</p>
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!selectedPlayer || loading || !bridgeConnected}
-                      onClick={handleHealPlayer}
-                    >
-                      {t('powers.healButton')}
-                    </Button>
+                    <DisabledReason reason={selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!selectedPlayer || loading || !bridgeConnected}
+                        onClick={handleHealPlayer}
+                      >
+                        {t('powers.healButton')}
+                      </Button>
+                    </DisabledReason>
                   </div>
                 </div>
               </TabsContent>

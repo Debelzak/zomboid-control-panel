@@ -94,7 +94,8 @@
     "moreActionsAria": "Plis aksyon sèvè",
     "addServerFirst": "Ajoute oswa chwazi yon sèvè dabò",
     "notAvailableRemote": "Pa disponib pou sèvè aleka (RCON sèlman)",
-    "forceStopTooltip": "Eseye fè yon sovgad rapid, epi sispann imedyatman kanmenm"
+    "forceStopTooltip": "Eseye fè yon sovgad rapid, epi sispann imedyatman kanmenm",
+    "connectRconNeedsHostRunning": "Demare sèvè a dabò"
   },
   "confirm": {
     "cancel": "Anile",

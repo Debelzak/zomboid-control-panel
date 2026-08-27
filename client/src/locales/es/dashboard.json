@@ -94,7 +94,8 @@
     "moreActionsAria": "Más acciones del servidor",
     "addServerFirst": "Añadir o seleccionar un servidor primero",
     "notAvailableRemote": "No disponible para servidores remotos (solo RCON)",
-    "forceStopTooltip": "Intenta un guardado rápido y luego detiene el juego de inmediato en cualquier caso"
+    "forceStopTooltip": "Intenta un guardado rápido y luego detiene el juego de inmediato en cualquier caso",
+    "connectRconNeedsHostRunning": "Inicia el servidor primero"
   },
   "confirm": {
     "cancel": "Cancelar",

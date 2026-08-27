@@ -94,7 +94,8 @@
     "moreActionsAria": "Plus d'actions serveur",
     "addServerFirst": "Ajoutez ou sélectionnez d'abord un serveur",
     "notAvailableRemote": "Non disponible pour les serveurs distants (RCON uniquement)",
-    "forceStopTooltip": "Tente une sauvegarde rapide, puis arrête immédiatement dans tous les cas"
+    "forceStopTooltip": "Tente une sauvegarde rapide, puis arrête immédiatement dans tous les cas",
+    "connectRconNeedsHostRunning": "Démarrez d'abord le serveur"
   },
   "confirm": {
     "cancel": "Annuler",

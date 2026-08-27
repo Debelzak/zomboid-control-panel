@@ -31,6 +31,7 @@ import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
 import { HelpTip } from '@/components/HelpTip'
+import { DisabledReason } from '@/components/DisabledReason'
 import { AutoUpdateResultBanner } from '@/components/AutoUpdateResultBanner'
 import { cn, copyText } from '@/lib/utils'
 import { getUserErrorMessage, getRecoveryUrl } from '@/lib/errorMessage'
@@ -1138,9 +1139,20 @@ export default function Dashboard() {
                 <Link to="/settings" className="flex items-center"><Server className="mr-2 h-4 w-4" /> {t('actions.bridgeSettings')}</Link>
               </DropdownMenuItem>
               {!rconConnected && (
-                <DropdownMenuItem onClick={handleConnect} disabled={!hasServer || loading !== null || (!activeServer?.isRemote && !hostRunning)}>
-                  <Wifi className="mr-2 h-4 w-4" /> {t('actions.connectRcon')}
-                </DropdownMenuItem>
+                <DisabledReason
+                  className="w-full"
+                  reason={
+                    !hasServer
+                      ? t('actions.addServerFirst')
+                      : !activeServer?.isRemote && !hostRunning
+                        ? t('actions.connectRconNeedsHostRunning')
+                        : null
+                  }
+                >
+                  <DropdownMenuItem onClick={handleConnect} disabled={!hasServer || loading !== null || (!activeServer?.isRemote && !hostRunning)}>
+                    <Wifi className="mr-2 h-4 w-4" /> {t('actions.connectRcon')}
+                  </DropdownMenuItem>
+                </DisabledReason>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem

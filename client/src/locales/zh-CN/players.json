@@ -262,7 +262,8 @@
     "on": "开",
     "off": "关",
     "enable": "启用",
-    "disable": "禁用"
+    "disable": "禁用",
+    "bridgeRequiredTooltip": "需要先连接 PanelBridge"
   },
   "notes": {
     "selectPlayerEmpty": "选择一名玩家以查看或添加备注",

@@ -94,7 +94,8 @@
     "moreActionsAria": "更多服务器操作",
     "addServerFirst": "先添加或选择一个服务器",
     "notAvailableRemote": "远程（仅 RCON）服务器不可用",
-    "forceStopTooltip": "尝试快速保存，之后无论如何都会立即停止"
+    "forceStopTooltip": "尝试快速保存，之后无论如何都会立即停止",
+    "connectRconNeedsHostRunning": "请先启动服务器"
   },
   "confirm": {
     "cancel": "取消",

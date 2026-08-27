@@ -262,7 +262,8 @@
     "on": "ACTIVÉ",
     "off": "DÉSACTIVÉ",
     "enable": "Activer",
-    "disable": "Désactiver"
+    "disable": "Désactiver",
+    "bridgeRequiredTooltip": "Nécessite que PanelBridge soit connecté"
   },
   "notes": {
     "selectPlayerEmpty": "Sélectionnez un joueur pour voir ou ajouter des notes",

@@ -262,7 +262,8 @@
     "on": "AN",
     "off": "AUS",
     "enable": "Aktivieren",
-    "disable": "Deaktivieren"
+    "disable": "Deaktivieren",
+    "bridgeRequiredTooltip": "Erfordert eine Verbindung zu PanelBridge"
   },
   "notes": {
     "selectPlayerEmpty": "Wähle einen Spieler aus, um Notizen anzusehen oder hinzuzufügen",

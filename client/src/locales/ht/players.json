@@ -262,7 +262,8 @@
     "on": "AKTIVE",
     "off": "DEZAKTIVE",
     "enable": "Aktive",
-    "disable": "Dezaktive"
+    "disable": "Dezaktive",
+    "bridgeRequiredTooltip": "Mande pou PanelBridge konekte"
   },
   "notes": {
     "selectPlayerEmpty": "Chwazi yon jwè pou wè oswa ajoute nòt",
