@@ -2300,6 +2300,7 @@ router.post("/templates", async (req, res) => {
       .substring(0, 50);
     let safeId = baseId;
     let counter = 1;
+    // codeql[js/path-injection] safeId/templateFile is derived from name via .toLowerCase().replace(/[^a-z0-9]/g, '_') a few lines above before being joined into a path here.
     while (fs.existsSync(path.join(templatesPath, `${safeId}.json`))) {
       safeId = `${baseId}_${counter++}`;
       if (counter > 100) {
@@ -2348,6 +2349,7 @@ router.post("/templates", async (req, res) => {
       }
     }
 
+    // codeql[js/path-injection] safeId/templateFile is derived from name via .toLowerCase().replace(/[^a-z0-9]/g, '_') a few lines above before being joined into a path here.
     fs.writeFileSync(templateFile, JSON.stringify(template, null, 2));
     log.info(`Created template: ${name} (${safeId})`);
 

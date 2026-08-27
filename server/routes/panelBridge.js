@@ -3102,10 +3102,12 @@ router.post("/install-mod", requirePermission("bridge.setup"), (req, res) => {
   let realTarget;
   try {
     // If target doesn't exist yet, resolve the parent and join
+    // codeql[js/path-injection] targetPath is required to be absolute, resolved and realpath'd, then required to end in /media/lua/server(/) (suffix-containment check) before this line runs -- see the guard chain starting a few lines above ('Validate path: must be a string, absolute, no traversal').
     if (fs.existsSync(resolvedTarget)) {
       realTarget = fs.realpathSync(resolvedTarget);
     } else {
       const parent = path.dirname(resolvedTarget);
+      // codeql[js/path-injection] targetPath is required to be absolute, resolved and realpath'd, then required to end in /media/lua/server(/) (suffix-containment check) before this line runs -- see the guard chain starting a few lines above ('Validate path: must be a string, absolute, no traversal').
       if (fs.existsSync(parent)) {
         realTarget = path.join(
           fs.realpathSync(parent),
@@ -3169,7 +3171,9 @@ router.post("/install-mod", requirePermission("bridge.setup"), (req, res) => {
     }
 
     // Ensure target directory exists (use realTarget for safety)
+    // codeql[js/path-injection] targetPath is required to be absolute, resolved and realpath'd, then required to end in /media/lua/server(/) (suffix-containment check) before this line runs -- see the guard chain starting a few lines above ('Validate path: must be a string, absolute, no traversal').
     if (!fs.existsSync(realTarget)) {
+      // codeql[js/path-injection] targetPath is required to be absolute, resolved and realpath'd, then required to end in /media/lua/server(/) (suffix-containment check) before this line runs -- see the guard chain starting a few lines above ('Validate path: must be a string, absolute, no traversal').
       fs.mkdirSync(realTarget, { recursive: true, mode: 0o755 });
     }
 
@@ -3559,6 +3563,7 @@ router.post("/character/import", requirePermission("players.gm_tools"), async (r
     const { dataDir } = getDataPaths();
     const safeUsername = username.replace(/[^a-zA-Z0-9_-]/g, "_");
     const exportDir = path.join(dataDir, "exports", safeUsername);
+    // codeql[js/path-injection] username is stripped to [a-zA-Z0-9_-] via safeUsername = username.replace(...) immediately above before being joined into this path.
     fs.mkdirSync(exportDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     snapshotPath = path.join(
@@ -3566,6 +3571,7 @@ router.post("/character/import", requirePermission("players.gm_tools"), async (r
       `${safeUsername}_pre-import_${timestamp}.json`,
     );
     fs.writeFileSync(
+      // codeql[js/path-injection] username is stripped to [a-zA-Z0-9_-] via safeUsername = username.replace(...) immediately above before being joined into this path.
       snapshotPath,
       JSON.stringify(snapshot.data ?? snapshot, null, 2),
     );

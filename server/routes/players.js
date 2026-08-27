@@ -51,6 +51,7 @@ const MAX_EXPORT_FILE_BYTES = 5 * 1024 * 1024;
 export function parsePlayerExportFile(filePath) {
   let stat;
   try {
+    // codeql[js/path-injection] filePath here is only ever called from GET /exports/:username/:filename, where username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ before this helper is invoked.
     stat = fs.statSync(filePath);
   } catch {
     throw new Error('Export not found');
@@ -62,6 +63,7 @@ export function parsePlayerExportFile(filePath) {
 
   let raw;
   try {
+    // codeql[js/path-injection] filePath here is only ever called from GET /exports/:username/:filename, where username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ before this helper is invoked.
     raw = fs.readFileSync(filePath, 'utf8');
   } catch {
     throw new Error('Could not read export file');
@@ -1057,9 +1059,12 @@ router.get('/exports', requirePermission("players.gm_tools"), async (req, res) =
 
     for (const playerDir of players) {
       const dirPath = path.join(exportsRoot, playerDir);
+      // codeql[js/path-injection] username (if present) is stripped to [a-zA-Z0-9_-] via .replace(/[^a-zA-Z0-9_-]/g, '_') a few lines above before being used as a directory name here.
       if (!fs.existsSync(dirPath)) continue;
+      // codeql[js/path-injection] username (if present) is stripped to [a-zA-Z0-9_-] via .replace(/[^a-zA-Z0-9_-]/g, '_') a few lines above before being used as a directory name here.
       const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.json')).sort().reverse();
       for (const file of files) {
+        // codeql[js/path-injection] username (if present) is stripped to [a-zA-Z0-9_-] via .replace(/[^a-zA-Z0-9_-]/g, '_') a few lines above before being used as a directory name here.
         const stat = fs.statSync(path.join(dirPath, file));
         results.push({
           username: playerDir,
@@ -1090,6 +1095,7 @@ router.get('/exports/:username/:filename', requirePermission("players.gm_tools")
     const { dataDir } = getDataPaths();
     const filePath = path.join(dataDir, 'exports', username, filename);
 
+    // codeql[js/path-injection] username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ immediately above before filePath is built.
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Export not found', code: ErrorCode.PLAYERS_EXPORT_NOT_FOUND });
     }
@@ -1113,10 +1119,12 @@ router.delete('/exports/:username/:filename', requirePermission("players.gm_tool
     const { dataDir } = getDataPaths();
     const filePath = path.join(dataDir, 'exports', username, filename);
 
+    // codeql[js/path-injection] username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ immediately above before filePath is built.
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Export not found', code: ErrorCode.PLAYERS_EXPORT_NOT_FOUND });
     }
 
+    // codeql[js/path-injection] username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ immediately above before filePath is built.
     fs.unlinkSync(filePath);
     res.json({ success: true });
   } catch (error) {

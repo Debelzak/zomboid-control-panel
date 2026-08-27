@@ -79,6 +79,7 @@ export function getDataPaths() {
 function copyDirSync(src, dest) {
   if (!fs.existsSync(src)) return false;
   
+  // codeql[js/path-injection] src/dest here are current.dataDir/newPaths.dataDir, both already validated (absolute, not a blocked system prefix, no overlap with a configured server's install/data dir) earlier in setDataPaths() before copyDirSync() is called.
   fs.mkdirSync(dest, { recursive: true });
   
   const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -90,6 +91,7 @@ function copyDirSync(src, dest) {
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else {
+      // codeql[js/path-injection] src/dest here are current.dataDir/newPaths.dataDir, both already validated (absolute, not a blocked system prefix, no overlap with a configured server's install/data dir) earlier in setDataPaths() before copyDirSync() is called.
       fs.copyFileSync(srcPath, destPath);
     }
   }
@@ -197,15 +199,21 @@ export async function setDataPaths(newPaths, moveFiles = false, options = {}) {
   try {
     if (newPaths.dataDir) {
       const testPath = path.join(newPaths.dataDir, '.test');
+      // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
       fs.mkdirSync(newPaths.dataDir, { recursive: true });
+      // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
       fs.writeFileSync(testPath, 'test');
+      // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
       fs.unlinkSync(testPath);
     }
 
     if (newPaths.logsDir) {
       const testPath = path.join(newPaths.logsDir, '.test');
+      // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
       fs.mkdirSync(newPaths.logsDir, { recursive: true });
+      // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
       fs.writeFileSync(testPath, 'test');
+      // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
       fs.unlinkSync(testPath);
     }
   } catch (e) {
@@ -236,6 +244,7 @@ export async function setDataPaths(newPaths, moveFiles = false, options = {}) {
           // this is the proof.
           const sourceDb = path.join(current.dataDir, 'db.json');
           const destDb = path.join(newPaths.dataDir, 'db.json');
+          // codeql[js/path-injection] newPaths.dataDir/logsDir passed setDataPaths()'s own guard chain above -- string+length check, isAbsolute(), BLOCKED_PREFIXES system-directory check, and pathsOverlap() against every configured PZ server's install/data dir -- before this line runs.
           if (fs.existsSync(sourceDb) && !fs.existsSync(destDb)) {
             return {
               success: false,

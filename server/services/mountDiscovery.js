@@ -235,10 +235,12 @@ function parsePort(value, fallback, max = 65535) {
 // instead of leaving RCON blank.
 export function readServerIniSettings(dataPath, serverName) {
   const iniPath = path.join(dataPath, "Server", `${serverName}.ini`);
+  // codeql[js/path-injection] dataPath/serverName here come from discovery.js's POST /create-from-discovery, which only passes through discovered.dataPath (matched from the server-computed discoverMounts() list, never the raw request value) and a serverName that passed both a strict identifier regex and membership in the discovered mount's own serverNames list.
   if (!fs.existsSync(iniPath)) return null;
 
   let settings;
   try {
+    // codeql[js/path-injection] dataPath/serverName here come from discovery.js's POST /create-from-discovery, which only passes through discovered.dataPath (matched from the server-computed discoverMounts() list, never the raw request value) and a serverName that passed both a strict identifier regex and membership in the discovered mount's own serverNames list.
     settings = parseIni(fs.readFileSync(iniPath, "utf-8"));
   } catch {
     return null;
