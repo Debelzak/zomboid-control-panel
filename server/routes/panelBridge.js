@@ -2214,7 +2214,20 @@ router.get("/sandbox", requirePermission("players.gm_tools"), async (req, res) =
   }
 });
 
-// Get available commands (complete reference for all 60 Lua handlers)
+// Get available commands. NOT verified complete -- despite the "complete
+// reference" claim this comment used to make, it has no consumer anywhere
+// in this codebase (confirmed by grep across client/src and a full-history
+// pickaxe on the client wrapper, panelBridgeApi.getCommands: zero callers
+// were ever added since the wrapper's own introduction in the initial
+// commit), so nothing has ever enforced it staying in sync with
+// VALID_ACTIONS as new actions were added. panelBridgeCommandsDocStaleness
+// .test.js gates the SAFE half (no entry here that isn't a real
+// VALID_ACTIONS member -- see its own header comment for why the other
+// half, every VALID_ACTIONS member having a doc entry, isn't gated too:
+// several missing actions have no dedicated route anywhere in this
+// codebase to verify a real argument shape through, and documenting a
+// shape nobody has confirmed would be worse than the current gap).
+// bug-hunt-2026-08-27.
 router.get("/commands", (req, res) => {
   res.json({
     commands: [
@@ -2735,28 +2748,12 @@ router.get("/commands", (req, res) => {
           z: "number (optional default: 0)",
         },
       },
-      {
-        action: "addLamppost",
-        description: "Add temporary light source",
-        args: {
-          x: "number (required)",
-          y: "number (required)",
-          z: "number (optional default: 0)",
-          r: "number 0-1",
-          g: "number 0-1",
-          b: "number 0-1",
-          radius: "number 1-30",
-        },
-      },
-      {
-        action: "removeLamppost",
-        description: "Remove temporary light source",
-        args: {
-          x: "number (required)",
-          y: "number (required)",
-          z: "number (optional default: 0)",
-        },
-      },
+      // addLamppost/removeLamppost removed here 2026 (release v0.8.0, commit
+      // f47ea1a) -- deliberately dropped from VALID_ACTIONS, but these two
+      // documentation entries were left behind and kept advertising them as
+      // callable. POST /command's whitelist check would refuse either one
+      // with "Unknown or invalid action" if anyone tried, since neither name
+      // exists in VALID_ACTIONS any more. bug-hunt-2026-08-27.
 
       // === Moderation Automation ===
       {
