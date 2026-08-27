@@ -154,6 +154,7 @@ const MIGRATION_V2_ADMIN_CAPABILITIES = [
   "players.moderate",
   "players.gm_tools",
   "players.view",
+  "players.endanger_or_impersonate",
   "mods.manage",
   "automation.manage",
   "integrations.manage",

@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Déclencher des événements du monde",
-        "description": "Météo, climat, heure de la journée, son ambiant, hordes de zombies, utilitaires et réglages visuels, ainsi que les messages de chat et de diffusion. Plusieurs de ces actions peuvent cibler un seul joueur nommé plutôt que le monde entier : l'apparition de hordes, les coups de feu, la foudre/le tonnerre et les sons d'attraction peuvent tous être dirigés vers l'emplacement d'un joueur précis, et les messages du chat général peuvent être envoyés sous n'importe quel nom d'auteur personnalisé, y compris celui d'un autre joueur."
+        "description": "Météo, climat, heure de la journée, son ambiant, hordes de zombies (les éliminer seulement, pas les faire apparaître sur quelqu'un), utilitaires, réglages visuels et messages diffusés attribués au serveur — des effets à l'échelle du monde, non ciblés sur un joueur en particulier. Faire apparaître des zombies ou des effets sonores sur un joueur nommé, la foudre/le tonnerre ciblés, et usurper l'identité d'un joueur dans le chat relèvent d'une permission distincte, players.endanger_or_impersonate."
       }
     },
     "rcon": {
@@ -204,6 +204,10 @@
       "view": {
         "label": "Voir les informations des joueurs",
         "description": "Consulter les détails, le statut et l'historique des joueurs."
+      },
+      "endanger_or_impersonate": {
+        "label": "Mettre en danger ou usurper l'identité d'un joueur",
+        "description": "Faire apparaître jusqu'à 500 zombies directement à l'emplacement d'un joueur nommé ou juste derrière lui, ou déclencher une horde dirigée vers lui ; diriger un coup de feu ou un son d'attraction vers sa position ; le frapper par la foudre ou le tonnerre ciblés. Séparément, et un type de préjudice différent : envoyer un message dans le chat général sous n'importe quel nom d'auteur personnalisé, y compris celui d'un autre joueur — donnant l'impression que ce joueur l'a écrit lui-même."
       }
     },
     "mods": {

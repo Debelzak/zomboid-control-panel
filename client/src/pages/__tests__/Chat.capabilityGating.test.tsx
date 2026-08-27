@@ -1,20 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ConfirmProvider } from '@/contexts/ConfirmContext'
 import Chat from '../Chat'
 import { panelBridgeApi, playersApi, configApi } from '@/lib/api'
 
-// bug-hunt-2026-08-27 Tier-3 capability-gating sweep: Chat.tsx had zero
-// client-side capability awareness before this change. Two genuinely
-// different capabilities gate this one page: sending any chat message
-// (server broadcast / admin chat / general chat) requires
-// server.world_events (the same capability that gates weather/zombie/
-// climate tools -- surprising, but confirmed deliberate, see Chat.tsx's own
-// comment); managing the quick-broadcast preset list requires panel.settings
-// instead. TECHNICIAN and MODERATOR both hold server.world_events but
-// neither holds panel.settings by default, so this is a live stock-role
-// gap, not a hypothetical one.
+// bug-hunt-2026-08-27 Tier-3 capability-gating sweep, later split
+// 2026-08-27 (operator ruling on ranked-bug #5): three genuinely different
+// capabilities gate this one page. Sending on the 'server' channel (plain
+// broadcast, POST /panel-bridge/message) requires server.world_events, the
+// same capability that gates weather/zombie/climate tools. Sending on
+// 'admin' or 'general' requires players.endanger_or_impersonate instead --
+// carved out of server.world_events specifically because chat/general
+// accepts an arbitrary custom author name, indistinguishable in the chat
+// log from that player having said it themselves (see Chat.tsx's own
+// comment). Managing the quick-broadcast preset list requires
+// panel.settings instead. None of TECHNICIAN/MODERATOR hold
+// players.endanger_or_impersonate or panel.settings by default, so this is
+// a live stock-role gap, not a hypothetical one.
 //
 // The Enter-key path is the sharpest risk here (Angela's Console.tsx
 // finding tonight: a disabled button alone is not a gate if a keypress
@@ -25,6 +29,60 @@ import { panelBridgeApi, playersApi, configApi } from '@/lib/api'
 // guards live inside sendMessage() and persistPresets() themselves, so
 // they cover every entry point; this file proves that by firing Enter
 // directly, not just clicking the visible button.
+//
+// The channel Select is a Radix Select -- Players.capabilityGating.test.tsx
+// already confirmed empirically (not just suspected) that a real pointer
+// interaction on a Radix Select throws in jsdom (target.hasPointerCapture
+// is not a function, then scrollIntoView is not a function). Mocking
+// '@/components/ui/select' below with a native <select> is the workaround:
+// it preserves Chat.tsx's REAL per-channel canSendChat logic untouched
+// (nothing about the capability gate itself is mocked), it just swaps the
+// picker widget so a channel switch is drivable via fireEvent.change.
+vi.mock('@/components/ui/select', () => {
+  function findAriaLabel(children: React.ReactNode): string | undefined {
+    let found: string | undefined
+    React.Children.forEach(children, (child) => {
+      if (!React.isValidElement(child)) return
+      const label = (child.props as { 'aria-label'?: string })['aria-label']
+      if (label) found = label
+    })
+    return found
+  }
+  function collectItems(children: React.ReactNode): Array<{ value: string; label: React.ReactNode }> {
+    const items: Array<{ value: string; label: React.ReactNode }> = []
+    React.Children.forEach(children, (child) => {
+      if (!React.isValidElement(child)) return
+      const nested = (child.props as { children?: React.ReactNode }).children
+      React.Children.forEach(nested, (item) => {
+        if (React.isValidElement(item) && (item.props as { value?: string }).value !== undefined) {
+          items.push({ value: (item.props as { value: string }).value, label: (item.props as { children?: React.ReactNode }).children })
+        }
+      })
+    })
+    return items
+  }
+  function Select({ value, onValueChange, disabled, children }: { value: string; onValueChange: (v: string) => void; disabled?: boolean; children: React.ReactNode }) {
+    return (
+      <select
+        aria-label={findAriaLabel(children)}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onValueChange(e.target.value)}
+      >
+        {collectItems(children).map((it) => (
+          <option key={it.value} value={it.value}>{it.label}</option>
+        ))}
+      </select>
+    )
+  }
+  return {
+    Select,
+    SelectTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    SelectItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  }
+})
 
 // jsdom doesn't implement scrollIntoView -- Chat.tsx calls it on every
 // chatHistory update to auto-scroll the message log, which is unrelated to
@@ -66,6 +124,8 @@ const getPlayers = vi.mocked(playersApi.getPlayers)
 const getAppSettings = vi.mocked(configApi.getAppSettings)
 const updateAppSettings = vi.mocked(configApi.updateAppSettings)
 const sendToServerChat = vi.mocked(panelBridgeApi.sendToServerChat)
+const sendToAdminChat = vi.mocked(panelBridgeApi.sendToAdminChat)
+const sendToGeneralChat = vi.mocked(panelBridgeApi.sendToGeneralChat)
 
 afterEach(() => {
   cleanup()
@@ -87,7 +147,7 @@ async function setUp() {
   getAppSettings.mockResolvedValue({ chatPresets: ['Test preset'] } as unknown as Awaited<ReturnType<typeof configApi.getAppSettings>>)
 }
 
-describe('Chat.tsx: sending gates on server.world_events', () => {
+describe("Chat.tsx: sending on the 'server' channel (default) gates on server.world_events", () => {
   it('disables Send and never reaches the API on click or Enter when the role lacks server.world_events', async () => {
     mockCan = (capability) => capability !== 'server.world_events'
     await setUp()
@@ -127,6 +187,85 @@ describe('Chat.tsx: sending gates on server.world_events', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => expect(sendToServerChat).toHaveBeenCalledWith('hello players', false))
+  })
+})
+
+describe("Chat.tsx: sending on the 'admin'/'general' channels gates on players.endanger_or_impersonate, NOT server.world_events", () => {
+  it("disables Send and never reaches the API on 'admin' when the role holds server.world_events but lacks players.endanger_or_impersonate", async () => {
+    mockCan = (capability) => capability !== 'players.endanger_or_impersonate'
+    await setUp()
+
+    renderChat()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chat channel' }), { target: { value: 'admin' } })
+    const input = await screen.findByRole('textbox', { name: 'Chat message' })
+    const sendButton = screen.getByRole('button', { name: 'send' })
+
+    // Same fixture-masking risk as the 'server' channel tests above: type
+    // first, so `!message.trim()` alone can't be the reason Send is
+    // disabled.
+    fireEvent.change(input, { target: { value: 'fake admin notice' } })
+    expect(sendButton).toBeDisabled()
+    fireEvent.click(sendButton)
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(sendToAdminChat).not.toHaveBeenCalled()
+  })
+
+  it("disables Send and never reaches the API on 'general' when the role holds server.world_events but lacks players.endanger_or_impersonate", async () => {
+    mockCan = (capability) => capability !== 'players.endanger_or_impersonate'
+    await setUp()
+
+    renderChat()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chat channel' }), { target: { value: 'general' } })
+    const input = await screen.findByRole('textbox', { name: 'Chat message' })
+    const sendButton = screen.getByRole('button', { name: 'send' })
+
+    fireEvent.change(input, { target: { value: 'pretend to be someone else' } })
+    expect(sendButton).toBeDisabled()
+    fireEvent.click(sendButton)
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(sendToGeneralChat).not.toHaveBeenCalled()
+  })
+
+  it("enables Send and reaches the API on 'admin' when the role holds players.endanger_or_impersonate even without server.world_events", async () => {
+    mockCan = (capability) => capability !== 'server.world_events'
+    await setUp()
+    sendToAdminChat.mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof panelBridgeApi.sendToAdminChat>>)
+
+    renderChat()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chat channel' }), { target: { value: 'admin' } })
+    const input = await screen.findByRole('textbox', { name: 'Chat message' })
+    fireEvent.change(input, { target: { value: 'real admin notice' } })
+
+    const sendButton = screen.getByRole('button', { name: 'send' })
+    expect(sendButton).not.toBeDisabled()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(sendToAdminChat).toHaveBeenCalledWith('real admin notice'))
+  })
+
+  it("enables Send and reaches the API on 'general' when the role holds players.endanger_or_impersonate even without server.world_events", async () => {
+    mockCan = (capability) => capability !== 'server.world_events'
+    await setUp()
+    sendToGeneralChat.mockResolvedValue(undefined as unknown as Awaited<ReturnType<typeof panelBridgeApi.sendToGeneralChat>>)
+
+    renderChat()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chat channel' }), { target: { value: 'general' } })
+    const input = await screen.findByRole('textbox', { name: 'Chat message' })
+    fireEvent.change(input, { target: { value: 'hello from "Admin"' } })
+
+    const sendButton = screen.getByRole('button', { name: 'send' })
+    expect(sendButton).not.toBeDisabled()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(sendToGeneralChat).toHaveBeenCalledWith('hello from "Admin"', 'Admin'))
   })
 })
 

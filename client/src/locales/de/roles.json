@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Weltereignisse auslösen",
-        "description": "Wetter, Klima, Tageszeit, Umgebungsgeräusche, Zombiehorden, Versorgungseinrichtungen und visuelle Einstellungen, außerdem Chat- und Rundschreiben. Mehrere davon können statt der ganzen Welt auf einen einzelnen, namentlich genannten Spieler gerichtet werden: Hordenspawns, Schüsse, Blitz/Donner und Lockgeräusche lassen sich alle auf den Standort eines bestimmten Spielers richten, und Nachrichten im allgemeinen Chat können unter einem beliebigen, frei wählbaren Autorennamen gesendet werden — auch dem eines anderen Spielers."
+        "description": "Wetter, Klima, Tageszeit, Umgebungsgeräusche, Zombiehorden (nur entfernen, nicht auf jemanden spawnen), Versorgungseinrichtungen, visuelle Einstellungen und vom Server gesendete Rundschreiben — weltweite Effekte, nicht auf einen bestimmten Spieler gerichtet. Zombies oder Klangeffekte auf einen namentlich genannten Spieler richten, gezielter Blitz/Donner und das Vortäuschen der Identität eines Spielers im Chat sind eine eigene Berechtigung, players.endanger_or_impersonate."
       }
     },
     "rcon": {
@@ -204,6 +204,10 @@
       "view": {
         "label": "Spielerinfos einsehen",
         "description": "Spielerdetails, -status und -verlauf einsehen."
+      },
+      "endanger_or_impersonate": {
+        "label": "Spieler gefährden oder sich als Spieler ausgeben",
+        "description": "Bis zu 500 Zombies direkt am Standort eines namentlich genannten Spielers oder direkt hinter ihm spawnen, oder eine auf ihn gerichtete Horde auslösen; einen Schuss- oder Lockgeräusch-Effekt auf seine Position richten; ihn mit gezieltem Blitz oder Donner treffen. Separat, und eine andere Art von Schaden: eine Nachricht im allgemeinen Chat unter einem beliebigen, frei wählbaren Autorennamen senden — auch dem eines anderen Spielers —, sodass es aussieht, als hätte dieser Spieler sie selbst geschrieben."
       }
     },
     "mods": {

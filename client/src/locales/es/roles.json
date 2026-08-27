@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Ejecutar eventos del mundo",
-        "description": "Tiempo atmosférico, clima, hora del día, sonido ambiental, hordas de zombis, servicios públicos y ajustes visuales, además de mensajes de chat y de difusión. Varios de estos pueden dirigirse a un jugador concreto en lugar de a todo el mundo: la aparición de hordas, los disparos, los rayos/truenos y los sonidos de atracción pueden apuntar todos a la ubicación de un jugador específico, y los mensajes del chat general pueden enviarse con cualquier nombre de autor personalizado, incluido el de otro jugador."
+        "description": "Tiempo atmosférico, clima, hora del día, sonido ambiental, hordas de zombis (solo eliminarlas, no invocarlas sobre alguien), servicios públicos, ajustes visuales y mensajes de difusión emitidos por el servidor — efectos a escala del mundo, no dirigidos a un jugador concreto. Invocar zombis o efectos de sonido sobre un jugador concreto, los rayos/truenos dirigidos y hacerse pasar por un jugador en el chat son un permiso aparte, players.endanger_or_impersonate."
       }
     },
     "rcon": {
@@ -204,6 +204,10 @@
       "view": {
         "label": "Ver información de jugadores",
         "description": "Consultar los datos, el estado y el historial de los jugadores."
+      },
+      "endanger_or_impersonate": {
+        "label": "Poner en peligro o suplantar a un jugador",
+        "description": "Invocar hasta 500 zombis directamente en la ubicación de un jugador concreto o justo detrás de él, o desencadenar una horda dirigida a él; apuntar un disparo o un sonido de atracción a su posición; alcanzarlo con rayos o truenos dirigidos. Por separado, y un tipo de daño distinto: enviar un mensaje en el chat general con cualquier nombre de autor personalizado, incluido el de otro jugador, haciendo que parezca que ese jugador lo escribió él mismo."
       }
     },
     "mods": {

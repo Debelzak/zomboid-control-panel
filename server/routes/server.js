@@ -1647,10 +1647,17 @@ router.post("/save", requirePermission("server.control"), async (req, res) => {
   }
 });
 
-// Message/weather/events/alarm/removezombies/releasesafehouse below: open to
-// every role, deliberately -- these are in-game/GM authority (broadcast a
-// message, run a weather or zombie event, release an inactive player's
-// safehouse), the same territory as players.js, not server operation.
+// Message/weather/alarm/removezombies/releasesafehouse below: open to every
+// role, deliberately -- these are in-game/GM authority (broadcast a message,
+// run a weather or zombie event, release an inactive player's safehouse),
+// the same territory as players.js, not server operation.
+//
+// events/lightning, events/thunder and events/horde are the exception: they
+// take an optional username and can strike or spawn a horde AT a named
+// player, not just somewhere in the world, so as of 2026-08-27 (operator
+// ruling on ranked-bug #5) they are gated on players.endanger_or_impersonate
+// instead -- admin-only by default, not open to every role like their
+// untargeted siblings above and below.
 
 // Send server message
 router.post("/message", requirePermission("server.world_events"), async (req, res) => {
@@ -1743,7 +1750,7 @@ router.post("/events/gunshot", requirePermission("server.world_events"), async (
   }
 });
 
-router.post("/events/lightning", requirePermission("server.world_events"), async (req, res) => {
+router.post("/events/lightning", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { username } = req.body || {};
@@ -1757,7 +1764,7 @@ router.post("/events/lightning", requirePermission("server.world_events"), async
   }
 });
 
-router.post("/events/thunder", requirePermission("server.world_events"), async (req, res) => {
+router.post("/events/thunder", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { username } = req.body || {};
@@ -1771,7 +1778,7 @@ router.post("/events/thunder", requirePermission("server.world_events"), async (
   }
 });
 
-router.post("/events/horde", requirePermission("server.world_events"), async (req, res) => {
+router.post("/events/horde", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   try {
     const rconService = req.app.get("rconService");
     const { count, username } = req.body || {};

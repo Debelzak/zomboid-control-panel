@@ -82,17 +82,43 @@ function parseBridgeActionName(rawCommand) {
 //
 // bridge:saveWorld is the one bridge: action that is NOT a world event: it's
 // PanelBridge's own equivalent of POST /server/save and POST
-// /panel-bridge/world/save, both gated server.control (panelBridge.js:2003)
-// -- not server.world_events, which every OTHER schedulable bridge action
-// (weather/sound/utilities/chat) matches exactly.
+// /panel-bridge/world/save, both gated server.control (panelBridge.js:2003).
+//
+// 2026-08-27 (operator ruling on ranked-bug #5): server.world_events itself
+// split, and three more schedulable bridge: actions went with the targeted
+// half -- triggerGunshot and triggerAlarmSound both accept {username} and,
+// per the Lua handler, resolve it to that player's exact x/y/z before
+// playing (services/panelBridge.js triggerGunshot/triggerAlarmSound ->
+// PanelBridge.lua handlers.triggerGunshot/triggerAlarmSound), the same
+// attraction-sound-at-a-player shape as POST /panel-bridge/sound/gunshot
+// and /sound/alarm; sendToAdminChat is PanelBridge's own equivalent of POST
+// /panel-bridge/chat/admin. All three now require
+// players.endanger_or_impersonate, matching their direct routes, not
+// server.world_events -- otherwise a moderator (who kept server.world_events
+// but lost players.endanger_or_impersonate in the split) could still reach
+// them by scheduling instead of calling the route directly, the exact
+// "scheduling an action must not cost less than performing it" gap this
+// function exists to close, just reopened by the split. createNoise
+// (/sound/noise's equivalent, also {username}-capable) is NOT in
+// SCHEDULABLE_BRIDGE_ACTIONS, so it isn't reachable via the scheduler at
+// all -- nothing to remap there.
+const ENDANGER_OR_IMPERSONATE_BRIDGE_ACTIONS = new Set([
+  "triggerGunshot",
+  "triggerAlarmSound",
+  "sendToAdminChat",
+]);
+
 export function requiredCapabilityForScheduledCommand(command) {
   const kind = classifyScheduledCommand(command);
   if (kind === "restart" || kind === "save") return "server.control";
   if (kind === "servermsg") return "server.world_events";
   if (kind === "bridge") {
-    return parseBridgeActionName(String(command ?? "")) === "saveWorld"
-      ? "server.control"
-      : "server.world_events";
+    const action = parseBridgeActionName(String(command ?? ""));
+    if (action === "saveWorld") return "server.control";
+    if (ENDANGER_OR_IMPERSONATE_BRIDGE_ACTIONS.has(action)) {
+      return "players.endanger_or_impersonate";
+    }
+    return "server.world_events";
   }
   return "rcon.execute"; // kind === "raw"
 }

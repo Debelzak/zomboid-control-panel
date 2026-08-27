@@ -332,15 +332,23 @@ function isValidBridgePath(inputPath) {
 // sound, zombies, visual, chat, utilities, character export/import,
 // teleport/give-item/heal/kill/godmode/invisible, plus /message) were
 // previously reachable by any signed-in role with no gate at all. Folded
-// into the matrix now, split by target: world-wide effects (weather,
-// climate, zombies, sound, visual, utilities, chat, /message, /time,
-// /world/stats) are requirePermission("server.world_events"); actions
-// aimed at a specific player or character, plus the read-only catalogue/
-// sandbox reads that support them, are requirePermission("players.gm_tools")
-// -- the same capability players.js's own teleport/give-item-equivalent
-// routes use. Both default to admin+technician+moderator, so this is a
-// zero-behaviour-change addition (adding a capability, not restricting
-// one). /status and /ping stay deliberately outside the matrix -- see
+// into the matrix, originally split by target: world-wide effects
+// requirePermission("server.world_events"); actions aimed at a specific
+// player or character, plus the read-only catalogue/sandbox reads that
+// support them, requirePermission("players.gm_tools") -- the same
+// capability players.js's own teleport/give-item-equivalent routes use.
+// Both defaulted to admin+technician+moderator, zero-behaviour-change.
+//
+// 2026-08-27 (operator ruling on ranked-bug #5) split world_events again:
+// /sound/near-player, /sound/gunshot, /zombies/spawn-near, /zombies/spawn-
+// behind, /chat/admin and /chat/general all take an optional target (a
+// username, or in chat/general's case an arbitrary custom author name) and
+// can spawn up to 500 zombies at a named player or make a chat message
+// read as if they said it -- gated on players.endanger_or_impersonate now,
+// admin-only by default, NOT folded into moderator's default grant the way
+// the original split was. Every other world_events route stays exactly as
+// described above: genuinely world-wide, no per-player target possible.
+// /status and /ping stay deliberately outside the matrix -- see
 // server.js's equivalent comment for why: dashboard-wide reads that
 // protect nothing if gated and can break a screen for a role if mis-set.
 // /commands stays outside the matrix too, for its own reason: the handler
@@ -3224,7 +3232,7 @@ router.post("/sound/world", requirePermission("server.world_events"), async (req
 });
 
 // Play sound near a player
-router.post("/sound/near-player", requirePermission("server.world_events"), async (req, res) => {
+router.post("/sound/near-player", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -3252,7 +3260,7 @@ router.post("/sound/near-player", requirePermission("server.world_events"), asyn
 });
 
 // Trigger gunshot sound
-router.post("/sound/gunshot", requirePermission("server.world_events"), async (req, res) => {
+router.post("/sound/gunshot", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -3280,7 +3288,7 @@ router.post("/sound/gunshot", requirePermission("server.world_events"), async (r
 });
 
 // Trigger alarm sound
-router.post("/sound/alarm", requirePermission("server.world_events"), async (req, res) => {
+router.post("/sound/alarm", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -3305,7 +3313,7 @@ router.post("/sound/alarm", requirePermission("server.world_events"), async (req
 });
 
 // Create custom noise
-router.post("/sound/noise", requirePermission("server.world_events"), async (req, res) => {
+router.post("/sound/noise", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
       .status(400)
@@ -3804,7 +3812,7 @@ router.post("/zombies/clear-all", requirePermission("server.world_events"), asyn
 });
 
 // Spawn horde near a player
-router.post("/zombies/spawn-near", requirePermission("server.world_events"), async (req, res) => {
+router.post("/zombies/spawn-near", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
       error: "Bridge not running",
@@ -3834,7 +3842,7 @@ router.post("/zombies/spawn-near", requirePermission("server.world_events"), asy
 });
 
 // Spawn horde behind a player
-router.post("/zombies/spawn-behind", requirePermission("server.world_events"), async (req, res) => {
+router.post("/zombies/spawn-behind", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
       error: "Bridge not running",
@@ -4013,7 +4021,7 @@ async function trySendViaRcon(req, text) {
 }
 
 // Send to admin chat
-router.post("/chat/admin", requirePermission("server.world_events"), async (req, res) => {
+router.post("/chat/admin", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   const { message } = req.body || {};
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res
@@ -4072,7 +4080,7 @@ router.post("/chat/admin", requirePermission("server.world_events"), async (req,
 });
 
 // Send to general chat with author
-router.post("/chat/general", requirePermission("server.world_events"), async (req, res) => {
+router.post("/chat/general", requirePermission("players.endanger_or_impersonate"), async (req, res) => {
   const author =
     typeof req.body.author === "string"
       ? req.body.author.trim().slice(0, 64) || "Server"

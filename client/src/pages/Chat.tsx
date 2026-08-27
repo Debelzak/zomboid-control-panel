@@ -67,22 +67,28 @@ export default function Chat() {
   const { toast } = useToast()
   const confirm = useConfirm()
   const socket = useSocket()
-  // Two genuinely different capabilities on this one page (bug-hunt-2026-08-27
-  // Tier-3 sweep): sending on any channel (server/admin/general, all three
-  // dedicated POST /panel-bridge/chat/* routes) requires server.world_events
-  // -- the same capability that gates weather/zombie/climate tools, not a
-  // chat- or moderation-specific one (server/routes/panelBridge.js:3947,
-  // 4006, 4062; deliberate per server/services/permissions.js:322-327, but
-  // still a distinct capability from the one below). Managing the quick-
-  // broadcast preset list (add/edit/delete, PUT /config/app-settings with
-  // chatPresets) requires panel.settings instead (server/routes/config.js:256;
-  // chatPresets is confirmed NOT in that route's per-key SETTINGS_KEY_CAPABILITY
-  // elevation map, so no secondary check applies). TECHNICIAN and MODERATOR
-  // both hold server.world_events but neither holds panel.settings by
-  // default, so every non-admin stock role can send chat today but cannot
-  // save presets -- a live gap, not a hypothetical one.
+  // Three genuinely different capabilities on this one page. Sending on the
+  // 'server' channel (POST /panel-bridge/message, plain broadcast, no
+  // spoofable author) requires server.world_events, same as weather/zombie/
+  // climate tools. Sending on 'admin' or 'general' (POST /panel-bridge/
+  // chat/admin, chat/general) requires players.endanger_or_impersonate
+  // instead -- split out of server.world_events 2026-08-27 (operator ruling
+  // on ranked-bug #5) specifically because chat/general accepts an
+  // arbitrary custom author name, indistinguishable in the chat log from
+  // that player having said it themselves; chat/admin moved with it as the
+  // same kind of harm (server/routes/panelBridge.js:4024, 4083). Managing
+  // the quick-broadcast preset list (add/edit/delete, PUT /config/app-
+  // settings with chatPresets) requires panel.settings instead (server/
+  // routes/config.js:256; chatPresets is confirmed NOT in that route's
+  // per-key SETTINGS_KEY_CAPABILITY elevation map, so no secondary check
+  // applies). None of TECHNICIAN/MODERATOR hold players.endanger_or_impersonate
+  // or panel.settings by default (admin-only), so every non-admin stock
+  // role can broadcast on 'server' but not send as admin/general or save
+  // presets -- a live gap, not a hypothetical one.
   const { can } = useAuth()
-  const canSendChat = can('server.world_events')
+  const canSendServerChat = can('server.world_events')
+  const canSendTargetedChat = can('players.endanger_or_impersonate')
+  const canSendChat = channel === 'server' ? canSendServerChat : canSendTargetedChat
   const canManagePresets = can('panel.settings')
 
   // Track whether the user is parked at (or near) the bottom of the

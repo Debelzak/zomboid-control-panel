@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Run world events",
-        "description": "Weather, climate, time of day, ambient sound, zombie hordes, utilities and visual settings, plus chat and broadcast messages. Several of these can target one named player instead of the whole world: horde spawns, gunshots, lightning/thunder and attraction sounds can all be aimed at a specific player's location, and general chat can be sent under any custom author name, including another player's."
+        "description": "Weather, climate, time of day, ambient sound, zombie hordes (clearing them, not spawning them at anyone), utilities, visual settings and server-attributed broadcast messages — world-wide effects, not aimed at a specific player. Spawning zombies or sound effects at a named player, targeted lightning/thunder, and impersonating a player in chat are a separate capability, players.endanger_or_impersonate."
       }
     },
     "rcon": {
@@ -204,6 +204,10 @@
       "view": {
         "label": "View player info",
         "description": "Read player details, status and history."
+      },
+      "endanger_or_impersonate": {
+        "label": "Endanger or impersonate a player",
+        "description": "Spawn up to 500 zombies directly at a named player's location or right behind them, or trigger a horde aimed at them; aim a gunshot or an attraction sound at their position; strike them with targeted lightning or thunder. Separately, and a different kind of harm: send a general-chat message under any custom author name, including another player's — making it read as if that player said it themselves."
       }
     },
     "mods": {

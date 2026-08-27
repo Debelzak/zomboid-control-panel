@@ -66,10 +66,19 @@ router.use(requirePermission('automation.manage'));
 //                                             /server/message and most
 //                                             PanelBridge world-event
 //                                             routes) — except
-//                                             bridge:saveWorld specifically,
-//                                             which matches server.control
-//                                             instead (PanelBridge's own
-//                                             equivalent of /server/save)
+//                                             bridge:saveWorld, which
+//                                             matches server.control instead
+//                                             (PanelBridge's own equivalent
+//                                             of /server/save), and
+//                                             bridge:triggerGunshot/
+//                                             triggerAlarmSound/
+//                                             sendToAdminChat, which match
+//                                             players.endanger_or_impersonate
+//                                             (2026-08-27, operator ruling
+//                                             on ranked-bug #5 -- these
+//                                             three can target a named
+//                                             player, same as their direct
+//                                             routes)
 //   raw (unrecognised)   -> rcon.execute     (the exact power routes/rcon.js
 //                                             gates behind, admin+technician
 //                                             only, deliberately not
