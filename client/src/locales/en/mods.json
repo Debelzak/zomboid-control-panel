@@ -3,6 +3,10 @@
     "noModsManage": "Your role does not have permission to manage mods.",
     "noServersManage": "Your role does not have permission to manage servers."
   },
+  "permissionDenied": {
+    "title": "You can't view mods",
+    "description": "Your account's role doesn't include \"Manage mods\". Ask an administrator to grant it if you need access to this page."
+  },
   "fetchError": {
     "title": "Mod data could not be loaded",
     "retry": "Retry"

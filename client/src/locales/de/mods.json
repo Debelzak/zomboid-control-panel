@@ -3,6 +3,10 @@
     "noModsManage": "Ihre Rolle hat keine Berechtigung, Mods zu verwalten.",
     "noServersManage": "Ihre Rolle hat keine Berechtigung, Server zu verwalten."
   },
+  "permissionDenied": {
+    "title": "Du kannst keine Mods einsehen",
+    "description": "Die Rolle deines Kontos enthält nicht das Recht „Mods verwalten“. Bitte einen Administrator, es zu vergeben, wenn du Zugriff auf diese Seite brauchst."
+  },
   "fetchError": {
     "title": "Mod-Daten konnten nicht geladen werden",
     "retry": "Erneut versuchen"

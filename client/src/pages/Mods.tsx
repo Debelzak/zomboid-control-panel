@@ -41,6 +41,7 @@ import {
   Eye,
   ArrowRight,
   Wand2,
+  ShieldAlert,
 } from 'lucide-react'
 import { ConflictScanResult, ScanStreamModScanned, ScanStreamConflictFound } from '@/types'
 import { WorkshopCollectionPanel } from '@/components/WorkshopCollectionPanel'
@@ -94,7 +95,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
-import { modsApi, serversApi } from '@/lib/api'
+import { modsApi, serversApi, ApiError } from '@/lib/api'
 import { FolderBrowser } from '@/components/FolderBrowser'
 import { buildRequiresMap, computeAutoSortedOrder, createRequirementResolver, type AutoSortResult } from '@/lib/modLoadOrder'
 import { EmptyState } from '@/components/EmptyState'
@@ -393,6 +394,16 @@ export default function Mods() {
   const [presets, setPresets] = useState<ModPreset[]>([])
   const [presetsLoading, setPresetsLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  // mods.js gates its whole router (reads included) behind mods.manage --
+  // so a role that lacks it doesn't get a partially-broken page, it gets
+  // every one of the five mount-time fetches below rejecting at once and
+  // "The backend may be unreachable" being shown, which is FALSE: the
+  // backend answered and said no (bug-hunt-2026-08-27, Angela's stock-role
+  // hunt). Answer that with one clean page-level state instead, same
+  // precedent as Users.tsx/RolesPermissions.tsx/OidcSettings.tsx/
+  // Debug.tsx (28bfb0c) -- a real 403 from the mount-time fetch, not a
+  // client-side can() guess.
+  const [permissionDenied, setPermissionDenied] = useState(false)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [presetName, setPresetName] = useState('')
   const [presetDescription, setPresetDescription] = useState('')
@@ -493,6 +504,22 @@ export default function Mods() {
         modsApi.getIgnoredMods(),
         modsApi.getIgnoredModPairs()
       ])
+
+      // mods.js gates every one of these five behind mods.manage as a
+      // whole-file router.use -- so a role that lacks it gets ALL FIVE
+      // rejecting with a real 403, not a mix of failures. That's the one
+      // shape "the backend may be unreachable" is actively wrong for: the
+      // backend answered every request and said no. Checked before any
+      // per-result processing (including the retry-timer below, which
+      // would otherwise keep re-requesting a 403 every 1.5s forever).
+      const allRejected403 = results.every(
+        (r) => r.status === 'rejected' && r.reason instanceof ApiError && r.reason.status === 403,
+      )
+      if (allRejected403) {
+        setPermissionDenied(true)
+        return
+      }
+      setPermissionDenied(false)
 
       // Extract successful results
       if (results[0].status === 'fulfilled') {
@@ -2457,6 +2484,14 @@ export default function Mods() {
           }
         />
 
+        {permissionDenied ? (
+          <EmptyState
+            icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
+            title={t('permissionDenied.title')}
+            description={t('permissionDenied.description')}
+          />
+        ) : (
+        <>
         {/* Status Bar — only show when mods are tracked */}
         {(status?.totalModsTracked || 0) > 0 && (
         <div className="flex items-center gap-4 rounded-lg border border-border/50 bg-card/60 px-3 py-2 flex-wrap">
@@ -5716,6 +5751,8 @@ export default function Mods() {
           )}
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* Single mod remove confirmation */}

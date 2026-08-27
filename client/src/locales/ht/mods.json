@@ -3,6 +3,10 @@
     "noModsManage": "Wòl ou pa gen pèmisyon pou jere mods.",
     "noServersManage": "Wòl ou pa gen pèmisyon pou jere sèvè yo."
   },
+  "permissionDenied": {
+    "title": "Ou pa ka gade mods yo",
+    "description": "Wòl kont ou a pa gen \"Jere mods\". Mande yon administratè bay ou aksè sa a si ou bezwen l."
+  },
   "fetchError": {
     "title": "Done mods yo pa t kapab chaje",
     "retry": "Eseye ankò"

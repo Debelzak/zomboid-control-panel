@@ -3,6 +3,10 @@
     "noModsManage": "Tu rol no tiene permiso para gestionar mods.",
     "noServersManage": "Tu rol no tiene permiso para gestionar servidores."
   },
+  "permissionDenied": {
+    "title": "No puedes ver los mods",
+    "description": "El rol de tu cuenta no incluye \"Gestionar mods\". Pide a un administrador que lo conceda si necesitas acceso a esta página."
+  },
   "fetchError": {
     "title": "No se pudieron cargar los datos de los mods",
     "retry": "Reintentar"

@@ -3,6 +3,10 @@
     "noModsManage": "Votre rôle ne permet pas de gérer les mods.",
     "noServersManage": "Votre rôle ne permet pas de gérer les serveurs."
   },
+  "permissionDenied": {
+    "title": "Vous ne pouvez pas consulter les mods",
+    "description": "Le rôle de votre compte n'inclut pas « Gérer les mods ». Demandez à un administrateur de vous l'accorder si vous avez besoin d'accéder à cette page."
+  },
   "fetchError": {
     "title": "Les données des mods n'ont pas pu être chargées",
     "retry": "Réessayer"

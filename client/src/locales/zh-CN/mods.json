@@ -3,6 +3,10 @@
     "noModsManage": "您的角色没有管理模组的权限。",
     "noServersManage": "您的角色没有管理服务器的权限。"
   },
+  "permissionDenied": {
+    "title": "无法查看模组",
+    "description": "当前账户的角色未包含「管理模组」权限。如需访问此页面，请联系管理员为该账户授予此权限。"
+  },
   "fetchError": {
     "title": "无法加载模组数据",
     "retry": "重试"

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Mods from '../Mods'
-import { modsApi, serversApi } from '@/lib/api'
+import { modsApi, serversApi, ApiError } from '@/lib/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 // bug-hunt-2026-08-27: mods.js gates every route (including reads) behind
@@ -294,5 +294,56 @@ describe('Mods.tsx capability gating -- servers.manage (Fix Path outlier)', () =
 
     const fixPathBtn = await screen.findByRole('button', { name: /fix path/i })
     expect(fixPathBtn).not.toBeDisabled()
+  })
+})
+
+// bug-hunt-2026-08-27 (Angela's stock-role hunt): mods.js gates its whole
+// router -- reads included -- behind mods.manage as one whole-file
+// router.use, so a role lacking it (e.g. the stock MODERATOR role) gets
+// all five of fetchData's mount-time calls rejecting with a real 403 at
+// once, not a mix of failures. Before this fix, that hit the generic
+// "all failed" branch and showed "Failed to load mod data. The backend
+// may be unreachable." -- FALSE: the backend answered every request and
+// said no. This asserts the honest page-level empty state replaces the
+// whole body instead, same precedent as Debug.tsx (28bfb0c).
+describe('Mods.tsx: a real 403 on every mount-time fetch shows a permission-denied empty state, not a false "backend unreachable" message', () => {
+  it('shows the empty state, not the misleading fetch-error banner, when every mount-time call is refused with a real 403', async () => {
+    mockCan = () => true // client-side gating is irrelevant here -- this is the SERVER's real answer
+    const denied = () => Promise.reject(new ApiError('Forbidden', { status: 403 }))
+    getTrackedMods.mockImplementation(denied)
+    getStatus.mockImplementation(denied)
+    getCurrentConfig.mockImplementation(denied)
+    getIgnoredMods.mockImplementation(denied)
+    getIgnoredModPairs.mockImplementation(denied)
+    getActive.mockResolvedValue({ server: { id: 1, installPath: 'C:\\server', isRemote: false } } as any)
+
+    renderMods()
+    await waitForLoaded()
+
+    await waitFor(() => expect(screen.getByText("You can't view mods")).toBeInTheDocument())
+    expect(screen.queryByText(/backend may be unreachable/i)).not.toBeInTheDocument()
+    // The whole mod-management BODY must be gone (PageHeader itself,
+    // including its Add Mod action, stays -- same precedent as Debug.tsx,
+    // 28bfb0c), so assert the section nav -- which renders unconditionally
+    // in the normal page regardless of data state -- is unreachable, not
+    // an element that would legitimately be absent anyway (e.g. a button
+    // gated behind data that never loaded).
+    expect(screen.queryByLabelText('Mod management sections')).not.toBeInTheDocument()
+  })
+
+  it('shows the normal page, not the empty state, when the failures are a genuine mixed/transient error (not all-403)', async () => {
+    mockCan = () => true
+    getTrackedMods.mockRejectedValue(new Error('network blip'))
+    primeReadMocks()
+    // Re-apply after primeReadMocks so getTrackedMods stays rejected while
+    // the other four resolve -- a real mixed-failure case, not the
+    // all-403 shape this fix targets.
+    getTrackedMods.mockRejectedValue(new Error('network blip'))
+
+    renderMods()
+    await waitForLoaded()
+
+    await waitFor(() => expect(screen.queryByText(/temporarily unavailable/i)).toBeInTheDocument())
+    expect(screen.queryByText("You can't view mods")).not.toBeInTheDocument()
   })
 })
