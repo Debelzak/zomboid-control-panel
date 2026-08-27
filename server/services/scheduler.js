@@ -490,11 +490,15 @@ export class Scheduler {
       }
     }
 
-    const result = await panelBridge.sendCommand(action, args);
-    if (result && result.success === false) {
-      throw new Error(result.error || `bridge action ${action} failed`);
-    }
-    return result;
+    // sendCommand()'s returned promise only ever resolves {success: true,
+    // data} or rejects (services/panelBridge.js processResult()'s only two
+    // outcomes) -- it never resolves an explicit {success: false}. A
+    // caller-side `if (result.success === false) throw` here was dead code,
+    // unreachable through this path, and implied a failure shape that
+    // structurally cannot occur -- the `await` below already surfaces a
+    // real bridge failure by rejecting, which propagates to executeTask()'s
+    // caller the same as every other throw in this function.
+    return panelBridge.sendCommand(action, args);
   }
 
   cancelTask(taskId) {
