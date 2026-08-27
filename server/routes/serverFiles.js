@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Files");
-import { getActiveServer, getAllSettings } from "../database/init.js";
+import { getActiveServer, getAllSettings, getRoleByName } from "../database/init.js";
 import {
   sanitizeError,
   sanitizeErrorParams,
@@ -49,6 +49,23 @@ const router = express.Router();
 // logged-in role, including moderator, could edit sandbox vars or restore
 // a server file backup.
 router.use(requirePermission("serverfiles.manage"));
+
+// PUT /ini writes any key in the submitted settings object to the same
+// Server/<name>.ini file server.js's own /configure-rcon and
+// /configure-network routes edit under server.configure -- RCONPassword,
+// RCONPort, DefaultPort, UDPPort and UPnP. serverfiles.manage's description
+// ("Edit sandbox options, spawn points and other server config files") gives
+// no hint that holding it also lets a caller rewrite the RCON password or
+// the game's listen port through this generic editor, bypassing
+// server.configure's own dedicated gate on those exact fields. Found in the
+// 2026-08-26 capability-description sweep, finding 4.
+const INI_KEY_CAPABILITY = {
+  RCONPassword: "server.configure",
+  RCONPort: "server.configure",
+  DefaultPort: "server.configure",
+  UDPPort: "server.configure",
+  UPnP: "server.configure",
+};
 
 // Thrown by getServerConfigPath()/getServerName() when no server is
 // configured at all (no active server row, and no legacy settings fallback
@@ -1256,6 +1273,45 @@ router.put("/ini", async (req, res) => {
         continue;
       }
       submittedSettings[key] = value;
+    }
+
+    // Enforced on CHANGE, not presence: the structured editor round-trips
+    // GET /ini's whole settings object back on every save (same trap
+    // Angela hit in this same editor for the RCON-masking fix above), so
+    // gating on mere presence would refuse every non-admin save that
+    // touches this tab at all. Compared against the file's own CURRENT
+    // value, never GET's masked response.
+    const touchesGovernedIniKey = Object.keys(submittedSettings).some(
+      (key) => key in INI_KEY_CAPABILITY,
+    );
+    if (touchesGovernedIniKey) {
+      const currentContent = fs.existsSync(filePath)
+        ? fs.readFileSync(filePath, "utf-8")
+        : "";
+      const currentIni = parseIni(currentContent);
+      const missingCapabilities = [];
+      let callerCapabilities = null;
+      for (const [key, value] of Object.entries(submittedSettings)) {
+        const requiredCapability = INI_KEY_CAPABILITY[key];
+        if (!requiredCapability) continue;
+        if (String(currentIni[key] ?? "") === String(value ?? "")) continue;
+        if (callerCapabilities === null) {
+          const role = req.user ? await getRoleByName(req.user.role) : null;
+          callerCapabilities = Array.isArray(role?.capabilities) ? role.capabilities : [];
+        }
+        if (!callerCapabilities.includes(requiredCapability)) {
+          missingCapabilities.push({ key, requiredCapability });
+        }
+      }
+      if (missingCapabilities.length > 0) {
+        const detail = missingCapabilities
+          .map((m) => `"${m.key}" needs ${m.requiredCapability}`)
+          .join(", ");
+        return res.status(403).json({
+          error: `Cannot change ${detail} without holding that capability yourself.`,
+          missing: missingCapabilities,
+        });
+      }
     }
 
     // Read original to preserve comments/structure. Locked per-path so two
