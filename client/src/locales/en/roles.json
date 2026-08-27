@@ -145,7 +145,7 @@
       },
       "configure": {
         "label": "Edit server configuration",
-        "description": "Edit the server's .ini settings, RCON connection details, and network/path configuration."
+        "description": "Edit the server's .ini settings, RCON connection details, and network/path configuration, and reload the server's Lua scripts on a live server."
       },
       "wipe": {
         "label": "Wipe the world",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "Manage mods",
-        "description": "Track, install and configure Workshop mods."
+        "description": "Track, install and configure Workshop mods, and permanently delete mod files from disk."
       }
     },
     "automation": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "View panel diagnostics",
-        "description": "View logs, performance history and CORS diagnostics, and relocate the panel's own data/log directories."
+        "description": "View logs, performance history and CORS diagnostics, relocate the panel's own data/log directories, and clear stale lock files."
       }
     },
     "panel": {
       "settings": {
         "label": "Manage panel-wide settings",
-        "description": "Change CORS policy, mod-check interval and other app-level settings."
+        "description": "Change CORS policy, mod-check interval and other app-level settings, and configure SSO/OIDC login."
       }
     }
   }

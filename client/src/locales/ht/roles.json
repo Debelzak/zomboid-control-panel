@@ -145,7 +145,7 @@
       },
       "configure": {
         "label": "Modifye konfigirasyon sèvè a",
-        "description": "Modifye paramèt .ini sèvè a, detay koneksyon RCON, ak konfigirasyon rezo/chemen."
+        "description": "Modifye paramèt .ini sèvè a, detay koneksyon RCON, ak konfigirasyon rezo/chemen, epi rechaje script Lua sèvè a pandan li ap kouri."
       },
       "wipe": {
         "label": "Efase mond lan nèt",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "Jere mod",
-        "description": "Swiv, enstale epi konfigire mod Workshop."
+        "description": "Swiv, enstale epi konfigire mod Workshop, epi efase fichye mod yo pou tout tan sou disk la."
       }
     },
     "automation": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "Gade dyagnostik panèl la",
-        "description": "Gade jounal, istorik pèfòmans ak dyagnostik CORS, epi deplase pwòp dosye done/jounal panèl la."
+        "description": "Gade jounal, istorik pèfòmans ak dyagnostik CORS, deplase pwòp dosye done/jounal panèl la, epi efase fichye vye lok."
       }
     },
     "panel": {
       "settings": {
         "label": "Jere paramèt panèl la an antye",
-        "description": "Chanje politik CORS, entèval verifikasyon mod ak lòt paramèt nivo aplikasyon."
+        "description": "Chanje politik CORS, entèval verifikasyon mod ak lòt paramèt nivo aplikasyon, epi konfigire koneksyon SSO/OIDC."
       }
     }
   }

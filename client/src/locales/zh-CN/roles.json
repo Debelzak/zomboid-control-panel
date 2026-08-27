@@ -145,7 +145,7 @@
       },
       "configure": {
         "label": "编辑服务器配置",
-        "description": "编辑服务器的 .ini 设置、RCON 连接详情，以及网络/路径配置。"
+        "description": "编辑服务器的 .ini 设置、RCON 连接详情，以及网络/路径配置，并在服务器运行时重新加载其 Lua 脚本。"
       },
       "wipe": {
         "label": "清除世界",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "管理模组",
-        "description": "追踪、安装与配置创意工坊模组。"
+        "description": "追踪、安装与配置创意工坊模组，并从磁盘永久删除模组文件。"
       }
     },
     "automation": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "查看面板诊断",
-        "description": "查看日志、性能历史及 CORS 诊断信息，并迁移面板自身的数据/日志目录。"
+        "description": "查看日志、性能历史及 CORS 诊断信息，迁移面板自身的数据/日志目录，并清除过期的锁定文件。"
       }
     },
     "panel": {
       "settings": {
         "label": "管理面板全局设置",
-        "description": "更改 CORS 策略、模组检查间隔及其他应用级设置。"
+        "description": "更改 CORS 策略、模组检查间隔及其他应用级设置，并配置 SSO/OIDC 登录。"
       }
     }
   }

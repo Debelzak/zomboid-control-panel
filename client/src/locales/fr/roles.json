@@ -145,7 +145,7 @@
       },
       "configure": {
         "label": "Modifier la configuration du serveur",
-        "description": "Modifier les paramètres .ini du serveur, les informations de connexion RCON, et la configuration réseau/chemins."
+        "description": "Modifier les paramètres .ini du serveur, les informations de connexion RCON, et la configuration réseau/chemins, et recharger les scripts Lua du serveur en cours d'exécution."
       },
       "wipe": {
         "label": "Effacer le monde",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "Gérer les mods",
-        "description": "Suivre, installer et configurer les mods du Workshop."
+        "description": "Suivre, installer et configurer les mods du Workshop, et supprimer définitivement des fichiers de mods du disque."
       }
     },
     "automation": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "Voir les diagnostics du panneau",
-        "description": "Consulter les journaux, l'historique de performance et les diagnostics CORS, et déplacer les répertoires de données/journaux propres au panneau."
+        "description": "Consulter les journaux, l'historique de performance et les diagnostics CORS, déplacer les répertoires de données/journaux propres au panneau, et supprimer les fichiers de verrouillage obsolètes."
       }
     },
     "panel": {
       "settings": {
         "label": "Gérer les paramètres du panneau",
-        "description": "Changer la politique CORS, l'intervalle de vérification des mods et d'autres paramètres de l'application."
+        "description": "Changer la politique CORS, l'intervalle de vérification des mods et d'autres paramètres de l'application, et configurer la connexion SSO/OIDC."
       }
     }
   }

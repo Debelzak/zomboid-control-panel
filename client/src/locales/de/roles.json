@@ -145,7 +145,7 @@
       },
       "configure": {
         "label": "Serverkonfiguration bearbeiten",
-        "description": "Die .ini-Einstellungen des Servers, die RCON-Verbindungsdetails sowie die Netzwerk-/Pfadkonfiguration bearbeiten."
+        "description": "Die .ini-Einstellungen des Servers, die RCON-Verbindungsdetails sowie die Netzwerk-/Pfadkonfiguration bearbeiten, und die Lua-Skripte des Servers bei laufendem Server neu laden."
       },
       "wipe": {
         "label": "Welt unwiderruflich löschen",
@@ -209,7 +209,7 @@
     "mods": {
       "manage": {
         "label": "Mods verwalten",
-        "description": "Workshop-Mods verfolgen, installieren und konfigurieren."
+        "description": "Workshop-Mods verfolgen, installieren und konfigurieren, sowie Mod-Dateien dauerhaft von der Festplatte löschen."
       }
     },
     "automation": {
@@ -245,13 +245,13 @@
     "diagnostics": {
       "manage": {
         "label": "Panel-Diagnose einsehen",
-        "description": "Protokolle, Leistungsverlauf und CORS-Diagnose einsehen sowie die eigenen Daten-/Protokollverzeichnisse des Panels verlagern."
+        "description": "Protokolle, Leistungsverlauf und CORS-Diagnose einsehen, die eigenen Daten-/Protokollverzeichnisse des Panels verlagern, und veraltete Sperrdateien löschen."
       }
     },
     "panel": {
       "settings": {
         "label": "Panelweite Einstellungen verwalten",
-        "description": "CORS-Richtlinie, Mod-Prüfintervall und andere App-weite Einstellungen ändern."
+        "description": "CORS-Richtlinie, Mod-Prüfintervall und andere App-weite Einstellungen ändern, sowie SSO/OIDC-Anmeldung konfigurieren."
       }
     }
   }
