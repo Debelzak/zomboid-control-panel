@@ -1603,16 +1603,22 @@ export default function Mods() {
       })))
       setCollectionImported(true)
 
+      const subCollectionCount = (result.subCollectionIds || []).length
+
       if (mods.length === 0) {
         toast({
           title: t('toasts.noModsFoundInCollectionTitle'),
-          description: t('toasts.noModsFoundInCollectionDesc'),
+          description: subCollectionCount > 0
+            ? t('toasts.collectionOnlySubCollectionsDesc', { count: subCollectionCount })
+            : t('toasts.noModsFoundInCollectionDesc'),
           variant: 'destructive',
         })
       } else {
         toast({
           title: t('toasts.modsFoundTitle', { count: mods.length }),
-          description: t('toasts.modsFoundDesc'),
+          description: subCollectionCount > 0
+            ? t('toasts.modsFoundDescWithSkipped', { count: subCollectionCount })
+            : t('toasts.modsFoundDesc'),
         })
       }
     } catch (error) {

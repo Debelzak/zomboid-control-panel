@@ -24,9 +24,19 @@ vi.mock('@/lib/api', async () => {
   }
 })
 
+const toastSpy = vi.fn()
+vi.mock('@/components/ui/use-toast', async () => {
+  const actual = await vi.importActual<typeof import('@/components/ui/use-toast')>('@/components/ui/use-toast')
+  return {
+    ...actual,
+    useToast: () => ({ toast: toastSpy, toasts: [], dismiss: vi.fn() }),
+  }
+})
+
 const collectionDiff = vi.mocked(modsApi.collectionDiff)
 const purgeMod = vi.mocked(modsApi.purgeMod)
 const collectionUntrack = vi.mocked(modsApi.collectionUntrack)
+const collectionAddItem = vi.mocked(modsApi.collectionAddItem)
 
 // A name with accents/non-ASCII, since the panel is the primary place an
 // operator sees Workshop titles rendered verbatim from Steam.
@@ -49,6 +59,8 @@ beforeEach(() => {
   collectionDiff.mockReset()
   purgeMod.mockReset()
   collectionUntrack.mockReset()
+  collectionAddItem.mockReset()
+  toastSpy.mockReset()
 })
 
 async function renderPanel(items: any[]) {
@@ -260,5 +272,58 @@ describe('WorkshopCollectionPanel', () => {
     ])
     expect(await screen.findByText('Missing Mod')).toBeInTheDocument()
     expect(screen.queryByText('Synced Mod')).not.toBeInTheDocument()
+  })
+
+  // user-report-steam-collection-import-fails-success8-filetype2, part (d):
+  // a bulk failure toast used to show only errors[0].error under a "First
+  // error:" label, silently discarding every other item's failure reason
+  // -- "if 47 different failures can hide behind one message, that is its
+  // own bug". These prove the toast now says whether every failure shares
+  // one cause or several, instead of always implying "there's more, who
+  // knows what".
+  it('bulk-add failure toast states all items shared the same error, not just "first error"', async () => {
+    collectionAddItem.mockRejectedValue(
+      new Error('Steam rejected this: that Workshop item is itself a collection, not a mod.'),
+    )
+    await renderPanel([
+      { workshopId: '1', name: 'Sub A', status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+      { workshopId: '2', name: 'Sub B', status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+    ])
+    await screen.findByText('Sub A')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
+    fireEvent.click(screen.getByRole('button', { name: /Add to collection/i }))
+
+    await waitFor(() => expect(collectionAddItem).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'destructive',
+        description: expect.stringContaining('all with the same error'),
+      }),
+    ))
+    const call = toastSpy.mock.calls.find((c) => c[0]?.variant === 'destructive')
+    expect(call![0].description).not.toMatch(/First error/i)
+  })
+
+  it('bulk-add failure toast reports the number of distinct errors when items fail differently', async () => {
+    collectionAddItem
+      .mockRejectedValueOnce(new Error('Steam session expired'))
+      .mockRejectedValueOnce(new Error('That item is itself a collection, not a mod.'))
+    await renderPanel([
+      { workshopId: '1', name: 'Sub A', status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+      { workshopId: '2', name: 'Sub B', status: 'to-add', inTracked: true, inCollection: false, inServer: false },
+    ])
+    await screen.findByText('Sub A')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all visible' }))
+    fireEvent.click(screen.getByRole('button', { name: /Add to collection/i }))
+
+    await waitFor(() => expect(collectionAddItem).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'destructive',
+        description: expect.stringContaining('2 different errors'),
+      }),
+    ))
   })
 })

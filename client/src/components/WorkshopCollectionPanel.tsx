@@ -415,10 +415,17 @@ export function WorkshopCollectionPanel() {
     if (errors.length === 0) {
       toast({ title: t('toastBulkCompleteTitle'), description: t('toastBulkCompleteDesc', { count: ok }) })
     } else {
+      // Don't silently drop errors 2..N behind "first error" -- if every
+      // failure is the same, say so explicitly; if they differ, say how
+      // many distinct causes there were so the user knows more than one
+      // thing needs attention instead of assuming a single fluke.
+      const uniqueErrors = [...new Set(errors.map((e) => e.error))]
       toast({
         variant: 'destructive',
         title: t('toastBulkFailureTitle', { count: errors.length }),
-        description: t('toastBulkFailureDesc', { ok, failed: errors.length, error: errors[0].error }),
+        description: uniqueErrors.length === 1
+          ? t('toastBulkFailureDescSame', { ok, failed: errors.length, error: uniqueErrors[0] })
+          : t('toastBulkFailureDescMixed', { ok, failed: errors.length, causes: uniqueErrors.length, error: uniqueErrors[0] }),
       })
     }
   }

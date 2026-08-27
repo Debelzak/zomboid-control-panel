@@ -1718,13 +1718,32 @@ router.post("/import-collection", async (req, res) => {
         });
     }
 
-    const modIds = collection.children?.map((c) => c.publishedfileid) || [];
+    // A collection's direct children can themselves be sub-collections --
+    // Steam marks these with filetype 2 (k_EWorkshopFileTypeCollection) in
+    // GetCollectionDetails' children[], the same enum value Steam's own
+    // sharedfiles/addchild error body echoes back when you try to add one:
+    // "the id you gave me IS a collection". A collection-of-collections is
+    // a real, common curation pattern (e.g. a "complete overhaul" bundle
+    // whose direct children are themed sub-collections). Treating a
+    // sub-collection id as an ordinary importable mod used to make every
+    // later add/track/sync attempt on it fail identically and permanently
+    // -- no cookie or session fix could ever resolve it -- because Steam
+    // refuses to nest a collection inside another collection this way.
+    const WORKSHOP_FILE_TYPE_COLLECTION = 2;
+    const children = collection.children || [];
+    const subCollectionIds = children
+      .filter((c) => Number(c.filetype) === WORKSHOP_FILE_TYPE_COLLECTION)
+      .map((c) => c.publishedfileid);
+    const modIds = children
+      .filter((c) => Number(c.filetype) !== WORKSHOP_FILE_TYPE_COLLECTION)
+      .map((c) => c.publishedfileid);
 
     if (modIds.length === 0) {
       return res.json({
         success: true,
         message: "Collection is empty",
         mods: [],
+        subCollectionIds,
       });
     }
 
@@ -1772,13 +1791,19 @@ router.post("/import-collection", async (req, res) => {
           ) || false,
       }));
 
-    log.info(`Found ${mods.length} mods in collection ${collectionId}`);
+    log.info(
+      `Found ${mods.length} mods in collection ${collectionId}` +
+        (subCollectionIds.length > 0
+          ? ` (${subCollectionIds.length} sub-collection${subCollectionIds.length === 1 ? "" : "s"} skipped)`
+          : ""),
+    );
 
     res.json({
       success: true,
       collectionId,
       totalMods: mods.length,
       mods,
+      subCollectionIds,
     });
   } catch (error) {
     log.error(`Failed to import collection: ${error.message}`);
