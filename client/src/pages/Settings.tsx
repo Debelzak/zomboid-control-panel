@@ -5737,6 +5737,12 @@ function WorkshopCollectionSyncCard({
     workshopId: string;
     name: string | null;
   } | null>(null);
+  // Mods.tsx confirms this exact modsApi.batchRemove operation on both its
+  // row and bulk paths; this row here reached the same server mutation with
+  // no confirm at all.
+  const [removeServerTarget, setRemoveServerTarget] = useState<{
+    workshopId: string;
+  } | null>(null);
 
   // Trust the server's credential check over a brittle bullet-prefix sniff:
   // the diff endpoint reports `hasCredentials` based on the actual stored
@@ -6719,10 +6725,9 @@ function WorkshopCollectionSyncCard({
                                     variant="ghost"
                                     className="h-7 px-2 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={() =>
-                                      runRowAction(
-                                        it.workshopId,
-                                        "remove-server",
-                                      )
+                                      setRemoveServerTarget({
+                                        workshopId: it.workshopId,
+                                      })
                                     }
                                     disabled={!!busy}
                                     title={t("workshopSync.removeFromServerTitle")}
@@ -6924,6 +6929,34 @@ function WorkshopCollectionSyncCard({
                 }}
               >
                 {t("workshopSync.removeEverywhereButton")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog
+          open={!!removeServerTarget}
+          onOpenChange={(open) => !open && setRemoveServerTarget(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("workshopSync.removeServerDialogTitle")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("workshopSync.removeServerDialogDesc")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("workshopSync.cancelButton")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  const target = removeServerTarget;
+                  setRemoveServerTarget(null);
+                  if (target) runRowAction(target.workshopId, "remove-server");
+                }}
+              >
+                {t("workshopSync.fromServer")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

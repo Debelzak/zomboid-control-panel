@@ -636,6 +636,8 @@
     "purgePlace3": "fichye telechaje sou disk la",
     "purgePlace4": "lis swiv panèl la",
     "purgeDialogNote": "Apre sa, yo ajoute l nan lis inyore a pou yon eskanè pita pa ka mennen l tounen an silans. Redemare sèvè a pou aplike.",
+    "removeServerDialogTitle": "Retire mòd sa a nan sèvè a?",
+    "removeServerDialogDesc": "Sa a retire l nan lis mòd aktif sèvè a. Li rete swiv isit la e ou ka rajoute l nenpòt ki lè.",
     "cancelButton": "Anile",
     "removeEverywhereButton": "Retire tout kote",
     "toasts": {

@@ -636,6 +636,8 @@
     "purgePlace3": "the downloaded files on disk",
     "purgePlace4": "the panel's tracked list",
     "purgeDialogNote": "It is then added to the ignore list so a later scan can't quietly bring it back. Restart the server to apply.",
+    "removeServerDialogTitle": "Remove this mod from the server?",
+    "removeServerDialogDesc": "This removes it from the server's active mod list. It stays tracked here and can be re-added at any time.",
     "cancelButton": "Cancel",
     "removeEverywhereButton": "Remove everywhere",
     "toasts": {

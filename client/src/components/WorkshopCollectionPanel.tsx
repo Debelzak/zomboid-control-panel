@@ -361,6 +361,12 @@ export function WorkshopCollectionPanel() {
       if (!ok) return
     }
     if (action === 'remove-server') {
+      const ok = await confirm({
+        title: t('removeServerBulkConfirmTitle', { count: targets.length }),
+        description: t('removeServerConfirmDescription'),
+        confirmLabel: t('removeServerConfirmButton'),
+      })
+      if (!ok) return
       setBulkBusy(action)
       targets.forEach((item) => setRowBusy((prev) => ({ ...prev, [item.workshopId]: action })))
       try {
@@ -806,6 +812,19 @@ export function WorkshopCollectionPanel() {
                             description: t('untrackConfirmDescription'),
                             variant: 'warning',
                             confirmLabel: t('untrackAndUnsync'),
+                          }).then((ok) => {
+                            if (ok) runRowAction(it.workshopId, action)
+                          })
+                          return
+                        }
+                        if (action === 'remove-server') {
+                          // Mods.tsx confirms this exact operation (modsApi.batchRemove)
+                          // on both its row and bulk paths; this panel and Settings.tsx
+                          // reached the same server mutation with no confirm at all.
+                          confirm({
+                            title: t('removeServerConfirmTitle'),
+                            description: t('removeServerConfirmDescription'),
+                            confirmLabel: t('removeServerConfirmButton'),
                           }).then((ok) => {
                             if (ok) runRowAction(it.workshopId, action)
                           })

@@ -697,6 +697,8 @@
     "purgePlace3": "den heruntergeladenen Dateien auf der Festplatte",
     "purgePlace4": "der verfolgten Liste des Panels",
     "purgeDialogNote": "Anschließend wird es zur Ignorierliste hinzugefügt, damit ein späterer Scan es nicht stillschweigend zurückbringt. Zum Anwenden den Server neu starten.",
+    "removeServerDialogTitle": "Diesen Mod vom Server entfernen?",
+    "removeServerDialogDesc": "Dadurch wird er aus der aktiven Modliste des Servers entfernt. Er bleibt hier weiterhin verfolgt und kann jederzeit wieder hinzugefügt werden.",
     "cancelButton": "Abbrechen",
     "removeEverywhereButton": "Überall entfernen",
     "toasts": {

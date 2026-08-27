@@ -697,6 +697,8 @@
     "purgePlace3": "les fichiers téléchargés sur le disque",
     "purgePlace4": "la liste des mods suivis du panneau",
     "purgeDialogNote": "Il est ensuite ajouté à la liste d'ignorés pour qu'une analyse ultérieure ne puisse pas le faire revenir discrètement. Redémarrez le serveur pour appliquer.",
+    "removeServerDialogTitle": "Retirer ce mod du serveur ?",
+    "removeServerDialogDesc": "Cela le retire de la liste des mods actifs du serveur. Il reste suivi ici et peut être rajouté à tout moment.",
     "cancelButton": "Annuler",
     "removeEverywhereButton": "Retirer partout",
     "toasts": {

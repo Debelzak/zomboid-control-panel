@@ -697,6 +697,8 @@
     "purgePlace3": "磁盘上已下载的文件",
     "purgePlace4": "面板的追踪列表",
     "purgeDialogNote": "随后会将其加入忽略列表，以防止后续扫描悄悄将其带回。重启服务器以应用更改。",
+    "removeServerDialogTitle": "要将此模组从服务器移除吗？",
+    "removeServerDialogDesc": "这会将其从服务器的活动模组列表中移除。它仍会在此处保持跟踪状态，可以随时重新添加。",
     "cancelButton": "取消",
     "removeEverywhereButton": "从所有位置移除",
     "toasts": {
