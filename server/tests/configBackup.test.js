@@ -121,4 +121,107 @@ describe("createBackup() -- backup filename collisions", () => {
     // The brand-new backup must never be the one pruned away.
     expect(remaining).toContain(result.name);
   });
+
+  // 2026-08-27, operator directive ("make sure backups works") relayed by
+  // god: the sibling collision fix in backupService.js sorts by real file
+  // birthtime, but this pruner used to sort the FILENAMES as strings, then
+  // slice(10). For files sharing the SAME millisecond -- exactly the case
+  // the collision suffix exists to handle -- "name.<ts>-2.bak" sorts
+  // LEXICOGRAPHICALLY BEFORE "name.<ts>.bak" ('-' < '.'), so within a
+  // colliding group the plain (chronologically-FIRST/oldest) name was
+  // always treated as "newest". That only becomes an observable bug when
+  // the keep/drop boundary falls INSIDE a colliding group -- put the group
+  // at the OLDEST timestamp in the set, with more members than fit in the
+  // remaining "keep" slots, and the buggy sort deletes the wrong member of
+  // the group instead of the group's true oldest.
+  it("when a same-millisecond collision group straddles the retention boundary, prunes the group's actual oldest member -- not whichever name sorts last", async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-configbackup-"));
+    const iniPath = path.join(root, "servertest.ini");
+    const backupDir = path.join(root, "backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(iniPath, "current", "utf8");
+
+    function busyWaitMs(ms) {
+      const start = Date.now();
+      while (Date.now() - start < ms) {
+        /* force real, distinct fs birthtimes between writes */
+      }
+    }
+
+    // Pruning now sorts by real fs birthtime (the fix under test), so what
+    // makes a file "oldest" here is WRITE ORDER, not the fictional date
+    // embedded in its name -- that embedded date only has to be internally
+    // consistent enough for the old, buggy string-sort to rank this group
+    // as chronologically EARLIER than the seeds by name (see the assertion
+    // on the buggy behavior below), it plays no role in the real ordering.
+    //
+    // A 3-member same-millisecond collision group, written FIRST (truly
+    // oldest overall): plain name first (truly oldest of the group), then
+    // "-2" (truly second). createBackup() itself supplies the third, real
+    // member later below (gets "-3") -- the actual code path under test,
+    // not a hand-built fixture standing in for it.
+    const collidedTs = "2026-08-01T00-00-00-000Z";
+    fs.writeFileSync(
+      path.join(backupDir, `servertest.ini.${collidedTs}.bak`),
+      "group member 1 (truly oldest)",
+      "utf8",
+    );
+    busyWaitMs(2);
+    fs.writeFileSync(
+      path.join(backupDir, `servertest.ini.${collidedTs}-2.bak`),
+      "group member 2 (truly second)",
+      "utf8",
+    );
+    busyWaitMs(2);
+
+    // 8 seeds, written AFTER the group above -- truly newer than the whole
+    // group, and never at risk in this scenario.
+    for (let i = 0; i < 8; i++) {
+      const ts = `2026-08-2${i}T00-00-00-000Z`;
+      fs.writeFileSync(
+        path.join(backupDir, `servertest.ini.${ts}.bak`),
+        `seed ${i}`,
+        "utf8",
+      );
+      busyWaitMs(2);
+    }
+
+    // 2 pre-seeded group members + 8 seeds = 10 pre-existing. This call's
+    // own backup becomes an 11th, colliding into "-3" -- pushing the total
+    // to 11 and forcing exactly one deletion, which must land inside the
+    // collision group (its true oldest, written before anything else in
+    // this test), not among the strictly-newer seeds.
+    // collidedTs already contains no ':' or '.', so createBackup()'s own
+    // `.replace(/[:.]/g, "-")` on this mocked value is a no-op -- it comes
+    // out exactly as collidedTs, landing in the same collision group as
+    // the two pre-seeded members above.
+    const toISOString = vi
+      .spyOn(Date.prototype, "toISOString")
+      .mockReturnValue(collidedTs);
+    try {
+      const result = await createBackup(root, "servertest.ini");
+      expect(result.backedUp).toBe(true);
+      expect(result.name).toBe(`servertest.ini.${collidedTs}-3.bak`);
+
+      const remaining = fs
+        .readdirSync(backupDir)
+        .filter((f) => f.startsWith("servertest.ini.") && f.endsWith(".bak"));
+      expect(remaining).toHaveLength(10);
+
+      // All 8 seeds survive -- they were never in contention.
+      for (let i = 0; i < 8; i++) {
+        expect(remaining).toContain(`servertest.ini.2026-08-2${i}T00-00-00-000Z.bak`);
+      }
+      // The group's true oldest member is the one dropped.
+      expect(remaining).not.toContain(`servertest.ini.${collidedTs}.bak`);
+      // Its true middle and true newest members both survive -- this is
+      // the assertion the old string-sort code got backwards: it kept the
+      // plain name (treating it as "newest" of the group) and deleted
+      // "-2" instead.
+      expect(remaining).toContain(`servertest.ini.${collidedTs}-2.bak`);
+      expect(remaining).toContain(`servertest.ini.${collidedTs}-3.bak`);
+    } finally {
+      toISOString.mockRestore();
+    }
+  });
 });

@@ -85,10 +85,30 @@ export async function createBackup(configPath, filename) {
     // failure must not flip this call's result to backedUp:false.
     try {
       const files = await fs.promises.readdir(backupDir);
-      const backups = files
-        .filter((f) => f.startsWith(filename + ".") && f.endsWith(".bak"))
-        .sort()
-        .reverse();
+      const candidateNames = files.filter(
+        (f) => f.startsWith(filename + ".") && f.endsWith(".bak"),
+      );
+      // Sort by actual file creation time, not by the filename string --
+      // the collision suffix above (2026-08-27) inserts "-2" etc. right
+      // before ".bak", and "-2.bak" sorts LEXICOGRAPHICALLY BEFORE ".bak"
+      // ('-' < '.'), which reverses the intended newest-first order for
+      // exactly the same-millisecond pair the suffix exists to
+      // disambiguate. Same fix backupService.js's listBackups() already
+      // uses for the world-backup pruner.
+      const candidates = await Promise.all(
+        candidateNames.map(async (name) => {
+          try {
+            const stats = await fs.promises.stat(path.join(backupDir, name));
+            return { name, birthtimeMs: stats.birthtimeMs };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const backups = candidates
+        .filter((c) => c !== null)
+        .sort((a, b) => b.birthtimeMs - a.birthtimeMs) // newest first
+        .map((c) => c.name);
 
       if (backups.length > 10) {
         const filesToDelete = backups.slice(10);
