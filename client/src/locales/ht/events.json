@@ -381,7 +381,7 @@
     "runEventSequence": { "label": "Egzekite Sekans Evènman", "description": "Egzekite yon sekans chat/move tan/eseinm/itilite/bri anchène." },
     "getInfrastructureSnapshot": { "label": "Enstantane Enfrastrikti", "description": "Li estati idwo/move tan ak yon pwen echantiyon si genyen." },
     "moderationKickUser": { "label": "Mete Itilizatè Deyò", "description": "Mete jwè deyò atravè BanSystem." },
-    "moderationBanUser": { "label": "Bani Itilizatè", "description": "Bani oswa retire baniman yon jwè." },
+    "moderationBanUser": { "label": "Bani Itilizatè", "description": "Bani oswa retire baniman sèlman selon non itilizatè a -- sa a pa bani adrès IP li. Sèvi ak paj Jwè yo pou yon bànisman non itilizatè + IP ansanm." },
     "moderationBanIP": { "label": "Bani IP", "description": "Bani oswa retire baniman yon adrès IP." },
     "moderationBanSteamID": { "label": "Bani SteamID", "description": "Bani oswa retire baniman yon SteamID." }
   },

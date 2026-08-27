@@ -443,7 +443,7 @@
     },
     "moderationBanUser": {
       "label": "Banear usuario",
-      "description": "Banear o desbanear a un jugador."
+      "description": "Banea o desbanea solo por nombre de usuario -- esto no banea su dirección IP. Usa la página de Jugadores para un baneo combinado de nombre de usuario e IP."
     },
     "moderationBanIP": {
       "label": "Banear IP",

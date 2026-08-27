@@ -381,7 +381,7 @@
     "runEventSequence": { "label": "运行事件序列", "description": "运行连锁的聊天/天气/蜂拥/设施/噪音序列。" },
     "getInfrastructureSnapshot": { "label": "基础设施快照", "description": "读取水电/天气状态及可选采样点。" },
     "moderationKickUser": { "label": "踢出用户", "description": "通过 BanSystem 踢出玩家。" },
-    "moderationBanUser": { "label": "封禁用户", "description": "封禁或解封玩家。" },
+    "moderationBanUser": { "label": "封禁用户", "description": "仅按用户名封禁或解封——不会封禁其 IP 地址。如需同时封禁用户名和 IP，请前往玩家页面。" },
     "moderationBanIP": { "label": "封禁 IP", "description": "封禁或解封 IP 地址。" },
     "moderationBanSteamID": { "label": "封禁 SteamID", "description": "封禁或解封 SteamID。" }
   },

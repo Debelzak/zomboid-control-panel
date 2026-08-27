@@ -381,7 +381,7 @@
     "runEventSequence": { "label": "Event-Sequenz ausführen", "description": "Verkettete Sequenz aus Chat/Wetter/Schwarm/Versorgung/Geräusch ausführen." },
     "getInfrastructureSnapshot": { "label": "Infrastruktur-Snapshot", "description": "Versorgungs-/Wetterstatus und optionalen Messpunkt auslesen." },
     "moderationKickUser": { "label": "Benutzer kicken", "description": "Spieler über BanSystem kicken." },
-    "moderationBanUser": { "label": "Benutzer bannen", "description": "Spieler bannen oder entbannen." },
+    "moderationBanUser": { "label": "Benutzer bannen", "description": "Bannt oder entbannt nur nach Benutzername -- die IP-Adresse wird dabei nicht gesperrt. Für eine kombinierte Benutzername+IP-Sperre die Spieler-Seite verwenden." },
     "moderationBanIP": { "label": "IP bannen", "description": "IP-Adresse bannen oder entbannen." },
     "moderationBanSteamID": { "label": "SteamID bannen", "description": "SteamID bannen oder entbannen." }
   },

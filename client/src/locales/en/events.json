@@ -381,7 +381,7 @@
     "runEventSequence": { "label": "Run Event Sequence", "description": "Run chained chat/weather/swarm/utilities/noise sequence." },
     "getInfrastructureSnapshot": { "label": "Infrastructure Snapshot", "description": "Read hydro/weather state and optional sample point." },
     "moderationKickUser": { "label": "Kick User", "description": "Kick player via BanSystem." },
-    "moderationBanUser": { "label": "Ban User", "description": "Ban or unban player." },
+    "moderationBanUser": { "label": "Ban User", "description": "Ban or unban by username only -- this does not ban their IP address. Use the Players page for a combined username+IP ban." },
     "moderationBanIP": { "label": "Ban IP", "description": "Ban or unban IP address." },
     "moderationBanSteamID": { "label": "Ban SteamID", "description": "Ban or unban SteamID." }
   },

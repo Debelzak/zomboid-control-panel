@@ -381,7 +381,7 @@
     "runEventSequence": { "label": "Exécuter une séquence d'événements", "description": "Exécute une séquence chaînée de chat/météo/essaim/utilitaires/bruit." },
     "getInfrastructureSnapshot": { "label": "Instantané des infrastructures", "description": "Lit l'état hydraulique/météo et un point d'échantillon optionnel." },
     "moderationKickUser": { "label": "Expulser un utilisateur", "description": "Expulse un joueur via BanSystem." },
-    "moderationBanUser": { "label": "Bannir un utilisateur", "description": "Bannit ou débannit un joueur." },
+    "moderationBanUser": { "label": "Bannir un utilisateur", "description": "Bannit ou débannit uniquement par nom d'utilisateur -- cela ne bannit pas son adresse IP. Utilisez la page Joueurs pour un bannissement combiné nom d'utilisateur + IP." },
     "moderationBanIP": { "label": "Bannir une IP", "description": "Bannit ou débannit une adresse IP." },
     "moderationBanSteamID": { "label": "Bannir un SteamID", "description": "Bannit ou débannit un SteamID." }
   },
