@@ -3640,11 +3640,11 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     description: 'How tough crops are.',
     type: 'select',
     options: [
-      { value: 1, label: 'Very Low' },
-      { value: 2, label: 'Low' },
+      { value: 1, label: 'Very High' },
+      { value: 2, label: 'High' },
       { value: 3, label: 'Normal' },
-      { value: 4, label: 'High' },
-      { value: 5, label: 'Very High' }
+      { value: 4, label: 'Low' },
+      { value: 5, label: 'Very Low' }
     ],
     default: 3,
     category: 'animals',
