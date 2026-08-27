@@ -242,7 +242,7 @@ export const CAPABILITIES = [
     group: "Panel Diagnostics & Settings",
     label: "View panel diagnostics",
     description:
-      "View logs, performance history, database maintenance tools and CORS diagnostics.",
+      "View logs, performance history, database maintenance tools and CORS diagnostics, and relocate the panel's own data/log directories.",
   },
   {
     key: "panel.settings",

@@ -28,6 +28,7 @@ import {
   getTrackedMods,
   getAllSettings,
   getCircuitBreakerStatus,
+  getRoleByName,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
 import { checkSandboxBraceBalance } from "./serverFiles.js";
@@ -5645,6 +5646,28 @@ router.get("/activity", requirePermission("diagnostics.manage"), async (req, res
     const limit = parseClampedInteger(req.query.limit, 200, 1, 500);
     const source = req.query.source || "all"; // 'all' | 'rcon' | 'bridge' | 'player' | 'server'
 
+    // Player action logs are players.view's own territory (its description:
+    // "Read player details, status and history") -- merging them into this
+    // diagnostics.manage-gated feed let a custom role holding diagnostics.manage
+    // without players.view read full player moderation history through a door
+    // labeled "logs, performance history... and CORS diagnostics." Only resolved
+    // when a player source could actually appear -- avoids a role lookup on
+    // every rcon/bridge/server-only request. Explicitly requested is a refusal
+    // (the caller asked for something they don't hold); folded into "all" it's
+    // a silent omission (the rest of the feed is still theirs to see) rather
+    // than refusing the whole request over one source.
+    let canViewPlayers = true;
+    if (source === "all" || source === "player") {
+      const role = req.user ? await getRoleByName(req.user.role) : null;
+      canViewPlayers = Array.isArray(role?.capabilities) && role.capabilities.includes("players.view");
+    }
+
+    if (source === "player" && !canViewPlayers) {
+      return res.status(403).json({
+        error: "Viewing player activity history also requires players.view.",
+      });
+    }
+
     const entries = [];
 
     // RCON command history
@@ -5685,8 +5708,10 @@ router.get("/activity", requirePermission("diagnostics.manage"), async (req, res
       }
     }
 
-    // Player action logs
-    if (source === "all" || source === "player") {
+    // Player action logs -- gated on players.view above; source === "player"
+    // without it already returned. source === "all" without it just skips
+    // this block, same as if no player logs existed.
+    if ((source === "all" || source === "player") && canViewPlayers) {
       const playerLogs = await getPlayerLogs(null, limit);
       for (const log of playerLogs) {
         entries.push({
