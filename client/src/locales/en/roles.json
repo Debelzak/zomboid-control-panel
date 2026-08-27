@@ -111,7 +111,7 @@
     "users": {
       "manage": {
         "label": "Manage user accounts",
-        "description": "Create accounts, list them, and change which role each one holds."
+        "description": "Create accounts, list them, change which role each one holds, and permanently delete an account."
       }
     },
     "roles": {

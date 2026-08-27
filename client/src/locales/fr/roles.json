@@ -111,7 +111,7 @@
     "users": {
       "manage": {
         "label": "Gérer les comptes utilisateurs",
-        "description": "Créer des comptes, les lister, et changer le rôle de chacun."
+        "description": "Créer des comptes, les lister, changer le rôle de chacun, et supprimer un compte de façon permanente."
       }
     },
     "roles": {

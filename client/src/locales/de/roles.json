@@ -111,7 +111,7 @@
     "users": {
       "manage": {
         "label": "Benutzerkonten verwalten",
-        "description": "Konten erstellen, auflisten und deren Rolle ändern."
+        "description": "Konten erstellen, auflisten, deren Rolle ändern und ein Konto dauerhaft löschen."
       }
     },
     "roles": {

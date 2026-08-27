@@ -111,7 +111,7 @@
     "users": {
       "manage": {
         "label": "Administrar cuentas de usuario",
-        "description": "Crear cuentas, listarlas y cambiar qué rol tiene cada una."
+        "description": "Crear cuentas, listarlas, cambiar qué rol tiene cada una, y eliminar una cuenta de forma permanente."
       }
     },
     "roles": {
