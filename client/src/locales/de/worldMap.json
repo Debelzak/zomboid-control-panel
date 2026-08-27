@@ -39,7 +39,9 @@
     "coverageDesc": "<1>tiles.pzmap.org</1> ist erreichbar, hat diesen Bereich in dieser Detailstufe aber noch nicht gerendert. Zoome heraus oder versuche es später erneut mit Aktualisieren.",
     "networkTitle": "Kartenkacheln werden nicht geladen",
     "networkDesc": "Diese Kachel konnte nicht vom Panel geladen werden. Überprüfe die eigene Netzwerkverbindung des Panels und versuche es erneut mit <1>Aktualisieren</1>.",
-    "diagnostic": "Diagnose: {{detail}}"
+    "diagnostic": "Diagnose: {{detail}}",
+    "gzipDetectedTitle": "Kartenkachel kam noch komprimiert an",
+    "gzipDetectedDesc": "Die Daten dieser Kachel erreichten den Browser noch gzip-komprimiert, statt automatisch entpackt zu werden. Das bedeutet meist, dass ein Reverse-Proxy vor dem Panel (nginx, Apache, Caddy usw.) den Content-Encoding-Header entfernt oder falsch behandelt. Falls das auf Ihre Einrichtung zutrifft, bitten Sie die zuständige Person, diese Einstellung zu prüfen."
   },
   "roster": {
     "label": "Liste",

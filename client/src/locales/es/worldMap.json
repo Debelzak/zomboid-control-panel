@@ -39,7 +39,9 @@
     "coverageDesc": "<1>tiles.pzmap.org</1> es accesible pero no ha renderizado esta área a este nivel de detalle. Alejar el zoom, o probar Actualizar más tarde.",
     "networkTitle": "Las teselas del mapa no cargan",
     "networkDesc": "No se pudo cargar esta tesela desde el panel. Comprueba la propia conexión de red del panel y prueba <1>Actualizar</1>.",
-    "diagnostic": "Diagnóstico: {{detail}}"
+    "diagnostic": "Diagnóstico: {{detail}}",
+    "gzipDetectedTitle": "El tile del mapa llegó aún comprimido",
+    "gzipDetectedDesc": "Los datos de este tile llegaron al navegador todavía comprimidos con gzip en lugar de descomprimirse automáticamente. Esto suele significar que un proxy inverso delante del panel (nginx, Apache, Caddy, etc.) está eliminando o gestionando mal el encabezado Content-Encoding. Si eso coincide con su configuración, pida a quien administre el proxy que revise ese ajuste."
   },
   "roster": {
     "label": "lista",

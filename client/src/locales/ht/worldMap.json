@@ -39,7 +39,9 @@
     "coverageDesc": "<1>tiles.pzmap.org</1> reyachab men li poko fè rann zòn sa a nan nivo detay sa a. Zoume pi lwen, oswa eseye Rafrechi pita.",
     "networkTitle": "Kawo kat yo pa chaje",
     "networkDesc": "Panèl la pa t' kapab chaje kawo sa a. Tcheke pwòp koneksyon rezo panèl la epi eseye <1>Rafrechi</1>.",
-    "diagnostic": "Dyagnostik: {{detail}}"
+    "diagnostic": "Dyagnostik: {{detail}}",
+    "gzipDetectedTitle": "Kawo kat la rive toujou konprese",
+    "gzipDetectedDesc": "Done kawo sa a rive nan navigatè a toujou konprese ak gzip olye pou li dekonprese otomatikman. Sa jeneralman vle di gen yon reverse proxy devan panèl la (nginx, Apache, Caddy, elatriye) ki retire oswa jere mal antèt Content-Encoding lan. Si sa matche ak konfigirasyon w lan, mande moun ki jere proxy a verifye paramèt sa a."
   },
   "roster": {
     "label": "lis jwè",

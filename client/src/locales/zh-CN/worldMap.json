@@ -39,7 +39,9 @@
     "coverageDesc": "<1>tiles.pzmap.org</1> 可以访问，但尚未在此细节级别渲染此区域。请缩小视图，或稍后重试刷新。",
     "networkTitle": "地图图块无法加载",
     "networkDesc": "无法从面板加载此图块。请检查面板自身的网络连接，然后重试<1>刷新</1>。",
-    "diagnostic": "诊断：{{detail}}"
+    "diagnostic": "诊断：{{detail}}",
+    "gzipDetectedTitle": "地图图块到达时仍处于压缩状态",
+    "gzipDetectedDesc": "此图块的数据到达浏览器时仍是 gzip 压缩状态，未被自动解压。这通常意味着面板前面的反向代理（如 nginx、Apache、Caddy 等）剥离或错误处理了 Content-Encoding 响应头。如果符合您的部署情况，请让代理管理员检查该设置。"
   },
   "roster": {
     "label": "花名册",

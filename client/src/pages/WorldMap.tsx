@@ -75,6 +75,7 @@ import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 import { bridgeSupportsPlayerStatus } from './worldMapBridgeVersion'
+import { diagnoseTileFailure } from './worldMapTileFailureDiagnosis'
 
 const TILE_RETRY_MS = [2_000, 10_000, 60_000] as const
 
@@ -945,6 +946,12 @@ export default function WorldMap() {
   const [tileLoadFailing, setTileLoadFailing] = useState(false)
   const [tileFailureKind, setTileFailureKind] = useState<'network' | 'coverage'>('network')
   const tileCoverageFailRef = useRef(0)
+  // Sticky once true for the current failure episode (reset alongside
+  // tileCoverageFailRef on recovery, below) -- a positive gzip-magic-number
+  // identification on ANY failing tile is worth surfacing even if it wasn't
+  // the very first tile to fail, unlike tileFailureDetail's first-failure-
+  // only gate. See worldMapTileFailureDiagnosis.ts.
+  const [tileGzipConfirmed, setTileGzipConfirmed] = useState(false)
   // The raw diagnostic code behind the most recent tile failure -- surfaced
   // in the banner itself so a report carries its own diagnosis (the X-Tile-
   // Cache header this reads was already on every tile response; nothing
@@ -966,7 +973,11 @@ export default function WorldMap() {
     tileCacheRef.current[key] = null
     pendingTileLoadsRef.current++
 
-    const markFailed = (reason: 'network' | 'coverage' = 'network', detail: string = 'no-header') => {
+    const markFailed = (
+      reason: 'network' | 'coverage' = 'network',
+      detail: string = 'no-header',
+      gzipConfirmed: boolean = false,
+    ) => {
       if (floorRef.current !== f) return
       // Drop the pending entry so the per-tile backoff guard above is what
       // gates the next retry (rather than the "key in cache" check).
@@ -975,6 +986,11 @@ export default function WorldMap() {
       const count = (prev?.count ?? 0) + 1
       const delay = TILE_RETRY_MS[Math.min(count - 1, TILE_RETRY_MS.length - 1)]
       tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
+      // A positive gzip-magic-number identification is worth surfacing
+      // whichever tile it shows up on, not gated to the first failure of a
+      // batch like the counters below -- it's a definitive diagnosis, not
+      // an illustrative sample.
+      if (gzipConfirmed) setTileGzipConfirmed(true)
       // Surface a user-visible warning if many distinct tiles are failing.
       if (count === 1) {
         // Last-write-wins across whichever tile fails FIRST most recently --
@@ -1008,6 +1024,7 @@ export default function WorldMap() {
             tileCoverageFailRef.current = 0
             setTileLoadFailing(false)
             setTileFailureDetail(null)
+            setTileGzipConfirmed(false)
           }
         }
       }
@@ -1045,9 +1062,14 @@ export default function WorldMap() {
       // the actual diagnostic code rather than just the coarse network/
       // coverage split -- see tileFailureDetail above.
       let cacheTierRaw: string | null = null
+      // The response's own declared size -- compared against the blob we
+      // actually receive if decoding later fails, to prove truncation
+      // rather than guess at it. See worldMapTileFailureDiagnosis.ts.
+      let contentLengthHeader: string | null = null
       fetch(proxyUrl)
         .then((res) => {
           cacheTierRaw = res.headers.get('X-Tile-Cache')
+          contentLengthHeader = res.headers.get('Content-Length')
           upstreamParticipated = cacheTierRaw === 'miss'
           if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
           if (res.status === 404) {
@@ -1085,7 +1107,30 @@ export default function WorldMap() {
             // sent these bytes this request, naming it is earned ('coverage').
             // If they came from our own cache (hit-mem/hit-disk), the
             // corruption is local and upstream had no part in it.
-            markFailed(upstreamParticipated ? 'coverage' : 'network', cacheTierRaw ?? 'no-header')
+            //
+            // Two cheap checks on the blob itself -- already fully in memory,
+            // no extra request, no operator devtools relay -- turn this from
+            // a hedge into either a positive identification or a size proof.
+            // See worldMapTileFailureDiagnosis.ts.
+            blob.slice(0, 2).arrayBuffer()
+              .then((buf) => {
+                const bytes = new Uint8Array(buf)
+                const firstTwo: readonly [number, number] | null =
+                  bytes.length === 2 ? [bytes[0], bytes[1]] : null
+                const diagnosis = diagnoseTileFailure(firstTwo, blob.size, contentLengthHeader)
+                const detail = diagnosis.looksLikeStillGzipped
+                  ? 'still-gzipped'
+                  : diagnosis.looksLikeTruncated
+                    ? `truncated: received ${diagnosis.receivedBytes} of ${diagnosis.expectedBytes} bytes`
+                    : cacheTierRaw ?? 'no-header'
+                markFailed(upstreamParticipated ? 'coverage' : 'network', detail, diagnosis.looksLikeStillGzipped)
+              })
+              .catch(() => {
+                // Reading the blob's own already-in-memory bytes failed --
+                // shouldn't happen, but fall back rather than leave this
+                // tile's failure unrecorded.
+                markFailed(upstreamParticipated ? 'coverage' : 'network', cacheTierRaw ?? 'no-header')
+              })
           }
           img.src = objectUrl
         })
@@ -2806,7 +2851,16 @@ export default function WorldMap() {
                 <span className="text-warning/70">{t('tileFailure.tilesOffline')}</span>
               </div>
               <div className="px-3 py-2 text-xs leading-snug">
-                {tileFailureKind === 'coverage' ? (
+                {tileGzipConfirmed ? (
+                  // A confirmed positive identification, not a hedge: the
+                  // received bytes start with the gzip magic number, so the
+                  // browser was handed a still-compressed body instead of a
+                  // decompressed image. See worldMapTileFailureDiagnosis.ts.
+                  <>
+                    <div className="font-semibold text-foreground">{t('tileFailure.gzipDetectedTitle')}</div>
+                    <div className="text-muted-foreground mt-0.5">{t('tileFailure.gzipDetectedDesc')}</div>
+                  </>
+                ) : tileFailureKind === 'coverage' ? (
                   <>
                     <div className="font-semibold text-foreground">{t('tileFailure.coverageTitle')}</div>
                     <div className="text-muted-foreground mt-0.5">
@@ -2829,12 +2883,15 @@ export default function WorldMap() {
                     </div>
                   </>
                 )}
-                {tileFailureDetail && (
-                  // The raw X-Tile-Cache diagnostic code (hit-mem/hit-disk/
-                  // miss/http-<status>/unreachable) -- was already on every
-                  // tile response and nothing ever displayed it. Shown
-                  // as-is (not translated) so a screenshot carries the same
-                  // fact a devtools Network tab would have shown.
+                {tileFailureDetail && !tileGzipConfirmed && (
+                  // The raw diagnostic code behind the most recent failure --
+                  // the X-Tile-Cache header value (hit-mem/hit-disk/miss/
+                  // http-<status>/unreachable), or a byte-count truncation
+                  // report when Content-Length disagreed with what arrived.
+                  // Shown as-is (not translated) so a screenshot carries the
+                  // same fact a devtools Network tab would have shown.
+                  // Suppressed when the gzip banner above is already showing
+                  // a more specific, translated statement of the same idea.
                   <div className="mt-1 pt-1 border-t border-warning/20 font-mono text-[10px] text-muted-foreground/70">
                     {t('tileFailure.diagnostic', { detail: tileFailureDetail })}
                   </div>

@@ -39,7 +39,9 @@
     "coverageDesc": "<1>tiles.pzmap.org</1> est joignable mais n'a pas encore rendu cette zone à ce niveau de détail. Dézoomez, ou réessayez plus tard avec Actualiser.",
     "networkTitle": "Les tuiles de carte ne se chargent pas",
     "networkDesc": "Cette tuile n'a pas pu être chargée depuis le panneau. Vérifiez la propre connexion réseau du panneau et réessayez avec <1>Actualiser</1>.",
-    "diagnostic": "Diagnostic : {{detail}}"
+    "diagnostic": "Diagnostic : {{detail}}",
+    "gzipDetectedTitle": "La tuile de carte est arrivée encore compressée",
+    "gzipDetectedDesc": "Les données de cette tuile sont arrivées au navigateur encore compressées en gzip au lieu d'être automatiquement décompressées. Cela signifie généralement qu'un proxy inverse devant le panneau (nginx, Apache, Caddy, etc.) supprime ou traite mal l'en-tête Content-Encoding. Si cela correspond à votre configuration, demandez à la personne qui gère le proxy de vérifier ce réglage."
   },
   "roster": {
     "label": "effectif",
