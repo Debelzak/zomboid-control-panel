@@ -226,6 +226,11 @@ export default function Backups() {
 
   // Actions
   const handleCreateBackup = async () => {
+    // Function-level guard, not just the button's `disabled` -- the button
+    // is an affordance, this is the gate. 2026-08-27 bug-hunt floor rule:
+    // assert the action is unreachable, don't just make the control look
+    // disabled (Angela's Console.tsx Enter-key bypass finding).
+    if (!canManageBackups) return
     setCreatingBackup(true)
     setBackupProgress({ phase: 'preparing', percent: 0, message: t('progress.startingFallback') })
     try {
@@ -266,6 +271,7 @@ export default function Backups() {
   // The file gets stored with an "uploaded-" prefix and shows up in the list
   // alongside scheduled backups; the user then clicks Restore to apply it.
   const handleUploadFile = async (file: File) => {
+    if (!canManageBackups) return
     if (!file) return
     if (activeServerRemote) {
       toast({ title: t('toasts.notAvailableRemoteTitle'), description: t('toasts.notAvailableRemoteDesc'), variant: 'destructive' })
@@ -311,6 +317,7 @@ export default function Backups() {
   }
 
   const handleRestoreBackup = async (name: string) => {
+    if (!canRestoreBackups) return
     setRestoreDialog({ open: false, backupName: null })
     setRestoringBackup(name)
     try {
@@ -336,6 +343,7 @@ export default function Backups() {
   }
 
   const handleViewSnapshot = async (name: string) => {
+    if (!canManageBackups) return
     try {
       const result = await backupApi.getSnapshot(name)
       if (!result.success || !result.snapshot) throw new Error(result.message || t('toasts.snapshotMissingFallback'))
@@ -350,6 +358,7 @@ export default function Backups() {
   }
 
   const handleDeleteBackups = async (names: string[]) => {
+    if (!canManageBackups) return
     setDeleteDialog({ open: false, names: [] })
     setDeletingBackups(true)
     try {
@@ -396,6 +405,7 @@ export default function Backups() {
   }
 
   const handleDeleteOlderThan = async () => {
+    if (!canManageBackups) return
     setDeleteOlderDialog(false)
     setDeletingOlder(true)
     try {
@@ -425,6 +435,7 @@ export default function Backups() {
   }
 
   const handleSaveSettings = async () => {
+    if (!canManageBackups) return
     setSavingSettings(true)
     try {
       await backupApi.updateSettings({
@@ -450,6 +461,7 @@ export default function Backups() {
   }
 
   const toggleBackupEnabled = async (enabled: boolean) => {
+    if (!canManageBackups) return
     try {
       await backupApi.updateSettings({ enabled })
       await fetchBackupStatus()
@@ -1008,7 +1020,7 @@ export default function Backups() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => backupApi.downloadBackup(backup.name)}
+                              onClick={() => { if (canDownloadBackups) backupApi.downloadBackup(backup.name) }}
                               disabled={!canDownloadBackups}
                               className="h-9 w-9"
                               aria-label={t('mainCard.downloadAria', { name: backup.name })}

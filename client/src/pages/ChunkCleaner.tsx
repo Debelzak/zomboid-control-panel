@@ -553,6 +553,10 @@ export default function ChunkCleaner() {
   const persistCurrentPath = useCallback(
     async (pathToSave: string) => {
       if (!pathToSave) return;
+      // Function-level guard, not just the button's disabled state --
+      // 2026-08-27 bug-hunt floor rule (Angela's Console.tsx Enter-key
+      // bypass finding): assert the action is unreachable.
+      if (!canManageChunks) return;
       setSavingPath(true);
       try {
         const result = await chunksApi.savePath(pathToSave);
@@ -580,7 +584,7 @@ export default function ChunkCleaner() {
         setSavingPath(false);
       }
     },
-    [fetchSaves, toast, t],
+    [fetchSaves, toast, t, canManageChunks],
   );
 
   const loadChunks = useCallback(async () => {
@@ -1903,6 +1907,11 @@ export default function ChunkCleaner() {
   // ─── Delete handlers ───
   const handleDelete = async () => {
     if (selectedChunks.size === 0) return;
+    // Function-level guard, not just the trigger button/keyboard-shortcut
+    // disabled state -- 2026-08-27 bug-hunt floor rule (Angela's
+    // Console.tsx Enter-key bypass finding): assert the action is
+    // unreachable, don't just make the control look disabled.
+    if (!canManageChunks) return;
 
     setDeleting(true);
     try {

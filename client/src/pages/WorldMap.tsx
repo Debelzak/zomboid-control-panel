@@ -2442,6 +2442,10 @@ export default function WorldMap() {
   // ─── Actions ────────────────────────────────────────────
   const triggerLightningAt = useCallback(
     async (x: number, y: number) => {
+      // Function-level guard, not just the menu item's disabled state --
+      // 2026-08-27 bug-hunt floor rule (Angela's Console.tsx Enter-key
+      // bypass finding): assert the action is unreachable.
+      if (!canWorldEvents) return
       setActionLoading('lightning')
       try {
         const res = await panelBridgeApi.triggerLightning(x, y, true, true, true)
@@ -2455,11 +2459,12 @@ export default function WorldMap() {
         setContextMenu(null)
       }
     },
-    [toast]
+    [toast, canWorldEvents]
   )
 
   const createNoiseAt = useCallback(
     async (x: number, y: number) => {
+      if (!canWorldEvents) return
       setActionLoading('noise')
       try {
         const res = await panelBridgeApi.playWorldSound(x, y, 0, 200, 100)
@@ -2473,12 +2478,13 @@ export default function WorldMap() {
         setContextMenu(null)
       }
     },
-    [toast]
+    [toast, canWorldEvents]
   )
 
   const callAirdrop = useCallback(
     async (x: number, y: number, preset: typeof AIRDROP_PRESETS[number]['id']) => {
       if (actionLoadingRef.current) return // prevent double-submit (ref avoids stale closure)
+      if (!canRunBridgeCommand) return
       actionLoadingRef.current = 'airdrop'
       setActionLoading('airdrop')
       try {
@@ -2518,7 +2524,7 @@ export default function WorldMap() {
         }
       }
     },
-    [toast, t, presetLabel]
+    [toast, t, presetLabel, canRunBridgeCommand]
   )
 
   // Clean up expired airdrop markers (older than 5 minutes)
@@ -2547,6 +2553,7 @@ export default function WorldMap() {
       label?: string
     }) => {
       if (actionLoadingRef.current) return
+      if (!canRunBridgeCommand) return
       const cleaned = opts.items
         .map((it) => ({
           itemType: (it.itemType || '').trim(),
@@ -2623,12 +2630,13 @@ export default function WorldMap() {
         }
       }
     },
-    [toast, t]
+    [toast, t, canRunBridgeCommand]
   )
 
   // Teleport an arbitrary online player to the right-clicked coordinate.
   const teleportPlayerTo = useCallback(
     async (username: string, x: number, y: number, z: number) => {
+      if (!canRunBridgeCommand) return
       setActionLoading('teleport')
       try {
         // bridge.sendCommand() (services/panelBridge.js) only ever resolves
@@ -2673,7 +2681,7 @@ export default function WorldMap() {
         if (mountedRef.current) setActionLoading(null)
       }
     },
-    [toast, fetchPlayerPositions, t]
+    [toast, fetchPlayerPositions, t, canRunBridgeCommand]
   )
 
   // Copy map coordinates to the clipboard. Goes through copyText (not the
@@ -3084,6 +3092,7 @@ export default function WorldMap() {
                     size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
                     disabled={actionLoading !== null || !canRunBridgeCommand}
                     onClick={() => {
+                      if (!canRunBridgeCommand) return
                       setActionLoading('heal-card')
                       panelBridgeApi.sendCommand('healPlayer', { username: selectedPlayer.username })
                         .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: selectedPlayer.username }) }); fetchPlayerPositions() })
@@ -3099,6 +3108,7 @@ export default function WorldMap() {
                     size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
                     disabled={actionLoading !== null || !canRunBridgeCommand}
                     onClick={() => {
+                      if (!canRunBridgeCommand) return
                       setActionLoading('god-card')
                       panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
                         .then((response) => {
@@ -3213,6 +3223,7 @@ export default function WorldMap() {
                   tone="success"
                   disabled={!canRunBridgeCommand}
                   onClick={() => {
+                    if (!canRunBridgeCommand) return
                     panelBridgeApi.sendCommand('healPlayer', { username: contextMenu.player!.username })
                       .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: contextMenu.player!.username }) }); fetchPlayerPositions() })
                       .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
@@ -3277,6 +3288,7 @@ export default function WorldMap() {
                       loading={actionLoading === 'vehicle-repair'}
                       disabled={!canRunBridgeCommand}
                       onClick={() => {
+                    if (!canRunBridgeCommand) return
                     setActionLoading('vehicle-repair')
                     // Generic /panel-bridge/command passthrough only ever
                     // resolves on success (see teleportPlayerTo above for
@@ -3298,6 +3310,7 @@ export default function WorldMap() {
                   loading={actionLoading === 'vehicle-fuel'}
                   disabled={!canRunBridgeCommand}
                   onClick={() => {
+                    if (!canRunBridgeCommand) return
                     setActionLoading('vehicle-fuel')
                     panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, percent: 100 })
                       .then((response) => {
@@ -3323,6 +3336,7 @@ export default function WorldMap() {
                   loading={actionLoading === 'vehicle-battery'}
                   disabled={!canRunBridgeCommand}
                   onClick={() => {
+                    if (!canRunBridgeCommand) return
                     setActionLoading('vehicle-battery')
                     panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, charge: 100 })
                       .then((response) => {
@@ -3365,6 +3379,7 @@ export default function WorldMap() {
                   loading={actionLoading === 'vehicle-hotwire'}
                   disabled={!canRunBridgeCommand}
                   onClick={() => {
+                    if (!canRunBridgeCommand) return
                     setActionLoading('vehicle-hotwire')
                     panelBridgeApi.sendCommand('vehicleHotwire', { vehicleId: contextMenu.vehicle!.id })
                       .then(() => {
@@ -3601,6 +3616,7 @@ export default function WorldMap() {
               disabled={!spawnVehicleId || actionLoading === 'spawn-vehicle' || !canGmTools}
               onClick={() => {
                 if (!spawnDialog || !spawnVehicleId) return
+                if (!canGmTools) return
                 setActionLoading('spawn-vehicle')
                 // /players/add-vehicle-at relays rconService.execute()'s
                 // result, which resolves { success: false, error } for a
@@ -4008,10 +4024,11 @@ export default function WorldMap() {
               {t('removeVehicleDialog.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
-              disabled={actionLoading === 'vehicle-remove'}
+              disabled={actionLoading === 'vehicle-remove' || !canRunBridgeCommand}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={(e) => {
                 e.preventDefault()
+                if (!canRunBridgeCommand) return
                 const target = removeVehicleTarget
                 if (!target) return
                 setActionLoading('vehicle-remove')
