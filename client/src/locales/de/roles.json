@@ -195,7 +195,7 @@
     "players": {
       "moderate": {
         "label": "Spieler maßregeln",
-        "description": "Einen Spieler bannen, entbannen, kicken oder auf die Whitelist setzen."
+        "description": "Einen Spieler bannen, entbannen, kicken oder auf die Whitelist setzen sowie den Ingame-Zugriffslevel eines Spielers ändern — einschließlich Admin-Rechte vergeben oder entziehen."
       },
       "gm_tools": {
         "label": "Game-Master-Werkzeuge",

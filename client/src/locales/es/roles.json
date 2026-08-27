@@ -195,7 +195,7 @@
     "players": {
       "moderate": {
         "label": "Sancionar a los jugadores",
-        "description": "Banear, desbanear, expulsar o poner en lista blanca a un jugador."
+        "description": "Banear, desbanear, expulsar o poner en lista blanca a un jugador, y cambiar el nivel de acceso dentro del juego de un jugador — incluyendo otorgar o revocar privilegios de administrador."
       },
       "gm_tools": {
         "label": "Herramientas de Game Master",

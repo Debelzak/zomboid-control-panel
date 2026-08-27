@@ -195,7 +195,7 @@
     "players": {
       "moderate": {
         "label": "管理玩家纪律",
-        "description": "封禁、解封、踢出或将玩家加入白名单。"
+        "description": "封禁、解封、踢出或将玩家加入白名单，并更改玩家的游戏内访问级别——包括授予或撤销管理员权限。"
       },
       "gm_tools": {
         "label": "GM 工具",

@@ -195,7 +195,7 @@
     "players": {
       "moderate": {
         "label": "Sanctionner les joueurs",
-        "description": "Bannir, débannir, expulser ou mettre sur liste blanche un joueur."
+        "description": "Bannir, débannir, expulser ou mettre sur liste blanche un joueur, et changer le niveau d'accès en jeu d'un joueur — y compris accorder ou révoquer les droits d'administrateur."
       },
       "gm_tools": {
         "label": "Outils de maître du jeu",
