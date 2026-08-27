@@ -121,9 +121,17 @@ export function normalizePlayerLogLimit(value) {
   return parseClampedInteger(value, 100, 1, 500);
 }
 
-// B42's godmod/invisible commands only accept the "-true" value form and ignore
-// a target username, so over RCON — which has no player of its own — they are
-// a no-op. PanelBridge sets the flag on the player object instead.
+// STALE CLAIM CORRECTED 2026-08-27: this comment used to say B42's
+// godmod/invisible RCON commands ignore a target username and are a no-op
+// over RCON. That was true of an earlier version of rcon.js; Kevin's
+// real-jar verification (b42-command-verification, fcc61a9) found B42 splits
+// a self-only command (godmod/invisible, no username slot) from a separate
+// other-player command (godmodplayer/invisibleplayer, required username),
+// and fixed setGodMode/setInvisible to send the other-player form whenever a
+// username is given -- so the RCON fallback below DOES target the named
+// player for those two. noclip's RCON targeting remains genuinely
+// unresolved (does-noclip-actually-target-a-player-over-rcon, folded into
+// b42-commands-need-live-verification) pending a live B42 server.
 async function setPlayerMode(req, bridgeAction, rconMethod, username, enabled) {
   if (bridge.isRunning) {
     const result = await bridge.sendCommand(bridgeAction, { username, enabled: enabled === true });

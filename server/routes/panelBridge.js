@@ -4025,19 +4025,41 @@ router.post("/chat/alert", requirePermission("server.world_events"), async (req,
       });
   }
   try {
-    // RCON servermsg is the most reliable for server-wide messages
+    // Only PanelBridge can deliver a genuine alert -- the Lua handler calls
+    // chat.server:sendServerAlertMessageToServerChat, a distinct native API
+    // from the plain sendMessageToServerChat it uses otherwise. RCON's
+    // servermsg has no alert/banner concept at all. Trying RCON first (as
+    // this route used to, unconditionally) meant a requested alert silently
+    // downgraded to a plain broadcast whenever RCON was connected -- the
+    // common case -- while the response still echoed isAlert:true as if the
+    // alert had actually been delivered. Try bridge first when an alert is
+    // actually requested; RCON remains the fallback, same as before.
+    if (alert && bridge.isRunning) {
+      const result = await bridge.sendCommand("sendToServerChat", {
+        message,
+        alert: true,
+      });
+      if (result?.success) return res.json(result);
+    }
+
     const rconResult = await trySendViaRcon(req, message);
     if (rconResult) {
       return res.json({
         success: true,
         data: {
-          message: "Alert sent via RCON",
-          isAlert: alert,
+          // Honest either way: RCON has never been able to deliver alert
+          // styling, so isAlert reflects what actually happened, not what
+          // was requested.
+          message: alert
+            ? "Alert requested but RCON has no alert styling -- sent as a plain broadcast"
+            : "Alert sent via RCON",
+          isAlert: false,
           method: "RCON",
         },
       });
     }
-    // Fallback: PanelBridge
+    // Fallback: PanelBridge (covers alert===false reaching here, or the
+    // alert-preferred bridge attempt above having failed)
     if (bridge.isRunning) {
       const result = await bridge.sendCommand("sendToServerChat", {
         message,
