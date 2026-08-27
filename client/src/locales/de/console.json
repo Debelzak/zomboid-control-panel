@@ -94,7 +94,8 @@
     "executeAria": "Befehl ausführen",
     "run": "ausführen",
     "keyboardHint": "// Enter · ausführen · ↑↓ Verlauf",
-    "noResponseFallback": "Keine Antwort"
+    "noResponseFallback": "Keine Antwort",
+    "noPermission": "Ihre Rolle hat keine Berechtigung, RCON-Befehle auszuführen."
   },
   "quickCommands": {
     "players": "Spieler",

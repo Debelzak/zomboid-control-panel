@@ -94,7 +94,8 @@
     "executeAria": "Egzekite kòmand",
     "run": "kouri",
     "keyboardHint": "// antre · kouri · ↑↓ istwa",
-    "noResponseFallback": "Pa gen repons"
+    "noResponseFallback": "Pa gen repons",
+    "noPermission": "Wòl ou pa gen pèmisyon pou egzekite kòmand RCON."
   },
   "quickCommands": {
     "players": "Jwè",

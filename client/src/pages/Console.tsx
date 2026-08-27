@@ -13,8 +13,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { rconApi, configApi, serverApi, serversApi, ApiError, type ServerInstance } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PageHeader } from '@/components/PageHeader'
+import { DisabledReason } from '@/components/DisabledReason'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
@@ -267,7 +269,17 @@ export default function Console() {
   const { toast } = useToast()
   const socket = useSocket()
   const confirm = useConfirm()
-  
+  const { can } = useAuth()
+  // POST /rcon/execute (server/routes/rcon.js) requires rcon.execute -- both
+  // the typed-command path (executeCommand) and the broadcast path
+  // (sendAnnouncement) end up calling it. can() fails OPEN when capabilities
+  // are unknown/null, same convention as every other capability check in
+  // the app -- this only ever blocks the action when the answer is a
+  // confirmed no. Guarded inside the handlers themselves, not just on the
+  // visible buttons: the command input's Enter key calls executeCommand
+  // directly, bypassing whatever the Run button's disabled state says.
+  const canExecuteRcon = can('rcon.execute')
+
   // Server Console Log state
   const [serverLogLines, setServerLogLines] = useState<string[]>([])
   const [_serverLogSize, setServerLogSize] = useState(0)
@@ -563,6 +575,7 @@ export default function Console() {
 
   const executeCommand = async () => {
     if (!command.trim()) return
+    if (!canExecuteRcon) return
 
     setLoading(true)
     try {
@@ -676,6 +689,7 @@ export default function Console() {
 
   const sendAnnouncement = async () => {
     if (!announcement.trim()) return
+    if (!canExecuteRcon) return
 
     setSendingAnnouncement(true)
     try {
@@ -1154,19 +1168,21 @@ export default function Console() {
                 onKeyDown={handleKeyDown}
                 placeholder={t('rcon.placeholder')}
                 className="pl-[5.5rem] font-mono bg-card/70 border-border/55 focus-visible:border-primary/60"
-                disabled={loading || !hasRconConfig}
+                disabled={loading || !hasRconConfig || !canExecuteRcon}
                 maxLength={2000}
                 aria-label={t('rcon.inputAria')}
               />
             </div>
-            <Button
-              onClick={executeCommand}
-              disabled={loading || !command.trim() || !hasRconConfig}
-              aria-label={t('rcon.executeAria')}
-              className="font-mono text-[11px] uppercase tracking-[0.18em]"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-3.5 h-3.5 mr-1.5" />{t('rcon.run')}</>}
-            </Button>
+            <DisabledReason reason={!canExecuteRcon ? t('rcon.noPermission') : null}>
+              <Button
+                onClick={executeCommand}
+                disabled={loading || !command.trim() || !hasRconConfig || !canExecuteRcon}
+                aria-label={t('rcon.executeAria')}
+                className="font-mono text-[11px] uppercase tracking-[0.18em]"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-3.5 h-3.5 mr-1.5" />{t('rcon.run')}</>}
+              </Button>
+            </DisabledReason>
           </div>
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
             {t('rcon.keyboardHint')}
@@ -1240,17 +1256,19 @@ export default function Console() {
                   <p className="text-xs text-muted-foreground">
                     <Trans i18nKey="broadcast.sendsVia" t={t} components={{ code: <code className="text-foreground/80" /> }} />
                   </p>
-                  <Button
-                    onClick={sendAnnouncement}
-                    disabled={sendingAnnouncement || !announcement.trim() || !hasRconConfig || rconConnected === false}
-                  >
-                    {sendingAnnouncement ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <Send className="w-4 h-4 mr-2" />
-                    )}
-                    {t('broadcast.send')}
-                  </Button>
+                  <DisabledReason reason={!canExecuteRcon ? t('rcon.noPermission') : null}>
+                    <Button
+                      onClick={sendAnnouncement}
+                      disabled={sendingAnnouncement || !announcement.trim() || !hasRconConfig || rconConnected === false || !canExecuteRcon}
+                    >
+                      {sendingAnnouncement ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <Send className="w-4 h-4 mr-2" />
+                      )}
+                      {t('broadcast.send')}
+                    </Button>
+                  </DisabledReason>
                 </div>
               </div>
             )}

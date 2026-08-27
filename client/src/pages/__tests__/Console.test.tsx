@@ -22,6 +22,23 @@ import enConsole from '../../locales/en/console.json'
 //      "Clear the log display (does not delete the server log file)" --
 //      copy is a claim, and this one is false.
 
+// This file doesn't exercise capability gating (see
+// Console.rconExecuteCapability.test.tsx for that) -- can() just needs to
+// fail open like the rest of the app so none of these pre-existing tests
+// see a newly-disabled control.
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: { id: 'u1', username: 'someone', role: 'admin', capabilities: null },
+    authEnabled: true,
+    isAuthenticated: true,
+    isLoading: false,
+    needsSetup: false,
+    logout: vi.fn(),
+    getToken: () => 'fake-token',
+    can: () => true,
+  }),
+}))
+
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
   return {
