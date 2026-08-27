@@ -3,7 +3,7 @@
     "noBridgeCommand": "This in-game action requires the bridge.command permission, which this role doesn't have.",
     "noWorldEvents": "Triggering world events requires the server.world_events permission, which this role doesn't have.",
     "noGmTools": "Spawning a vehicle requires the players.gm_tools permission, which this role doesn't have.",
-    "noGmToolsBridgeAction": "This action requires both the bridge.command and players.gm_tools permissions, which this role doesn't have."
+    "noGmToolsBridgeAction": "This action requires the players.gm_tools permission, which this role doesn't have."
   },
   "pageHeader": {
     "title": "World Map",

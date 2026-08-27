@@ -6,22 +6,28 @@ import { SocketContext } from '@/contexts/SocketContext'
 import WorldMap from '../WorldMap'
 import { panelBridgeApi, serversApi, updateApi, mapApi, type ServerInstance } from '@/lib/api'
 
-// 2026-08-27 bug-hunt: Jim's c3083d5 added setGodMode/setInvisible/setNoclip/
-// healPlayer to panelBridge.js's BRIDGE_ACTION_CAPABILITY, so those four now
-// require bridge.command AND players.gm_tools server-side -- an hour after
-// this file's own capability trace (2c6180a-era comment above canRunBridgeCommand)
-// established bridge.command ALONE as the correct gate for every passthrough
-// action on this page. WorldMap only reaches two of those four (healPlayer,
-// setGodMode -- setInvisible/setNoclip live on Players.tsx), across three
-// call sites (dossier Heal/God buttons, context-menu Heal item). Gating them
-// on bridge.command alone now OVER-offers: a role holding bridge.command but
-// not players.gm_tools sees them enabled and gets a 403 on click.
-// This asserts BOTH directions, which is the point of the fix: heal/godmode
-// must be unreachable without gm_tools, while every OTHER bridge.command-only
-// action on the page (proven here via the empty-space context menu's "Custom
-// drop…" item) must stay reachable -- over-gating the rest to require
-// gm_tools too would hide working controls for zero reason, the exact
-// failure this whole sweep exists to avoid.
+// 2026-08-27 bug-hunt: UPDATED same day per an operator ruling that reverses
+// server commit c3083d5 (also from earlier the same day). c3083d5 had made
+// healPlayer/setGodMode require bridge.command AND players.gm_tools --
+// this file originally asserted exactly that "both capabilities" shape. The
+// operator ruled bridge.command was only ever an accidental side effect of
+// these two routing through the generic PanelBridge passthrough, not a
+// deliberate second gate, and requiring it denied Technician (who holds
+// gm_tools but not bridge.command by default) the GM tools it's meant to
+// have. players.gm_tools ALONE now gates healPlayer/setGodMode server-side
+// (GM_TOOLS_ONLY_ACTIONS in panelBridge.js) -- bridge.command is
+// irrelevant to these two specifically, same as Spawn Vehicle already was.
+// WorldMap reaches two of the four GM tools (healPlayer, setGodMode --
+// setInvisible/setNoclip live on Players.tsx), across three call sites
+// (dossier Heal/God buttons, context-menu Heal item).
+// This asserts BOTH directions of the NEW rule, not just that the old one
+// is gone: lacking gm_tools (regardless of bridge.command) must leave
+// Heal/God unreachable, and holding gm_tools WITHOUT bridge.command --
+// the Technician case the ruling exists for -- must reach them. It also
+// keeps the original "unrelated bridge.command-only action stays reachable"
+// proof, now under the lacking-gm_tools role, so a gm_tools-alone gate on
+// Heal/God is shown not to accidentally require gm_tools for anything else
+// on the page.
 
 let mockCan = (_capability: string) => true
 
@@ -153,8 +159,8 @@ async function setUp(players: Array<{ name: string; x: number; y: number }>) {
   sendCommand.mockResolvedValue({ success: true, data: {} } as Awaited<ReturnType<typeof panelBridgeApi.sendCommand>>)
 }
 
-describe('WorldMap.tsx: healPlayer/setGodMode require bridge.command AND players.gm_tools (Jim c3083d5), not bridge.command alone', () => {
-  it('disables the dossier Heal and God buttons, and clicking them never calls the API, when the role holds bridge.command but not players.gm_tools', async () => {
+describe('WorldMap.tsx: healPlayer/setGodMode require players.gm_tools ALONE (2026-08-27 operator ruling reverses Jim c3083d5)', () => {
+  it('disables the dossier Heal and God buttons, and clicking them never calls the API, when the role lacks players.gm_tools even while holding bridge.command', async () => {
     mockCan = (capability) => capability !== 'players.gm_tools'
     await setUp([{ name: 'Kate', x: 10000, y: 10000 }])
 
@@ -177,7 +183,7 @@ describe('WorldMap.tsx: healPlayer/setGodMode require bridge.command AND players
     })
   })
 
-  it('leaves an unrelated bridge.command-only action (Custom drop… on the empty-space menu) reachable under the same role -- proves this is not an over-gate', async () => {
+  it('leaves an unrelated bridge.command-only action (Custom drop… on the empty-space menu) reachable under the same role -- proves the gm_tools gate on Heal/God is not an over-gate', async () => {
     mockCan = (capability) => capability !== 'players.gm_tools'
     await setUp([])
 
@@ -194,8 +200,8 @@ describe('WorldMap.tsx: healPlayer/setGodMode require bridge.command AND players
     expect(customDrop).not.toBeDisabled()
   })
 
-  it('enables the dossier Heal and God buttons, and Heal actually calls healPlayer, when the role holds both bridge.command and players.gm_tools', async () => {
-    mockCan = () => true
+  it('enables the dossier Heal and God buttons, and Heal actually calls healPlayer, when the role holds players.gm_tools WITHOUT bridge.command -- the Technician case this ruling exists for', async () => {
+    mockCan = (capability) => capability !== 'bridge.command'
     await setUp([{ name: 'Kate', x: 10000, y: 10000 }])
 
     renderWorldMap()

@@ -3,7 +3,7 @@
     "noBridgeCommand": "Cette action en jeu nécessite la permission bridge.command, que ce rôle ne possède pas.",
     "noWorldEvents": "Déclencher des événements mondiaux nécessite la permission server.world_events, que ce rôle ne possède pas.",
     "noGmTools": "Faire apparaître un véhicule nécessite la permission players.gm_tools, que ce rôle ne possède pas.",
-    "noGmToolsBridgeAction": "Cette action nécessite à la fois les permissions bridge.command et players.gm_tools, que ce rôle ne possède pas."
+    "noGmToolsBridgeAction": "Cette action nécessite la permission players.gm_tools, que ce rôle ne possède pas."
   },
   "pageHeader": {
     "title": "Carte du monde",

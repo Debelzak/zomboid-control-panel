@@ -606,22 +606,23 @@ export default function WorldMap() {
   // Only addVehicleAt is genuinely players.gm_tools alone: it hits a
   // dedicated route (POST /players/add-vehicle-at) instead of the passthrough.
   //
-  // setGodMode/healPlayer are a THIRD shape, and it moved under us: Jim's
-  // c3083d5 (2026-08-27, an hour after this file's own capability trace)
-  // added them to panelBridge.js's BRIDGE_ACTION_CAPABILITY alongside the
-  // four moderation actions, so they now require bridge.command AND
-  // players.gm_tools server-side -- gating on bridge.command alone (as
-  // every other passthrough action on this page correctly does) now
-  // over-offers these two specifically. See canGmToolsBridgeAction below;
-  // do NOT widen this to any other action on the page -- BRIDGE_ACTION_CAPABILITY
-  // is the authoritative list and everything not on it stays bridge.command
+  // setGodMode/healPlayer are a THIRD shape: as of an operator ruling
+  // (bug-hunt-2026-08-27, reverses server commit c3083d5 from earlier the
+  // same day) players.gm_tools ALONE gates them, same as Spawn Vehicle
+  // below -- bridge.command is NOT required despite routing through the
+  // generic PanelBridge passthrough. c3083d5 had briefly made it "gm_tools
+  // AND bridge.command"; the operator ruled bridge.command was only ever an
+  // accidental side effect of these two routing through the passthrough,
+  // not a deliberate second gate, and requiring it would deny Technician
+  // (who holds gm_tools but not bridge.command by default) the GM tools
+  // it's meant to have. See server/routes/panelBridge.js's
+  // BRIDGE_ACTION_CAPABILITY / GM_TOOLS_ONLY_ACTIONS. Do NOT widen this to
+  // any other action on the page -- everything else stays bridge.command
   // alone, same reasoning as always: gating on a capability a route doesn't
   // actually check hides a working control.
   const canRunBridgeCommand = can('bridge.command')
   const canWorldEvents = can('server.world_events')
   const canGmTools = can('players.gm_tools')
-  // setGodMode / healPlayer specifically -- see comment above.
-  const canGmToolsBridgeAction = canRunBridgeCommand && canGmTools
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapWrapperRef = useRef<HTMLDivElement>(null)
@@ -3103,12 +3104,12 @@ export default function WorldMap() {
                 )}
               </div>
               <div className="px-2 py-1.5 border-t border-border/40 bg-muted/20 flex gap-1">
-                <DisabledReason reason={!canGmToolsBridgeAction ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1">
+                <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1">
                   <Button
                     size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
-                    disabled={actionLoading !== null || !canGmToolsBridgeAction}
+                    disabled={actionLoading !== null || !canGmTools}
                     onClick={() => {
-                      if (!canGmToolsBridgeAction) return
+                      if (!canGmTools) return
                       setActionLoading('heal-card')
                       panelBridgeApi.sendCommand('healPlayer', { username: selectedPlayer.username })
                         .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: selectedPlayer.username }) }); fetchPlayerPositions() })
@@ -3119,12 +3120,12 @@ export default function WorldMap() {
                     <Heart className="w-3 h-3" /> {t('dossier.heal')}
                   </Button>
                 </DisabledReason>
-                <DisabledReason reason={!canGmToolsBridgeAction ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1">
+                <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1">
                   <Button
                     size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
-                    disabled={actionLoading !== null || !canGmToolsBridgeAction}
+                    disabled={actionLoading !== null || !canGmTools}
                     onClick={() => {
-                      if (!canGmToolsBridgeAction) return
+                      if (!canGmTools) return
                       setActionLoading('god-card')
                       panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
                         .then((response) => {
@@ -3235,11 +3236,11 @@ export default function WorldMap() {
                 <ContextMenuItem
                   icon={<Heart className="w-3.5 h-3.5 text-emerald-400" />}
                   label={t('contextMenu.healPlayer')}
-                  description={!canGmToolsBridgeAction ? t('permissions.noGmToolsBridgeAction') : undefined}
+                  description={!canGmTools ? t('permissions.noGmToolsBridgeAction') : undefined}
                   tone="success"
-                  disabled={!canGmToolsBridgeAction}
+                  disabled={!canGmTools}
                   onClick={() => {
-                    if (!canGmToolsBridgeAction) return
+                    if (!canGmTools) return
                     panelBridgeApi.sendCommand('healPlayer', { username: contextMenu.player!.username })
                       .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: contextMenu.player!.username }) }); fetchPlayerPositions() })
                       .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))

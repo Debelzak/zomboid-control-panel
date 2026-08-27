@@ -3,7 +3,7 @@
     "noBridgeCommand": "此游戏内操作需要 bridge.command 权限，而该角色没有此权限。",
     "noWorldEvents": "触发世界事件需要 server.world_events 权限，而该角色没有此权限。",
     "noGmTools": "生成载具需要 players.gm_tools 权限，而该角色没有此权限。",
-    "noGmToolsBridgeAction": "此操作同时需要 bridge.command 和 players.gm_tools 权限，而该角色没有这些权限。"
+    "noGmToolsBridgeAction": "此操作需要 players.gm_tools 权限，而该角色没有此权限。"
   },
   "pageHeader": {
     "title": "世界地图",
