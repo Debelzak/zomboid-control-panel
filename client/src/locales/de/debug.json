@@ -3,6 +3,10 @@
     "title": "Debug & Protokolle",
     "description": "Live-Diagnose, aktueller Verlauf und Umgebungsdetails für dieses Panel"
   },
+  "permissionDenied": {
+    "title": "Du kannst keine Panel-Diagnosen einsehen",
+    "description": "Die Rolle deines Kontos enthält nicht das Recht „Panel-Diagnose einsehen“. Bitte einen Administrator, es zu vergeben, wenn du Zugriff auf diese Seite brauchst."
+  },
   "headerActions": {
     "bundling": "Bündeln…",
     "supportBundleZip": "Support-Paket (.zip)",

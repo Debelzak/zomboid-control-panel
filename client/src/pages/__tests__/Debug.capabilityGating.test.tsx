@@ -430,3 +430,37 @@ describe('Debug.tsx: the one automated fix with no API call is never gated', () 
     await waitFor(() => expect(screen.getByRole('tab', { name: /crash/i })).toHaveAttribute('aria-selected', 'true'))
   })
 })
+
+// god (2026-08-27): "EVERY read endpoint in debug.js requires
+// diagnostics.manage ... SO TODAY A USER WITHOUT diagnostics.manage OPENS
+// DEBUG AND GETS A WALL OF 403s." Per-fix gating (above) answers "which
+// buttons work"; this answers "why is this page broken" -- a real 403 from
+// the mount-time diagnostics fetch replaces the whole Tabs UI with one
+// clean permission-denied state, same precedent as Users.tsx/
+// RolesPermissions.tsx/OidcSettings.tsx (react to the server's actual
+// answer, not a client-side can() guess).
+describe('Debug.tsx: a 403 from the diagnostics fetch replaces the whole page, not just one tab', () => {
+  it('shows the permission-denied empty state and never renders the Tabs UI when /debug/diagnostics returns 403', async () => {
+    mockCan = () => true
+    mockedApiFetch.mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/debug/diagnostics')) return jsonResponse({ error: 'Forbidden' }, false, 403)
+      return jsonResponse({})
+    })
+
+    renderDebug()
+
+    expect(await screen.findByText(/can't view debug diagnostics/i)).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /view crash logs/i })).not.toBeInTheDocument()
+  })
+
+  it('renders the normal Tabs UI (not the permission-denied state) when /debug/diagnostics returns 200', async () => {
+    mockCan = () => true
+    setUpApiFetch()
+
+    renderDebug()
+
+    expect(await screen.findByRole('tablist')).toBeInTheDocument()
+    expect(screen.queryByText(/can't view debug diagnostics/i)).not.toBeInTheDocument()
+  })
+})

@@ -3,6 +3,10 @@
     "title": "Depuración y registros",
     "description": "Diagnósticos en tiempo real, historial reciente y detalles del entorno de este panel"
   },
+  "permissionDenied": {
+    "title": "No se puede ver el diagnóstico del panel",
+    "description": "El rol de tu cuenta no incluye \"Ver diagnóstico del panel\". Pide a un administrador que lo conceda si necesitas acceso a esta página."
+  },
   "headerActions": {
     "bundling": "Generando paquete…",
     "supportBundleZip": "Paquete de soporte (.zip)",

@@ -3,6 +3,10 @@
     "title": "Debogaj & Jounal",
     "description": "Dyagnostik an tan reyèl, istorik resan, ak detay anviwònman pou panèl sa a"
   },
+  "permissionDenied": {
+    "title": "Ou pa ka gade dyagnostik panèl la",
+    "description": "Wòl kont ou a pa gen \"Gade dyagnostik panèl la\". Mande yon administratè bay ou aksè sa a si ou bezwen l."
+  },
   "headerActions": {
     "bundling": "Ap gwoupe…",
     "supportBundleZip": "Pakè Sipò (.zip)",

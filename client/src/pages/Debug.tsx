@@ -53,6 +53,7 @@ import {
   PlayCircle,
   Archive,
   FileDown,
+  ShieldAlert,
 } from "lucide-react";
 import {
   Card,
@@ -779,6 +780,15 @@ export default function Debug() {
   );
   const [refreshingDiagnostics, setRefreshingDiagnostics] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  // Every read endpoint this page hits requires diagnostics.manage (server/
+  // routes/debug.js's file-level comment says so explicitly) -- so a role
+  // that lacks it doesn't get a partially-broken page, it gets a wall of
+  // 403s across every tab. Answer that with one clean page-level state
+  // instead of per-tab error banners, same precedent as Users.tsx/
+  // RolesPermissions.tsx/OidcSettings.tsx (a real 403 from the mount-time
+  // fetch, not a client-side can() guess).
+  const [diagnosticsPermissionDenied, setDiagnosticsPermissionDenied] =
+    useState(false);
   const [diagnosticsHideOk, setDiagnosticsHideOk] = useState(false);
   const [fixingDiagnosticsCheckId, setFixingDiagnosticsCheckId] = useState<
     string | null
@@ -932,7 +942,12 @@ export default function Debug() {
     setRefreshingDiagnostics(true);
     try {
       const res = await authFetch("/api/debug/diagnostics");
+      if (res.status === 403) {
+        setDiagnosticsPermissionDenied(true);
+        return;
+      }
       if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
+      setDiagnosticsPermissionDenied(false);
       const data = await res.json();
       if (data?.checks) {
         setDiagnostics(data);
@@ -2356,6 +2371,13 @@ export default function Debug() {
         }
       />
 
+      {diagnosticsPermissionDenied ? (
+        <EmptyState
+          icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
+          title={t("permissionDenied.title")}
+          description={t("permissionDenied.description")}
+        />
+      ) : (
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
@@ -6132,6 +6154,7 @@ export default function Debug() {
           </Card>
         </TabsContent>
       </Tabs>
+      )}
     </div>
   );
 }

@@ -3,6 +3,10 @@
     "title": "调试与日志",
     "description": "本面板的实时诊断、近期历史记录及环境详情"
   },
+  "permissionDenied": {
+    "title": "无法查看面板诊断",
+    "description": "当前账户的角色未包含「查看面板诊断」权限。如需访问此页面，请联系管理员为该账户授予此权限。"
+  },
   "headerActions": {
     "bundling": "正在打包……",
     "supportBundleZip": "支持包（.zip）",

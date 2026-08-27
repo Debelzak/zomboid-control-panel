@@ -3,6 +3,10 @@
     "title": "Debug & Logs",
     "description": "Live diagnostics, recent history, and environment details for this panel"
   },
+  "permissionDenied": {
+    "title": "You can't view debug diagnostics",
+    "description": "Your account's role doesn't include \"View panel diagnostics\". Ask an administrator to grant it if you need access to this page."
+  },
   "headerActions": {
     "bundling": "Bundling…",
     "supportBundleZip": "Support Bundle (.zip)",
