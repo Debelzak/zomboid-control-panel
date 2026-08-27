@@ -192,10 +192,30 @@ async function fetchViaCurl(url) {
   };
 }
 
-// 42.19.0 was removed from map.projectzomboid.com - /maps/42.19.0/base/ now
-// 404s in its entirety, so the previous fallback could not serve a single tile.
-// It is still listed in the build list, so "listed" is not evidence a build is
-// still rendered; only the fallback needs to be a build that actually exists.
+// Verified live against tiles.pzmap.org (the host this file actually
+// queries -- see PZ_TILES_ROOT below), 2026-08-26: 42.19.0's base/
+// map_info.json and base/layer0.dzi both return 200 with geometry
+// BYTE-IDENTICAL to 42.20.0's (same width/height/x0/y0/sqr, even the same
+// git_commit) -- upstream appears to serve one current render under both
+// version tags for the base isometric layer today. Its base_top (top-down)
+// layer, separately, DOES 404 (Cloudflare R2 "object not found"), so
+// 42.19.0 is not uniformly gone, only partially, and not the way the prior
+// version of this comment claimed.
+//
+// That prior claim ("42.19.0 was removed from map.projectzomboid.com -
+// /maps/42.19.0/base/ now 404s in its entirety") was never evidence
+// specific to 42.19.0: /maps/42.20.0/base/ 404s identically on that same
+// legacy domain (which 308-redirects to pzmap.org) -- the whole /maps/
+// URL scheme there is dead for every build, and it is not the host this
+// code queries in the first place. "Listed is not evidence rendered"
+// remains a sound general principle; it just wasn't what was actually
+// wrong here.
+//
+// This is still just a hardcoded last-resort literal -- getB42Map() above
+// tries to dynamically resolve the CURRENT build first (/api/builds/default,
+// then /api/builds) and only reaches this constant if that entire mechanism
+// fails. Re-verify before trusting the numbers below; the 42.19.0/42.20.0
+// convergence observed today may not be permanent.
 const B42_DIR_FALLBACK = "42.20.0";
 const B42_DIR_TTL_MS = 24 * 60 * 60 * 1000; // re-resolve at most once per 24 h
 const B42_DIR_RETRY_MS = 5 * 60 * 1000; // ...but retry a failed resolve sooner
@@ -220,14 +240,22 @@ const B42_GEOMETRY_FALLBACK = {
   scale: 1,
 };
 
-// The projection origin is NOT derivable from the image dimensions: 42.20.0 is
-// exactly 2x the height of 42.19.0 but 4032 px wider, because the renderer
-// crops/pads each build independently. The map service (tiles.pzmap.org)
-// publishes the real origin per build in base/map_info.json and its own viewer projects with
+// The projection origin is NOT derivable from the image dimensions: the
+// renderer can crop/pad each build independently, so two builds with the
+// same width/height are not guaranteed to share an origin, and a build
+// with a different width/height is not guaranteed to have a
+// proportionally-scaled one either. (An earlier version of this comment
+// cited 42.19.0 vs 42.20.0 as a live example of differing dimensions and a
+// derived pixel-offset consequence; verified live 2026-08-26 that the two
+// currently report IDENTICAL width/height/x0/y0/sqr, so that specific pair
+// no longer demonstrates the risk -- the risk itself is unrelated to
+// whether any two particular builds happen to differ today.) The map
+// service (tiles.pzmap.org) publishes the real origin per build in
+// base/map_info.json and its own viewer projects with
 //   imageX = (x0 + (sx - sy) * sqr / 2) / scale
 //   imageY = (y0 + (sx + sy) * sqr / 4) / scale
-// where scale = 1 << skip. Scaling a previous build's origin by the width
-// ratio instead puts markers ~2300 px (~36 tiles) west of where they are.
+// where scale = 1 << skip. Always read a new fallback build's origin from
+// its own map_info.json; never derive it from another build's origin.
 async function fetchMapProjection(directory) {
   try {
     // JSON descriptor path — Node's own TLS stack is challenged here, curl
@@ -247,10 +275,13 @@ async function fetchMapProjection(directory) {
     return null;
   }
 }
-// Map builds are not all rendered at the same resolution: 42.19.0 is
-// TileSize=1024 / 1157312x509520, while 42.20.0 doubled to TileSize=2048 /
-// 2318656x1019040. Nothing about the geometry can be assumed, so read it from
-// the build's own DZI descriptor and hand it to the client.
+// Map builds are not guaranteed to share a resolution -- verified live
+// 2026-08-26 that 42.19.0 and 42.20.0 currently BOTH report TileSize=2048 /
+// 2318656x1019040 (identical; an earlier version of this comment claimed
+// 42.19.0 was TileSize=1024 / 1157312x509520, which does not match what
+// tiles.pzmap.org serves today). Whatever the current numbers, nothing
+// about the geometry can be assumed going forward, so read it from the
+// build's own DZI descriptor and hand it to the client.
 async function fetchMapGeometry(directory) {
   try {
     // XML descriptor path — same Cloudflare-vs-Node's-TLS-stack situation as
@@ -384,9 +415,14 @@ async function discoverRenderedMaxLevel(directory, geometry) {
 }
 
 // The top-down (base_top) view is rendered separately from the isometric base
-// and does not use the same image format across builds: 42.19.0 publishes webp
-// while 42.20.0 publishes jpg. Requesting the wrong extension is a hard 404, so
-// read the format from the build's own base_top descriptor.
+// and is not guaranteed to use the same image format across builds -- verified
+// live 2026-08-26 that 42.20.0 publishes jpg; 42.19.0's base_top/layer0.dzi
+// now 404s entirely (Cloudflare R2 "object not found", unlike its still-live
+// base/ tree), so its format can no longer be confirmed at all. An earlier
+// version of this comment claimed it was webp -- unverifiable today, may
+// have been true once. Requesting the wrong extension is a hard 404, so
+// read the format from the build's own base_top descriptor rather than
+// assuming one.
 const TOP_FORMAT_FALLBACK = "jpg";
 const TOP_CONTENT_TYPES = {
   webp: "image/webp",
