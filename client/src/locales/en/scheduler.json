@@ -64,6 +64,7 @@
     "customExpressionPlaceholder": "e.g., 0 */2 * * *",
     "cronExpressionAria": "Cron expression",
     "cronFormatHint": "Format: minute hour day month weekday",
+    "cronValidExpression": "Valid expression",
     "commandLabel": "Command",
     "commandSelectPlaceholder": "Select common command...",
     "commandCustomPlaceholder": "Or enter custom command",

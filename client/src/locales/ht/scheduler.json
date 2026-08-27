@@ -64,6 +64,7 @@
     "customExpressionPlaceholder": "e.g., 0 */2 * * *",
     "cronExpressionAria": "Ekspresyon cron",
     "cronFormatHint": "Fòma: minit èdtan jou mwa jou semèn",
+    "cronValidExpression": "Ekspresyon valid",
     "commandLabel": "Kòmand",
     "commandSelectPlaceholder": "Chwazi kòmand komen...",
     "commandCustomPlaceholder": "Oswa antre kòmand pèsonalize",

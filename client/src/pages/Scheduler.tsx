@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import {
@@ -145,6 +145,13 @@ export default function Scheduler() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null)
 
+  // Advisory-only preview of the custom cron field via POST /validate-cron --
+  // never gates Save. The server re-validates independently and is the real
+  // source of truth, so a failed/slow preview call must never block or
+  // second-guess what create/update will actually decide.
+  const [cronValidation, setCronValidation] = useState<{ valid: boolean; error?: string } | null>(null)
+  const cronValidationIdRef = useRef(0)
+
   // Simple Scheduler State
   const [scheduleMode, setScheduleMode] = useState<'simple' | 'advanced'>('simple')
   const [simpleIntervalType, setSimpleIntervalType] = useState<'hourly' | 'daily' | 'weekly' | 'interval'>('daily')
@@ -197,6 +204,40 @@ export default function Scheduler() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Preview the custom cron field as the operator types, so an invalid
+  // expression is caught here instead of only on Save. Advanced-only: the
+  // simple builder always produces a cron string it already knows is valid,
+  // so validating it too would just be an extra request for no signal.
+  // Debounced via the effect's own cleanup (a new keystroke cancels the
+  // still-pending timer before it fires) -- but that alone doesn't cover a
+  // slower-typed request resolving AFTER a faster-typed later one, so the
+  // generation counter below still gates every state update. Same
+  // shape as the fetch-race hunt's loadIdRef fixes tonight, applied to a
+  // debounce instead of a mount-triggered fetch.
+  useEffect(() => {
+    if (scheduleMode !== 'advanced' || !newTaskCron.trim()) {
+      setCronValidation(null)
+      return
+    }
+    const validationId = ++cronValidationIdRef.current
+    const timer = setTimeout(() => {
+      schedulerApi.validateCron(newTaskCron)
+        .then((result) => {
+          if (cronValidationIdRef.current !== validationId) return
+          setCronValidation(result)
+        })
+        // Advisory only -- a failed preview call says nothing about whether
+        // the expression is actually valid, so it clears any stale verdict
+        // rather than showing a wrong one. Save still works either way: the
+        // server validates independently at submit time.
+        .catch(() => {
+          if (cronValidationIdRef.current !== validationId) return
+          setCronValidation(null)
+        })
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [newTaskCron, scheduleMode])
 
   // Poll server status so Manual Restart / Quick Broadcasts stay accurate.
   // Skipped while the tab is hidden to avoid pointless work in background tabs.
@@ -724,6 +765,19 @@ export default function Scheduler() {
                     <p id="cron-format-hint" className="text-xs text-muted-foreground">
                       {t('dialog.cronFormatHint')}
                     </p>
+                    {cronValidation && (
+                      <p
+                        className={`flex items-center gap-1.5 text-xs ${cronValidation.valid ? 'text-primary' : 'text-destructive'}`}
+                        aria-live="polite"
+                      >
+                        {cronValidation.valid ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        )}
+                        {cronValidation.valid ? t('dialog.cronValidExpression') : cronValidation.error}
+                      </p>
+                    )}
                   </TabsContent>
                 </Tabs>
               </div>

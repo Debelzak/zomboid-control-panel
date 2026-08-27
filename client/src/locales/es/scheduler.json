@@ -64,6 +64,7 @@
     "customExpressionPlaceholder": "p. ej., 0 */2 * * *",
     "cronExpressionAria": "Expresión cron",
     "cronFormatHint": "Formato: minuto hora día mes día de la semana",
+    "cronValidExpression": "Expresión válida",
     "commandLabel": "Comando",
     "commandSelectPlaceholder": "Seleccionar comando común…",
     "commandCustomPlaceholder": "O introducir un comando personalizado",
