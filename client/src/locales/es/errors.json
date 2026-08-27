@@ -50,6 +50,8 @@
   "FILE_NOT_FOUND": "No se encontró el archivo",
   "RAW_CONTENT_STRING_REQUIRED": "Se requiere una cadena de contenido",
   "RAW_CONTENT_TOO_LARGE": "Contenido demasiado grande (máximo 512 KB)",
+  "RAW_INI_SECRET_UNRESOLVABLE": "No se pudo guardar de forma segura: el valor enmascarado de la línea «{{key}}» no se pudo emparejar con un único valor real. No se escribió nada.",
+  "RAW_INI_SECRET_LINE_REMOVED": "Se eliminó la línea «{{key}}», pero contiene un secreto real que no se puede descartar en silencio. Para borrarlo, escribe «{{key}}=» explícitamente en lugar de eliminar la línea, o usa el editor estructurado.",
   "RESTORE_INVALID_EXTENSION": "Extensión de archivo de copia de seguridad no válida",
   "RESTORE_BACKUP_NOT_FOUND": "No se encontró la copia de seguridad",
   "RESTORE_INVALID_FILENAME": "Nombre de archivo de copia de seguridad no válido",

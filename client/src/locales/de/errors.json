@@ -50,6 +50,8 @@
   "FILE_NOT_FOUND": "Datei nicht gefunden",
   "RAW_CONTENT_STRING_REQUIRED": "Inhalt (String) erforderlich",
   "RAW_CONTENT_TOO_LARGE": "Inhalt zu groß (maximal 512 KB)",
+  "RAW_INI_SECRET_UNRESOLVABLE": "Konnte nicht sicher gespeichert werden: Der maskierte Wert der Zeile „{{key}}“ konnte keinem eindeutigen echten Wert zugeordnet werden. Es wurde nichts geschrieben.",
+  "RAW_INI_SECRET_LINE_REMOVED": "Die Zeile „{{key}}“ wurde entfernt, enthält aber ein echtes Passwort, das nicht stillschweigend verworfen werden kann. Um es zu löschen, schreibe explizit „{{key}}=“, statt die Zeile zu entfernen, oder verwende den strukturierten Editor.",
   "RESTORE_INVALID_EXTENSION": "Ungültige Dateiendung für das Backup",
   "RESTORE_BACKUP_NOT_FOUND": "Backup nicht gefunden",
   "RESTORE_INVALID_FILENAME": "Ungültiger Backup-Dateiname",

@@ -12,12 +12,14 @@ import {
   omitSensitiveFields,
   maskSensitiveObject,
   isMaskedSecret,
+  maskSecretValue,
 } from "../utils/sanitize.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import {
   getBackupPath,
   createBackup,
   backupWarningFor,
+  writeIniWithBackup,
 } from "../utils/configBackup.js";
 import { escapeRegExp } from "../utils/regex.js";
 import { confineToRoots } from "../utils/browseRoots.js";
@@ -430,6 +432,98 @@ export function stripSensitiveIniLines(content) {
     return !SENSITIVE_FIELD_RE.test(key);
   });
   return kept.join("\n");
+}
+
+// GET /raw/:type=ini's read-side counterpart to the structured /ini route's
+// maskSensitiveObject(): mask a secret-shaped `Key=Value` line's VALUE in
+// place, byte-for-byte otherwise (everything up to and including the `=`,
+// comments, blank lines, formatting). Unlike stripSensitiveIniLines() above,
+// this can't drop the line -- the raw editor's PUT round-trips this exact
+// text back, and reconcileMaskedIniLines() below needs the line to still be
+// there (by key) to know what it's reconciling against.
+export function maskSensitiveIniLines(content) {
+  const lines = content.split(/\r?\n/);
+  const masked = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      return line;
+    }
+    const eqIndex = line.indexOf("=");
+    if (eqIndex <= 0) return line;
+    const key = line.substring(0, eqIndex).trim();
+    const value = line.substring(eqIndex + 1);
+    if (!SENSITIVE_FIELD_RE.test(key) || !value) return line;
+    return `${line.substring(0, eqIndex + 1)}${maskSecretValue(value)}`;
+  });
+  return masked.join("\n");
+}
+
+// PUT /raw/:type=ini's write-side counterpart. Unlike the structured /ini
+// route, the raw editor round-trips ONE FULL TEXT BLOB on every save with no
+// per-line diff against what the operator actually touched -- Save always
+// resubmits the whole thing, regardless of which line changed. So masking
+// the read alone would let ANY raw-mode save (editing an unrelated line)
+// silently overwrite a live secret with the "••••••••xxxx"
+// placeholder text the moment that key's line comes back unchanged.
+//
+// This reconciles by KEY, never by line position -- reordering lines or
+// inserting a new one above a secret must not misalign the match -- and it
+// REFUSES the entire save (returns ok:false, writes nothing) the instant a
+// masked value can't be resolved unambiguously, rather than guessing or
+// best-effort patching part of the file. A rejected save costs the operator
+// one retry; a half-reconciled write costs them their live server config,
+// which is a strictly worse failure than the secret leak this exists to
+// close. Three ways a masked line fails to resolve, all refused the same
+// way: the key doesn't exist in the live file any more; the key exists more
+// than once in either the live file or the incoming submission (which one
+// would even be "the" secret to restore?); or -- the case a naive line-diff
+// would miss entirely -- the key existed live with a real value but is
+// ABSENT from the incoming content altogether, meaning the operator deleted
+// a line that reads as bullets, quite possibly without realizing it was a
+// real credential. All four are treated as "can't safely tell what the
+// operator intended" rather than silently picking a side.
+export function reconcileMaskedIniLines(incomingContent, liveContent) {
+  const indexIniLines = (text) => {
+    const lines = text.split(/\r?\n/);
+    const byKey = new Map();
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) return;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex <= 0) return;
+      const key = trimmed.substring(0, eqIndex).trim();
+      const value = trimmed.substring(eqIndex + 1);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push({ index, line, value });
+    });
+    return byKey;
+  };
+
+  const incomingByKey = indexIniLines(incomingContent);
+  const liveByKey = indexIniLines(liveContent);
+  const outLines = incomingContent.split(/\r?\n/);
+
+  for (const [key, entries] of incomingByKey) {
+    if (!SENSITIVE_FIELD_RE.test(key)) continue;
+    const maskedEntries = entries.filter((e) => isMaskedSecret(e.value));
+    if (maskedEntries.length === 0) continue;
+
+    const liveEntries = liveByKey.get(key) || [];
+    if (maskedEntries.length > 1 || liveEntries.length !== 1) {
+      return { ok: false, reason: "unresolvable", key };
+    }
+    outLines[maskedEntries[0].index] = liveEntries[0].line;
+  }
+
+  for (const [key, liveEntries] of liveByKey) {
+    if (!SENSITIVE_FIELD_RE.test(key)) continue;
+    if (liveEntries.length !== 1 || !liveEntries[0].value) continue;
+    if (!incomingByKey.has(key)) {
+      return { ok: false, reason: "removed", key };
+    }
+  }
+
+  return { ok: true, content: outLines.join("\n") };
 }
 
 // Convert object back to INI format
@@ -1739,7 +1833,10 @@ router.get("/raw/:type", async (req, res) => {
     }
 
     const content = fs.readFileSync(filePath, "utf-8");
-    res.json({ content, filename: fileMap[type] });
+    res.json({
+      content: type === "ini" ? maskSensitiveIniLines(content) : content,
+      filename: fileMap[type],
+    });
   } catch (error) {
     log.error("Failed to read raw file:", error);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -1786,13 +1883,47 @@ router.put("/raw/:type", async (req, res) => {
     const filePath = path.join(configPath, fileMap[type]);
 
     let backupWarning = null;
+    let reconcileFailure = null;
     await withFileLock(filePath, async () => {
-      if (fs.existsSync(filePath)) {
-        backupWarning = backupWarningFor(await createBackup(configPath, fileMap[type]));
+      let contentToWrite = content;
+
+      // Only the ini type is Key=Value text that GET /raw ever masks --
+      // sandbox/spawnpoints/spawnregions are Lua table syntax, not INI
+      // lines, so running line-based reconciliation on them would at best
+      // no-op and at worst corrupt them. SandboxVars also has no RCON
+      // field to protect in the first place.
+      if (type === "ini" && fs.existsSync(filePath)) {
+        const liveContent = fs.readFileSync(filePath, "utf-8");
+        const reconciled = reconcileMaskedIniLines(content, liveContent);
+        if (!reconciled.ok) {
+          reconcileFailure = reconciled;
+          return;
+        }
+        contentToWrite = reconciled.content;
       }
 
-      writeFileAtomic(filePath, content, "utf-8");
+      if (type === "ini") {
+        backupWarning = backupWarningFor(await writeIniWithBackup(filePath, contentToWrite));
+      } else {
+        if (fs.existsSync(filePath)) {
+          backupWarning = backupWarningFor(await createBackup(configPath, fileMap[type]));
+        }
+        writeFileAtomic(filePath, contentToWrite, "utf-8");
+      }
     });
+
+    if (reconcileFailure) {
+      const isRemoved = reconcileFailure.reason === "removed";
+      return res.status(400).json({
+        error: isRemoved
+          ? `The "${reconcileFailure.key}" line was removed, but it holds a live secret that can't be silently dropped. To clear it, write "${reconcileFailure.key}=" explicitly instead of deleting the line, or use the structured editor.`
+          : `Could not safely save: the "${reconcileFailure.key}" line's masked value could not be matched back to exactly one live value. Nothing was written.`,
+        code: isRemoved
+          ? ErrorCode.RAW_INI_SECRET_LINE_REMOVED
+          : ErrorCode.RAW_INI_SECRET_UNRESOLVABLE,
+        params: sanitizeErrorParams({ key: reconcileFailure.key }),
+      });
+    }
 
     log.info(`Saved raw file: ${fileMap[type]}`);
     res.json({

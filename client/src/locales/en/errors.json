@@ -50,6 +50,8 @@
   "FILE_NOT_FOUND": "File not found",
   "RAW_CONTENT_STRING_REQUIRED": "Content string required",
   "RAW_CONTENT_TOO_LARGE": "Content too large (max 512KB)",
+  "RAW_INI_SECRET_UNRESOLVABLE": "Could not safely save: the \"{{key}}\" line's masked value could not be matched back to exactly one live value. Nothing was written.",
+  "RAW_INI_SECRET_LINE_REMOVED": "The \"{{key}}\" line was removed, but it holds a live secret that can't be silently dropped. To clear it, write \"{{key}}=\" explicitly instead of deleting the line, or use the structured editor.",
   "RESTORE_INVALID_EXTENSION": "Invalid backup file extension",
   "RESTORE_BACKUP_NOT_FOUND": "Backup not found",
   "RESTORE_INVALID_FILENAME": "Invalid backup filename",

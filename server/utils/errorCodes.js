@@ -225,6 +225,18 @@ export const ErrorCode = Object.freeze({
   /** server/routes/serverFiles.js -- PUT /raw/:type, `content` exceeds
    * 512KB. */
   RAW_CONTENT_TOO_LARGE: "RAW_CONTENT_TOO_LARGE",
+  /** server/routes/serverFiles.js -- PUT /raw/ini, a secret-shaped line
+   * (e.g. RCONPassword) came back masked but reconcileMaskedIniLines()
+   * couldn't match it to exactly one live line to restore (key missing, or
+   * the key appears more than once in either the live file or the
+   * submission). Refused rather than guessed; nothing was written. */
+  RAW_INI_SECRET_UNRESOLVABLE: "RAW_INI_SECRET_UNRESOLVABLE",
+  /** server/routes/serverFiles.js -- PUT /raw/ini, a secret-shaped line that
+   * held a real value live was entirely removed from the submitted content
+   * (not just masked-and-unchanged). Refused rather than silently dropping
+   * or silently restoring a credential the operator may not have realized
+   * was real. */
+  RAW_INI_SECRET_LINE_REMOVED: "RAW_INI_SECRET_LINE_REMOVED",
   /** server/routes/serverFiles.js -- POST /restore/:filename, sanitized
    * filename doesn't end in .bak. */
   RESTORE_INVALID_EXTENSION: "RESTORE_INVALID_EXTENSION",

@@ -50,6 +50,8 @@
   "FILE_NOT_FOUND": "未找到文件",
   "RAW_CONTENT_STRING_REQUIRED": "需要内容字符串",
   "RAW_CONTENT_TOO_LARGE": "内容过大（最大 512KB）",
+  "RAW_INI_SECRET_UNRESOLVABLE": "无法安全保存：“{{key}}”这一行的掩码值无法唯一匹配到实际值，未写入任何内容。",
+  "RAW_INI_SECRET_LINE_REMOVED": "“{{key}}”这一行已被删除，但它保存着一个真实的密钥，不能被静默丢弃。如需清空它，请显式写入“{{key}}=”，而不是删除整行，或使用结构化编辑器。",
   "RESTORE_INVALID_EXTENSION": "备份文件扩展名无效",
   "RESTORE_BACKUP_NOT_FOUND": "未找到备份",
   "RESTORE_INVALID_FILENAME": "备份文件名无效",

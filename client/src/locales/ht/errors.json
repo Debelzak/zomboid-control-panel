@@ -50,6 +50,8 @@
   "FILE_NOT_FOUND": "Dosye pa jwenn",
   "RAW_CONTENT_STRING_REQUIRED": "Kontni tèks obligatwa",
   "RAW_CONTENT_TOO_LARGE": "Kontni twò gwo (maksimòm 512KB)",
+  "RAW_INI_SECRET_UNRESOLVABLE": "Pa t ka anrejistre an sekirite: valè kache liy \"{{key}}\" a pa t ka koresponn ak yon sèl valè reyèl. Anyen pa t ekri.",
+  "RAW_INI_SECRET_LINE_REMOVED": "Liy \"{{key}}\" a te retire, men li gen yon modpas reyèl ki pa ka jete an silans. Pou efase l, ekri \"{{key}}=\" dirèkteman olye ou efase liy lan, oswa itilize editè estriktire a.",
   "RESTORE_INVALID_EXTENSION": "Ekstansyon dosye kopi sovgad envalid",
   "RESTORE_BACKUP_NOT_FOUND": "Kopi sovgad pa jwenn",
   "RESTORE_INVALID_FILENAME": "Non dosye kopi sovgad envalid",

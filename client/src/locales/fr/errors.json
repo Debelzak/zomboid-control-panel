@@ -50,6 +50,8 @@
   "FILE_NOT_FOUND": "Fichier introuvable",
   "RAW_CONTENT_STRING_REQUIRED": "Contenu sous forme de chaîne requis",
   "RAW_CONTENT_TOO_LARGE": "Contenu trop volumineux (512 Ko maximum)",
+  "RAW_INI_SECRET_UNRESOLVABLE": "Impossible d'enregistrer en toute sécurité : la valeur masquée de la ligne « {{key}} » n'a pas pu être associée à une seule valeur réelle. Rien n'a été écrit.",
+  "RAW_INI_SECRET_LINE_REMOVED": "La ligne « {{key}} » a été supprimée, mais elle contient un secret réel qui ne peut pas être abandonné silencieusement. Pour l'effacer, écrivez « {{key}}= » explicitement au lieu de supprimer la ligne, ou utilisez l'éditeur structuré.",
   "RESTORE_INVALID_EXTENSION": "Extension de fichier de sauvegarde invalide",
   "RESTORE_BACKUP_NOT_FOUND": "Sauvegarde introuvable",
   "RESTORE_INVALID_FILENAME": "Nom de fichier de sauvegarde invalide",
