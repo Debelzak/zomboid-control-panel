@@ -2546,22 +2546,24 @@ export default function Mods() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => { if (!canManageMods) return; setCollectionDialogOpen(true) }}
-                  disabled={!canManageMods}
-                  title={!canManageMods ? t('permissions.noModsManage') : undefined}
-                >
-                  <Library className="w-4 h-4 mr-2" />
-                  {t('statusBar.importCollection')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => { if (!canManageMods) return; setRestartSettingsOpen(true) }}
-                  disabled={!canManageMods}
-                  title={!canManageMods ? t('permissions.noModsManage') : undefined}
-                >
-                  <Settings2 className="w-4 h-4 mr-2" />
-                  {t('statusBar.autoRestartSettings')}
-                </DropdownMenuItem>
+                <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null} className="w-full">
+                  <DropdownMenuItem
+                    onClick={() => { if (!canManageMods) return; setCollectionDialogOpen(true) }}
+                    disabled={!canManageMods}
+                  >
+                    <Library className="w-4 h-4 mr-2" />
+                    {t('statusBar.importCollection')}
+                  </DropdownMenuItem>
+                </DisabledReason>
+                <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null} className="w-full">
+                  <DropdownMenuItem
+                    onClick={() => { if (!canManageMods) return; setRestartSettingsOpen(true) }}
+                    disabled={!canManageMods}
+                  >
+                    <Settings2 className="w-4 h-4 mr-2" />
+                    {t('statusBar.autoRestartSettings')}
+                  </DropdownMenuItem>
+                </DisabledReason>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <div className="flex items-center justify-between gap-4">
@@ -3386,6 +3388,7 @@ export default function Mods() {
                       onClick={handleCollectionSyncNow}
                       disabled={collectionSyncing || !canManageMods}
                       className="h-6 px-2 ml-1 text-xs hover:bg-warning/20"
+                      // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the button does ("Sync tracked mods → Steam Workshop collection"), not why it's disabled; unconditional, no permission text to lose. Triaged 2026-08-27.
                       title={t('installedTab.collectionSyncTooltip')}
                     >
                       {collectionSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : t('installedTab.collectionSync')}
@@ -4266,25 +4269,31 @@ export default function Mods() {
                                         {t('activeMods.copyWorkshopId')}
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        className="text-destructive focus:text-destructive"
-                                        title={!canManageMods ? t('permissions.noModsManage') : t('activeMods.removeFromIniHint')}
-                                        onClick={() => { if (!canManageMods) return; setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) }) }}
-                                        disabled={!canManageMods}
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        {t('activeMods.removeFromIni')}
-                                      </DropdownMenuItem>
+                                      <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null} className="w-full">
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive"
+                                          // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (mods.manage) now lives in the DisabledReason wrapper above; this title carries only the always-relevant "what removing does" hint, correctly absent (via DisabledReason's own tooltip taking over) rather than dead when actually disabled.
+                                          title={t('activeMods.removeFromIniHint')}
+                                          onClick={() => { if (!canManageMods) return; setConfirmRemoveWorkshop({ wsId: g.wsId, knownModIds: g.mods.map(m => m.id) }) }}
+                                          disabled={!canManageMods}
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" />
+                                          {t('activeMods.removeFromIni')}
+                                        </DropdownMenuItem>
+                                      </DisabledReason>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        className="text-destructive focus:text-destructive"
-                                        title={!canManageMods ? t('permissions.noModsManage') : t('activeMods.removeFromServerHint')}
-                                        onClick={() => { if (!canManageMods) return; setConfirmRemoveMod(g.wsId) }}
-                                        disabled={!canManageMods}
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        {t('activeMods.removeFromServer')}
-                                      </DropdownMenuItem>
+                                      <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null} className="w-full">
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive"
+                                          // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (mods.manage) now lives in the DisabledReason wrapper above; this title carries only the always-relevant "what removing does" hint, correctly absent (via DisabledReason's own tooltip taking over) rather than dead when actually disabled.
+                                          title={t('activeMods.removeFromServerHint')}
+                                          onClick={() => { if (!canManageMods) return; setConfirmRemoveMod(g.wsId) }}
+                                          disabled={!canManageMods}
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" />
+                                          {t('activeMods.removeFromServer')}
+                                        </DropdownMenuItem>
+                                      </DisabledReason>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 )
@@ -4428,17 +4437,19 @@ export default function Mods() {
                                                         ? 'bg-success/15 text-success hover:bg-success/25'
                                                         : 'bg-muted/15 text-muted-foreground/75 hover:text-muted-foreground hover:bg-muted/25')
                                                 return (
+                                                  <DisabledReason key={mod.id} reason={!canManageMods ? t('permissions.noModsManage') : null}>
                                                   <button
-                                                    key={mod.id}
                                                     onClick={(e) => { e.stopPropagation(); toggleMod(mod, g.wsId) }}
                                                     disabled={!canManageMods}
-                                                    title={!canManageMods ? t('permissions.noModsManage') : tooltipBits}
+                                                    // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (mods.manage) now lives in the DisabledReason wrapper above; this title carries only the always-relevant chip tooltip (id/name, dupe/clash/overlap warnings, click hint), correctly absent rather than dead when actually disabled.
+                                                    title={tooltipBits}
                                                     className={`mod-toggle-pill inline-flex max-w-[200px] items-center gap-1 truncate rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${canManageMods ? 'cursor-pointer' : ''} ${styleClass}`}
                                                   >
                                                     {isScanClashing && <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-destructive" />}
                                                     {!isScanClashing && hasScanOverlap && <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-warning/70" />}
                                                     <span className="truncate">{mod.id}</span>
                                                   </button>
+                                                  </DisabledReason>
                                                 )
                                               })
                                             })()}
@@ -4476,6 +4487,7 @@ export default function Mods() {
                                                 <span className="min-w-0 break-words font-medium text-destructive/90">
                                                   {t('activeMods.clashWarning')}
                                                 </span>
+                                                <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null}>
                                                 <button
                                                   type="button"
                                                   onClick={(e) => {
@@ -4483,13 +4495,15 @@ export default function Mods() {
                                                     for (const [a, b] of scanClashingPairs) dismissPair(a, b)
                                                   }}
                                                   disabled={!canManageMods}
-                                                  title={!canManageMods ? t('permissions.noModsManage') : scanClashingPairs.length === 1
+                                                  // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (mods.manage) now lives in the DisabledReason wrapper above; this title carries only the always-relevant dismiss-pair hint, correctly absent rather than dead when actually disabled.
+                                                  title={scanClashingPairs.length === 1
                                                     ? t('activeMods.dismissOneTooltip', { a: scanClashingPairs[0][0], b: scanClashingPairs[0][1] })
                                                     : t('activeMods.dismissAllTooltip', { count: scanClashingPairs.length })}
                                                   className="ml-auto inline-flex items-center gap-1 rounded border border-border/50 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
                                                   {t('activeMods.notAConflict')}
                                                 </button>
+                                                </DisabledReason>
                                               </div>
                                             )
                                           }
@@ -4517,15 +4531,18 @@ export default function Mods() {
                                                 <Info aria-hidden="true" className="mt-px h-3 w-3 shrink-0 sm:mt-0" />
                                                 <span className="min-w-0 break-words">{t('activeMods.multipleEnabledHint', { count: enabledIds.length })}</span>
                                                 {dismissedHere.length > 0 && (
+                                                  <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null}>
                                                   <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
                                                     disabled={!canManageMods}
-                                                    title={!canManageMods ? t('permissions.noModsManage') : t('activeMods.restoreDismissedTooltip', { count: dismissedHere.length })}
+                                                    // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (mods.manage) now lives in the DisabledReason wrapper above; this title carries only the always-relevant restore-dismissed hint, correctly absent rather than dead when actually disabled.
+                                                    title={t('activeMods.restoreDismissedTooltip', { count: dismissedHere.length })}
                                                     className="ml-auto text-[10px] text-muted-foreground/60 underline-offset-2 hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                                                   >
                                                     {t('activeMods.restoreDismissed', { count: dismissedHere.length })}
                                                   </button>
+                                                  </DisabledReason>
                                                 )}
                                               </div>
                                             )
@@ -4534,15 +4551,16 @@ export default function Mods() {
                                             return (
                                               <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/50">
                                                 <span className="min-w-0">{t('activeMods.dismissedCount', { count: dismissedHere.length })}</span>
-                                                <button
-                                                  type="button"
-                                                  onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
-                                                  disabled={!canManageMods}
-                                                  title={!canManageMods ? t('permissions.noModsManage') : undefined}
-                                                  className="underline-offset-2 hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                  {t('activeMods.restore')}
-                                                </button>
+                                                <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null}>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); for (const p of dismissedHere) restorePair(p.mod_a, p.mod_b) }}
+                                                    disabled={!canManageMods}
+                                                    className="underline-offset-2 hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                                  >
+                                                    {t('activeMods.restore')}
+                                                  </button>
+                                                </DisabledReason>
                                               </div>
                                             )
                                           }
@@ -4574,6 +4592,7 @@ export default function Mods() {
                                     }}
                                     disabled={!canManageMods}
                                     className="text-destructive/80 hover:text-destructive hover:bg-destructive/15 rounded p-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-destructive/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (what removing this orphan does); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                                     title={t('activeMods.removeOrphanTooltip', { id })}
                                     aria-label={t('activeMods.removeOrphanAria', { id })}
                                   >
@@ -4644,34 +4663,37 @@ export default function Mods() {
                             <div className="space-y-1.5">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/75">{t('activeMods.loadedIds')}</p>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleAllInGroup(inspectedGroup)}
-                                  disabled={!canManageMods}
-                                  title={!canManageMods ? t('permissions.noModsManage') : undefined}
-                                  className="rounded border border-border/45 bg-muted/25 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {inspectedGroup.allEnabled ? t('activeMods.disableAll') : t('activeMods.enableAll')}
-                                </button>
+                                <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null}>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleAllInGroup(inspectedGroup)}
+                                    disabled={!canManageMods}
+                                    className="rounded border border-border/45 bg-muted/25 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {inspectedGroup.allEnabled ? t('activeMods.disableAll') : t('activeMods.enableAll')}
+                                  </button>
+                                </DisabledReason>
                               </div>
                               <div className="space-y-1.5">
                                 {inspectedGroup.mods.map(mod => {
                                   const missing = missingDepsMap.get(mod.id) || []
                                   const isDupe = duplicateModIds.has(mod.id)
                                   return (
+                                    <DisabledReason key={mod.id} reason={!canManageMods ? t('permissions.noModsManage') : null}>
                                     <button
-                                      key={mod.id}
                                       type="button"
                                       onClick={() => toggleMod(mod, inspectedGroup.wsId)}
                                       disabled={!canManageMods}
                                       className={`flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-50 ${mod.enabled ? 'border-success/25 bg-success/10 text-success' : 'border-border/45 bg-muted/20 text-muted-foreground hover:text-foreground'}`}
-                                      title={!canManageMods ? t('permissions.noModsManage') : `${mod.enabled ? t('activeMods.clickToDisable') : t('activeMods.clickToEnable')} ${mod.id}`}
+                                      // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (mods.manage) now lives in the DisabledReason wrapper above; this title carries only the always-relevant click-to-toggle hint, correctly absent rather than dead when actually disabled.
+                                      title={`${mod.enabled ? t('activeMods.clickToDisable') : t('activeMods.clickToEnable')} ${mod.id}`}
                                     >
                                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${mod.enabled ? 'bg-success' : 'bg-muted-foreground/45'}`} aria-hidden="true" />
                                       <span className="min-w-0 flex-1 truncate font-mono">{mod.id}</span>
                                       {missing.length > 0 && <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" aria-label={t('activeMods.missingDependencyAria')} />}
                                       {isDupe && <span className="shrink-0 rounded border border-warning/35 bg-warning/10 px-1 py-0 text-[9px] uppercase tracking-wide text-warning">dup</span>}
                                     </button>
+                                    </DisabledReason>
                                   )
                                 })}
                               </div>
@@ -5115,9 +5137,10 @@ export default function Mods() {
                   <div className="space-y-4 sub-tab-enter">
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">{t('presetsTab.intro')}</p>
+                      <DisabledReason reason={!canManageMods ? t('permissions.noModsManage') : null}>
                       <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
                         <DialogTrigger asChild>
-                          <Button size="sm" disabled={!iniConfig?.configured || !canManageMods} title={!canManageMods ? t('permissions.noModsManage') : undefined}>
+                          <Button size="sm" disabled={!iniConfig?.configured || !canManageMods}>
                             <Save className="w-4 h-4 mr-2" />
                             {t('presetsTab.saveCurrent')}
                           </Button>
@@ -5167,6 +5190,7 @@ export default function Mods() {
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
+                      </DisabledReason>
                     </div>
 
                     {presetsLoading ? (
@@ -5305,6 +5329,7 @@ export default function Mods() {
                           }}
                           disabled={repairingMaps || !canManageMods}
                           className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground transition-colors disabled:opacity-50"
+                          // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the button does; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                           title={t('toolsTab.repairTooltip')}
                         >
                           {repairingMaps ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wrench className="w-3 h-3" />}

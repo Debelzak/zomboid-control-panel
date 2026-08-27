@@ -1385,6 +1385,7 @@ export default function Servers() {
                 onClick={handleScanMounts}
                 disabled={scanningMounts || !canServersDiscover}
                 aria-label={t('pageHeader.scanAria')}
+                // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                 title={t('pageHeader.scanTitle')}
               >
                 {scanningMounts ? (
@@ -1828,6 +1829,7 @@ export default function Servers() {
                           variant="outline"
                           onClick={() => handleInlineStop(server)}
                           disabled={stopPending || serverActionPending !== null || !canInlineStartStop}
+                          // eslint-disable-next-line local/no-dead-disabled-title -- pure hint; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                           title={t('card.stopThisServer')}
                         >
                           {stopPending ? (
@@ -1844,6 +1846,7 @@ export default function Servers() {
                           variant="outline"
                           onClick={() => handleInlineStart(server)}
                           disabled={startPending || serverActionPending !== null || !canInlineStartStop}
+                          // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (which of two enabled-state labels applies); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                           title={server.isActive ? t('card.startThisServer') : t('card.switchAndStart')}
                         >
                           {startPending ? (
@@ -1862,6 +1865,7 @@ export default function Servers() {
                         variant="outline"
                         onClick={() => handleConfigureRemoteBridge(server)}
                         disabled={!canServersManage}
+                        // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the button does; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                         title={t('card.configureSftpTitle')}
                       >
                         <Link className="w-4 h-4 mr-1.5" /> {t('card.configureSftp')}
