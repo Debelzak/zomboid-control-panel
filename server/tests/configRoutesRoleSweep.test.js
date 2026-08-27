@@ -10,6 +10,14 @@ vi.mock("../database/init.js", () => ({
 // password/host/port) and /cors-debug (diagnostics that can also clear
 // blocked-origin state) were reachable by any signed-in account. Same
 // both-directions standard as the rest of the sweep.
+//
+// bug-hunt-2026-08-26: GET/PUT /, POST /reload, GET /options, POST /option,
+// GET/PUT /paths and GET/PUT /rcon were removed as dead code (no client
+// caller anywhere, undocumented, superseded by serverFilesApi's ini/sandbox
+// endpoints and server.js's /configure-rcon) -- see errorCodes.js's removed
+// CONFIG_* entries for the sites that used to guard them. The sweep below
+// is narrower now because there is genuinely less surface, not because
+// coverage was dropped.
 
 function createResponse() {
   const response = { status: () => response, json: () => response };
@@ -30,14 +38,6 @@ function getGate(router, routePath, method) {
   return layer.route.stack[0].handle;
 }
 
-function getFinalHandler(router, routePath, method) {
-  const layer = router.stack.find(
-    (entry) => entry.route?.path === routePath && entry.route.methods[method],
-  );
-  if (!layer) throw new Error(`No ${method.toUpperCase()} ${routePath} route registered`);
-  return layer.route.stack[layer.route.stack.length - 1].handle;
-}
-
 async function runGate(router, routePath, method, role) {
   const res = createResponse();
   let calledNext = false;
@@ -51,15 +51,8 @@ async function runGate(router, routePath, method, role) {
   return { res, calledNext };
 }
 
-describe("config.js: server.configure (edit .ini/RCON/paths config) -- admin+technician", () => {
-  const ROUTES = [
-    ["/", "put"],
-    ["/reload", "post"],
-    ["/option", "post"],
-    ["/paths", "put"],
-    ["/rcon", "put"],
-    ["/test-rcon", "post"],
-  ];
+describe("config.js: server.configure (test-rcon) -- admin+technician", () => {
+  const ROUTES = [["/test-rcon", "post"]];
 
   it.each(ROUTES)("refuses a moderator on %s %s", async (routePath, method) => {
     const { default: router } = await import("../routes/config.js");
@@ -71,55 +64,6 @@ describe("config.js: server.configure (edit .ini/RCON/paths config) -- admin+tec
     const { default: router } = await import("../routes/config.js");
     const { calledNext } = await runGate(router, routePath, method, "technician");
     expect(calledNext).toBe(true);
-  });
-});
-
-describe("config.js: PUT /rcon validates ports strictly", () => {
-  it("rejects a numeric prefix instead of passing a malformed port to RCON", async () => {
-    const { default: router } = await import("../routes/config.js");
-    const updateConfig = vi.fn();
-    const response = createResponse();
-
-    await getFinalHandler(router, "/rcon", "put")(
-      {
-        body: { port: "27015junk" },
-        app: { get: () => ({ updateConfig }) },
-      },
-      response,
-    );
-
-    expect(response.getStatusCode()).toBe(400);
-    expect(updateConfig).not.toHaveBeenCalled();
-  });
-
-  it("passes a valid port as a number", async () => {
-    const { default: router } = await import("../routes/config.js");
-    const updateConfig = vi.fn();
-    const response = createResponse();
-
-    await getFinalHandler(router, "/rcon", "put")(
-      {
-        body: { port: "27016" },
-        app: { get: () => ({ updateConfig }) },
-      },
-      response,
-    );
-
-    expect(updateConfig).toHaveBeenCalledWith(undefined, 27016, undefined);
-  });
-
-  it("returns a client error for a missing body", async () => {
-    const { default: router } = await import("../routes/config.js");
-    const updateConfig = vi.fn();
-    const response = createResponse();
-
-    await getFinalHandler(router, "/rcon", "put")(
-      { body: null, app: { get: () => ({ updateConfig }) } },
-      response,
-    );
-
-    expect(response.getStatusCode()).toBe(400);
-    expect(updateConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -158,13 +102,7 @@ describe("config.js: PUT /app-settings stays admin-only (unchanged, corsAllowAll
 });
 
 describe("config.js: read-only routes stay open to every role", () => {
-  const OPEN = [
-    ["/", "get"],
-    ["/options", "get"],
-    ["/app-settings", "get"],
-    ["/paths", "get"],
-    ["/rcon", "get"],
-  ];
+  const OPEN = [["/app-settings", "get"]];
 
   it.each(OPEN)("%s %s has no requireRole gate ahead of its handler", async (routePath, method) => {
     const { default: router } = await import("../routes/config.js");

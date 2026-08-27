@@ -1677,21 +1677,6 @@ export const ErrorCode = Object.freeze({
    * remote (this panel doesn't manage its process). */
   SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED: "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED",
 
-  /** server/routes/config.js -- PUT /, `config` missing from the body. */
-  CONFIG_REQUIRED: "CONFIG_REQUIRED",
-  /** server/routes/config.js -- PUT /, serverManager.saveServerConfig()
-   * reported failure. Carries the underlying reason as the `reason` param
-   * -- the specific cause is more useful here than a generic message,
-   * unlike the file's catch-all 500s. */
-  CONFIG_SAVE_FAILED: "CONFIG_SAVE_FAILED",
-  /** server/routes/config.js -- POST /option, `name` or `value` missing. */
-  CONFIG_OPTION_FIELDS_REQUIRED: "CONFIG_OPTION_FIELDS_REQUIRED",
-  /** server/routes/config.js -- POST /option, `name` fails
-   * isValidOptionName() (command-injection guard on the RCON option name). */
-  CONFIG_OPTION_NAME_INVALID: "CONFIG_OPTION_NAME_INVALID",
-  /** server/routes/config.js -- POST /option, `value` fails
-   * isValidOptionValue(). */
-  CONFIG_OPTION_VALUE_INVALID: "CONFIG_OPTION_VALUE_INVALID",
   /** server/routes/config.js -- PUT /app-settings, `settings` missing or not
    * an object. */
   CONFIG_APP_SETTINGS_REQUIRED: "CONFIG_APP_SETTINGS_REQUIRED",
@@ -1769,24 +1754,6 @@ export const ErrorCode = Object.freeze({
   /** server/routes/config.js -- POST /cors-debug/reload, the CORS config
    * reload hook was never registered on the app. */
   CONFIG_CORS_RELOAD_UNAVAILABLE: "CONFIG_CORS_RELOAD_UNAVAILABLE",
-  /** server/routes/config.js -- PUT /paths, `serverPath` fails
-   * isValidConfigPath() (must be absolute, no traversal). */
-  CONFIG_INVALID_SERVER_PATH: "CONFIG_INVALID_SERVER_PATH",
-  /** server/routes/config.js -- PUT /paths, `savePath` fails
-   * isValidConfigPath(). */
-  CONFIG_INVALID_SAVE_PATH: "CONFIG_INVALID_SAVE_PATH",
-  /** server/routes/config.js -- PUT /rcon, request body missing/not an
-   * object/an array. */
-  CONFIG_RCON_REQUEST_BODY_INVALID: "CONFIG_RCON_REQUEST_BODY_INVALID",
-  /** server/routes/config.js -- PUT /rcon, `host` fails the hostname-safe
-   * format check. */
-  CONFIG_RCON_INVALID_HOST: "CONFIG_RCON_INVALID_HOST",
-  /** server/routes/config.js -- PUT /rcon, `port` fails the 1-65535 bounded
-   * check. */
-  CONFIG_RCON_INVALID_PORT: "CONFIG_RCON_INVALID_PORT",
-  /** server/routes/config.js -- PUT /rcon, `password` present but not a
-   * string or exceeds 256 characters. */
-  CONFIG_RCON_INVALID_PASSWORD: "CONFIG_RCON_INVALID_PASSWORD",
 
   /** server/routes/discord.js -- GET /config, PUT /config, POST /start,
    * POST /stop, POST /reset, POST /test-message, PUT /webhook-events, GET

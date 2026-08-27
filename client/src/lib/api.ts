@@ -1399,10 +1399,6 @@ export const chunksApi = {
 
 // Config API
 export const configApi = {
-  getServerConfig: () => apiGet("/config"),
-  updateServerConfig: (config: Record<string, string>) =>
-    apiPut("/config", { config }),
-  reloadOptions: () => apiPost("/config/reload"),
   getAppSettings: () => apiGet("/config/app-settings"),
   updateAppSettings: (settings: Record<string, unknown>) =>
     apiPut("/config/app-settings", { settings }),
@@ -1462,12 +1458,6 @@ export const configApi = {
         lastLoadedAt: string | null;
       };
     }>,
-  getPaths: () => apiGet("/config/paths"),
-  updatePaths: (serverPath: string, savePath: string) =>
-    apiPut("/config/paths", { serverPath, savePath }),
-  getRconConfig: () => apiGet("/config/rcon"),
-  updateRconConfig: (host: string, port: number, password: string) =>
-    apiPut("/config/rcon", { host, port, password }),
   testRcon: () => apiPost<ConfigTestRconResult>("/config/test-rcon"),
 };
 

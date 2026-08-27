@@ -3,12 +3,10 @@ import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 
 const getAllSettings = vi.fn();
 const setSetting = vi.fn();
-const getActiveServer = vi.fn();
 
 vi.mock("../database/init.js", () => ({
   getAllSettings,
   setSetting,
-  getActiveServer,
   getRoleByName: mockGetRoleByName,
 }));
 
@@ -219,58 +217,5 @@ describe("PUT /api/config/app-settings", () => {
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true }),
     );
-  });
-});
-
-describe("PUT /api/config", () => {
-  it("refuses to write server config while the local server is running", async () => {
-    getActiveServer.mockResolvedValue({ isRemote: false });
-    const saveServerConfig = vi.fn();
-    const response = createResponse();
-
-    await runRoute(
-      "/",
-      "put",
-      {
-        body: { config: { serverName: "DoomerZ" } },
-        user: { role: "admin" },
-        app: {
-          get: (key) =>
-            key === "serverManager"
-              ? {
-                  getServerProcessDetails: vi.fn(async () => ({ running: true, scanFailed: false })),
-                  saveServerConfig,
-                }
-              : null,
-        },
-      },
-      response,
-    );
-
-    expect(response.status).toHaveBeenCalledWith(409);
-    expect(saveServerConfig).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for a missing body", async () => {
-    getActiveServer.mockResolvedValue({ isRemote: false });
-    const response = createResponse();
-
-    await runRoute(
-      "/",
-      "put",
-      {
-        body: null,
-        user: { role: "admin" },
-        app: {
-          get: (key) =>
-            key === "serverManager"
-              ? { getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: false })) }
-              : null,
-        },
-      },
-      response,
-    );
-
-    expect(response.status).toHaveBeenCalledWith(400);
   });
 });

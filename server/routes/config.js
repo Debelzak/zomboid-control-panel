@@ -1,6 +1,5 @@
 import express from "express";
 import fs from "fs";
-import path from "path";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("API:Config");
 import { getAllSettings, getSetting, setSetting } from "../database/init.js";
@@ -18,7 +17,6 @@ import {
   MOD_CHECK_INTERVAL_MINUTES_MIN,
   minutesToCheckIntervalMs,
 } from "../services/modChecker.js";
-import { requireStoppedForLocalConfigMutation } from "../services/configMutationGuard.js";
 import {
   checkTcpReachable,
   RCON_UNREACHABLE_DETAIL,
@@ -135,21 +133,10 @@ const VALID_SETTINGS_KEYS = [
   "panelBridgeSftpConfigPath",
 ];
 
-const OPTION_NAME_REGEX = /^[a-zA-Z0-9_]{1,64}$/;
-const OPTION_VALUE_REGEX = /^[a-zA-Z0-9_.,:;\/ -]{0,256}$/;
 const ORIGIN_DELIMITER_REGEX = /[\n,;]+/;
 const MAX_CORS_ALLOWED_ORIGINS_LENGTH = 5000;
 const MAX_CORS_ALLOWED_ORIGINS = 100;
 const MAX_CORS_ORIGIN_LENGTH = 256;
-
-function isValidOptionName(name) {
-  return typeof name === "string" && OPTION_NAME_REGEX.test(name);
-}
-
-function isValidOptionValue(value) {
-  const strVal = String(value);
-  return OPTION_VALUE_REGEX.test(strVal);
-}
 
 function validateCorsAllowedOrigins(value) {
   if (typeof value !== "string") {
@@ -185,99 +172,6 @@ function validateCorsAllowedOrigins(value) {
 
   return null;
 }
-
-// Get server configuration
-router.get("/", async (req, res) => {
-  try {
-    const serverManager = req.app.get("serverManager");
-    const config = await serverManager.getServerConfig();
-    res.json({ config });
-  } catch (error) {
-    log.error(`Failed to get config: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Update server configuration
-router.put("/", requirePermission("server.configure"), requireStoppedForLocalConfigMutation, async (req, res) => {
-  try {
-    log.info("PUT /config — saving server config");
-    const serverManager = req.app.get("serverManager");
-    const config = req.body?.config;
-
-    if (!config) {
-      return res.status(400).json({ error: "Config is required", code: ErrorCode.CONFIG_REQUIRED });
-    }
-
-    const saved = await serverManager.saveServerConfig(config);
-    if (!saved?.success) {
-      const reason = saved?.error || "Configuration could not be written";
-      return res.status(500).json({
-        error: sanitizeError(reason),
-        code: ErrorCode.CONFIG_SAVE_FAILED,
-        params: sanitizeErrorParams({ reason }),
-      });
-    }
-    res.json({ success: true, message: "Configuration saved" });
-  } catch (error) {
-    log.error(`Failed to save config: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Reload server options via RCON
-router.post("/reload", requirePermission("server.configure"), async (req, res) => {
-  try {
-    const rconService = req.app.get("rconService");
-    const result = await rconService.reloadOptions();
-    res.json(result);
-  } catch (error) {
-    log.error(`Failed to reload options: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Get server options via RCON
-router.get("/options", async (req, res) => {
-  try {
-    const rconService = req.app.get("rconService");
-    const result = await rconService.showOptions();
-    res.json(result);
-  } catch (error) {
-    log.error(`Failed to get options: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Change a specific option via RCON
-router.post("/option", requirePermission("server.configure"), async (req, res) => {
-  try {
-    const rconService = req.app.get("rconService");
-    const { name, value } = req.body || {};
-    log.info(`POST /option: ${name}=${value}`);
-
-    if (!name || value === undefined) {
-      return res
-        .status(400)
-        .json({ error: "Option name and value are required", code: ErrorCode.CONFIG_OPTION_FIELDS_REQUIRED });
-    }
-
-    // Validate option name and value to prevent command injection
-    if (!isValidOptionName(name)) {
-      return res.status(400).json({ error: "Invalid option name format", code: ErrorCode.CONFIG_OPTION_NAME_INVALID });
-    }
-
-    if (!isValidOptionValue(value)) {
-      return res.status(400).json({ error: "Invalid option value format", code: ErrorCode.CONFIG_OPTION_VALUE_INVALID });
-    }
-
-    const result = await rconService.changeOption(name, value);
-    res.json(result);
-  } catch (error) {
-    log.error(`Failed to change option: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
 
 // Sensitive settings are masked in API responses by pattern (see
 // SENSITIVE_FIELD_RE / maskSensitiveObject in utils/sanitize.js) rather than
@@ -920,162 +814,6 @@ router.delete("/cors-debug/blocked", requirePermission("diagnostics.manage"), as
     res.json({ success: true, diagnostics: getCorsDebugSnapshot() });
   } catch (error) {
     log.error(`Failed to clear blocked CORS origins: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Get paths configuration
-router.get("/paths", async (req, res) => {
-  try {
-    res.json({
-      serverPath: process.env.PZ_SERVER_PATH || "",
-      savePath: process.env.PZ_SAVE_PATH || "",
-      serverBat:
-        process.env.PZ_SERVER_BAT ||
-        (process.platform === "win32"
-          ? "StartServer64.bat"
-          : "start-server.sh"),
-    });
-  } catch (error) {
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// serverManager.savePath set here is what server.js's /wipe and
-// /wipe/preview join with "Saves/Multiplayer/{serverName}" before recursively
-// deleting -- the previous check here only rejected a literal ".." and never
-// required an absolute path, so a relative value would resolve against
-// whatever the panel process's cwd happens to be at wipe time instead of the
-// real Zomboid data folder. Matches server.js's own isValidPath: absolute,
-// no traversal.
-export function isValidConfigPath(inputPath) {
-  if (typeof inputPath !== "string" || inputPath.length > 500) return false;
-  if (inputPath.includes("..")) return false;
-  const normalized = path.normalize(inputPath);
-  if (normalized.includes("..")) return false;
-  return path.isAbsolute(normalized);
-}
-
-// Update paths (runtime only - doesn't persist to .env)
-//
-// INVESTIGATED 2026-08-24 (conv-hunt-resume, config-live-pointer-mutations-
-// no-running-guard): unlike PUT / above, this has no
-// requireStoppedForLocalConfigMutation. Concluded no guard is needed --
-// this mutates serverManager's in-memory serverPath/savePath fields only
-// (explicitly runtime-only, never touches a file or the database), and
-// every consumer that could turn a stale pointer into something worse than
-// a confusing display is independently guarded already: server.js's /wipe
-// and /wipe/preview require BOTH a real OS-level process scan confirming
-// the server is stopped (not derived from this field) AND the specific
-// Saves/Multiplayer/{serverName} subpath to exist (404s rather than
-// silently acting on an unrelated directory in the overwhelming majority of
-// misconfigurations); PUT /config's saveServerConfig() is already gated by
-// requireStoppedForLocalConfigMutation; and backupService/chunks.js resolve
-// their own paths from the database (getActiveServer()/getSetting()), not
-// from this field at all, so this route cannot affect them. The worst
-// realistic outcome while the real server keeps running unaffected on its
-// old path is the panel's own config/status displays showing stale, missing,
-// or (rarely) a different install's data -- confusing, self-correcting once
-// noticed, never destructive. A running-state guard would not close the one
-// real edge case found (a wrong-but-structurally-matching savePath later
-// enabling a misdirected wipe after a legitimate stop) since that risk
-// exists independent of the server's state when this route was called.
-router.put("/paths", requirePermission("server.configure"), async (req, res) => {
-  try {
-    const serverManager = req.app.get("serverManager");
-    const { serverPath, savePath } = req.body || {};
-
-    // Validate paths
-    if (serverPath !== undefined && !isValidConfigPath(serverPath)) {
-      return res.status(400).json({ error: "Invalid server path", code: ErrorCode.CONFIG_INVALID_SERVER_PATH });
-    }
-    if (savePath !== undefined && !isValidConfigPath(savePath)) {
-      return res.status(400).json({ error: "Invalid save path", code: ErrorCode.CONFIG_INVALID_SAVE_PATH });
-    }
-
-    serverManager.updatePaths(serverPath, savePath);
-
-    res.json({ success: true, message: "Paths updated" });
-  } catch (error) {
-    log.error(`Failed to update paths: ${error.message}`);
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Get RCON configuration
-router.get("/rcon", async (req, res) => {
-  try {
-    const rconService = req.app.get("rconService");
-    const config = rconService.getConfig();
-    res.json(config);
-  } catch (error) {
-    res.status(500).json({ error: sanitizeError(error.message) });
-  }
-});
-
-// Validation for RCON config
-const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
-const RCON_PASSWORD_MAX_LENGTH = 256;
-
-// Update RCON configuration
-//
-// INVESTIGATED 2026-08-24 (conv-hunt-resume, config-live-pointer-mutations-
-// no-running-guard): also has no requireStoppedForLocalConfigMutation, also
-// concluded no guard is needed, for a stronger reason than /paths above:
-// rcon.js's updateConfig() disconnects any live connection immediately on a
-// config change (see rcon.js), and every RCON action after that reconnects
-// against the NEW config -- a wrong host/port simply fails to connect. This
-// fails LOUD and immediately: there is no code path where a bad RCON
-// pointer produces plausible-but-wrong data, since RCON is a live
-// connection, not a file read. The existing /test-rcon route and RCON
-// status reporting (`connected: false`) already surface this without any
-// guard needed here.
-router.put("/rcon", requirePermission("server.configure"), async (req, res) => {
-  try {
-    const rconService = req.app.get("rconService");
-    if (
-      !req.body ||
-      typeof req.body !== "object" ||
-      Array.isArray(req.body)
-    ) {
-      return res.status(400).json({ error: "Request body must be an object", code: ErrorCode.CONFIG_RCON_REQUEST_BODY_INVALID });
-    }
-    const { host, port, password } = req.body;
-    let normalizedPort = port;
-
-    // Validate host (if provided)
-    if (host !== undefined) {
-      if (typeof host !== "string" || !RCON_HOST_REGEX.test(host)) {
-        return res.status(400).json({ error: "Invalid host format", code: ErrorCode.CONFIG_RCON_INVALID_HOST });
-      }
-    }
-
-    // Validate port (if provided)
-    if (port !== undefined) {
-      const portNum = parseBoundedInteger(port, null, 1, 65535);
-      if (portNum === null) {
-        return res
-          .status(400)
-          .json({ error: "Invalid port number (must be 1-65535)", code: ErrorCode.CONFIG_RCON_INVALID_PORT });
-      }
-      normalizedPort = portNum;
-    }
-
-    // Validate password length (if provided)
-    if (password !== undefined) {
-      if (
-        typeof password !== "string" ||
-        password.length > RCON_PASSWORD_MAX_LENGTH
-      ) {
-        return res.status(400).json({ error: "Invalid password format", code: ErrorCode.CONFIG_RCON_INVALID_PASSWORD });
-      }
-    }
-
-    rconService.updateConfig(host, normalizedPort, password);
-
-    res.json({ success: true, message: "RCON configuration updated" });
-  } catch (error) {
-    log.error(`Failed to update RCON config: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
