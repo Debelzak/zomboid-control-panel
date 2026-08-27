@@ -6,6 +6,7 @@ import tseslint from 'typescript-eslint'
 import noRawErrorMessage from '../eslint-rules/no-raw-error-message.js'
 import noDuplicateInterfaceName from '../eslint-rules/no-duplicate-interface-name.js'
 import noDeadDisabledTitle from '../eslint-rules/no-dead-disabled-title.js'
+import noUnguardedCapabilityMenuItem from '../eslint-rules/no-unguarded-capability-menu-item.js'
 
 export default tseslint.config(
   {
@@ -26,6 +27,7 @@ export default tseslint.config(
           'no-raw-error-message': noRawErrorMessage,
           'no-duplicate-interface-name': noDuplicateInterfaceName,
           'no-dead-disabled-title': noDeadDisabledTitle,
+          'no-unguarded-capability-menu-item': noUnguardedCapabilityMenuItem,
         },
       },
     },
@@ -64,6 +66,18 @@ export default tseslint.config(
       // maintaining a per-file exemption list -- the exact grandfather-list
       // liability already removed elsewhere in this file tonight.
       'local/no-dead-disabled-title': 'warn',
+
+      // 2026-08-27 Players.tsx Radix-onClick sweep: Radix runs a
+      // DropdownMenuItem/ContextMenuItem/MenubarItem/SelectItem/CommandItem's
+      // onClick unconditionally, regardless of `disabled` -- these render a
+      // <div>, not a native <button>, so `disabled` is CSS/unfocusability,
+      // not a code-level gate. See eslint-rules/no-unguarded-capability-menu-item.js.
+      // `warn`, not `error`, until the full-client count from this rule's
+      // first run is triaged across every page it touches -- same reasoning
+      // as no-dead-disabled-title above: this file only owns Players.tsx,
+      // and forcing every other page's owner to fix on this commit isn't
+      // this rule's call to make.
+      'local/no-unguarded-capability-menu-item': 'warn',
     },
   },
   {
