@@ -122,6 +122,12 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
     spawnMock.mockReset();
     writeFileAtomicMock.mockReset();
     writeFileAtomicMock.mockImplementation((...args) => realHolder.fn(...args));
+    // Reset to the shared no-op default before each test -- individual
+    // tests below override this with a key-conditional implementation to
+    // fail one specific setSetting call; without a reset here, that
+    // override would leak into whichever test runs next.
+    vi.mocked(setSetting).mockReset();
+    vi.mocked(setSetting).mockImplementation(async () => {});
   });
 
   afterEach(() => {
@@ -184,7 +190,16 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
       queueMicrotask(() => fakeProc.emit("close", 0));
       return fakeProc;
     });
-    vi.mocked(setSetting).mockRejectedValueOnce(new Error("EBUSY: database locked"));
+    // Keyed on "serverPath" rather than "the next call regardless of args":
+    // saveAndResolveSteamCmdExe() (CodeQL js/command-line-injection fix,
+    // 2026-08-27) now saves steamcmdPath earlier in this same route, before
+    // this block's own setSetting calls even start -- a bare
+    // mockRejectedValueOnce() would silently reject THAT call instead of
+    // the one this test is actually about, the same fragility a call-count
+    // assumption always has once an earlier call is added upstream.
+    vi.mocked(setSetting).mockImplementation(async (key) => {
+      if (key === "serverPath") throw new Error("EBUSY: database locked");
+    });
 
     const { default: router } = await import("../routes/server.js");
     const { io, completePromise } = fakeIoCapturingComplete();
@@ -212,18 +227,16 @@ describe("POST /api/server/install -- warnings array (finding #6) and watchdog m
       queueMicrotask(() => fakeProc.emit("close", 0));
       return fakeProc;
     });
-    // The general settings block calls setSetting 8 times before the RCON
-    // block's first call -- let those succeed and fail only the RCON one.
-    vi.mocked(setSetting)
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockResolvedValueOnce()
-      .mockRejectedValueOnce(new Error("EBUSY: database locked"));
+    // Keyed on "rconPassword" rather than a call-count sequence -- a count
+    // assumption breaks the moment any earlier setSetting call is added
+    // upstream (as saveAndResolveSteamCmdExe's steamcmdPath save now is,
+    // CodeQL js/command-line-injection fix 2026-08-27), and would then
+    // silently fail a DIFFERENT settings block while this test still passes
+    // (both blocks report the same INSTALL_SETTINGS_SAVE_FAILED
+    // progressCode, so a wrong-block failure isn't even visible here).
+    vi.mocked(setSetting).mockImplementation(async (key) => {
+      if (key === "rconPassword") throw new Error("EBUSY: database locked");
+    });
 
     const { default: router } = await import("../routes/server.js");
     const { io, completePromise } = fakeIoCapturingComplete();
@@ -427,6 +440,10 @@ describe("POST /api/server/install -- UPnP reaches the server's own .ini, not ju
     spawnMock.mockReset();
     writeFileAtomicMock.mockReset();
     writeFileAtomicMock.mockImplementation((...args) => realHolder.fn(...args));
+    // See the sibling describe block's beforeEach for why this reset is
+    // needed now that saveAndResolveSteamCmdExe() also calls setSetting.
+    vi.mocked(setSetting).mockReset();
+    vi.mocked(setSetting).mockImplementation(async () => {});
   });
 
   afterEach(() => {

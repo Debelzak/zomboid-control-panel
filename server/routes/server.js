@@ -82,6 +82,44 @@ function getSteamCmdExe(steamcmdPath) {
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
+// The single point every spawn() of a SteamCMD-family executable in this
+// file goes through. CodeQL js/command-line-injection #10,11,12,13,297
+// (2026-08-27 triage, operator-ruled fix): every call site used to resolve
+// steamcmdExe from a per-request steamcmdPath/installPath value, checked
+// only for absoluteness and no traversal (isValidPath) -- the DIRECTORY a
+// binary got spawned from was fully caller-chosen within one request, with
+// no persistent record of intent. Operator's own reasoning for choosing
+// this over a stronger capability gate: "a gate on top of a per-request
+// executable path still leaves a per-request executable path -- it relies
+// on that gate being right forever."
+//
+// candidatePath, when the caller has one (the operator typed/browsed to it
+// in THIS request, already passed through isValidPath by the caller), gets
+// PERSISTED before this function ever reads the setting back -- so "saved"
+// and "used" can never observably diverge, even within the same request
+// that just picked the path. Browsing to preview a not-yet-installed path
+// still works exactly as before; the difference is that path is now saved
+// as a side effect of being previewed/used, not read back from the request
+// object a second time for the actual spawn. Omitting candidatePath is the
+// steady-state case: resolve whatever is already saved.
+async function saveAndResolveSteamCmdExe(candidatePath) {
+  if (candidatePath) {
+    const current = await getSetting("steamcmdPath");
+    if (current !== candidatePath) {
+      await setSetting("steamcmdPath", candidatePath);
+    }
+    // Resolve from candidatePath directly rather than reading the setting
+    // back a second time: setSetting() has already been awaited to
+    // completion above, so "saved" and "used" can't diverge within this
+    // request regardless of it. Re-reading would only add a redundant round
+    // trip with no extra safety -- it can't protect against a genuinely
+    // concurrent writer from a DIFFERENT request either.
+    return getSteamCmdExe(candidatePath);
+  }
+  const configuredPath = await getSetting("steamcmdPath");
+  return configuredPath ? getSteamCmdExe(configuredPath) : null;
+}
+
 // Emits one line of SteamCMD's OWN stdout/stderr, forwarded verbatim, with
 // no `progressCode` field and no way to attach one. This is the ONLY
 // function in this file allowed to emit install:log, steam:log or
@@ -107,8 +145,12 @@ function emitRawSteamCmdLine(io, event, type, text) {
 // Windows is intentionally out of scope here (existing callers already
 // keep their own hard-fail for isWindows before calling this).
 async function ensureSteamCmdLinux(installPath, io) {
-  const steamcmdExe = getSteamCmdExe(installPath);
-  if (fs.existsSync(steamcmdExe)) return steamcmdExe;
+  // Persist installPath as the configured steamcmdPath before resolving
+  // anything from it -- see saveAndResolveSteamCmdExe's header comment.
+  // Both real callers (POST /install, POST /steam-update) already validate
+  // installPath with isValidPath() before reaching here.
+  const steamcmdExe = await saveAndResolveSteamCmdExe(installPath);
+  if (steamcmdExe && fs.existsSync(steamcmdExe)) return steamcmdExe;
 
   const emit = (event, payload) => {
     try {
@@ -1958,8 +2000,14 @@ router.get("/branches", requirePermission("server.install"), async (req, res) =>
       return res.status(400).json({ error: "Invalid SteamCMD path", code: ErrorCode.STEAMCMD_PATH_INVALID });
     }
 
-    const steamcmdExe = getSteamCmdExe(steamcmdPath);
-    if (!fs.existsSync(steamcmdExe)) {
+    // Persist a query-string candidate before resolving it into something
+    // spawn() runs -- see saveAndResolveSteamCmdExe's header comment
+    // (CodeQL js/command-line-injection #11). Browsing/previewing a
+    // not-yet-saved path still works exactly as before; it's saved as a
+    // side effect of being previewed, rather than trusted straight off the
+    // query string for the spawn below.
+    const steamcmdExe = await saveAndResolveSteamCmdExe(steamcmdPath);
+    if (!steamcmdExe || !fs.existsSync(steamcmdExe)) {
       return res.json({
         branches: FALLBACK_BRANCHES,
         source: "fallback",
@@ -2281,8 +2329,11 @@ router.post("/install", requirePermission("server.install"), async (req, res) =>
     // hard-failing (see ensureSteamCmdLinux for why: fresh volumes, or a
     // previous install that never finished, shouldn't force a manual
     // re-run of the setup wizard).
-    let steamcmdExe = getSteamCmdExe(steamcmdPath);
-    if (!fs.existsSync(steamcmdExe)) {
+    // Persist steamcmdPath as the configured setting before resolving an
+    // executable from it -- see saveAndResolveSteamCmdExe's header comment
+    // (CodeQL js/command-line-injection #12).
+    let steamcmdExe = await saveAndResolveSteamCmdExe(steamcmdPath);
+    if (!steamcmdExe || !fs.existsSync(steamcmdExe)) {
       if (isWindows) {
         return res
           .status(400)
@@ -3503,8 +3554,11 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
 
     // Auto-download SteamCMD on Linux instead of hard-failing — see
     // ensureSteamCmdLinux.
-    let steamcmdExe = getSteamCmdExe(steamcmdPath);
-    if (!fs.existsSync(steamcmdExe)) {
+    // Persist steamcmdPath as the configured setting before resolving an
+    // executable from it -- see saveAndResolveSteamCmdExe's header comment
+    // (CodeQL js/command-line-injection #13).
+    let steamcmdExe = await saveAndResolveSteamCmdExe(steamcmdPath);
+    if (!steamcmdExe || !fs.existsSync(steamcmdExe)) {
       if (isWindows) {
         return res
           .status(400)
@@ -3770,6 +3824,18 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
       return res.status(400).json({ error: "Invalid installation path", code: ErrorCode.STEAMCMD_DOWNLOAD_INVALID_PATH });
     }
 
+    // This route's whole job is provisioning SteamCMD at installPath --
+    // persist it as the configured steamcmdPath setting now, before
+    // runFirstTimeSetup()'s spawn() resolves an executable from it below
+    // (CodeQL js/command-line-injection #297; see
+    // saveAndResolveSteamCmdExe's header comment). Also makes /install and
+    // /steam-update find this location afterward without the operator
+    // re-typing it.
+    const configuredSteamcmdPath = await getSetting("steamcmdPath");
+    if (configuredSteamcmdPath !== installPath) {
+      await setSetting("steamcmdPath", installPath);
+    }
+
     const io = req.app.get("io");
 
     // Create directory if it doesn't exist
@@ -4004,6 +4070,13 @@ router.post("/steamcmd/download", requirePermission("server.install"), async (re
       });
       log.info("Running SteamCMD first-time setup...");
 
+      // installPath was already persisted as the steamcmdPath setting
+      // earlier in this same request (before the download even started),
+      // so this closure's value is provably the saved one -- not converted
+      // to the async saveAndResolveSteamCmdExe() here because
+      // runFirstTimeSetup() is a synchronous, fire-and-forget inner
+      // function invoked from a spawn/stream callback, not awaited by
+      // either caller.
       const steamcmdExe = getSteamCmdExe(installPath);
       // On Linux, set LD_LIBRARY_PATH for SteamCMD's 32-bit libraries
       const firstRunOpts = { cwd: installPath };
