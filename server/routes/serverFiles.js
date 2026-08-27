@@ -7,6 +7,11 @@ const log = createLogger("API:Files");
 import { getActiveServer, getAllSettings } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
+import {
+  getBackupPath,
+  createBackup,
+  backupWarningFor,
+} from "../utils/configBackup.js";
 import { escapeRegExp } from "../utils/regex.js";
 import { confineToRoots } from "../utils/browseRoots.js";
 import {
@@ -364,101 +369,10 @@ export async function getServerName() {
   return safe;
 }
 
-// Backup directory
-async function getBackupPath() {
-  return path.join(await getServerConfigPath(), "backups");
-}
-
-// Create a backup of `filename` before an edit overwrites it.
-//
-// Returns one of three shapes, DELIBERATELY not collapsed into a single
-// null/truthy check: a caller that can't tell "nothing to back up" apart
-// from "the backup failed" ends up treating both the same way, which is
-// exactly how a response ended up asserting a backup existed when it
-// didn't (see docs/qa/kevin-route-hunt.md Finding 2). Same defect shape as
-// `if (!req.user) return next()` from earlier tonight -- one value quietly
-// carrying two meanings, one benign and one dangerous.
-//   { backedUp: true, name }               -- a real backup now exists on disk
-//   { backedUp: false, reason: "no-source" } -- benign: the file being edited
-//     doesn't exist yet (e.g. first-ever write), so there is nothing to
-//     protect. Not a failure.
-//   { backedUp: false, reason: "failed", error } -- dangerous: a backup was
-//     attempted (the source file exists) and did not happen -- disk full,
-//     backup dir unwritable, the copy itself failing. The safety net the
-//     caller may be about to rely on is NOT there.
-async function createBackup(filename) {
-  const configPath = await getServerConfigPath();
-  const backupDir = await getBackupPath();
-  const filePath = path.join(configPath, filename);
-
-  try {
-    await fs.promises.access(filePath);
-  } catch (e) {
-    log.debug(`Config backup source not found: ${filePath} — ${e.message}`);
-    return { backedUp: false, reason: "no-source" };
-  }
-
-  try {
-    // Ensure backup directory exists
-    await fs.promises.mkdir(backupDir, { recursive: true });
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupName = `${filename}.${timestamp}.bak`;
-    const backupPath = path.join(backupDir, backupName);
-
-    // Async copy — this is the actual safety net. Anything that throws
-    // past this point means the backup did not happen.
-    await fs.promises.copyFile(filePath, backupPath);
-    log.info(`Created backup: ${backupName}`);
-
-    // Cleanup old backups is best-effort housekeeping, not part of the
-    // safety net itself — the new backup above already exists on disk
-    // regardless of whether pruning old ones succeeds, so a cleanup
-    // failure must not flip this call's result to backedUp:false.
-    try {
-      const files = await fs.promises.readdir(backupDir);
-      const backups = files
-        .filter((f) => f.startsWith(filename + ".") && f.endsWith(".bak"))
-        .sort()
-        .reverse();
-
-      if (backups.length > 10) {
-        const filesToDelete = backups.slice(10);
-        await Promise.all(
-          filesToDelete.map((old) =>
-            fs.promises
-              .unlink(path.join(backupDir, old))
-              .catch((e) =>
-                log.warn(`Failed to delete old backup ${old}: ${e.message}`),
-              ),
-          ),
-        );
-      }
-    } catch (cleanupError) {
-      log.warn(
-        `Backup cleanup failed (new backup ${backupName} is still safe): ${cleanupError.message}`,
-      );
-    }
-
-    return { backedUp: true, name: backupName };
-  } catch (error) {
-    log.error(`Backup creation failed: ${error.message}`);
-    return { backedUp: false, reason: "failed", error: error.message };
-  }
-}
-
-// For an ordinary, intentional config edit (as opposed to /sandbox/repair's
-// heuristic rewrite of an already-corrupted file): a backup that failed
-// must never block the edit the operator asked for -- the file being
-// edited is valid and the change is deliberate, so losing the previous
-// version is an annoyance, not a disaster. But the response must say so
-// rather than silently degrading. Returns a user-facing warning string, or
-// null when there's nothing to warn about (backup succeeded, or there was
-// no prior file to back up in the first place).
-function backupWarningFor(backup) {
-  if (!backup || backup.backedUp || backup.reason === "no-source") return null;
-  return `Could not back up the previous version before saving: ${backup.error}. Your change was saved, but there is no safety copy of what was there before.`;
-}
+// getBackupPath/createBackup/backupWarningFor moved to
+// ../utils/configBackup.js (parameterized on configPath instead of calling
+// getServerConfigPath() internally) so server/routes/mods.js's ini-rewriting
+// routes can reuse the exact same backup logic. Imported below.
 
 // Parse INI file to object
 export function parseIni(content) {
@@ -1184,7 +1098,7 @@ router.put("/ini", async (req, res) => {
       let originalContent = "";
       if (fs.existsSync(filePath)) {
         originalContent = fs.readFileSync(filePath, "utf-8");
-        backupWarning = backupWarningFor(await createBackup(`${serverName}.ini`));
+        backupWarning = backupWarningFor(await createBackup(configPath, `${serverName}.ini`));
       }
 
       const content = toIni(settings, originalContent);
@@ -1305,7 +1219,7 @@ router.put("/sandbox", async (req, res) => {
         : createSandboxVars(sandbox);
       if (fileExists) {
         backupWarning = backupWarningFor(
-          await createBackup(`${serverName}_SandboxVars.lua`),
+          await createBackup(configPath, `${serverName}_SandboxVars.lua`),
         );
       }
       writeFileAtomic(filePath, newContent, "utf-8");
@@ -1377,7 +1291,7 @@ router.put("/sandbox-option", async (req, res) => {
       const newContent = modifySandboxValue(originalContent, key, value, block);
       if (newContent === originalContent) return;
       backupWarning = backupWarningFor(
-        await createBackup(`${serverName}_SandboxVars.lua`),
+        await createBackup(configPath, `${serverName}_SandboxVars.lua`),
       );
       writeFileAtomic(filePath, newContent, "utf-8");
       persisted = true;
@@ -1474,7 +1388,7 @@ async function writeSandboxValues(entries, configPath, serverName) {
       return;
     }
     const backupWarning = backupWarningFor(
-      await createBackup(`${serverName}_SandboxVars.lua`),
+      await createBackup(configPath, `${serverName}_SandboxVars.lua`),
     );
     writeFileAtomic(filePath, content, "utf-8");
     persisted = true;
@@ -1556,7 +1470,7 @@ router.post("/sandbox/repair", async (req, res) => {
         };
       }
 
-      const backup = await createBackup(`${serverName}_SandboxVars.lua`);
+      const backup = await createBackup(configPath, `${serverName}_SandboxVars.lua`);
       if (!backup.backedUp) {
         // reason === "no-source" can't happen here (existsSync already
         // confirmed the file above), so this is always the "failed" case.
@@ -1649,7 +1563,7 @@ router.put("/spawnpoints", async (req, res) => {
     await withFileLock(filePath, async () => {
       if (fs.existsSync(filePath)) {
         backupWarning = backupWarningFor(
-          await createBackup(`${serverName}_spawnpoints.lua`),
+          await createBackup(configPath, `${serverName}_spawnpoints.lua`),
         );
       }
 
@@ -1714,7 +1628,7 @@ router.put("/spawnregions", async (req, res) => {
     await withFileLock(filePath, async () => {
       if (fs.existsSync(filePath)) {
         backupWarning = backupWarningFor(
-          await createBackup(`${serverName}_spawnregions.lua`),
+          await createBackup(configPath, `${serverName}_spawnregions.lua`),
         );
       }
 
@@ -1816,7 +1730,7 @@ router.put("/raw/:type", async (req, res) => {
     let backupWarning = null;
     await withFileLock(filePath, async () => {
       if (fs.existsSync(filePath)) {
-        backupWarning = backupWarningFor(await createBackup(fileMap[type]));
+        backupWarning = backupWarningFor(await createBackup(configPath, fileMap[type]));
       }
 
       writeFileAtomic(filePath, content, "utf-8");
@@ -1838,7 +1752,8 @@ router.put("/raw/:type", async (req, res) => {
 // List backups
 router.get("/backups", async (req, res) => {
   try {
-    const backupDir = await getBackupPath();
+    const configPath = await getServerConfigPath();
+    const backupDir = await getBackupPath(configPath);
 
     if (!fs.existsSync(backupDir)) {
       return res.json({ backups: [] });
@@ -1888,8 +1803,8 @@ router.get("/backups", async (req, res) => {
 // Restore from backup
 router.post("/restore/:filename", async (req, res) => {
   try {
-    const backupDir = await getBackupPath();
     const configPath = await getServerConfigPath();
+    const backupDir = await getBackupPath(configPath);
 
     // Sanitize filename to prevent path traversal
     const filename = path.basename(req.params.filename);
@@ -1934,7 +1849,7 @@ router.post("/restore/:filename", async (req, res) => {
     // of right before this restore is not recoverable through this panel.
     let preRestoreBackupWarning = null;
     if (fs.existsSync(targetPath)) {
-      const backup = await createBackup(originalName);
+      const backup = await createBackup(configPath, originalName);
       if (!backup.backedUp && backup.reason !== "no-source") {
         preRestoreBackupWarning = `Could not back up the current ${originalName} before restoring over it: ${backup.error}. The version that was in place before this restore is not recoverable through this panel.`;
       }
@@ -2201,7 +2116,7 @@ router.post("/templates/:id/apply", async (req, res) => {
       await withFileLock(iniPath, async () => {
         // Create backup first
         const iniBackupWarning = backupWarningFor(
-          await createBackup(`${serverName}.ini`),
+          await createBackup(configPath, `${serverName}.ini`),
         );
         if (iniBackupWarning) backupWarnings.push(iniBackupWarning);
 
@@ -2222,7 +2137,7 @@ router.post("/templates/:id/apply", async (req, res) => {
       await withFileLock(sandboxPath, async () => {
         // Create backup first
         const sandboxBackupWarning = backupWarningFor(
-          await createBackup(`${serverName}_SandboxVars.lua`),
+          await createBackup(configPath, `${serverName}_SandboxVars.lua`),
         );
         if (sandboxBackupWarning) backupWarnings.push(sandboxBackupWarning);
 

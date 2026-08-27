@@ -52,7 +52,8 @@ import {
 } from "../utils/browserCookies.js";
 import { requirePermission } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
-import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
+import { withFileLock } from "../utils/fileWriteQueue.js";
+import { writeIniWithBackup, backupWarningFor } from "../utils/configBackup.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 
 const router = express.Router();
@@ -2043,7 +2044,8 @@ router.post("/write-to-ini", async (req, res) => {
     }
 
     // Atomically read-modify-write the ini file inside the lock
-    await withIniLock(iniPath, () => {
+    let backupWarning = null;
+    await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       // Update or add Mods= (mod IDs like NeatUI_Framework)
@@ -2072,7 +2074,9 @@ router.post("/write-to-ini", async (req, res) => {
         }
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
     });
 
     log.info(
@@ -2090,6 +2094,7 @@ router.post("/write-to-ini", async (req, res) => {
       workshopItems: workshopIdList,
       mapList,
       mapFolders: detectedMapFolders,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to write mods to ini: ${error.message}`);
@@ -2248,7 +2253,7 @@ router.post("/toggle-mod-id", async (req, res) => {
       });
     }
 
-    const result = await withIniLock(iniPath, () => {
+    const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
@@ -2268,8 +2273,10 @@ router.post("/toggle-mod-id", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
-      return { totalMods: currentModIds.length };
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
+      return { totalMods: currentModIds.length, backupWarning };
     });
     log.info(
       `Toggled mod ID "${modId}" ${enabled ? "ON" : "OFF"} in ${iniPath}`,
@@ -2280,6 +2287,7 @@ router.post("/toggle-mod-id", async (req, res) => {
       modId,
       enabled,
       totalMods: result.totalMods,
+      ...(result.backupWarning ? { backupWarning: result.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to toggle mod ID: ${error.message}`);
@@ -2372,7 +2380,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       });
     }
 
-    const result = await withIniLock(iniPath, () => {
+    const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
@@ -2395,8 +2403,10 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
-      return { totalMods: currentModIds.length };
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
+      return { totalMods: currentModIds.length, backupWarning };
     });
     log.info(`Batch toggled ${changes.length} mod IDs in ${iniPath}`);
 
@@ -2404,6 +2414,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       success: true,
       changesApplied: changes.length,
       totalMods: result.totalMods,
+      ...(result.backupWarning ? { backupWarning: result.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to batch toggle mod IDs: ${error.message}`);
@@ -2507,7 +2518,7 @@ router.post("/add-to-ini", async (req, res) => {
     }
 
     // Atomically read-modify-write inside the lock
-    const result = await withIniLock(iniPath, () => {
+    const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -2573,10 +2584,13 @@ router.post("/add-to-ini", async (req, res) => {
         }
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
       return {
         alreadyExists: false,
         totalWorkshopItems: currentWorkshopIds.length,
+        backupWarning,
       };
     });
 
@@ -2606,6 +2620,7 @@ router.post("/add-to-ini", async (req, res) => {
       note: detectedModId
         ? undefined
         : 'Mod ID could not be auto-detected. You may need to add it manually or use "Sync Mod IDs" after the mod is downloaded.',
+      ...(result.backupWarning ? { backupWarning: result.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to add mod to ini: ${error.message}`);
@@ -3193,7 +3208,7 @@ router.post("/remove-from-ini", async (req, res) => {
     }
 
     // Atomically read-modify-write inside the lock
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       // Get current workshop items
@@ -3325,12 +3340,15 @@ router.post("/remove-from-ini", async (req, res) => {
         );
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
       return {
         removedModIds,
         removedMapFolders,
         remainingWorkshopItems: workshopIds.length,
         remainingMods: modIds.length,
+        backupWarning,
       };
     });
 
@@ -3349,6 +3367,7 @@ router.post("/remove-from-ini", async (req, res) => {
       mapFoldersRemoved: lockResult.removedMapFolders,
       remainingWorkshopItems: lockResult.remainingWorkshopItems,
       remainingMods: lockResult.remainingMods,
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to remove mod from ini: ${error.message}`);
@@ -3430,7 +3449,7 @@ router.post("/batch-remove", async (req, res) => {
 
         if (fs.existsSync(iniPath)) {
           iniEditApplied = true;
-          iniResult = await withIniLock(iniPath, () => {
+          iniResult = await withIniLock(iniPath, async () => {
             let content = readTextFile(iniPath);
             const removeSet = new Set(validIds);
 
@@ -3488,7 +3507,9 @@ router.post("/batch-remove", async (req, res) => {
               );
             }
 
-            writeFileAtomic(iniPath, content, "utf-8");
+            const backupWarning = backupWarningFor(
+              await writeIniWithBackup(iniPath, content),
+            );
 
             const wsRemoved = origWsCount - iniWorkshopIds.length;
             const modRemoved = origModCount - iniModIds.length;
@@ -3496,7 +3517,11 @@ router.post("/batch-remove", async (req, res) => {
               `Batch INI removal: removed ${wsRemoved} workshop IDs, ${modRemoved} mod IDs, ${mapFoldersToRemove.size} map folders`,
             );
 
-            return { removed: wsRemoved, skipped: validIds.length - wsRemoved };
+            return {
+              removed: wsRemoved,
+              skipped: validIds.length - wsRemoved,
+              backupWarning,
+            };
           });
         }
       }
@@ -3546,6 +3571,7 @@ router.post("/batch-remove", async (req, res) => {
       dbFailed: dbResults.failed,
       iniRemoved: iniResult.removed,
       iniSkipped: iniResult.skipped,
+      ...(iniResult.backupWarning ? { backupWarning: iniResult.backupWarning } : {}),
       ...(iniEditApplied
         ? {}
         : {
@@ -3595,7 +3621,7 @@ router.post("/repair-map-entries", async (req, res) => {
     }
 
     // Atomically read-modify-write inside the lock
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const mapMatch = content.match(/^Map=(.*)$/m);
       const currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [];
@@ -3646,12 +3672,15 @@ router.post("/repair-map-entries", async (req, res) => {
         validEntries.push("Muldraugh, KY");
       }
 
+      let backupWarning = null;
       if (removedEntries.length > 0 || addedEntries.length > 0) {
         const newMapLine = validEntries.join(";");
         if (content.includes("Map=")) {
           content = content.replace(/^Map=.*/m, `Map=${newMapLine}`);
         }
-        writeFileAtomic(iniPath, content, "utf-8");
+        backupWarning = backupWarningFor(
+          await writeIniWithBackup(iniPath, content),
+        );
         log.info(
           `Repaired Map= entries: removed ${removedEntries.length} invalid, added ${addedEntries.length} missing`,
         );
@@ -3661,7 +3690,7 @@ router.post("/repair-map-entries", async (req, res) => {
           log.info(`  Added: ${addedEntries.join(", ")}`);
       }
 
-      return { removedEntries, addedEntries, validEntries };
+      return { removedEntries, addedEntries, validEntries, backupWarning };
     });
 
     const parts = [];
@@ -3683,6 +3712,7 @@ router.post("/repair-map-entries", async (req, res) => {
         parts.length > 0
           ? parts.join(". ")
           : "All map entries are valid. No changes needed.",
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to repair map entries: ${error.message}`);
@@ -3724,7 +3754,7 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
     }
 
     // Atomically read-modify-write inside the lock
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       const currentMods = modsMatch?.[1]?.split(";").filter(Boolean) || [];
@@ -3750,8 +3780,10 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
         /^Mods=.*/m,
         `Mods=${sanitizeModIdList(deduped)}`,
       );
-      writeFileAtomic(iniPath, content, "utf-8");
-      return { noChanges: false, removed, deduped };
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
+      return { noChanges: false, removed, deduped, backupWarning };
     });
 
     if (lockResult.noChanges) {
@@ -3775,6 +3807,7 @@ router.post("/deduplicate-mod-ids", async (req, res) => {
       uniqueCount: uniqueDupes.length,
       remaining: lockResult.deduped.length,
       message: `Removed ${lockResult.removed.length} duplicate mod ID${lockResult.removed.length !== 1 ? "s" : ""}: ${uniqueDupes.join(", ")}`,
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to deduplicate mod IDs: ${error.message}`);
@@ -3845,7 +3878,7 @@ router.post("/add-missing-dep", async (req, res) => {
       : [];
 
     // Atomically read-modify-write inside the lock
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       // Add to WorkshopItems if not present
@@ -3911,8 +3944,10 @@ router.post("/add-missing-dep", async (req, res) => {
         }
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
-      return { wsAdded, modIdAdded };
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
+      return { wsAdded, modIdAdded, backupWarning };
     });
 
     log.info(
@@ -3927,6 +3962,7 @@ router.post("/add-missing-dep", async (req, res) => {
       modIdAdded: lockResult.modIdAdded,
       mapFolders,
       message: `Added ${resolvedModId || wsIdStr} to server config.${mapFolders.length > 0 ? ` Map folders: ${mapFolders.join(", ")}` : ""}`,
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to add missing dep: ${error.message}`);
@@ -4011,7 +4047,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
     }
 
     // Atomically read-modify-write inside the lock
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
       const currentWs = new Set(wsMatch?.[1]?.split(";").filter(Boolean) || []);
@@ -4062,8 +4098,10 @@ router.post("/add-all-resolved-deps", async (req, res) => {
         else content += `\nMap=${mapLine}`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
-      return { wsAdded, modIdsAdded, allMapFolders };
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
+      return { wsAdded, modIdsAdded, allMapFolders, backupWarning };
     });
 
     log.info(
@@ -4077,6 +4115,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       modIdsAdded: lockResult.modIdsAdded,
       mapFolders: lockResult.allMapFolders,
       message: `Added ${deps.length} dependencies to server config.`,
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to batch add deps: ${error.message}`);
@@ -4566,7 +4605,7 @@ router.post("/sync-mod-ids", async (req, res) => {
     }
 
     // Atomically re-read, modify, and write inside the lock
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       const modsMatch = content.match(/^Mods=(.*)$/m);
@@ -4640,8 +4679,15 @@ router.post("/sync-mod-ids", async (req, res) => {
         content += `\nMods=${newModList}`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
-      return { syncedMods, missingMods, totalModIds: finalModIds.length };
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
+      return {
+        syncedMods,
+        missingMods,
+        totalModIds: finalModIds.length,
+        backupWarning,
+      };
     });
 
     const addedCount = lockResult.syncedMods.filter((m) =>
@@ -4662,6 +4708,7 @@ router.post("/sync-mod-ids", async (req, res) => {
         lockResult.missingMods.length > 0
           ? "Start server to download missing workshop items."
           : undefined,
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to sync mod IDs: ${error.message}`);
@@ -4996,7 +5043,8 @@ router.post("/presets/:id/apply", async (req, res) => {
       });
     }
 
-    await withIniLock(iniPath, () => {
+    let backupWarning = null;
+    await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       const workshopLine = `WorkshopItems=${sanitizeIniList(preset.workshop_ids || [])}`;
@@ -5013,7 +5061,9 @@ router.post("/presets/:id/apply", async (req, res) => {
         content += `\n${modsLine}`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
     });
 
     log.info(
@@ -5023,6 +5073,7 @@ router.post("/presets/:id/apply", async (req, res) => {
       message: `Preset "${preset.name}" applied successfully`,
       workshopCount: (preset.workshop_ids || []).length,
       modCount: (preset.mods || []).length,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to apply mod preset: ${error.message}`);
@@ -5074,7 +5125,8 @@ router.post("/save-order", async (req, res) => {
       });
     }
 
-    await withIniLock(iniPath, () => {
+    let backupWarning = null;
+    await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       const modsLine = `Mods=${sanitizeModIdList(modIds)}`;
@@ -5084,13 +5136,16 @@ router.post("/save-order", async (req, res) => {
         content += `\n${modsLine}`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
     });
 
     log.info(`Saved mod load order: ${modIds.length} mods`);
     res.json({
       message: "Mod load order saved successfully",
       modCount: modIds.length,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to save mod order: ${error.message}`);
@@ -5344,7 +5399,7 @@ router.post("/add-mod-advanced", async (req, res) => {
 
     // Atomically read-modify-write inside the lock
     let addedMapFolders = [];
-    const lockResult = await withIniLock(iniPath, () => {
+    const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -5407,11 +5462,14 @@ router.post("/add-mod-advanced", async (req, res) => {
         }
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      const backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
       return {
         addedModIds,
         totalModIdsInConfig: currentModIds.length,
         workshopAlreadyExisted: workshopAlreadyExists,
+        backupWarning,
       };
     });
 
@@ -5442,6 +5500,7 @@ router.post("/add-mod-advanced", async (req, res) => {
         lockResult.addedModIds.length > 0
           ? `Added ${lockResult.addedModIds.length} mod ID(s): ${lockResult.addedModIds.join(", ")}`
           : "Workshop ID added (mod IDs were already configured)",
+      ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to add mod advanced: ${error.message}`);
@@ -7796,7 +7855,8 @@ router.post("/enable-disk-mod", async (req, res) => {
       ? findAllModIdsFromWorkshop(wsId, serverPath)
       : [];
 
-    await withIniLock(iniPath, () => {
+    let backupWarning = null;
+    await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       // WorkshopItems
@@ -7827,7 +7887,9 @@ router.post("/enable-disk-mod", async (req, res) => {
         ? content.replace(/^Mods=.*/m, modsLine)
         : content.trimEnd() + `\n${modsLine}\n`;
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
     });
 
     // Lift any prior ignore-list entry so auto-track picks it up.
@@ -7844,6 +7906,7 @@ router.post("/enable-disk-mod", async (req, res) => {
       success: true,
       workshopId: wsId,
       modIdsAdded: modIdsToAdd.length,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to enable disk-only mod: ${error.message}`);
@@ -7885,7 +7948,8 @@ async function deleteModFromDiskAndIni(wsId) {
     ? findMapFoldersFromWorkshop(wsId, serverPath)
     : [];
 
-  await withIniLock(iniPath, () => {
+  let backupWarning = null;
+  await withIniLock(iniPath, async () => {
     let content = readTextFile(iniPath);
     const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
     if (wsMatch) {
@@ -7918,7 +7982,9 @@ async function deleteModFromDiskAndIni(wsId) {
       if (mapList.length === 0) mapList = ["Muldraugh, KY"];
       content = content.replace(/^Map=.*/m, `Map=${sanitizeIniList(mapList)}`);
     }
-    writeFileAtomic(iniPath, content, "utf-8");
+    backupWarning = backupWarningFor(
+      await writeIniWithBackup(iniPath, content),
+    );
   });
 
   const possiblePaths = getWorkshopPaths(wsId, serverPath || "");
@@ -7935,7 +8001,13 @@ async function deleteModFromDiskAndIni(wsId) {
     }
   }
 
-  return { removedPath, modIdsToStrip, mapFoldersToStrip, iniEditApplied: true };
+  return {
+    removedPath,
+    modIdsToStrip,
+    mapFoldersToStrip,
+    iniEditApplied: true,
+    backupWarning,
+  };
 }
 
 // Delete a mod from disk: removes the workshop content folder, and also
@@ -7953,7 +8025,7 @@ router.post("/delete-disk-mod", async (req, res) => {
       });
     }
 
-    const { removedPath, modIdsToStrip, iniEditApplied } =
+    const { removedPath, modIdsToStrip, iniEditApplied, backupWarning } =
       await deleteModFromDiskAndIni(wsId);
 
     if (!iniEditApplied) {
@@ -8006,6 +8078,7 @@ router.post("/delete-disk-mod", async (req, res) => {
       workshopId: wsId,
       deletedFromDisk: !!removedPath,
       modIdsStripped: modIdsToStrip.length,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to delete disk mod: ${error.message}`);
@@ -8051,8 +8124,13 @@ router.post("/purge", async (req, res) => {
       }
     }
 
-    const { removedPath, modIdsToStrip, mapFoldersToStrip, iniEditApplied } =
-      await deleteModFromDiskAndIni(wsId);
+    const {
+      removedPath,
+      modIdsToStrip,
+      mapFoldersToStrip,
+      iniEditApplied,
+      backupWarning,
+    } = await deleteModFromDiskAndIni(wsId);
 
     if (!iniEditApplied) {
       log.error(
@@ -8094,6 +8172,7 @@ router.post("/purge", async (req, res) => {
       deletedFromDisk: !!removedPath,
       modIdsStripped: modIdsToStrip.length,
       mapFoldersStripped: mapFoldersToStrip.length,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Purge failed: ${error.message}`);
@@ -8147,7 +8226,8 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
       }
     }
 
-    await withIniLock(iniPath, () => {
+    let backupWarning = null;
+    await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
       if (wsMatch) {
@@ -8171,7 +8251,9 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
           `Mods=${sanitizeModIdList(modsList)}`,
         );
       }
-      writeFileAtomic(iniPath, content, "utf-8");
+      backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
     });
 
     // Delete folders.
@@ -8227,6 +8309,7 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
       deletedFromDisk: deletedCount,
       modIdsStripped: allModIdsToStrip.size,
       results,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to batch delete disk mods: ${error.message}`);
@@ -8327,7 +8410,8 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
     }
 
     // Apply both INI mutations in a single locked write.
-    await withIniLock(iniPath, () => {
+    let backupWarning = null;
+    await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
       if (wsToDrop.size > 0) {
@@ -8365,7 +8449,9 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
           : content.trimEnd() + `\n${newLine}\n`;
       }
 
-      writeFileAtomic(iniPath, content, "utf-8");
+      backupWarning = backupWarningFor(
+        await writeIniWithBackup(iniPath, content),
+      );
     });
 
     const counts = {
@@ -8388,6 +8474,7 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
       modIdsAdded: modIdsToAdd.size,
       wsDropped: wsToDrop.size,
       breakdown,
+      ...(backupWarning ? { backupWarning } : {}),
     });
   } catch (error) {
     log.error(`Failed to resolve orphan workshop items: ${error.message}`);
