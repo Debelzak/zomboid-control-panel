@@ -94,7 +94,7 @@
     "moreActionsAria": "Weitere Serveraktionen",
     "addServerFirst": "Zuerst einen Server hinzufügen oder auswählen",
     "notAvailableRemote": "Nicht verfügbar für Remote-Server (nur RCON)",
-    "forceStopTooltip": "Beendet das Spiel sofort, ohne zu speichern"
+    "forceStopTooltip": "Versucht eine kurze Speicherung, stoppt dann in jedem Fall sofort"
   },
   "confirm": {
     "cancel": "Abbrechen",
@@ -104,7 +104,7 @@
     },
     "forceStopServer": {
       "title": "Server sofort stoppen",
-      "description": "Dadurch wird der Spielprozess sofort beendet, ohne zu speichern.",
+      "description": "Dies versucht eine kurze Speicherung (bis zu 3 Sekunden) und stoppt das Spiel dann sofort, unabhängig davon, ob die Speicherung erfolgreich war.",
       "descriptionPlayers": " {{count}} Spieler werden getrennt!"
     },
     "restartServer": {
@@ -122,7 +122,10 @@
     "startServerScriptBackup": { "title": "Server wird gestartet — Startskript gesichert", "description": "Der Panel hat Änderungen am Startskript erkannt und deine Version vor dem Neuerstellen gesichert." },
     "stopServer": { "title": "Server gestoppt", "description": "Sitzung sauber beendet." },
     "stopServerRequested": { "title": "Herunterfahren angefordert", "description": "Der Server speichert und beendet sich gerade geordnet — bei einer großen Welt kann das einen Moment dauern. Das Status-Badge wird aktualisiert, sobald der Stopp bestätigt ist." },
-    "forceStopServer": { "title": "Server sofort gestoppt", "description": "Der Spielprozess wurde ohne RCON beendet." },
+    "forceStopServer": { "title": "Server sofort gestoppt", "description": "Die Welt wurde gespeichert, dann wurde der Spielprozess gestoppt." },
+    "forceStopSaveFailed": { "title": "Server sofort gestoppt – Speichern fehlgeschlagen", "description": "Die Speicherung vor dem Stopp wurde abgelehnt. Aktueller Fortschritt könnte verloren gegangen sein." },
+    "forceStopSaveTimedOut": { "title": "Server sofort gestoppt – Speichern hat zu lange gedauert", "description": "Die Speicherung vor dem Stopp hat nicht innerhalb von 3 Sekunden geantwortet. Aktueller Fortschritt könnte verloren gegangen sein." },
+    "forceStopSaveSkipped": { "title": "Server sofort gestoppt – keine Speicherung versucht", "description": "RCON war nicht verbunden, daher wurde vor dem Stoppen keine Speicherung versucht. Aktueller Fortschritt könnte verloren gegangen sein." },
     "restartServer": { "title": "Neustart geplant", "description": "Der Server wird in Kürze neu gestartet." },
     "restartServerNow": { "title": "Neustart ausgelöst", "description": "Befehl für harten Neustart gesendet." },
     "saveWorld": { "title": "Welt gespeichert", "description": "Aktueller Zustand auf die Festplatte geschrieben." },

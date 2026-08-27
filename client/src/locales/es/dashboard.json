@@ -94,7 +94,7 @@
     "moreActionsAria": "Más acciones del servidor",
     "addServerFirst": "Añadir o seleccionar un servidor primero",
     "notAvailableRemote": "No disponible para servidores remotos (solo RCON)",
-    "forceStopTooltip": "Detiene el juego de inmediato sin guardar"
+    "forceStopTooltip": "Intenta un guardado rápido y luego detiene el juego de inmediato en cualquier caso"
   },
   "confirm": {
     "cancel": "Cancelar",
@@ -104,7 +104,7 @@
     },
     "forceStopServer": {
       "title": "Forzar detención del servidor",
-      "description": "Esto terminará el proceso del juego de inmediato sin guardar.",
+      "description": "Esto intenta un guardado rápido (hasta 3 segundos) y luego detiene el juego de inmediato, tanto si el guardado tiene éxito como si no.",
       "descriptionPlayers": " ¡Se desconectará a {{count}} jugador(es)!"
     },
     "restartServer": {
@@ -122,7 +122,10 @@
     "startServerScriptBackup": { "title": "Iniciando servidor — script de inicio respaldado", "description": "El panel detectó cambios en tu script de inicio y guardó tu versión antes de regenerarlo." },
     "stopServer": { "title": "Servidor detenido", "description": "Sesión cerrada correctamente." },
     "stopServerRequested": { "title": "Apagado solicitado", "description": "El servidor está guardando y cerrando de forma ordenada — puede tardar un momento en un mundo grande. La insignia de estado se actualizará una vez que se confirme la detención." },
-    "forceStopServer": { "title": "Servidor detenido a la fuerza", "description": "El proceso del juego se terminó sin RCON." },
+    "forceStopServer": { "title": "Servidor detenido a la fuerza", "description": "Se guardó el mundo y luego se detuvo el proceso del juego." },
+    "forceStopSaveFailed": { "title": "Servidor detenido a la fuerza — guardado fallido", "description": "El guardado previo a la detención fue rechazado. El progreso reciente podría perderse." },
+    "forceStopSaveTimedOut": { "title": "Servidor detenido a la fuerza — el guardado tardó demasiado", "description": "El guardado previo a la detención no respondió en 3 segundos. El progreso reciente podría perderse." },
+    "forceStopSaveSkipped": { "title": "Servidor detenido a la fuerza — no se intentó guardar", "description": "RCON no estaba conectado, así que no se intentó guardar antes de detener. El progreso reciente podría perderse." },
     "restartServer": { "title": "Reinicio programado", "description": "El servidor se reiniciará en breve." },
     "restartServerNow": { "title": "Reinicio iniciado", "description": "Comando de reinicio forzado enviado." },
     "saveWorld": { "title": "Mundo guardado", "description": "Estado actual escrito en disco." },

@@ -94,7 +94,7 @@
     "moreActionsAria": "Plis aksyon sèvè",
     "addServerFirst": "Ajoute oswa chwazi yon sèvè dabò",
     "notAvailableRemote": "Pa disponib pou sèvè aleka (RCON sèlman)",
-    "forceStopTooltip": "Sispann jwèt la imedyatman san l pa sove"
+    "forceStopTooltip": "Eseye fè yon sovgad rapid, epi sispann imedyatman kanmenm"
   },
   "confirm": {
     "cancel": "Anile",
@@ -104,7 +104,7 @@
     },
     "forceStopServer": {
       "title": "Fòse sispann sèvè a",
-      "description": "Sa a pral touye pwosesis jwèt la imedyatman san l pa sove.",
+      "description": "Sa a eseye fè yon sovgad rapid (jiska 3 segond), epi li sispann jwèt la imedyatman kit sovgad la reyisi kit li pa reyisi.",
       "descriptionPlayers": " {{count}} jwè ap dekonekte!"
     },
     "restartServer": {
@@ -122,7 +122,10 @@
     "startServerScriptBackup": { "title": "Sèvè ap demare — script demaraj sovgade", "description": "Panèl la detekte chanjman nan script demaraj ou a e li sovgade vèsyon ou anvan li rejenere l." },
     "stopServer": { "title": "Sèvè sispann", "description": "Sesyon an fèmen san pwoblèm." },
     "stopServerRequested": { "title": "Arè mande", "description": "Sèvè a ap sove epi fèmen an dousè — sa ka pran yon ti moman sou yon gwo mond. Badj estati a ap mete ajou yon fwa arè a konfime." },
-    "forceStopServer": { "title": "Sèvè fòse sispann", "description": "Pwosesis jwèt la touye san RCON." },
+    "forceStopServer": { "title": "Sèvè fòse sispann", "description": "Mond lan te sove, epi pwosesis jwèt la te sispann." },
+    "forceStopSaveFailed": { "title": "Sèvè fòse sispann — sovgad echwe", "description": "Sovgad anvan sispann lan te refize. Pwogrè resan ka pèdi." },
+    "forceStopSaveTimedOut": { "title": "Sèvè fòse sispann — sovgad pran twòp tan", "description": "Sovgad anvan sispann lan pa t reponn nan 3 segond. Pwogrè resan ka pèdi." },
+    "forceStopSaveSkipped": { "title": "Sèvè fòse sispann — pa gen sovgad ki te eseye", "description": "RCON pa t konekte, kidonk pa gen sovgad ki te eseye anvan sispann. Pwogrè resan ka pèdi." },
     "restartServer": { "title": "Redemaraj pwograme", "description": "Sèvè a ap redemare talè." },
     "restartServerNow": { "title": "Redemaraj deklanche", "description": "Kòmand redemaraj brital voye." },
     "saveWorld": { "title": "Mond sove", "description": "Eta aktyèl ekri sou disk la." },

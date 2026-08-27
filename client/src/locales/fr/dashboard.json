@@ -94,7 +94,7 @@
     "moreActionsAria": "Plus d'actions serveur",
     "addServerFirst": "Ajoutez ou sélectionnez d'abord un serveur",
     "notAvailableRemote": "Non disponible pour les serveurs distants (RCON uniquement)",
-    "forceStopTooltip": "Arrête immédiatement le jeu sans enregistrer"
+    "forceStopTooltip": "Tente une sauvegarde rapide, puis arrête immédiatement dans tous les cas"
   },
   "confirm": {
     "cancel": "Annuler",
@@ -104,7 +104,7 @@
     },
     "forceStopServer": {
       "title": "Arrêt forcé du serveur",
-      "description": "Ceci arrêtera immédiatement le processus du jeu sans enregistrer.",
+      "description": "Ceci tente une sauvegarde rapide (jusqu'à 3 secondes), puis arrête le jeu immédiatement, que la sauvegarde réussisse ou non.",
       "descriptionPlayers": " {{count}} joueur(s) seront déconnectés !"
     },
     "restartServer": {
@@ -122,7 +122,10 @@
     "startServerScriptBackup": { "title": "Démarrage du serveur — script de démarrage sauvegardé", "description": "Le panneau a détecté des modifications du script de démarrage et a sauvegardé votre version avant de le régénérer." },
     "stopServer": { "title": "Serveur arrêté", "description": "Session terminée proprement." },
     "stopServerRequested": { "title": "Arrêt demandé", "description": "Le serveur sauvegarde et s'arrête proprement — cela peut prendre un moment sur un grand monde. Le badge de statut se mettra à jour une fois l'arrêt confirmé." },
-    "forceStopServer": { "title": "Arrêt forcé du serveur", "description": "Le processus du jeu a été arrêté sans RCON." },
+    "forceStopServer": { "title": "Arrêt forcé du serveur", "description": "Le monde a été sauvegardé, puis le processus du jeu a été arrêté." },
+    "forceStopSaveFailed": { "title": "Arrêt forcé du serveur — échec de la sauvegarde", "description": "La sauvegarde préalable à l'arrêt a été refusée. La progression récente pourrait être perdue." },
+    "forceStopSaveTimedOut": { "title": "Arrêt forcé du serveur — délai de sauvegarde dépassé", "description": "La sauvegarde préalable à l'arrêt n'a pas répondu en 3 secondes. La progression récente pourrait être perdue." },
+    "forceStopSaveSkipped": { "title": "Arrêt forcé du serveur — aucune sauvegarde tentée", "description": "RCON n'était pas connecté, donc aucune sauvegarde n'a été tentée avant l'arrêt. La progression récente pourrait être perdue." },
     "restartServer": { "title": "Redémarrage programmé", "description": "Le serveur redémarrera sous peu." },
     "restartServerNow": { "title": "Redémarrage déclenché", "description": "Commande de redémarrage forcé envoyée." },
     "saveWorld": { "title": "Monde enregistré", "description": "État actuel écrit sur le disque." },

@@ -94,7 +94,7 @@
     "moreActionsAria": "More server actions",
     "addServerFirst": "Add or select a server first",
     "notAvailableRemote": "Not available for remote (RCON-only) servers",
-    "forceStopTooltip": "Immediately stops the game without saving"
+    "forceStopTooltip": "Tries a quick save, then stops immediately either way"
   },
   "confirm": {
     "cancel": "Cancel",
@@ -104,7 +104,7 @@
     },
     "forceStopServer": {
       "title": "Force stop server",
-      "description": "This will immediately kill the game process without saving.",
+      "description": "This attempts a quick save (up to 3 seconds), then stops the game immediately whether or not the save succeeds.",
       "descriptionPlayers": " {{count}} player(s) will be disconnected!"
     },
     "restartServer": {
@@ -122,7 +122,10 @@
     "startServerScriptBackup": { "title": "Server starting — startup script backed up", "description": "The panel detected changes to your startup script and saved your version before regenerating it." },
     "stopServer": { "title": "Server stopped", "description": "Session closed cleanly." },
     "stopServerRequested": { "title": "Shutdown requested", "description": "The server is saving and closing gracefully — this can take a moment on a large world. The status badge will update once it's confirmed stopped." },
-    "forceStopServer": { "title": "Server force stopped", "description": "The game process was terminated without RCON." },
+    "forceStopServer": { "title": "Server force stopped", "description": "The world was saved, then the game process was stopped." },
+    "forceStopSaveFailed": { "title": "Server force stopped — save failed", "description": "The pre-stop save was refused. Recent progress may be lost." },
+    "forceStopSaveTimedOut": { "title": "Server force stopped — save timed out", "description": "The pre-stop save didn't respond within 3 seconds. Recent progress may be lost." },
+    "forceStopSaveSkipped": { "title": "Server force stopped — no save attempted", "description": "RCON wasn't connected, so no save was attempted before stopping. Recent progress may be lost." },
     "restartServer": { "title": "Restart scheduled", "description": "The server will restart shortly." },
     "restartServerNow": { "title": "Restart triggered", "description": "Hard restart command sent." },
     "saveWorld": { "title": "World saved", "description": "Current state written to disk." },

@@ -91,6 +91,24 @@ function getDashboardSuccessCopy(t: TFunction<'dashboard'>, action: string) {
   }
 }
 
+// Force Stop attempts a bounded, fail-open save before killing the server
+// (server.js's attemptBoundedSaveBeforeForceStop) and reports the outcome as
+// saveOutcome on every response shape. "saved" uses the plain success copy
+// (getDashboardSuccessCopy above) -- this only covers the other three, which
+// must NOT be collapsed into one message: "the save was refused" and "the
+// save didn't answer in time" mean different things about server state, and
+// "skipped" has to say why rather than reading as a silent nothing. Returns
+// null for "saved" or an unrecognized/absent value, telling the caller to
+// fall through to the generic success toast instead.
+export function getForceStopSaveOutcomeCopy(t: TFunction<'dashboard'>, saveOutcome: string | undefined) {
+  switch (saveOutcome) {
+    case 'failed':   return { title: t('successCopy.forceStopSaveFailed.title'), description: t('successCopy.forceStopSaveFailed.description') }
+    case 'timedOut': return { title: t('successCopy.forceStopSaveTimedOut.title'), description: t('successCopy.forceStopSaveTimedOut.description') }
+    case 'skipped':  return { title: t('successCopy.forceStopSaveSkipped.title'), description: t('successCopy.forceStopSaveSkipped.description') }
+    default:         return null
+  }
+}
+
 // 2026-08-26: unreachable for every current handleAction() caller (serverApi
 // .start/.save, rconApi.connect, backupApi.createBackup) -- each resolves
 // through apiPost, and lib/api.ts's handleResponse() already throws on any
@@ -613,6 +631,19 @@ export default function Dashboard() {
       // the watchdog genuinely observes the process gone.
       const stopUnconfirmed = action === 'Stop server' && result && typeof result === 'object'
         && (result as { confirmed?: boolean }).confirmed === false
+      // 2026-08-26 bug hunt: Force Stop now attempts a bounded, fail-open save
+      // before killing the server (server.js's attemptBoundedSaveBeforeForceStop)
+      // and reports the outcome as saveOutcome -- but the generic success toast
+      // read nothing from the response, so a failed/timed-out/skipped save was
+      // reported identically to a genuine save. "saved" still uses the plain
+      // success copy below; the other three get their own warning-tier toast
+      // (this operation's outer action DID succeed -- the server IS stopped --
+      // so destructive-red would overstate it, and folding into success would
+      // hide the one thing an operator needs to know after a force-stop).
+      const forceStopSaveOutcome = action === 'Force stop server' && result && typeof result === 'object'
+        ? (result as { saveOutcome?: string }).saveOutcome
+        : undefined
+      const forceStopOutcomeCopy = getForceStopSaveOutcomeCopy(t, forceStopSaveOutcome)
       if (scriptWarnings && scriptWarnings.length > 0) {
         toast({
           title: t('successCopy.startServerScriptBackup.title'),
@@ -625,6 +656,8 @@ export default function Dashboard() {
           description: t('successCopy.stopServerRequested.description'),
           variant: 'success' as const,
         })
+      } else if (forceStopOutcomeCopy) {
+        toast({ title: forceStopOutcomeCopy.title, description: forceStopOutcomeCopy.description, variant: 'warning' as const })
       } else {
         toast({ title: copy.title, description: copy.description, variant: 'success' as const })
       }
