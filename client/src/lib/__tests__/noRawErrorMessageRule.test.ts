@@ -4,7 +4,11 @@ import { RuleTester } from 'eslint'
 import rule from '../../../../eslint-rules/no-raw-error-message.js'
 
 const ruleTester = new RuleTester({
-  languageOptions: { ecmaVersion: 2023, sourceType: 'module' },
+  languageOptions: {
+    ecmaVersion: 2023,
+    sourceType: 'module',
+    parserOptions: { ecmaFeatures: { jsx: true } },
+  },
 })
 
 // eslint-rules/no-raw-error-message.js: the structural half of the
@@ -62,6 +66,20 @@ describe('local/no-raw-error-message', () => {
       // same as shape 2's equivalents.
       "toast({ description: result.message })",
       "setStatus(data?.message)",
+
+      // JSX sink (Jim, 2026-08-26), legitimate use: a non-error-like chain
+      // rendered straight into markup -- not excluded by sink, excluded by
+      // the object not being error-like.
+      'const el = <p>{data.message}</p>',
+      // Same shape, chain two levels deep -- the last segment ("count") is
+      // not error-like either, so isErrorLikeReference must reject it
+      // rather than matching on ANY member access ending in a plausible word.
+      'const el = <p>{this.state.error.count}</p>',
+      // `.message` accessed on a chain, but not inside a JSX expression
+      // container and not a toast()/set*() argument either -- plain
+      // variable assignment, the same two-step limitation shape 3 already
+      // accepts above, now confirmed for the chained-object case too.
+      'const msg = this.state.error.message',
     ],
     invalid: [
       {
@@ -115,6 +133,30 @@ describe('local/no-raw-error-message', () => {
       {
         // Shape 3 with optional chaining, direct set*() argument.
         code: 'setDetectError(error?.message)',
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // The JSX-sink gap (Jim, 2026-08-26): `{error.message}` rendered
+        // straight into markup, never a toast()/set*() argument at all --
+        // the exact shape that was structurally invisible before this rule
+        // learned to recognize JSXExpressionContainer as a sink.
+        code: 'const el = <p>{error.message}</p>',
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // The exact ErrorBoundary.tsx / FeatureErrorBoundary.tsx shape:
+        // JSX sink AND a chained object (`this.state.error`, not a bare
+        // `error` identifier) at once -- a class component has no bare
+        // local variable to catch into. Needs both isFeedingUserVisibleSink's
+        // JSX case and isErrorLikeReference's chain case together.
+        code: 'const el = <pre>{this.state.error.message}</pre>',
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Same chained-object shape via a different property name
+        // (`this.props.error`), confirming isErrorLikeReference isn't
+        // hardcoded to `state`.
+        code: 'const el = <pre>{this.props.error.message}</pre>',
         errors: [{ messageId: 'rawMessage' }],
       },
     ],

@@ -26,8 +26,29 @@
  * this is what's been found so far, not a closed set. If a fourth turns up,
  * add it here rather than assuming three is now complete either.
  *
- * All three are flagged ONLY when feeding a value a user will actually see:
- * the direct argument to `toast(...)`, or the direct argument to a
+ * TWO KINDS OF GAP, ON DIFFERENT AXES -- both real, only one currently live.
+ * "How far the rule traces" (accepted, no currently-actionable site found):
+ * no variable-flow tracing across a `const msg = ...; toast({description: msg})`
+ * two-step, and the ternary only matches a bare `instanceof Error`, not an
+ * `instanceof ApiError` or other subclass (2026-08-26 self-audit: exactly one
+ * site in the whole client matches that shape, and it's already exempt for
+ * the two-step reason above, so widening it today would flag nothing).
+ * "Where the rule looks" (Jim, 2026-08-26, WITH live sites): the sink check
+ * below only recognised `toast(...)`/`set*(...)` call arguments -- it never
+ * entered a JSX expression container at all, so `{error.message}` rendered
+ * straight into markup was structurally invisible. Two real instances,
+ * ErrorBoundary.tsx:56 and FeatureErrorBoundary.tsx:89 -- the app's own crash
+ * screens, both spelling their caught error as `this.state.error.message`
+ * (a class component has no bare local variable to catch into), which also
+ * needed isBareErrorMessageAccess's object check widened from "bare
+ * identifier" to "chain ending in an error-like property" (isErrorLikeReference)
+ * -- the JSX gap alone wasn't sufficient to catch these two without that.
+ * Live evidence is what changes the calculus versus the accepted gaps above:
+ * a demonstrated site earns the fix; a theoretical one doesn't, per the same
+ * standard applied when those two were left alone.
+ *
+ * All three (now four) shapes are flagged ONLY when feeding a value a user
+ * will actually see: the direct argument to `toast(...)`, or the direct argument to a
  * `set...(...)` state-setter call (including the `setX(prev => ({ ...prev,
  * error: <node> }))` functional-update shape real sites used). This is
  * deliberately narrower than "any of these shapes anywhere" -- the audit's
@@ -116,9 +137,27 @@ function isRawMessageLogicalOr(node) {
   return ERROR_LIKE_IDENTIFIER_RE.test(member.object.name);
 }
 
+// True for `error` (bare identifier matching the error-like list) or for
+// a chain ending in an error-like property -- `this.state.error`,
+// `this.props.error` -- which is how a class-component error boundary
+// necessarily spells its caught error (there is no bare local variable to
+// name). One level of "what is this chain's own last segment called" is
+// enough for every real site found; not a general is-this-an-Error-typed
+// walk.
+function isErrorLikeReference(node) {
+  if (node.type === "Identifier") return ERROR_LIKE_IDENTIFIER_RE.test(node.name);
+  if (node.type === "MemberExpression" && node.property.type === "Identifier") {
+    return ERROR_LIKE_IDENTIFIER_RE.test(node.property.name);
+  }
+  return false;
+}
+
 // Shape 3: a bare `x.message` / `x?.message` with no fallback at all --
 // worse than shapes 1/2 (an empty or undefined .message shows nothing,
-// not even a generic string), same identifier restriction as shape 2.
+// not even a generic string), same identifier restriction as shape 2
+// (now also matching a `this.state.error`-shaped chain -- see
+// isErrorLikeReference -- found in the two class-component error
+// boundaries, which have no bare local variable to catch into).
 // Visited directly as MemberExpression: espree/typescript-eslint parse
 // `x?.message` as ChainExpression > MemberExpression, so the traversal
 // reaches this exact node either way, optional or not.
@@ -127,8 +166,7 @@ function isBareErrorMessageAccess(node) {
   if (node.property.type !== "Identifier" || node.property.name !== "message") {
     return false;
   }
-  if (node.object.type !== "Identifier") return false;
-  return ERROR_LIKE_IDENTIFIER_RE.test(node.object.name);
+  return isErrorLikeReference(node.object);
 }
 
 // True when `node` (the ternary or the logical-OR expression) is the value
@@ -144,6 +182,16 @@ function isFeedingUserVisibleSink(node) {
   let current = node;
   for (let depth = 0; depth < 8 && current.parent; depth += 1) {
     const parent = current.parent;
+
+    // `{error.message}` rendered straight into markup -- found in
+    // ErrorBoundary.tsx/FeatureErrorBoundary.tsx, the app's own crash
+    // screens. A third sink alongside toast()/set*(), on a different axis
+    // from the other two gaps this rule already documents as open (those
+    // are about how FAR the rule traces; this is about WHERE it looks --
+    // it never entered a JSX expression container at all).
+    if (parent.type === "JSXExpressionContainer") {
+      return true;
+    }
 
     if (parent.type === "CallExpression" && parent.callee.type === "Identifier") {
       if (/^set[A-Z]/.test(parent.callee.name) && parent.arguments.includes(current)) {
