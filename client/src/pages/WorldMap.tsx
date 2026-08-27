@@ -2799,6 +2799,7 @@ export default function WorldMap() {
                   disabled={floor >= 29}
                   aria-label={t('controlRail.floorUp')}
                   className="h-6 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-transparent"
+                  // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (t('controlRail.floorUp') = "Floor up"), same text as the aria-label, unrelated to why the button disables at the floor cap. Triaged 2026-08-27, no disabled-reason text to lose.
                   title={t('controlRail.floorUp')}
                 >
                   <ChevronUp className="w-3.5 h-3.5" />
@@ -2821,6 +2822,7 @@ export default function WorldMap() {
                   disabled={floor <= -1}
                   aria-label={t('controlRail.floorDown')}
                   className="h-6 w-9 rounded-sm border border-transparent hover:border-border/50 hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-transparent"
+                  // eslint-disable-next-line local/no-dead-disabled-title -- pure hint (t('controlRail.floorDown') = "Floor down"), same text as the aria-label, unrelated to why the button disables at the floor minimum. Triaged 2026-08-27, no disabled-reason text to lose.
                   title={t('controlRail.floorDown')}
                 >
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -4091,6 +4093,7 @@ function ContextMenuItem({ icon, label, onClick, loading, description, disabled,
       role="menuitem"
       onClick={onClick}
       disabled={loading || disabled}
+      // eslint-disable-next-line local/no-dead-disabled-title -- description is also rendered as a visible line below (`{description && <span ...>}` a few lines down), so this title is redundant, not a hidden disabled-reason. Adjudicated 2026-08-27 (god chased the "hidden reason" hypothesis and refuted it against the actual JSX).
       title={description}
       className="group relative w-full pr-2 py-1.5 text-xs flex items-stretch gap-2.5 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:outline-none"
     >

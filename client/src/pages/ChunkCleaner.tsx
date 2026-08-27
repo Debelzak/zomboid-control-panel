@@ -2228,6 +2228,7 @@ export default function ChunkCleaner() {
                             className="flex-1 h-6 text-[10px]"
                             onClick={() => void persistCurrentPath(customPath)}
                             disabled={savingPath || loadingSaves || !canManageChunks}
+                            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the button does; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                             title={t("save.saveAsDefaultTitle")}
                           >
                             <Save className="w-3 h-3 mr-1" />
@@ -2735,23 +2736,29 @@ export default function ChunkCleaner() {
                                     key={s.path}
                                     className="flex items-center gap-2"
                                   >
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void applySuggestedPath(s.path)
-                                      }
-                                      disabled={!s.exists || loadingSaves}
-                                      className="flex-1 text-left text-[11px] font-mono px-2 py-1 rounded border border-border/40 bg-background hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors break-all"
-                                      title={
-                                        s.exists
-                                          ? s.hasSaves
-                                            ? t("canvas.titleHasSaves")
-                                            : t("canvas.titleFolderExists")
-                                          : t("canvas.titleFolderMissing")
-                                      }
+                                    <DisabledReason
+                                      reason={!s.exists ? t("canvas.titleFolderMissing") : null}
+                                      className="flex-1"
                                     >
-                                      {s.path}
-                                    </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void applySuggestedPath(s.path)
+                                        }
+                                        disabled={!s.exists || loadingSaves}
+                                        className="flex-1 text-left text-[11px] font-mono px-2 py-1 rounded border border-border/40 bg-background hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors break-all"
+                                        // eslint-disable-next-line local/no-dead-disabled-title -- split 2026-08-27 (rule's own shape-2 guidance): the disabled-reason branch (folder missing) now lives in the DisabledReason wrapper above; this title carries only the enabled-state status hint and is correctly absent, not dead, when the wrapper's reason covers the disable.
+                                        title={
+                                          s.exists
+                                            ? s.hasSaves
+                                              ? t("canvas.titleHasSaves")
+                                              : t("canvas.titleFolderExists")
+                                            : undefined
+                                        }
+                                      >
+                                        {s.path}
+                                      </button>
+                                    </DisabledReason>
                                     {s.hasSaves ? (
                                       <Badge
                                         variant="secondary"

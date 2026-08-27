@@ -581,6 +581,7 @@ export default function Backups() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingBackup || restoringBackup !== null || activeServerRemote || !canManageBackups}
                 className="gap-2"
+                // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Upload an existing world_backup_*.zip from another machine"); the actual disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                 title={t('pageHeader.uploadTitleLocal')}
               >
                 {uploadingBackup ? (
@@ -605,6 +606,7 @@ export default function Backups() {
               onClick={refreshAll}
               disabled={loading}
               aria-label={t('pageHeader.refreshAria')}
+              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; disables only transiently while a refresh is already in flight (the spinning icon is the self-evident "why"), not a permission gate needing DisabledReason. Triaged 2026-08-27.
               title={t('pageHeader.refreshTitle')}
             >
               <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
@@ -994,6 +996,7 @@ export default function Backups() {
                               disabled={!canManageBackups}
                               className="h-9 w-9"
                               aria-label={t('mainCard.viewSnapshotAria', { name: backup.name })}
+                              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                               title={t('mainCard.viewSnapshotTitle')}
                             >
                               <FileText className="w-4 h-4" />
@@ -1007,6 +1010,7 @@ export default function Backups() {
                               disabled={isRestoring || restoringBackup !== null || creatingBackup || !canRestoreBackups}
                               className="h-9 w-9 text-warning hover:text-warning hover:bg-warning/10"
                               aria-label={t('mainCard.restoreAria', { name: backup.name })}
+                              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                               title={t('mainCard.restoreTitle')}
                             >
                               {isRestoring ? (
@@ -1024,6 +1028,7 @@ export default function Backups() {
                               disabled={!canDownloadBackups}
                               className="h-9 w-9"
                               aria-label={t('mainCard.downloadAria', { name: backup.name })}
+                              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                               title={t('mainCard.downloadTitle')}
                             >
                               <Download className="w-4 h-4" />
@@ -1037,6 +1042,7 @@ export default function Backups() {
                               disabled={deletingBackups || !canManageBackups}
                               className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
                               aria-label={t('mainCard.deleteAria', { name: backup.name })}
+                              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint, same text as the aria-label; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                               title={t('mainCard.deleteTitle')}
                             >
                               <Trash2 className="w-4 h-4" />
