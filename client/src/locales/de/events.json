@@ -197,7 +197,9 @@
     "statusOffline": "offline",
     "statusPending": "…",
     "restore": "wiederherstellen",
-    "shutOff": "abschalten"
+    "shutOff": "abschalten",
+    "timingReasoning": "Modifikator {{modifier}} · Welttag {{day}} · {{nights}} überlebte Nächte",
+    "modifierNever": "nie"
   },
   "quickSounds": {
     "sublabel": "RCON · zieht Zombies an",
@@ -521,6 +523,7 @@
     "bridgeCommandFailedFallback": "Brücken-Befehl fehlgeschlagen.",
     "notPersistedDesc": "Nur auf die laufende Welt angewendet — SandboxVars.lua wurde nicht aktualisiert ({{reason}}), daher macht ein Serverneustart dies rückgängig.",
     "notPersistedUnknownReason": "unbekannter Grund",
+    "powerDidNotTakeEffectDesc": "Der Server meldet, dass der Strom weiterhin {{state}} ist — die Änderung wurde nicht wirksam.",
     "noPlayersOnlineError": "Keine Spieler online",
     "targetPlayerRequiredHorde": "Zielspieler für Hordenerzeugung erforderlich",
     "operationCompletedDesc": "Operation erfolgreich abgeschlossen.",

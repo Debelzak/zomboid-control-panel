@@ -197,7 +197,9 @@
     "statusOffline": "fuera de línea",
     "statusPending": "…",
     "restore": "restaurar",
-    "shutOff": "cortar"
+    "shutOff": "cortar",
+    "timingReasoning": "modificador {{modifier}} · día del mundo {{day}} · {{nights}} noches sobrevividas",
+    "modifierNever": "nunca"
   },
   "quickSounds": {
     "sublabel": "RCON · atrae zombis",
@@ -695,6 +697,7 @@
     "bridgeCommandFailedFallback": "Comando del bridge fallido.",
     "notPersistedDesc": "Aplicado únicamente al mundo en ejecución — SandboxVars.lua no se actualizó ({{reason}}), por lo que un reinicio del servidor deshará este cambio.",
     "notPersistedUnknownReason": "motivo desconocido",
+    "powerDidNotTakeEffectDesc": "El servidor indica que la energía sigue {{state}} — el cambio no surtió efecto.",
     "noPlayersOnlineError": "No hay jugadores en línea",
     "targetPlayerRequiredHorde": "Se requiere un jugador objetivo para generar la horda",
     "operationCompletedDesc": "La operación se completó correctamente.",

@@ -146,6 +146,17 @@ function SectionHeader({
   )
 }
 
+// elecShutModifier/waterShutModifier are the day-thresholds the game's own
+// power formula (ISButtonPrompt.lua:421, replicated in PanelBridge.lua's
+// getUtilitiesStatus) compares worldAgeDays against to produce powerOn/
+// waterOn. 2147483647 is that Lua's own documented "never shuts off"
+// sentinel (see its restoreUtilities comment); shown as-is otherwise rather
+// than reinterpreted, so this never re-derives -- and risks disagreeing
+// with -- the verdict the Lua already computed.
+function formatShutoffModifier(modifier: number, t: TFunction) {
+  return modifier >= 2147483647 ? t('utilities.modifierNever') : String(modifier)
+}
+
 function getEventSuccessCopy(action: string, t: TFunction) {
   const copy = (key: string) => ({ title: t(`successCopy.${key}.title`), description: t(`successCopy.${key}.description`) })
   switch (action) {
@@ -1009,6 +1020,10 @@ export default function Events() {
     waterOn: boolean
     elecShut: string
     waterShut: string
+    elecShutModifier: number
+    waterShutModifier: number
+    currentWorldDay: number
+    nightsSurvived: number
   } | null>(null)
 
   const { toast } = useToast()
@@ -1332,14 +1347,30 @@ export default function Events() {
       await checkBridgeStatus()
       const successCopy = getEventSuccessCopy(action, t)
       const notPersisted = result?.persisted === false
+      // restoreUtilities/shutOffUtilities already compute the REAL post-
+      // action power state via world:isHydroPowerOn() (a genuine read-back,
+      // not a hardcoded literal -- see panelBridgeUtilitiesHydroPowerOnReporting
+      // .test.js) and return it unconditionally alongside `success: true`.
+      // The Lua's own comments ("applySettings can re-roll the modifier" /
+      // "so it can't be overwritten") describe exactly the case where the
+      // write silently doesn't stick -- until now the client never looked
+      // at hydroPowerOn, so a silent no-op still read back as plain success.
+      // Water has no equivalent boolean read-back in this response (see
+      // PanelBridge.lua's "Water has no Java flag like isHydroPowerOn()"
+      // comment) -- only power's outcome can be verified this way.
+      const powerMismatch = power && typeof result?.hydroPowerOn === 'boolean' && result.hydroPowerOn !== on
       toast({
-        title: successCopy.title,
-        description: notPersisted
-          ? t('toasts.notPersistedDesc', { reason: result.persistReason || t('toasts.notPersistedUnknownReason') })
-          : successCopy.description,
-        variant: notPersisted ? 'default' : ('success' as const),
+        title: powerMismatch ? t('toasts.actionFailedTitle', { action }) : successCopy.title,
+        description: powerMismatch
+          ? t('toasts.powerDidNotTakeEffectDesc', {
+              state: result.hydroPowerOn ? t('utilities.statusOnline') : t('utilities.statusOffline'),
+            })
+          : notPersisted
+            ? t('toasts.notPersistedDesc', { reason: result.persistReason || t('toasts.notPersistedUnknownReason') })
+            : successCopy.description,
+        variant: powerMismatch ? 'destructive' : notPersisted ? 'default' : ('success' as const),
       })
-      pushActivity(successCopy.title, true)
+      pushActivity(powerMismatch ? t('toasts.actionFailedTitle', { action }) : successCopy.title, !powerMismatch)
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.commandFailedFallback'))
       toast({
@@ -2343,6 +2374,15 @@ export default function Events() {
                       {utilitiesStatus === null ? t('utilities.statusPending') : utilitiesStatus.powerOn ? t('utilities.statusOnline') : t('utilities.statusOffline')}
                     </span>
                   </div>
+                  {utilitiesStatus !== null && (
+                    <p className="font-mono text-[10px] text-muted-foreground/60">
+                      {t('utilities.timingReasoning', {
+                        modifier: formatShutoffModifier(utilitiesStatus.elecShutModifier, t),
+                        day: Math.floor(utilitiesStatus.currentWorldDay),
+                        nights: utilitiesStatus.nightsSurvived,
+                      })}
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleUtilities('Restore Power', true, true, false)} className="h-8 text-xs font-medium text-emerald-400/90 hover:text-emerald-400 hover:border-emerald-400/40">
                       {t('utilities.restore')}
@@ -2370,6 +2410,15 @@ export default function Events() {
                       {utilitiesStatus === null ? t('utilities.statusPending') : utilitiesStatus.waterOn ? t('utilities.statusOnline') : t('utilities.statusOffline')}
                     </span>
                   </div>
+                  {utilitiesStatus !== null && (
+                    <p className="font-mono text-[10px] text-muted-foreground/60">
+                      {t('utilities.timingReasoning', {
+                        modifier: formatShutoffModifier(utilitiesStatus.waterShutModifier, t),
+                        day: Math.floor(utilitiesStatus.currentWorldDay),
+                        nights: utilitiesStatus.nightsSurvived,
+                      })}
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleUtilities('Restore Water', true, false, true)} className="h-8 text-xs font-medium text-emerald-400/90 hover:text-emerald-400 hover:border-emerald-400/40">
                       {t('utilities.restore')}

@@ -197,7 +197,9 @@
     "statusOffline": "离线",
     "statusPending": "…",
     "restore": "恢复",
-    "shutOff": "关闭"
+    "shutOff": "关闭",
+    "timingReasoning": "修正值 {{modifier}} · 世界第 {{day}} 天 · 已存活 {{nights}} 夜",
+    "modifierNever": "永不"
   },
   "quickSounds": {
     "sublabel": "RCON · 吸引丧尸",
@@ -521,6 +523,7 @@
     "bridgeCommandFailedFallback": "桥接命令失败。",
     "notPersistedDesc": "仅应用于当前运行中的世界 — SandboxVars.lua 未被更新（{{reason}}），因此服务器重启后此更改将被撤销。",
     "notPersistedUnknownReason": "未知原因",
+    "powerDidNotTakeEffectDesc": "服务器报告电力状态仍为{{state}} — 更改未生效。",
     "noPlayersOnlineError": "没有在线玩家",
     "targetPlayerRequiredHorde": "生成尸群需要目标玩家",
     "operationCompletedDesc": "操作已成功完成。",

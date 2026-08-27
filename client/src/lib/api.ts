@@ -2608,6 +2608,13 @@ export const panelBridgeApi = {
         waterShut: string;
         elecShutModifier: number;
         waterShutModifier: number;
+        // The Lua replicates the game's own power-shutoff formula
+        // (ISButtonPrompt.lua:421 -- elecShutModifier > -1 AND worldAgeDays
+        // < elecShutModifier) to compute powerOn/waterOn above; these are
+        // the inputs to that formula, so the UI can show WHY, not just the
+        // on/off verdict.
+        currentWorldDay: number;
+        nightsSurvived: number;
       };
     }>,
 
