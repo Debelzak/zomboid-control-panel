@@ -53,6 +53,7 @@ import { PanelUpdateChecker } from "./services/panelUpdateChecker.js";
 import { LogTailer } from "./services/logTailer.js";
 import { DiskMonitor } from "./services/diskMonitor.js";
 import authService from "./services/auth.js";
+import { getRoleByName } from "./services/permissions.js";
 import { requireRole } from "./services/auth.js";
 import authRoutes from "./routes/auth.js";
 import oidcRoutes from "./routes/oidc.js";
@@ -1846,7 +1847,22 @@ io.use(async (socket, next) => {
     if (needsSetup) return next();
 
     const authEnabled = await authService.isAuthEnabled();
-    if (!authEnabled) return next();
+    if (!authEnabled) {
+      // Auth explicitly disabled: grant full access, but EXPLICITLY -- set a
+      // real socket.user rather than leaving it unset, same fix and same
+      // reasoning as authService.middleware()'s req.user (services/auth.js):
+      // "no socket.user" must mean only one thing (not authenticated,
+      // refuse) everywhere downstream, including the subscribe:* capability
+      // checks below.
+      socket.user = {
+        userId: null,
+        username: null,
+        role: "admin",
+        tokenGen: null,
+        authDisabled: true,
+      };
+      return next();
+    }
 
     // Check for token in handshake auth or query params
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -1866,6 +1882,24 @@ io.use(async (socket, next) => {
   }
 });
 
+// A room join has no HTTP-style response to refuse with, so the "no
+// capability" outcome is simply not joining the room -- the client asked
+// for a stream it can't have and silently gets none of it, same effective
+// result as requirePermission()'s 403 without inventing a socket-only error
+// shape. Mirrors requirePermission()'s own role -> capabilities lookup
+// (services/permissions.js) rather than a second, divergent one; fails
+// closed on any missing/unresolvable role, same as that function.
+export async function socketHasCapability(socket, capability) {
+  if (!socket.user) return false;
+  try {
+    const role = await getRoleByName(socket.user.role);
+    return Array.isArray(role?.capabilities) && role.capabilities.includes(capability);
+  } catch (error) {
+    log.warn(`Could not resolve socket capability "${capability}": ${error.message}`);
+    return false;
+  }
+}
+
 // Socket.IO connection handling
 io.on("connection", (socket) => {
   log.debug(
@@ -1876,23 +1910,36 @@ io.on("connection", (socket) => {
     log.debug(`Client disconnected: ${socket.id}`);
   });
 
-  // Subscribe to server status updates
+  // Subscribe to server status updates. GET /api/server/status has no
+  // permission gate at all (deliberate -- every logged-in role, and the
+  // dashboard itself, needs it), so this room is intentionally open too.
   socket.on("subscribe:status", () => {
     socket.join("server-status");
   });
 
-  // Subscribe to player updates
-  socket.on("subscribe:players", () => {
+  // Subscribe to player updates. Mirrors GET /api/players/ (players.js),
+  // which requires players.view -- this room carries the same data and
+  // must not be reachable by a role that route refuses.
+  socket.on("subscribe:players", async () => {
+    if (!(await socketHasCapability(socket, "players.view"))) return;
     socket.join("players");
   });
 
-  // Subscribe to logs
-  socket.on("subscribe:logs", () => {
+  // Subscribe to logs. Mirrors GET /api/debug/logs (debug.js), which
+  // requires diagnostics.manage -- every route in that file is admin-only
+  // by design. Without this check, moderator (which does not hold
+  // diagnostics.manage) could get the identical live log stream, including
+  // RCON command text, just by connecting a socket instead of calling the
+  // HTTP route.
+  socket.on("subscribe:logs", async () => {
+    if (!(await socketHasCapability(socket, "diagnostics.manage"))) return;
     socket.join("logs");
   });
 
-  // Subscribe to performance snapshots
-  socket.on("subscribe:perf", () => {
+  // Subscribe to performance snapshots. Mirrors POST
+  // /api/debug/performance-snapshot (debug.js), also diagnostics.manage.
+  socket.on("subscribe:perf", async () => {
+    if (!(await socketHasCapability(socket, "diagnostics.manage"))) return;
     socket.join("perf");
   });
   socket.on("unsubscribe:perf", () => {
