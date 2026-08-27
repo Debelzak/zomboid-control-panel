@@ -354,11 +354,37 @@ function hasActiveSteamOperation(normalizedPath) {
   return true;
 }
 
+// Every location serverManager.js's getServerConfig() will accept as "the"
+// INI for a server, in the same preference order, given a config directory
+// (the Server/ subdirectory a modern PZ install uses) and its parent data
+// directory (the legacy layout some installs still have the real file
+// under). ensureRconConfigured() below used to check ONLY the first of
+// these -- if a particular install's real, fully-configured INI happened to
+// live at one of the others, that ini "didn't exist" as far as this
+// function could tell, and it would pre-create a bare RCON-only stub AT THE
+// WRONG PATH with no backup, discarding every other setting the moment PZ
+// picked that file up (2026-08-27 user report: "ini and sandbox settings
+// reverted to default" after a restart). Mirrors getServerConfig()'s own
+// fallback chain exactly so both halves of the panel agree on where a
+// server's real INI is.
+function candidateIniPaths(serverConfigPath, zomboidDataPath, serverName) {
+  const candidates = [];
+  if (serverConfigPath) {
+    candidates.push(path.join(serverConfigPath, `${serverName}.ini`));
+  }
+  if (zomboidDataPath) {
+    candidates.push(path.join(zomboidDataPath, `${serverName}.ini`));
+    candidates.push(path.join(zomboidDataPath, "servertest.ini"));
+    candidates.push(path.join(zomboidDataPath, "serveroptions.ini"));
+  }
+  return candidates;
+}
+
 // Helper to auto-configure RCON in the server's .ini file
 // Called BEFORE server starts to ensure PZ reads the correct RCON credentials on boot.
 // If the INI file doesn't exist yet (first run), creates the directory + a minimal INI
 // so PZ will merge its defaults with our RCON settings instead of generating a blank password.
-async function ensureRconConfigured() {
+export async function ensureRconConfigured() {
   try {
     const activeServer = await getActiveServer();
     if (!activeServer) {
@@ -385,7 +411,17 @@ async function ensureRconConfigured() {
       return false;
     }
 
-    const iniPath = path.join(serverConfigPath, `${serverName}.ini`);
+    // Prefer an INI that actually exists at any recognized location over
+    // the default Server/ path -- see candidateIniPaths()'s comment. Falls
+    // back to the default path (unchanged from before) only when none of
+    // the candidates exist, which is the genuine "first run" case.
+    const iniPath =
+      candidateIniPaths(
+        serverConfigPath,
+        activeServer.zomboidDataPath,
+        serverName,
+      ).find((candidate) => fs.existsSync(candidate)) ||
+      path.join(serverConfigPath, `${serverName}.ini`);
 
     // Locked per-path: two overlapping calls (e.g. a start request racing a
     // settings save) must not interleave their read-modify-write of the INI.
