@@ -8,6 +8,7 @@ import {
   parseClampedInteger,
 } from '../utils/queryNumbers.js';
 import { sanitizeError } from '../utils/sanitize.js';
+import { redactRconCommandSecrets } from '../utils/rconCommandRedaction.js';
 import {
   testRconConnection,
   checkTcpReachable,
@@ -62,8 +63,12 @@ router.post('/execute', requirePermission('rcon.execute'), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const command = req.body?.command;
-    log.info(`POST /execute: ${typeof command === 'string' ? command.substring(0, 100) : ''}`);
-    
+    // Redact BEFORE truncating: the redaction regex needs the password
+    // argument's closing quote to match (rconCommandRedaction.js), which a
+    // 100-char cut partway through the password would strip, leaving a
+    // partial cleartext fragment logged instead of a redacted one.
+    log.info(`POST /execute: ${typeof command === 'string' ? redactRconCommandSecrets(command).substring(0, 100) : ''}`);
+
     if (!command) {
       return res.status(400).json({ error: 'Command is required', code: ErrorCode.RCON_COMMAND_REQUIRED });
     }
@@ -74,12 +79,17 @@ router.post('/execute', requirePermission('rcon.execute'), async (req, res) => {
     }
     
     const result = await rconService.execute(command);
-    
-    // Emit to connected clients
+
+    // Emit to connected clients. Redact both fields before broadcasting --
+    // this is the FULL, untruncated command reaching every socket in the
+    // "logs" room, unlike the 100-char log.info above, and command_history
+    // (database/init.js's logCommand) already redacts both command and
+    // response for the identical reason: `response` is defense-in-depth in
+    // case a verbose RCON reply ever echoes the command it's replying to.
     const io = req.app.get('io');
     if (io) io.to('logs').emit('rcon:response', {
-      command,
-      response: result.response || result.error,
+      command: redactRconCommandSecrets(command),
+      response: redactRconCommandSecrets(result.response || result.error),
       success: result.success,
       timestamp: new Date().toISOString()
     });

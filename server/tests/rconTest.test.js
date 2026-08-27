@@ -216,3 +216,70 @@ describe('RCON route malformed request handling', () => {
     expect(res.body.code).toBe('RCON_COMMAND_INVALID');
   });
 });
+
+// 2026-08-27 bug hunt: POST /execute broadcasts its command AND response to
+// the "logs" socket room via rcon:response, and separately logs the command
+// via log.info -- both were the raw, unredacted string. logCommand()
+// (database/init.js) already redacts an adduser password before persisting
+// to command_history for exactly this reason (see rconCommandRedaction.js);
+// these two sites were never brought in line, so `adduser "Bob" "hunter2"`
+// still reached every diagnostics.manage-holding socket, and every log
+// line, in cleartext. Wire-level coverage: calls the real handler and
+// asserts on what actually got emitted/logged, not on source text.
+describe('RCON /execute -- redacts secrets before they leave the route', () => {
+  function createIoMock() {
+    const emitted = [];
+    return {
+      emitted,
+      to: () => ({
+        emit: (event, payload) => emitted.push({ event, payload }),
+      }),
+    };
+  }
+
+  it('redacts the adduser password in the rcon:response broadcast, both command and response fields', async () => {
+    const res = createResponse();
+    const io = createIoMock();
+    const rconService = {
+      execute: vi.fn(async () => ({
+        success: true,
+        response: 'Command received: adduser "Bob" "hunter2" -> User added',
+      })),
+    };
+
+    await getHandler('/execute')(
+      {
+        body: { command: 'adduser "Bob" "hunter2"' },
+        app: { get: (key) => (key === 'rconService' ? rconService : io) },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(undefined); // res.json(), no explicit status -- 200 default
+    const broadcast = io.emitted.find((e) => e.event === 'rcon:response');
+    expect(broadcast.payload.command).toBe('adduser "Bob" "[REDACTED]"');
+    expect(broadcast.payload.response).toBe(
+      'Command received: adduser "Bob" "[REDACTED]" -> User added',
+    );
+  });
+
+  it('does not alter a command with no password to redact', async () => {
+    const res = createResponse();
+    const io = createIoMock();
+    const rconService = {
+      execute: vi.fn(async () => ({ success: true, response: 'players: Bob' })),
+    };
+
+    await getHandler('/execute')(
+      {
+        body: { command: 'players' },
+        app: { get: (key) => (key === 'rconService' ? rconService : io) },
+      },
+      res,
+    );
+
+    const broadcast = io.emitted.find((e) => e.event === 'rcon:response');
+    expect(broadcast.payload.command).toBe('players');
+    expect(broadcast.payload.response).toBe('players: Bob');
+  });
+});
