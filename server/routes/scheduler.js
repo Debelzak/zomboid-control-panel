@@ -519,6 +519,20 @@ router.post('/tasks/:id/run', async (req, res) => {
 // Trigger immediate restart
 router.post('/restart-now', async (req, res) => {
   try {
+    // This is not a scheduled-task action -- there is no stored command to
+    // classify via requiredCapabilityForScheduledCommand() the way POST
+    // /tasks, PUT /tasks/:id and POST /tasks/:id/run already do above. It is
+    // a direct, immediate call into scheduler.performRestart(), the exact
+    // same live action POST /server/restart performs under server.control.
+    // automation.manage alone ("manage scheduled tasks") only covers the
+    // scheduling half of that same reasoning: someone holding it but not
+    // server.control could restart the live server right now through this
+    // door, which /server/restart's own gate exists specifically to
+    // require. bug-hunt-2026-08-27, Pam's undersell pass, routed as a
+    // bypass row rather than a label fix.
+    const allowed = await requireCapabilityInline('server.control', req, res);
+    if (!allowed) return;
+
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
       return res.status(400).json({ error: 'Cannot restart a remote server. The process is not managed by this panel.', code: ErrorCode.SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED });

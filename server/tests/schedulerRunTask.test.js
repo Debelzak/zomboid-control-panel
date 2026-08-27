@@ -855,6 +855,7 @@ describe("POST /api/scheduler/restart-now labels its Schedule History entry as m
 
     await getRestartNowHandler()(
       {
+        user: { role: "automation_and_control" },
         body: { warningMinutes: 5 },
         app: { get: () => ({ performRestart }) },
       },
@@ -862,5 +863,61 @@ describe("POST /api/scheduler/restart-now labels its Schedule History entry as m
     );
 
     expect(performRestart).toHaveBeenCalledWith(5, { label: "Manual restart" });
+  });
+});
+
+// bug-hunt-2026-08-27 (Pam's undersell pass, routed as a bypass row): unlike
+// POST /tasks, PUT /tasks/:id and POST /tasks/:id/run above, restart-now has
+// no stored command to classify via requiredCapabilityForScheduledCommand()
+// -- it calls scheduler.performRestart() directly, the exact same live
+// action POST /server/restart performs under server.control. Was gated only
+// by the router-level automation.manage ("manage scheduled tasks"), which
+// says nothing about performing an immediate restart -- someone holding
+// automation.manage but not server.control could restart the live server
+// right now through this door.
+describe("POST /api/scheduler/restart-now requires server.control in addition to automation.manage", () => {
+  function getRestartNowHandler() {
+    const layer = router.stack.find(
+      (entry) => entry.route?.path === "/restart-now" && entry.route.methods.post,
+    );
+    return layer.route.stack[0].handle;
+  }
+
+  it("refuses a caller who holds automation.manage but not server.control", async () => {
+    const { getActiveServer } = await import("../database/init.js");
+    getActiveServer.mockResolvedValue(null);
+    const performRestart = vi.fn().mockResolvedValue({ success: true });
+    const response = createResponse();
+
+    await getRestartNowHandler()(
+      {
+        user: { role: "automation_only" },
+        body: {},
+        app: { get: () => ({ performRestart }) },
+      },
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(performRestart).not.toHaveBeenCalled();
+  });
+
+  it("allows a caller who holds both automation.manage and server.control", async () => {
+    const { getActiveServer } = await import("../database/init.js");
+    getActiveServer.mockResolvedValue(null);
+    const performRestart = vi.fn().mockResolvedValue({ success: true });
+    const response = createResponse();
+
+    await getRestartNowHandler()(
+      {
+        user: { role: "automation_and_control" },
+        body: {},
+        app: { get: () => ({ performRestart }) },
+      },
+      response,
+    );
+
+    expect(response.status).not.toHaveBeenCalledWith(403);
+    expect(performRestart).toHaveBeenCalled();
   });
 });

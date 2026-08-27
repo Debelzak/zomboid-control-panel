@@ -91,6 +91,7 @@ describe("scheduler:action_result socket emission", () => {
 
     await getHandler("/restart-now", "post")(
       {
+        user: { role: "automation_and_control" },
         body: { warningMinutes: 5 },
         app: { get: (key) => (key === "scheduler" ? { performRestart } : key === "io" ? { emit } : null) },
       },
@@ -118,6 +119,7 @@ describe("scheduler:action_result socket emission", () => {
 
     await getHandler("/restart-now", "post")(
       {
+        user: { role: "automation_and_control" },
         body: {},
         app: { get: (key) => (key === "scheduler" ? { performRestart } : key === "io" ? { emit } : null) },
       },
@@ -139,6 +141,7 @@ describe("scheduler:action_result socket emission", () => {
 
     await getHandler("/restart-now", "post")(
       {
+        user: { role: "automation_and_control" },
         body: {},
         app: { get: (key) => (key === "scheduler" ? { performRestart } : key === "io" ? { emit } : null) },
       },
@@ -159,7 +162,7 @@ describe("scheduler:action_result socket emission", () => {
 
     await expect(
       getHandler("/restart-now", "post")(
-        { body: {}, app: { get: () => ({ performRestart }) } }, // same object for every key, no .emit
+        { user: { role: "automation_and_control" }, body: {}, app: { get: () => ({ performRestart }) } }, // same object for every key, no .emit
         response,
       ),
     ).resolves.not.toThrow();
