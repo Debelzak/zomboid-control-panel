@@ -38,7 +38,8 @@
     "coverageTitle": "No map tiles at this zoom",
     "coverageDesc": "<1>tiles.pzmap.org</1> is reachable but hasn't rendered this area at this detail level. Zoom out, or try Refresh later.",
     "networkTitle": "Map tiles aren't loading",
-    "networkDesc": "This tile couldn't be loaded from the panel. Check the panel's own network connection and try <1>Refresh</1>."
+    "networkDesc": "This tile couldn't be loaded from the panel. Check the panel's own network connection and try <1>Refresh</1>.",
+    "diagnostic": "Diagnostic: {{detail}}"
   },
   "roster": {
     "label": "roster",

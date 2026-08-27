@@ -937,6 +937,15 @@ export default function WorldMap() {
   const [tileLoadFailing, setTileLoadFailing] = useState(false)
   const [tileFailureKind, setTileFailureKind] = useState<'network' | 'coverage'>('network')
   const tileCoverageFailRef = useRef(0)
+  // The raw diagnostic code behind the most recent tile failure -- surfaced
+  // in the banner itself so a report carries its own diagnosis (the X-Tile-
+  // Cache header this reads was already on every tile response; nothing
+  // ever displayed it, same defect shape as the backupWarning field nobody
+  // read). Every request that ever reaches markFailed already went through
+  // loadViaProxy (the direct path always retries via proxy before giving
+  // up, see loadDziTile's directImg.onerror below), so this header is
+  // always the relevant one -- there is no "which path" ambiguity to add.
+  const [tileFailureDetail, setTileFailureDetail] = useState<string | null>(null)
 
   const loadDziTile = useCallback((level: number, col: number, row: number) => {
     const f = floorRef.current
@@ -949,7 +958,7 @@ export default function WorldMap() {
     tileCacheRef.current[key] = null
     pendingTileLoadsRef.current++
 
-    const markFailed = (reason: 'network' | 'coverage' = 'network') => {
+    const markFailed = (reason: 'network' | 'coverage' = 'network', detail: string = 'no-header') => {
       if (floorRef.current !== f) return
       // Drop the pending entry so the per-tile backoff guard above is what
       // gates the next retry (rather than the "key in cache" check).
@@ -960,6 +969,12 @@ export default function WorldMap() {
       tileFailRef.current[key] = { count, nextAt: Date.now() + delay }
       // Surface a user-visible warning if many distinct tiles are failing.
       if (count === 1) {
+        // Last-write-wins across whichever tile fails FIRST most recently --
+        // illustrative of what's currently going wrong, not a claim every
+        // failing tile shares one cause. Gated the same way as the counters
+        // just below (first failure of a given tile only) to avoid a
+        // re-render on every backoff retry of an already-known-failing tile.
+        setTileFailureDetail(detail)
         tileFailureCountRef.current++
         if (reason === 'coverage') tileCoverageFailRef.current++
         if (tileFailureCountRef.current >= 6) {
@@ -984,6 +999,7 @@ export default function WorldMap() {
           if (tileFailureCountRef.current === 0) {
             tileCoverageFailRef.current = 0
             setTileLoadFailing(false)
+            setTileFailureDetail(null)
           }
         }
       }
@@ -1016,9 +1032,15 @@ export default function WorldMap() {
       // X-Tile-Cache: miss confirms an upstream fetch actually happened;
       // hit-mem/hit-disk/absent all mean "local", regardless of status.
       let upstreamParticipated = false
+      // Raw X-Tile-Cache value (hit-mem/hit-disk/miss), kept alongside the
+      // derived upstreamParticipated boolean so the failure banner can show
+      // the actual diagnostic code rather than just the coarse network/
+      // coverage split -- see tileFailureDetail above.
+      let cacheTierRaw: string | null = null
       fetch(proxyUrl)
         .then((res) => {
-          upstreamParticipated = res.headers.get('X-Tile-Cache') === 'miss'
+          cacheTierRaw = res.headers.get('X-Tile-Cache')
+          upstreamParticipated = cacheTierRaw === 'miss'
           if (floorRef.current !== f) { pendingTileLoadsRef.current--; return null } // stale — floor changed mid-flight
           if (res.status === 404) {
             pendingTileLoadsRef.current--
@@ -1055,7 +1077,7 @@ export default function WorldMap() {
             // sent these bytes this request, naming it is earned ('coverage').
             // If they came from our own cache (hit-mem/hit-disk), the
             // corruption is local and upstream had no part in it.
-            markFailed(upstreamParticipated ? 'coverage' : 'network')
+            markFailed(upstreamParticipated ? 'coverage' : 'network', cacheTierRaw ?? 'no-header')
           }
           img.src = objectUrl
         })
@@ -1067,7 +1089,14 @@ export default function WorldMap() {
           // rejected fetch (couldn't even reach our own proxy), or a 4xx
           // that never got as far as the upstream fetch (local validation) --
           // means we can't vouch for tiles.pzmap.org either way.
-          markFailed(upstreamParticipated && status && status >= 400 && status < 500 ? 'coverage' : 'network')
+          // Detail: the response's own header when we got one (a 4xx/5xx
+          // passthrough still carries it), else `http-<status>` when there
+          // was a status but no header, else 'unreachable' for a fetch that
+          // never got a response at all (couldn't even reach our own proxy).
+          markFailed(
+            upstreamParticipated && status && status >= 400 && status < 500 ? 'coverage' : 'network',
+            cacheTierRaw ?? (status ? `http-${status}` : 'unreachable'),
+          )
         })
     }
 
@@ -2781,6 +2810,16 @@ export default function WorldMap() {
                       />
                     </div>
                   </>
+                )}
+                {tileFailureDetail && (
+                  // The raw X-Tile-Cache diagnostic code (hit-mem/hit-disk/
+                  // miss/http-<status>/unreachable) -- was already on every
+                  // tile response and nothing ever displayed it. Shown
+                  // as-is (not translated) so a screenshot carries the same
+                  // fact a devtools Network tab would have shown.
+                  <div className="mt-1 pt-1 border-t border-warning/20 font-mono text-[10px] text-muted-foreground/70">
+                    {t('tileFailure.diagnostic', { detail: tileFailureDetail })}
+                  </div>
                 )}
               </div>
             </div>

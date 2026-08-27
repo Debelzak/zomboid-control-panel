@@ -38,7 +38,8 @@
     "coverageTitle": "Keine Kartenkacheln bei dieser Zoomstufe",
     "coverageDesc": "<1>tiles.pzmap.org</1> ist erreichbar, hat diesen Bereich in dieser Detailstufe aber noch nicht gerendert. Zoome heraus oder versuche es später erneut mit Aktualisieren.",
     "networkTitle": "Kartenkacheln werden nicht geladen",
-    "networkDesc": "Diese Kachel konnte nicht vom Panel geladen werden. Überprüfe die eigene Netzwerkverbindung des Panels und versuche es erneut mit <1>Aktualisieren</1>."
+    "networkDesc": "Diese Kachel konnte nicht vom Panel geladen werden. Überprüfe die eigene Netzwerkverbindung des Panels und versuche es erneut mit <1>Aktualisieren</1>.",
+    "diagnostic": "Diagnose: {{detail}}"
   },
   "roster": {
     "label": "Liste",
