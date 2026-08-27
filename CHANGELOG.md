@@ -90,6 +90,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A server's saved settings could be replaced with a blank configuration when it started.**
+  Before starting a server, the panel checks whether that server already has a configuration file,
+  so that it can add the remote-console settings it needs on a genuinely new one. That check looked
+  in only one of the four locations the rest of the panel recognises - different Project Zomboid
+  installations and versions keep the file in different places, and the panel has always accepted
+  all four everywhere else. On an installation whose real configuration lives in one of the other
+  three, the check could not see it, concluded the server had never been set up, and wrote a fresh,
+  almost-empty configuration in its place. Project Zomboid then supplied its own built-in defaults
+  for everything that file did not mention - the server password, the mod list and every sandbox
+  setting - which from the outside looks exactly like the server reverting to default. This was also
+  the one configuration write that did not take a backup first, so the panel's own backup screen
+  could not undo it. The check now looks in every location the panel recognises, and only treats a
+  server as new when no configuration exists in any of them. Reported by a user whose settings and
+  mod list reverted after a restart; this closes a demonstrated gap in the panel's own handling of
+  those locations, and whether it was the exact cause of that report is still being confirmed.
+
 - **Two backups taken within the same millisecond silently destroyed one of them.** Startup-script
   backups and configuration-file backups were both named from a timestamp precise to the
   millisecond, so two taken close together - an edit saved twice quickly, several servers backed up
