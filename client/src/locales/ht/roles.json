@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Lanse evènman mond",
-        "description": "Move tan, klima, lè nan jounen an, son anbyans, mas zonbi, itilite, paramèt vizyèl ak mesaj anons — efè sou tout mond lan, pa vize yon jwè spesifik."
+        "description": "Move tan, klima, lè nan jounen an, son anbyans, mas zonbi, itilite ak paramèt vizyèl, plis mesaj chat ak anons. Plizyè nan sa yo ka vize yon sèl jwè ki gen non, olye tout mond lan: parèt mas zonbi, kout zam, loray/tonnè ak son atiran ka tout dirije sou kote yon jwè espesifik ye, e mesaj nan chat jeneral la ka voye anba nenpòt non otè ou chwazi, ki gen ladan non yon lòt jwè."
       }
     },
     "rcon": {

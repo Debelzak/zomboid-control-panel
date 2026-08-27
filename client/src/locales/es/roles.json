@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Ejecutar eventos del mundo",
-        "description": "Tiempo atmosférico, clima, hora del día, sonido ambiental, hordas de zombis, servicios públicos, ajustes visuales y mensajes de difusión — efectos a escala del mundo, no dirigidos a un jugador concreto."
+        "description": "Tiempo atmosférico, clima, hora del día, sonido ambiental, hordas de zombis, servicios públicos y ajustes visuales, además de mensajes de chat y de difusión. Varios de estos pueden dirigirse a un jugador concreto en lugar de a todo el mundo: la aparición de hordas, los disparos, los rayos/truenos y los sonidos de atracción pueden apuntar todos a la ubicación de un jugador específico, y los mensajes del chat general pueden enviarse con cualquier nombre de autor personalizado, incluido el de otro jugador."
       }
     },
     "rcon": {

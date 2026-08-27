@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Déclencher des événements du monde",
-        "description": "Météo, climat, heure de la journée, son ambiant, hordes de zombies, utilitaires, réglages visuels et messages diffusés — des effets à l'échelle du monde, non ciblés sur un joueur en particulier."
+        "description": "Météo, climat, heure de la journée, son ambiant, hordes de zombies, utilitaires et réglages visuels, ainsi que les messages de chat et de diffusion. Plusieurs de ces actions peuvent cibler un seul joueur nommé plutôt que le monde entier : l'apparition de hordes, les coups de feu, la foudre/le tonnerre et les sons d'attraction peuvent tous être dirigés vers l'emplacement d'un joueur précis, et les messages du chat général peuvent être envoyés sous n'importe quel nom d'auteur personnalisé, y compris celui d'un autre joueur."
       }
     },
     "rcon": {

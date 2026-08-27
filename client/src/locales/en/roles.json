@@ -153,7 +153,7 @@
       },
       "world_events": {
         "label": "Run world events",
-        "description": "Weather, climate, time of day, ambient sound, zombie hordes, utilities, visual settings and broadcast messages — world-wide effects, not aimed at a specific player."
+        "description": "Weather, climate, time of day, ambient sound, zombie hordes, utilities and visual settings, plus chat and broadcast messages. Several of these can target one named player instead of the whole world: horde spawns, gunshots, lightning/thunder and attraction sounds can all be aimed at a specific player's location, and general chat can be sent under any custom author name, including another player's."
       }
     },
     "rcon": {
