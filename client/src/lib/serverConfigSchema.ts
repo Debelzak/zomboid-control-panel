@@ -4748,6 +4748,26 @@ function translatedOrFallback(key: string, fallback: string): string {
   return resolveRegisteredTranslation('serverconfig', key, undefined) ?? fallback
 }
 
+// Sandbox setting/option LABELS ONLY (never descriptions) additionally check
+// the sandboxPz namespace before falling back to the schema's own English
+// string. That namespace holds Project Zomboid's own official translations,
+// extracted verbatim from the game's Sandbox.json language files -- so an
+// operator setting "Meta Events" here sees the exact same word their game
+// client shows, rather than a differently-worded (even if accurate)
+// translation authored independently of PZ's own vocabulary. A hand-authored
+// override placed directly in serverconfig.json still wins if one is ever
+// added -- this only fills the gap when neither exists.
+// Descriptions are deliberately NOT wired to this: PZ's own tooltips were
+// written for its in-game options screen, ours were written for this panel,
+// and they are not automatically the same job.
+function translatedSandboxLabel(key: string, fallback: string): string {
+  return (
+    resolveRegisteredTranslation('serverconfig', `sandboxSettings.${key}`, undefined) ??
+    resolveRegisteredTranslation('sandboxPz', key, undefined) ??
+    fallback
+  )
+}
+
 export function getIniSettingLabel(setting: IniSetting): string {
   return translatedOrFallback(`iniSettings.${setting.category}.${setting.key}.label`, setting.label)
 }
@@ -4770,7 +4790,7 @@ export function getIniCategoryGroupLabel(group: { id: string; label: string }): 
 }
 
 export function getSandboxSettingLabel(setting: SandboxSetting): string {
-  return translatedOrFallback(`sandboxSettings.${setting.category}.${setting.key}.label`, setting.label)
+  return translatedSandboxLabel(`${setting.category}.${setting.key}.label`, setting.label)
 }
 
 export function getSandboxSettingDescription(setting: SandboxSetting): string {
@@ -4779,7 +4799,7 @@ export function getSandboxSettingDescription(setting: SandboxSetting): string {
 
 export function getSandboxSettingOptionLabel(setting: SandboxSetting, value: number): string {
   const fallback = setting.options?.find(o => o.value === value)?.label ?? String(value)
-  return translatedOrFallback(`sandboxSettings.${setting.category}.${setting.key}.options.${value}.label`, fallback)
+  return translatedSandboxLabel(`${setting.category}.${setting.key}.options.${value}.label`, fallback)
 }
 
 export function getSandboxCategoryLabel(category: { id: string; label: string }): string {
