@@ -243,9 +243,24 @@ export const VALID_ACTIONS = new Set([
 // three of the four onto this passthrough (and built the fourth, heal,
 // against the passthrough from the start) as an incidental side effect of an
 // unrelated 641-line UI-overhaul release commit, with no comment anywhere in
-// that diff acknowledging the capability implication. Whichever client path
-// is actually live, the server-side gate here has to hold -- same reasoning
-// as the moderation four, so they get the same treatment.
+// that diff acknowledging the capability implication.
+//
+// The two buckets below use DIFFERENT gating shapes, not the same one:
+//  - The moderation four have no dedicated route of their own, so the
+//    capability named here is ADDITIONAL, on top of this route's own
+//    bridge.command gate (still enforced for them -- see
+//    requireBridgeCommandUnlessGmToolsOnly below).
+//  - The GM four (GM_TOOLS_ONLY_ACTIONS) use REPLACEMENT semantics as of
+//    an operator ruling (bug-hunt-2026-08-27, reverses c3083d5 the same
+//    day): players.gm_tools ALONE is sufficient, and bridge.command is not
+//    required at all for these four. c3083d5 had made it "gm_tools AND
+//    bridge.command" -- the operator ruled that was never the intended
+//    fix, since bridge.command was only ever an accidental side effect of
+//    these four routing through the generic passthrough, and requiring it
+//    denies Technician (who holds gm_tools but not bridge.command by
+//    default) the GM tools it's meant to have. A role holding ONLY
+//    players.gm_tools must reach these four through this passthrough, the
+//    same as it already can through their own dedicated routes.
 export const BRIDGE_ACTION_CAPABILITY = {
   moderationKickUser: "players.moderate",
   moderationBanUser: "players.moderate",
@@ -256,6 +271,36 @@ export const BRIDGE_ACTION_CAPABILITY = {
   setNoclip: "players.gm_tools",
   healPlayer: "players.gm_tools",
 };
+
+// The subset of BRIDGE_ACTION_CAPABILITY that uses REPLACEMENT semantics
+// (see the comment above) -- an explicit set rather than derived from the
+// capability string, so a future action that happens to reuse
+// "players.gm_tools" with ADDITIONAL semantics can't silently fall into
+// the wrong bucket.
+export const GM_TOOLS_ONLY_ACTIONS = new Set([
+  "setGodMode",
+  "setInvisible",
+  "setNoclip",
+  "healPlayer",
+]);
+
+// POST /command's own gate can't be a flat requirePermission("bridge.command")
+// the way every other bridge.setup route above is: GM_TOOLS_ONLY_ACTIONS
+// must be reachable WITHOUT bridge.command, decided per-request by the
+// action in the body, which requirePermission()'s capability argument
+// (fixed at route-registration time) has no way to see. This still enforces
+// authentication (401) exactly like requirePermission does; it only skips
+// the bridge.command capability check when the action is one of the four
+// GM tools, leaving BRIDGE_ACTION_CAPABILITY's own inline check further
+// down in the handler as their sole gate.
+const requireBridgeCommand = requirePermission("bridge.command");
+function requireBridgeCommandUnlessGmToolsOnly(req, res, next) {
+  const { action } = req.body || {};
+  if (typeof action === "string" && GM_TOOLS_ONLY_ACTIONS.has(action)) {
+    return next();
+  }
+  return requireBridgeCommand(req, res, next);
+}
 
 // Username validation for PanelBridge player endpoints.
 // Allow normal in-game names (spaces/symbols) while blocking control chars and quote/backslash.
@@ -1225,7 +1270,11 @@ router.get("/ping", async (req, res) => {
 // real work today: roles are data now, an operator can create a custom
 // role and grant it bridge.command deliberately, and this is exactly what
 // stops that role also getting the unrestricted passthrough by accident.
-router.post("/command", requirePermission("bridge.command"), async (req, res) => {
+// EXCEPT for GM_TOOLS_ONLY_ACTIONS (see requireBridgeCommandUnlessGmToolsOnly
+// and BRIDGE_ACTION_CAPABILITY's own comment above) — those four skip this
+// gate entirely and are enforced solely by the inline players.gm_tools
+// check further down in this handler.
+router.post("/command", requireBridgeCommandUnlessGmToolsOnly, async (req, res) => {
   const activeServer = await getActiveServer();
   if (activeServer?.isRemote && !bridge.isSftpRunning() && !bridge.isRunning) {
     return res.status(400).json({
@@ -1263,20 +1312,21 @@ router.post("/command", requirePermission("bridge.command"), async (req, res) =>
     });
   }
 
-  // See BRIDGE_ACTION_CAPABILITY's own comment above: the four moderation
-  // actions need players.moderate, and setGodMode/setInvisible/setNoclip/
-  // healPlayer need players.gm_tools, each in addition to this route's own
-  // bridge.command gate -- either because they have no dedicated route of
-  // their own (moderation), or because a dedicated gated route exists but
-  // this passthrough is the path Players.tsx actually calls today (the GM
-  // four).
+  // See BRIDGE_ACTION_CAPABILITY's own comment above for the two different
+  // gating shapes here: the four moderation actions need players.moderate
+  // ADDITIONALLY, on top of the bridge.command gate already enforced by
+  // requireBridgeCommandUnlessGmToolsOnly above. The GM four
+  // (GM_TOOLS_ONLY_ACTIONS) never went through that gate at all for this
+  // request -- players.gm_tools here is their ONLY gate, not an addition.
   const requiredCapability = BRIDGE_ACTION_CAPABILITY[action];
   if (requiredCapability) {
     const role = req.user ? await getRoleByName(req.user.role) : null;
     const capabilities = Array.isArray(role?.capabilities) ? role.capabilities : [];
     if (!capabilities.includes(requiredCapability)) {
       return res.status(403).json({
-        error: `"${action}" also requires ${requiredCapability}.`,
+        error: GM_TOOLS_ONLY_ACTIONS.has(action)
+          ? `"${action}" requires ${requiredCapability}.`
+          : `"${action}" also requires ${requiredCapability}.`,
         code: ErrorCode.PANELBRIDGE_ACTION_CAPABILITY_REQUIRED,
       });
     }

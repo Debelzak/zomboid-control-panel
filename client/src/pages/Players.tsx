@@ -306,22 +306,23 @@ function ActionTile({
 export default function Players() {
   const { t, i18n } = useTranslation('players')
   const accessLevelLabels = useMemo(() => getAccessLevelLabels(t), [t])
-  // Three separate server gates, not one -- kick/ban/whitelist/access-level
-  // require players.moderate; teleport/spawn/character import-export require
-  // players.gm_tools; godmode/invisible/noclip/heal go through the generic
-  // PanelBridge passthrough (POST /panel-bridge/command) and its base gate,
-  // bridge.command, NOT players.gm_tools despite the action names -- see
-  // server/routes/panelBridge.js's BRIDGE_ACTION_CAPABILITY map.
+  // Two server gates, not three -- kick/ban/whitelist/access-level require
+  // players.moderate; teleport/spawn/character import-export AND
+  // godmode/invisible/noclip/heal all require players.gm_tools.
+  // godmode/invisible/noclip/heal route through the generic PanelBridge
+  // passthrough (POST /panel-bridge/command), but as of an operator ruling
+  // (bug-hunt-2026-08-27, reverses server commit c3083d5 from earlier the
+  // same day) players.gm_tools ALONE gates them there too -- bridge.command
+  // is not required. c3083d5 had briefly made it "gm_tools AND
+  // bridge.command"; the operator ruled bridge.command was only ever an
+  // accidental side effect of these four routing through the passthrough,
+  // not a deliberate second gate, and requiring it would deny Technician
+  // (who holds gm_tools but not bridge.command by default) the GM tools
+  // it's meant to have. See server/routes/panelBridge.js's
+  // BRIDGE_ACTION_CAPABILITY / GM_TOOLS_ONLY_ACTIONS.
   const { can } = useAuth()
   const canModerate = can('players.moderate')
   const canGmTools = can('players.gm_tools')
-  const canBridgeCommand = can('bridge.command')
-  // As of server commit c3083d5, setGodMode/setInvisible/setNoclip/healPlayer
-  // additionally require players.gm_tools on top of the route's base
-  // bridge.command gate (BRIDGE_ACTION_CAPABILITY in panelBridge.js) -- this
-  // is the only bucket on the page using bridge.command, so the combined
-  // check applies to all of it without over-gating any other action.
-  const canBridgeGmTools = canBridgeCommand && canGmTools
   const [players, setPlayers] = useState<Player[]>([])
   const [perks, setPerks] = useState<PerkChoice[]>([])
   const [selectedPlayer, setSelectedPlayer] = useState<string>('')
@@ -1788,20 +1789,20 @@ export default function Players() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DisabledReason className="w-full" reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
-                                <DropdownMenuItem onClick={() => { if (!canBridgeGmTools) return; handleGodMode(!selectedPlayerPowers?.godMode) }} disabled={loading || !bridgeConnected || !canBridgeGmTools}>
+                              <DisabledReason className="w-full" reason={!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                                <DropdownMenuItem onClick={() => { if (!canGmTools) return; handleGodMode(!selectedPlayerPowers?.godMode) }} disabled={loading || !bridgeConnected || !canGmTools}>
                                   <Ghost className="w-4 h-4 mr-2" />
                                   {selectedPlayerPowers?.godMode ? t('dossier.disableGodMode') : t('dossier.enableGodMode')}
                                 </DropdownMenuItem>
                               </DisabledReason>
-                              <DisabledReason className="w-full" reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
-                                <DropdownMenuItem onClick={() => { if (!canBridgeGmTools) return; handleInvisible(!selectedPlayerPowers?.invisible) }} disabled={loading || !bridgeConnected || !canBridgeGmTools}>
+                              <DisabledReason className="w-full" reason={!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                                <DropdownMenuItem onClick={() => { if (!canGmTools) return; handleInvisible(!selectedPlayerPowers?.invisible) }} disabled={loading || !bridgeConnected || !canGmTools}>
                                   <Eye className="w-4 h-4 mr-2" />
                                   {selectedPlayerPowers?.invisible ? t('dossier.disableInvisible') : t('dossier.enableInvisible')}
                                 </DropdownMenuItem>
                               </DisabledReason>
-                              <DisabledReason className="w-full" reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
-                                <DropdownMenuItem onClick={() => { if (!canBridgeGmTools) return; handleNoclip(!selectedPlayerPowers?.noclip) }} disabled={loading || !bridgeConnected || !canBridgeGmTools}>
+                              <DisabledReason className="w-full" reason={!canGmTools ? t('permissions.noGmTools') : (!bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                                <DropdownMenuItem onClick={() => { if (!canGmTools) return; handleNoclip(!selectedPlayerPowers?.noclip) }} disabled={loading || !bridgeConnected || !canGmTools}>
                                   <Layers className="w-4 h-4 mr-2" />
                                   {selectedPlayerPowers?.noclip ? t('dossier.disableNoclip') : t('dossier.enableNoclip')}
                                 </DropdownMenuItem>
@@ -2588,11 +2589,11 @@ export default function Players() {
                           {selectedPlayerPowers.godMode ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
+                      <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                         <Button
                           variant={selectedPlayerPowers?.godMode ? 'default' : 'outline'}
                           size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeGmTools}
+                          disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
                           onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}
                         >
                           {selectedPlayerPowers?.godMode ? t('powers.disable') : t('powers.enable')}
@@ -2618,11 +2619,11 @@ export default function Players() {
                           {selectedPlayerPowers.invisible ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
+                      <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                         <Button
                           variant={selectedPlayerPowers?.invisible ? 'default' : 'outline'}
                           size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeGmTools}
+                          disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
                           onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}
                         >
                           {selectedPlayerPowers?.invisible ? t('powers.disable') : t('powers.enable')}
@@ -2648,11 +2649,11 @@ export default function Players() {
                           {selectedPlayerPowers.noclip ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
-                      <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
+                      <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                         <Button
                           variant={selectedPlayerPowers?.noclip ? 'default' : 'outline'}
                           size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeGmTools}
+                          disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
                           onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}
                         >
                           {selectedPlayerPowers?.noclip ? t('powers.disable') : t('powers.enable')}
@@ -2672,11 +2673,11 @@ export default function Players() {
                         <p className="text-xs text-muted-foreground">{t('powers.healDesc')}</p>
                       </div>
                     </div>
-                    <DisabledReason reason={!canBridgeCommand ? t('permissions.noBridgeCommand') : (!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null))}>
+                    <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={!selectedPlayer || loading || !bridgeConnected || !canBridgeGmTools}
+                        disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
                         onClick={handleHealPlayer}
                       >
                         {t('powers.healButton')}

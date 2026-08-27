@@ -6,12 +6,13 @@ import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 // bug-hunt-2026-08-27: Players.tsx had zero client-side capability gating.
-// Every mutating action reaches one of THREE distinct server gates --
-// players.moderate (kick/ban/whitelist/access-level/notes), players.gm_tools
-// (teleport/spawn items+vehicles/xp/character import-export), and
-// bridge.command (godmode/invisible/noclip/heal -- these route through the
-// generic PanelBridge passthrough, POST /panel-bridge/command, NOT through
-// their same-named but never-called players.gm_tools-gated dedicated routes).
+// Every mutating action reaches one of TWO distinct server gates --
+// players.moderate (kick/ban/whitelist/access-level/notes) and
+// players.gm_tools (teleport/spawn items+vehicles/xp/character import-export,
+// AND godmode/invisible/noclip/heal -- these route through the generic
+// PanelBridge passthrough, POST /panel-bridge/command, gated on
+// players.gm_tools alone there per an operator ruling, bug-hunt-2026-08-27;
+// see server/routes/panelBridge.js's GM_TOOLS_ONLY_ACTIONS).
 // Several actions have more than one render-level trigger (Kick and Ban each
 // have an ActionTile AND a dossier quick-action button; Unban SteamID has
 // THREE: a summary banner, a Banned-tab row button, and an ActionTile) --
@@ -269,9 +270,8 @@ describe('Players.tsx: capability gating', () => {
     // addXp not asserted here -- Give XP is never clicked in this test
     // (see the comment above), so it would be a vacuous assertion.
 
-    // Powers tab -- bridge.command AND players.gm_tools (server c3083d5
-    // added the gm_tools requirement on top of bridge.command for these
-    // four specifically; see the dedicated split-capability test below).
+    // Powers tab -- players.gm_tools (see the dedicated split-capability
+    // tests below for the bridge.command-is-irrelevant proof).
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Powers' }), { button: 0 })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Heal' })).toBeInTheDocument(), { timeout: 3000 })
     const enableButtons = screen.getAllByRole('button', { name: 'Enable' })
@@ -323,16 +323,21 @@ describe('Players.tsx: capability gating', () => {
     expect(screen.getByRole('button', { name: 'Heal' })).not.toBeDisabled()
   })
 
-  // bug-hunt-2026-08-27: server commit c3083d5 (an hour after the gating
-  // above shipped) made setGodMode/setInvisible/setNoclip/healPlayer require
-  // BOTH bridge.command AND players.gm_tools server-side
-  // (BRIDGE_ACTION_CAPABILITY in panelBridge.js), not bridge.command alone.
-  // Holding bridge.command without gm_tools must now find those four
-  // unreachable -- and, the direction that actually stops an over-gate,
-  // holding gm_tools without bridge.command must still reach every OTHER
-  // players.gm_tools action on the page (teleport, spawn, xp), proving the
-  // combined requirement was not accidentally widened beyond these four.
-  it('requires BOTH bridge.command and players.gm_tools for the GM-tools four, without over-gating the rest of players.gm_tools', async () => {
+  // bug-hunt-2026-08-27, operator ruling (supersedes server commit c3083d5
+  // from earlier the same day): setGodMode/setInvisible/setNoclip/healPlayer
+  // are gated on players.gm_tools ALONE again, not "gm_tools AND
+  // bridge.command". c3083d5's combined requirement was itself a fix for a
+  // real problem (these four were reachable on bridge.command alone, no
+  // gm_tools check at all, since commit 8bd0edc) -- but the operator ruled
+  // requiring BOTH was never the intended fix: bridge.command was only ever
+  // an accidental side effect of these four routing through the generic
+  // passthrough, and requiring it denies Technician (who holds gm_tools but
+  // not bridge.command by default) the GM tools it's meant to have. This
+  // test pair now proves the opposite direction from before: gm_tools alone
+  // must be SUFFICIENT (not just necessary, which the deny-all test above
+  // already covers), and bridge.command alone must remain insufficient
+  // (gm_tools is still the real gate, not dropped entirely).
+  it('bridge.command alone is not sufficient for the GM-tools four -- players.gm_tools is still required', async () => {
     mockCan = (capability) => capability === 'bridge.command'
     await setUpFixtures()
     renderPlayers()
@@ -347,36 +352,26 @@ describe('Players.tsx: capability gating', () => {
     enableButtons.forEach(b => fireEvent.click(b))
     fireEvent.click(screen.getByRole('button', { name: 'Heal' }))
     expect(sendCommand).not.toHaveBeenCalled()
-
-    // Teleport is players.gm_tools only -- still unreachable here since this
-    // role holds bridge.command but not gm_tools.
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Moderation' }), { button: 0 })
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Teleport\b/ })).toBeInTheDocument(), { timeout: 3000 })
-    expect(screen.getByRole('button', { name: /^Teleport\b/ })).toBeDisabled()
   })
 
-  it('holding players.gm_tools without bridge.command still reaches teleport/spawn/xp, only the GM-tools four stay unreachable', async () => {
+  it('players.gm_tools alone is sufficient for the GM-tools four, without bridge.command (Technician regains all four)', async () => {
     mockCan = (capability) => capability === 'players.gm_tools'
     await setUpFixtures()
     renderPlayers()
     await selectTestPlayer()
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Teleport\b/ })).toBeInTheDocument(), { timeout: 3000 })
-    expect(screen.getByRole('button', { name: /^Teleport\b/ })).not.toBeDisabled()
-
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Spawn' }), { button: 0 })
-    await waitFor(() => expect(screen.getByRole('button', { name: /Give XP/ })).toBeInTheDocument(), { timeout: 3000 })
-    expect(screen.getByText('Give items').closest('button')).not.toBeDisabled()
-    expect(screen.getByText('Spawn vehicles').closest('button')).not.toBeDisabled()
-    // Give XP also requires a perk to be selected (unrelated to capability,
-    // and no perk is selected in this fixture), so it's not asserted here --
-    // the two browser-opening buttons above are sufficient evidence that
-    // players.gm_tools alone still reaches this tab.
-
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Powers' }), { button: 0 })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Heal' })).toBeInTheDocument(), { timeout: 3000 })
-    screen.getAllByRole('button', { name: 'Enable' }).forEach(b => expect(b).toBeDisabled())
-    expect(screen.getByRole('button', { name: 'Heal' })).toBeDisabled()
+    const enableButtons = screen.getAllByRole('button', { name: 'Enable' })
+    expect(enableButtons).toHaveLength(3)
+    enableButtons.forEach(b => expect(b).not.toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Heal' })).not.toBeDisabled()
+
+    // Teleport still reachable too -- confirms gm_tools wasn't accidentally
+    // narrowed anywhere else on the page by this change.
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Moderation' }), { button: 0 })
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Teleport\b/ })).toBeInTheDocument(), { timeout: 3000 })
+    expect(screen.getByRole('button', { name: /^Teleport\b/ })).not.toBeDisabled()
   })
 
   // bug-hunt-2026-08-27: Radix's DropdownMenuItem composes the caller's

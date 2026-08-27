@@ -28,6 +28,11 @@ const ROLES = {
   // describes, used by the setGodMode/setInvisible/setNoclip/healPlayer
   // block below.
   gm_tools_admin: { capabilities: ["bridge.command", "players.gm_tools"] },
+  // Holds ONLY players.gm_tools, no bridge.command -- the Technician shape
+  // per an operator ruling (bug-hunt-2026-08-27, reverses c3083d5): this
+  // role must now reach the GM-tools four through this passthrough despite
+  // never holding bridge.command at all.
+  gm_tools_only: { capabilities: ["players.gm_tools"] },
 };
 const getRoleByName = vi.fn(async (name) => ROLES[name] || null);
 
@@ -58,6 +63,20 @@ function getHandler(routePath, method) {
   return layer.route.stack[layer.route.stack.length - 1].handle;
 }
 
+// Every handler in the route's stack, in registration order -- e.g. for
+// POST /command: [requireBridgeCommandUnlessGmToolsOnly, the real handler].
+// getHandler() above only grabs the LAST one (skipping the gate ahead of
+// it, same as every other file using this pattern); the GM-tools-only
+// tests below need the gate too, since that's the piece that actually
+// changed -- whether bridge.command is still required at the ROUTE level,
+// not just in the inline BRIDGE_ACTION_CAPABILITY check further down.
+function getStack(routePath, method) {
+  const layer = router.stack.find(
+    (entry) => entry.route?.path === routePath && entry.route.methods[method],
+  );
+  return layer.route.stack.map((entry) => entry.handle);
+}
+
 async function postCommand(action, args, role) {
   const res = createResponse();
   await getHandler("/command", "post")(
@@ -65,6 +84,23 @@ async function postCommand(action, args, role) {
     res,
     () => {},
   );
+  return res;
+}
+
+// Runs the FULL middleware stack in registration order, stopping as soon as
+// a handler doesn't call next() (i.e. it sent a response). Needed to prove
+// the route-level gate itself (not just the inline handler logic
+// postCommand() above exercises) behaves correctly for GM_TOOLS_ONLY_ACTIONS.
+async function postCommandFullStack(action, args, role) {
+  const res = createResponse();
+  const req = { user: { role }, body: { action, args } };
+  for (const handle of getStack("/command", "post")) {
+    let calledNext = false;
+    await handle(req, res, () => {
+      calledNext = true;
+    });
+    if (!calledNext) break;
+  }
   return res;
 }
 
@@ -133,9 +169,18 @@ describe("POST /panel-bridge/command -- moderation actions require players.moder
 // since commit 8bd0edc ("Release v1.0.2") silently moved three of the four
 // onto this passthrough (and built the fourth, heal, against the
 // passthrough from the start) as a side effect of an unrelated UI-overhaul
-// release commit. Same shape as the moderation four: whichever client path
-// is actually live, the server-side gate has to hold.
-describe("POST /panel-bridge/command -- setGodMode/setInvisible/setNoclip/healPlayer require players.gm_tools in addition to bridge.command", () => {
+// release commit.
+//
+// This describe block previously proved these four need BOTH bridge.command
+// AND players.gm_tools (server commit c3083d5). An operator ruling the same
+// day SUPERSEDED that: players.gm_tools ALONE is now sufficient, and
+// bridge.command is not required at all for these four -- c3083d5's combined
+// requirement was never the intended fix, and denied Technician (who holds
+// gm_tools but not bridge.command by default) the GM tools it's meant to
+// have. The "requires BOTH" tests that used to live here were correct for
+// the code as it stood, and are now testing the wrong thing; replaced
+// below rather than patched to keep passing.
+describe("POST /panel-bridge/command -- setGodMode/setInvisible/setNoclip/healPlayer require players.gm_tools ALONE, not bridge.command", () => {
   let sendCommand;
 
   beforeEach(() => {
@@ -159,7 +204,7 @@ describe("POST /panel-bridge/command -- setGodMode/setInvisible/setNoclip/healPl
       : { username: "Survivor", enabled: true };
 
   it.each(GM_TOOLS_ACTIONS)(
-    "refuses %s for a caller who holds bridge.command but not players.gm_tools",
+    "refuses %s for a caller who holds bridge.command but not players.gm_tools (inline check)",
     async (action) => {
       const res = await postCommand(action, argsFor(action), "bridge_command_only");
 
@@ -172,17 +217,6 @@ describe("POST /panel-bridge/command -- setGodMode/setInvisible/setNoclip/healPl
   );
 
   it.each(GM_TOOLS_ACTIONS)(
-    "allows %s for a caller who holds both bridge.command and players.gm_tools",
-    async (action) => {
-      const args = argsFor(action);
-      const res = await postCommand(action, args, "gm_tools_admin");
-
-      expect(res.status).not.toHaveBeenCalledWith(403);
-      expect(sendCommand).toHaveBeenCalledWith(action, args);
-    },
-  );
-
-  it.each(GM_TOOLS_ACTIONS)(
     "still refuses %s for a caller who holds players.moderate but not players.gm_tools (the moderation grant doesn't leak into GM tools)",
     async (action) => {
       const res = await postCommand(action, argsFor(action), "admin");
@@ -191,4 +225,50 @@ describe("POST /panel-bridge/command -- setGodMode/setInvisible/setNoclip/healPl
       expect(sendCommand).not.toHaveBeenCalled();
     },
   );
+
+  // The three tests below run the FULL route stack (postCommandFullStack),
+  // not just the last handler -- they're specifically proving the
+  // route-level gate (requireBridgeCommandUnlessGmToolsOnly) skips
+  // bridge.command for these four, which postCommand()'s
+  // skip-straight-to-the-last-handler pattern can't see at all.
+
+  it.each(GM_TOOLS_ACTIONS)(
+    "allows %s through the FULL route stack for a caller who holds ONLY players.gm_tools, no bridge.command (Technician shape)",
+    async (action) => {
+      const args = argsFor(action);
+      const res = await postCommandFullStack(action, args, "gm_tools_only");
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(sendCommand).toHaveBeenCalledWith(action, args);
+    },
+  );
+
+  it.each(GM_TOOLS_ACTIONS)(
+    "refuses %s through the FULL route stack for a caller who holds ONLY bridge.command, no players.gm_tools",
+    async (action) => {
+      const res = await postCommandFullStack(action, argsFor(action), "bridge_command_only");
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(sendCommand).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(GM_TOOLS_ACTIONS)(
+    "allows %s through the FULL route stack for a caller who holds both bridge.command and players.gm_tools",
+    async (action) => {
+      const args = argsFor(action);
+      const res = await postCommandFullStack(action, args, "gm_tools_admin");
+
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      expect(sendCommand).toHaveBeenCalledWith(action, args);
+    },
+  );
+
+  it("a non-GM-tools action (e.g. moderationKickUser) still needs bridge.command through the FULL route stack even for a gm_tools-only caller", async () => {
+    const res = await postCommandFullStack("moderationKickUser", { username: "Griefer" }, "gm_tools_only");
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
 });
