@@ -52,8 +52,11 @@ import { copyText } from '@/lib/utils'
 interface GameServer {
   name: string
   ip: string
-  port: number
-  gamePort?: number
+  // Can be null: the server derives this from the Steam listing's addr
+  // field, falling back to gameport, and stays honestly unknown (never a
+  // guessed default) when neither is parseable.
+  port: number | null
+  gamePort?: number | null
   players: number
   maxPlayers: number
   map: string
@@ -70,6 +73,29 @@ interface GameServer {
 
 type SortField = 'name' | 'players' | 'maxPlayers' | 'ping'
 type SortDirection = 'asc' | 'desc'
+
+// The query port (used for A2S ping/connect diagnostics) is honestly null
+// when the panel couldn't parse one -- never a guessed default. Ping keys
+// off this directly and stay disabled when it's absent, so a fabricated
+// port never gets pinged and no cache entry is ever written under a
+// "port unknown" key (which would otherwise let two portless servers on
+// the same IP collide into one ping result).
+export function pingKey(server: Pick<GameServer, 'ip' | 'port'>): string | null {
+  return server.port === null || server.port === undefined ? null : `${server.ip}:${server.port}`
+}
+
+// The human-facing address prefers the raw Steam-reported game port over
+// the derived query port, falling back to the query port only if the game
+// port is missing. Null when neither is known -- the caller must render an
+// IP with no port rather than print the literal string "null".
+export function displayPort(server: Pick<GameServer, 'port' | 'gamePort'>): number | null {
+  return server.gamePort || server.port || null
+}
+
+export function displayAddress(server: Pick<GameServer, 'ip' | 'port' | 'gamePort'>): string {
+  const port = displayPort(server)
+  return port === null ? server.ip : `${server.ip}:${port}`
+}
 
 export default function ServerFinder() {
   const { t, i18n } = useTranslation('serverFinder')
@@ -204,10 +230,13 @@ export default function ServerFinder() {
           aVal = a.maxPlayers
           bVal = b.maxPlayers
           break
-        case 'ping':
-          aVal = serverPings[`${a.ip}:${a.port}`] ?? 9999
-          bVal = serverPings[`${b.ip}:${b.port}`] ?? 9999
+        case 'ping': {
+          const aKey = pingKey(a)
+          const bKey = pingKey(b)
+          aVal = (aKey ? serverPings[aKey] : undefined) ?? 9999
+          bVal = (bKey ? serverPings[bKey] : undefined) ?? 9999
           break
+        }
         default:
           return 0
       }
@@ -235,8 +264,10 @@ export default function ServerFinder() {
     setFilteredServers(prev => {
       const sorted = [...prev]
       sorted.sort((a, b) => {
-        const aVal = serverPings[`${a.ip}:${a.port}`] ?? 9999
-        const bVal = serverPings[`${b.ip}:${b.port}`] ?? 9999
+        const aKey = pingKey(a)
+        const bKey = pingKey(b)
+        const aVal = (aKey ? serverPings[aKey] : undefined) ?? 9999
+        const bVal = (bKey ? serverPings[bKey] : undefined) ?? 9999
         return sortDirection === 'asc' ? aVal - bVal : bVal - aVal
       })
       return sorted
@@ -295,7 +326,8 @@ export default function ServerFinder() {
     }
   }
 
-  const pingServer = async (ip: string, port: number) => {
+  const pingServer = async (ip: string, port: number | null) => {
+    if (port === null) return // no known query port -- nothing to ping
     const key = `${ip}:${port}`
     if (pingingServers.has(key)) return
 
@@ -672,8 +704,10 @@ export default function ServerFinder() {
               <div className="space-y-2">
                 {paginatedServers.map((server, index) => {
                   const serverKey = `${server.ip}:${server.port}`
-                  const ping = serverPings[serverKey]
-                  const isPinging = pingingServers.has(serverKey)
+                  const pKey = pingKey(server)
+                  const ping = pKey ? serverPings[pKey] : undefined
+                  const isPinging = pKey ? pingingServers.has(pKey) : false
+                  const address = displayAddress(server)
                   const isFull = server.players >= server.maxPlayers && server.maxPlayers > 0
                   const hasPlayers = server.players > 0 && !isFull
                   const statusTone = isFull
@@ -720,13 +754,13 @@ export default function ServerFinder() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  copyAddress(`${server.ip}:${server.gamePort || server.port}`)
+                                  copyAddress(address)
                                 }}
                                 className="flex items-center gap-1 rounded hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                                aria-label={t('serverItem.copyAddressAria', { address: `${server.ip}:${server.gamePort || server.port}` })}
+                                aria-label={t('serverItem.copyAddressAria', { address })}
                               >
                                 <Globe className="h-3 w-3" />
-                                {server.ip}:{server.gamePort || server.port}
+                                {address}
                                 <Copy className="h-3 w-3 opacity-50" />
                               </button>
                             </TooltipTrigger>
@@ -784,6 +818,13 @@ export default function ServerFinder() {
                           <span className={`text-sm font-medium ${getPingColor(ping)}`}>
                             {ping !== null ? t('serverItem.pingMs', { ping }) : t('serverItem.pingNa')}
                           </span>
+                        ) : pKey === null ? (
+                          // No known query port -- pinging would either send
+                          // a request the server rejects or, worse, silently
+                          // share a cache entry with another portless server
+                          // on the same IP. Reuses the existing "N/A" copy
+                          // rather than a new label.
+                          <span className="text-sm text-muted-foreground">{t('serverItem.pingNa')}</span>
                         ) : (
                           <Button
                             variant="ghost"
@@ -807,9 +848,9 @@ export default function ServerFinder() {
                               variant="default"
                               size="sm"
                               className="h-7 px-2"
+                              disabled={displayPort(server) === null}
                               onClick={() => {
-                                const addr = `${server.ip}:${server.gamePort || server.port}`
-                                window.open(`steam://connect/${addr}`, '_self')
+                                window.open(`steam://connect/${address}`, '_self')
                               }}
                             >
                               {t('serverItem.connect')}
