@@ -451,6 +451,18 @@ export function mapSteamServer(server) {
   };
 }
 
+// The master-server fallback path used to report an identical
+// `servers: []` for three genuinely different outcomes: the master
+// genuinely listed zero PZ servers, the master listed servers but none of
+// them answered the follow-up A2S query, or the master itself could never
+// be reached. Only meaningful for the master_server path with zero results
+// -- undefined otherwise, dropped from the JSON response by JSON.stringify.
+export function deriveEmptyReason({ source, serversFound, mastersReachable, mastersListedCount }) {
+  if (source !== 'master_server' || serversFound > 0) return undefined;
+  if (!mastersReachable) return 'master-unreachable';
+  return mastersListedCount > 0 ? 'no-servers-responded' : 'no-servers-listed';
+}
+
 /**
  * Get server list - tries Steam API first, falls back to master server query
  */
@@ -482,6 +494,14 @@ router.get('/', async (req, res) => {
     }
 
     // Fallback to master server query (less reliable but works without API key)
+    // emptyReason distinguishes three causes that used to collapse into the
+    // same "servers: []": the master genuinely listed nothing, the master
+    // listed servers but none of them answered the follow-up A2S query, or
+    // the master itself could never be reached. Only computed (and only
+    // included in the response) when this fallback path actually ran and
+    // came up empty -- the common non-empty case is untouched.
+    let mastersReachable = false;
+    let mastersListedCount = 0;
     if (servers.length === 0) {
       source = 'master_server';
       try {
@@ -491,6 +511,8 @@ router.get('/', async (req, res) => {
         for (const master of MASTER_SERVERS) {
           try {
             const masterServers = await queryMasterServer(master.host, master.port, 0xFF, filter);
+            mastersReachable = true;
+            mastersListedCount += masterServers.length;
 
             // Query each server for details (limit concurrent queries)
             const batchSize = 50;
@@ -514,6 +536,12 @@ router.get('/', async (req, res) => {
         log.error('Master server query failed:', masterError.message);
       }
     }
+    const emptyReason = deriveEmptyReason({
+      source,
+      serversFound: servers.length,
+      mastersReachable,
+      mastersListedCount,
+    });
 
     // Sort by player count (descending)
     servers.sort((a, b) => (b.players || 0) - (a.players || 0));
@@ -533,6 +561,7 @@ router.get('/', async (req, res) => {
       totalCapacity,
       servers, // Return ALL servers, frontend handles pagination
       apiKeyConfigured,
+      emptyReason, // undefined (dropped by JSON.stringify) outside the empty master_server case
     });
   } catch (error) {
     log.error('Failed to get server list:', error);

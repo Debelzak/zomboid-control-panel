@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildA2SInfoQuery,
+  deriveEmptyReason,
   isPrivateIp,
   parseQueryPort,
   queryServerInfo,
@@ -192,5 +193,43 @@ describe("queryServerInfo: onFailureReason distinguishes the collapsed causes", 
     } finally {
       server.close();
     }
+  });
+});
+
+// Regression coverage: GET / reported an identical `servers: []` for three
+// different causes on the master-server fallback path -- genuinely zero PZ
+// servers listed, servers listed but none answered A2S, and the master
+// itself unreachable. deriveEmptyReason is the pure decision extracted from
+// that route so the branching can be tested without standing up fake UDP
+// master servers.
+describe("deriveEmptyReason: the master-list zero-collapse, disambiguated", () => {
+  it("is undefined outside the master_server path -- steam_api source is untouched", () => {
+    expect(
+      deriveEmptyReason({ source: "steam_api", serversFound: 0, mastersReachable: false, mastersListedCount: 0 }),
+    ).toBeUndefined();
+  });
+
+  it("is undefined once any servers were actually found", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 3, mastersReachable: true, mastersListedCount: 10 }),
+    ).toBeUndefined();
+  });
+
+  it("'master-unreachable' -- every master in the list threw, none ever responded", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 0, mastersReachable: false, mastersListedCount: 0 }),
+    ).toBe("master-unreachable");
+  });
+
+  it("'no-servers-listed' -- the master answered with a genuinely empty list", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 0, mastersReachable: true, mastersListedCount: 0 }),
+    ).toBe("no-servers-listed");
+  });
+
+  it("'no-servers-responded' -- the master listed servers, but every A2S follow-up failed", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 0, mastersReachable: true, mastersListedCount: 40 }),
+    ).toBe("no-servers-responded");
   });
 });
