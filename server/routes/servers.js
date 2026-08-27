@@ -139,6 +139,14 @@ export function parseDiscoveredPort(value, fallback, max = 65535) {
   }
   if (typeof value !== "string") return null;
   if (value.trim() === "") return fallback;
+  // Ports are unsigned. parseBoundedInteger alone would accept an explicit
+  // "+27015" (it's a general integer parser reused elsewhere for values
+  // that legitimately can be negative), but mountDiscovery.js's parsePort
+  // -- the other reader of this same ini field, used by
+  // create-from-discovery -- has always enforced digits-only. Without this
+  // check the same ini line was a valid server on one route and an invalid
+  // one on the other.
+  if (!/^\d+$/.test(value.trim())) return null;
   return parseBoundedInteger(value, null, 1, max);
 }
 
@@ -259,9 +267,20 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
 // password read off each ini is never put on the wire (hasRcon says
 // whether one is set). POST / re-reads it server-side at creation time via
 // importIniFrom, keyed off dataPath+serverName, instead of round-tripping
-// the real value through the browser. See docs follow-up: this duplicates
-// the ini-parsing in services/mountDiscovery.js's readServerIniSettings —
-// filed separately, not folded into this fix.
+// the real value through the browser.
+//
+// 2026-08-27: this route's local parseIni() duplicates
+// services/mountDiscovery.js's readServerIniSettings -- checked, not just
+// filed. The two line-parsing loops are behaviourally identical (11
+// fixtures: duplicate key, inline comment, section header, blank value,
+// CRLF, a value containing "=", leading whitespace, both comment styles,
+// eqIndex===0, lone-CR -- no divergence, not merged, since a refactor with
+// no behavioural difference is pure risk). The paired port validators
+// DID diverge -- parseDiscoveredPort (below) accepted "RCONPort=+27015"
+// while mountDiscovery.js's parsePort (digits-only) rejected it, so the
+// same ini line was a valid server on this route and not on
+// create-from-discovery. Fixed by making parseDiscoveredPort digits-only
+// too; see server/tests/serversRoute.test.js.
 router.post("/auto-scan", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { scanPath, maxDepth = 3 } = req.body || {};

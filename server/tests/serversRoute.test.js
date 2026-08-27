@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 const createServer = vi.fn();
 const updateServer = vi.fn();
@@ -287,6 +290,34 @@ describe("server discovery port parsing", () => {
       expect(parseDiscoveredPort(value, 27015)).toBeNull();
     },
   );
+
+  it("agrees with mountDiscovery.js's readServerIniSettings on a signed port -- the real bug this proves", async () => {
+    // 2026-08-27, two-implementations-of-server-ini-parsing: on
+    // "RCONPort=+27015", pre-fix parseDiscoveredPort returned 27015 (a
+    // valid server) while mountDiscovery.js's parsePort -- reading the
+    // exact same ini field for create-from-discovery -- rejected it,
+    // because parseBoundedInteger's regex allows a leading sign and
+    // parsePort's does not. This test fails on the pre-fix code (asserts
+    // null, would have received 27015) and cross-checks against the real
+    // readServerIniSettings function (not a copy) on a real temp ini, so
+    // it can't drift back out of sync with mountDiscovery.js's actual
+    // behaviour the way a hand-copied fixture could.
+    expect(parseDiscoveredPort("+27015", 27015)).toBeNull();
+
+    const { readServerIniSettings } = await import("../services/mountDiscovery.js");
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "auto-scan-port-sign-"));
+    try {
+      const serverDir = path.join(tmpRoot, "Server");
+      fs.mkdirSync(serverDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(serverDir, "signedport.ini"),
+        ["RCONPort=+27015", "RCONPassword=secret", "DefaultPort=16261", "PublicName=Test"].join("\n"),
+      );
+      expect(readServerIniSettings(tmpRoot, "signedport")).toBeNull();
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("server ID parsing", () => {
