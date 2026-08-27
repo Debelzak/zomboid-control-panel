@@ -197,6 +197,21 @@ function createSandboxDefaults(): SandboxData {
   return sandbox
 }
 
+// PanelBridge.lua's setSandboxOption handler calls world:saveWorld() to make
+// a live sandbox-option change durable, and reports the result as
+// `persisted`/`saveError` (commit b376b2c) -- added specifically because a
+// bare pcall used to swallow a failed world save and report success either
+// way. persisted===false is a real failure the mod already detected and
+// logged server-side; `undefined` means an older bridge build that never
+// sends this field at all and must NOT be read as a failure -- same
+// old-bridge-safe contract as getBridgeVerifiedState (lib/bridgeVerify.ts)
+// applies to `verified`. Exported as a pure predicate so this exact
+// contract (only an explicit false warns) is unit-testable without
+// mounting the whole page.
+export function isWorldSaveFailure(data: { persisted?: unknown } | null | undefined): boolean {
+  return data?.persisted === false
+}
+
 // Auth-aware image preview (img tags can't send Bearer tokens)
 function AuthImage({ filePath, alt, className }: { filePath: string; alt?: string; className?: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
@@ -1184,7 +1199,7 @@ export default function ServerConfig() {
     try {
       const response = await panelBridgeApi.sendCommand('setSandboxOption', { name: optName, value: newValue }) as {
         success?: boolean
-        data?: { name: string; value: unknown; type: string; verified?: unknown }
+        data?: { name: string; value: unknown; type: string; verified?: unknown; persisted?: unknown; saveError?: unknown }
         error?: string
       }
       if (response?.success && response.data) {
@@ -1221,6 +1236,24 @@ export default function ServerConfig() {
               ? { title: t('toasts.optionUpdatedTitle'), description: t('toasts.bridgeOldBridgeDesc', { action: optName }), variant: 'default' }
               : { title: t('toasts.optionUpdatedTitle'), description: t('toasts.optionUpdatedDesc', { option: optName }) },
         )
+
+        // See isWorldSaveFailure()'s own comment for the persisted/saveError
+        // contract. This is a DIFFERENT persistence layer from the
+        // SandboxVars.lua file write checked just below -- the two calls
+        // hit different processes and different failure modes (e.g. "world
+        // already saving" has nothing to do with whether the panel can
+        // write a text file), so either can fail independently of the
+        // other and each is worth telling the operator about on its own.
+        if (isWorldSaveFailure(response.data)) {
+          toast({
+            title: t('toasts.appliedNotSavedTitle'),
+            description: t('toasts.worldSaveFailedDesc', {
+              option: optName,
+              reason: typeof response.data.saveError === 'string' ? response.data.saveError : t('toasts.unknownError'),
+            }),
+            variant: 'destructive',
+          })
+        }
 
         // The bridge only changes the live value. Without this the option
         // reverts to whatever SandboxVars.lua still says on the next restart.

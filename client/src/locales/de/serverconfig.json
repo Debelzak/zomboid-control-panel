@@ -338,6 +338,7 @@
     "bridgeUnverifiedDesc": "{{action}} wurde gesendet, aber das Mod konnte nicht bestätigen, dass es wirksam wurde.",
     "bridgeOldBridgeDesc": "{{action}} hat möglicherweise funktioniert, aber diese Version des PanelBridge-Mods meldet nicht zurück, ob es so war. Aktualisiere das Mod, um Ergebnisse zu bestätigen.",
     "appliedNotSavedTitle": "Angewendet, aber nicht gespeichert",
+    "worldSaveFailedDesc": "{{option}} wurde angewendet, aber das Speichern der Spielwelt ist fehlgeschlagen ({{reason}}) -- die Änderung übersteht daher möglicherweise den nächsten Neustart nicht.",
     "notPersistedDesc": "{{option}} ist nicht in SandboxVars.lua enthalten und wird daher beim Neustart des Servers zurückgesetzt.",
     "willResetFallback": "{{option}} wird beim Neustart des Servers zurückgesetzt.",
     "failedToUpdateTitle": "Aktualisierung fehlgeschlagen",

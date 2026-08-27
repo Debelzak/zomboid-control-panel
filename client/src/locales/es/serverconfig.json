@@ -338,6 +338,7 @@
     "bridgeUnverifiedDesc": "{{action}} se envió, pero el mod no pudo confirmar que surtiera efecto.",
     "bridgeOldBridgeDesc": "{{action}} puede haber funcionado, pero esta versión del mod PanelBridge no informa si fue así. Actualiza el mod para confirmar los resultados.",
     "appliedNotSavedTitle": "Aplicado, pero no guardado",
+    "worldSaveFailedDesc": "{{option}} se aplicó, pero el guardado del mundo del servidor falló ({{reason}}), así que podría no sobrevivir al próximo reinicio.",
     "notPersistedDesc": "{{option}} no está en SandboxVars.lua, así que se restablecerá cuando el servidor se reinicie.",
     "willResetFallback": "{{option}} se restablecerá cuando el servidor se reinicie.",
     "failedToUpdateTitle": "Error al actualizar",
