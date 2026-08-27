@@ -16,6 +16,7 @@ import {
   getServers,
 } from "../database/init.js";
 import { sanitizeError, sanitizeIniValue } from "../utils/sanitize.js";
+import { resolveLaunchMode } from "../services/serverManager.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { requirePermission } from "../services/permissions.js";
@@ -1107,6 +1108,13 @@ router.get("/network-interfaces", async (req, res) => {
 // `managedHandled` mirrors the /start route's own `managed.handled` check:
 // a container-managed server's image owns the launch command, so there is
 // no local script to regenerate.
+//
+// Operator ruling 2026-08-27 (custom-launcher-as-a-real-supported-mode-not-
+// an-accident): a stored serverPath/installPath ending in .bat/.sh/.exe is
+// CUSTOM LAUNCHER mode, not an error -- resolveLaunchMode() (serverManager.js)
+// is the one predicate both this function AND scheduler.js's performRestart()
+// (via this same function) ask, so the two agree on what "managed" means
+// without either growing its own notion of it.
 export async function refreshLaunchTargetBeforeStart(
   activeServer,
   { managedHandled = false } = {},
@@ -1125,7 +1133,24 @@ export async function refreshLaunchTargetBeforeStart(
   }
 
   let scriptBackupWarnings = [];
+  const launchMode = resolveLaunchMode(activeServer);
   if (
+    !managedHandled &&
+    activeServer &&
+    !activeServer.startCommand &&
+    activeServer.installPath &&
+    launchMode.mode === "custom"
+  ) {
+    // CUSTOM LAUNCHER mode (operator ruling 2026-08-27): the panel does not
+    // manage this script. Regenerating would join a filename onto the
+    // launcher PATH itself (installPath here is a file, not a directory)
+    // and either write into a broken nested path or silently do nothing --
+    // neither is "not regenerating," so this must not even attempt the
+    // write, unlike before this feature existed.
+    log.info(
+      `Custom launcher mode active (${launchMode.launcherPath}) — not regenerating; the panel does not manage this script.`,
+    );
+  } else if (
     !managedHandled &&
     activeServer &&
     !activeServer.startCommand &&

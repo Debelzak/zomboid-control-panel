@@ -35,6 +35,7 @@ import {
 } from "../utils/queryNumbers.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
 import { GAME_PORT_MAX, applyUpnpToIni } from "./server.js";
+import { resolveLaunchMode } from "../services/serverManager.js";
 
 const router = express.Router();
 const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
@@ -53,6 +54,54 @@ function isValidServerName(value) {
 
 function isValidDockerContainerRef(value) {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value);
+}
+
+const INSTALL_PATH_MAX_LENGTH = 1024;
+
+// HARDEN (operator ruling 2026-08-27, card
+// custom-launcher-as-a-real-supported-mode-not-an-accident): neither
+// installPath nor serverPath was validated at all before this, despite
+// silently controlling MANAGED vs CUSTOM LAUNCHER mode (serverManager.js's
+// resolveLaunchMode() -- the same predicate this calls, so a saved value's
+// shape and the mode it will actually resolve to at load time can never
+// disagree). A launcher-shaped value (.bat/.sh/.exe) is accepted without
+// requiring it to exist yet -- the operator may be configuring this before
+// the file is in place, matching installPath's own existing not-yet-
+// installed allowance for a fresh, not-yet-downloaded server. A
+// directory-shaped value must actually BE a directory if something already
+// exists at that path; a value that already exists as a plain file with no
+// recognized launcher extension is rejected outright -- that combination
+// (file-shaped, unrecognized) is exactly the unvalidated case that used to
+// silently break regeneration (server.js's refreshLaunchTargetBeforeStart()
+// would join a filename onto a file, not a directory).
+function validateInstallPathShape(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return { valid: false, error: "Install path must be a non-empty string" };
+  }
+  if (value.length > INSTALL_PATH_MAX_LENGTH) {
+    return { valid: false, error: "Install path is too long" };
+  }
+  if (/[\x00-\x1f]/.test(value)) {
+    return { valid: false, error: "Install path contains invalid characters" };
+  }
+  const { mode } = resolveLaunchMode({ installPath: value });
+  if (mode === "custom") {
+    return { valid: true, mode };
+  }
+  try {
+    if (fs.existsSync(value) && !fs.statSync(value).isDirectory()) {
+      return {
+        valid: false,
+        error:
+          "Install path exists but is not a directory. If this is meant to point at a custom launcher script, its filename must end in .bat, .sh, or .exe.",
+      };
+    }
+  } catch {
+    // Unreadable (permissions, a transient mount hiccup) -- don't hard-fail
+    // a save over a stat error; a genuinely unusable path still surfaces a
+    // real error at install/start time.
+  }
+  return { valid: true, mode };
 }
 
 // Run a requirePermission() check outside of route-level middleware, for a
@@ -813,6 +862,13 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       }
     }
 
+    if (!isRemote) {
+      const installPathCheck = validateInstallPathShape(config.installPath);
+      if (!installPathCheck.valid) {
+        return res.status(400).json({ error: installPathCheck.error });
+      }
+    }
+
     // Validate display name length
     if (typeof config.name !== "string" || config.name.length > 100) {
       return res
@@ -935,10 +991,16 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   "useUpnp",
   "isRemote",
   "startCommand",
-  "startBat",
-  "batFile",
   "description",
   "adminPassword",
+  // startBat/batFile used to be allowed here too. Re-confirmed dead
+  // (2026-08-27, custom-launcher-as-a-real-supported-mode-not-an-accident):
+  // grepped serverManager.js, database/init.js and all of client/src --
+  // zero reads of either field anywhere. Removed rather than repurposed:
+  // the real, now-supported mechanism for "point at a specific launcher
+  // file" is a serverPath/installPath ending in .bat/.sh/.exe (see
+  // resolveLaunchMode()), and keeping these next to that would have been a
+  // third, unused mechanism sitting beside the two real ones.
 ];
 
 export function parseServerId(value) {
@@ -1005,6 +1067,21 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
         });
       }
       updates.dockerContainerName = value || null;
+    }
+
+    // HARDEN (operator ruling 2026-08-27): neither field was validated at
+    // all before this, despite silently controlling MANAGED vs CUSTOM
+    // LAUNCHER mode (serverManager.js's resolveLaunchMode()) -- an
+    // unvalidated path that silently changes launch behavior was the whole
+    // bug this feature closes. serverPath is the same shape as installPath
+    // and follows the same rule.
+    for (const key of ["installPath", "serverPath"]) {
+      if (updates[key] !== undefined && updates[key] !== "") {
+        const check = validateInstallPathShape(updates[key]);
+        if (!check.valid) {
+          return res.status(400).json({ error: check.error });
+        }
+      }
     }
 
     // GET responses mask rconPassword/adminPassword (sanitizeServerResponse).
@@ -1106,8 +1183,6 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
         "useNoSteam",
         "useDebug",
         "startCommand",
-        "startBat",
-        "batFile",
         "serverName",
       ].some((k) => Object.prototype.hasOwnProperty.call(updates, k));
 

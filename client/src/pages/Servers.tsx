@@ -199,6 +199,19 @@ export function isValidGamePort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65534
 }
 
+// Client-side mirror of server/services/serverManager.js's resolveLaunchMode()
+// -- a serverPath/installPath ending in .bat/.sh/.exe is CUSTOM LAUNCHER mode
+// (operator ruling 2026-08-27, card
+// custom-launcher-as-a-real-supported-mode-not-an-accident): the operator's
+// own script, real and supported. Display-only, matching the server's own
+// authoritative check (serverManager.js) rather than gating anything here --
+// used to decide when to show the "the panel will not manage this script"
+// notice, and by getInstallFolder() below (which used to duplicate this
+// same regex inline).
+export function isCustomLauncherPath(installPath: string | null | undefined): boolean {
+  return !!installPath && /\.(bat|sh|exe)$/i.test(installPath)
+}
+
 // Client-side mirror of server.js's /delete-files nested-path check (via
 // confineToRoots) -- informational only, so the delete dialog can warn
 // BEFORE the request round-trips instead of the operator only finding out
@@ -1246,7 +1259,7 @@ export default function Servers() {
   const getInstallFolder = (installPath: string | undefined): string => {
     if (!installPath) return ''
     // If path ends with a script/executable, get the parent folder
-    if (/\.(bat|sh|exe)$/i.test(installPath)) {
+    if (isCustomLauncherPath(installPath)) {
       const lastSlash = Math.max(installPath.lastIndexOf('\\'), installPath.lastIndexOf('/'))
       return lastSlash > 0 ? installPath.substring(0, lastSlash) : installPath
     }
@@ -2192,6 +2205,13 @@ export default function Servers() {
                   className="font-mono text-sm"
                   maxLength={260}
                 />
+                {isCustomLauncherPath(newServer.installPath) && (
+                  <Alert className="border-warning/40 bg-warning/10">
+                    <AlertCircle className="h-4 w-4 text-warning" />
+                    <AlertTitle className="text-warning">{t('localForm.customLauncherNoticeTitle')}</AlertTitle>
+                    <AlertDescription>{t('localForm.customLauncherNoticeBody')}</AlertDescription>
+                  </Alert>
+                )}
               </div>
             </div>
             )}
@@ -2435,6 +2455,13 @@ export default function Servers() {
                   onChange={e => setEditingServer({ ...editingServer, installPath: e.target.value })}
                   className="font-mono text-sm"
                 />
+                {isCustomLauncherPath(editingServer.installPath) && (
+                  <Alert className="border-warning/40 bg-warning/10">
+                    <AlertCircle className="h-4 w-4 text-warning" />
+                    <AlertTitle className="text-warning">{t('editDialog.customLauncherNoticeTitle')}</AlertTitle>
+                    <AlertDescription>{t('editDialog.customLauncherNoticeBody')}</AlertDescription>
+                  </Alert>
+                )}
               </div>
 
               <div className="space-y-2">

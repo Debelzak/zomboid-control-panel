@@ -219,6 +219,32 @@ function normalizePathForCompare(value) {
   return isWindows ? normalized.toLowerCase() : normalized;
 }
 
+// Two supported ways to point the panel at a server -- an operator ruling,
+// not an accident (2026-08-27, user-report-servertest-ini-and-sandbox-
+// reverted-to-default-after-restart): MANAGED (a directory -- the panel
+// generates, owns, and regenerates StartServer_<name>.bat/.sh, baking
+// -cachedir/-servername into it) or CUSTOM LAUNCHER (a path ending in
+// .bat/.sh/.exe -- the operator's own script; the panel launches it as-is
+// and never regenerates or manages it). ONE predicate, asked by every
+// caller that needs to know which: loadConfig() below (to resolve
+// serverBat), server.js's refreshLaunchTargetBeforeStart() (to decide
+// whether to regenerate the launch script before a start/restart), and
+// servers.js's PUT/POST validation (to decide which shape rule a saved
+// installPath/serverPath must satisfy). An existing file-shaped value must
+// keep resolving as CUSTOM LAUNCHER -- this codifies behavior loadConfig()
+// already had, it does not change it.
+export function resolveLaunchMode(server) {
+  const raw = server?.serverPath || server?.installPath;
+  if (!raw || typeof raw !== "string") {
+    return { mode: "managed", launcherPath: null };
+  }
+  const lower = raw.toLowerCase();
+  if (lower.endsWith(".bat") || lower.endsWith(".sh") || lower.endsWith(".exe")) {
+    return { mode: "custom", launcherPath: raw };
+  }
+  return { mode: "managed", launcherPath: null };
+}
+
 /**
  * How strongly a running process looks like it belongs to a given server.
  * Returns -1 when a launch argument proves it belongs to a DIFFERENT server,
@@ -275,6 +301,9 @@ export class ServerManager {
     this.isRunning = false;
     this.startTime = null;
     this.configLoaded = false;
+    // "managed" (the panel owns and regenerates the launch script) or
+    // "custom" (the operator's own .bat/.sh/.exe -- see resolveLaunchMode()).
+    this.launchMode = "managed";
     // Which server this instance's currently-loaded config belongs to (null
     // = "the active server", the shared-singleton default). Recorded so
     // internal reload points (e.g. startServer()'s "settings may have
@@ -300,6 +329,7 @@ export class ServerManager {
     this.startCommand = "";
     this.rconHost = null;
     this.rconPort = null;
+    this.launchMode = "managed";
     this.configLoaded = false;
     await this.loadConfig(serverId);
   }
@@ -323,21 +353,16 @@ export class ServerManager {
         // Use serverPath if available, otherwise extract from installPath
         let serverDir = activeServer.serverPath || activeServer.installPath;
 
-        // If path points to a file (e.g., .bat), extract the directory
-        if (serverDir) {
-          const serverDirLower = serverDir.toLowerCase();
-          if (
-            serverDirLower.endsWith(".bat") ||
-            serverDirLower.endsWith(".sh") ||
-            serverDirLower.endsWith(".exe")
-          ) {
-            // Extract the batch file name before getting directory
-            const batchFileName = path.basename(serverDir);
-            serverDir = path.dirname(serverDir);
-            // Use the specified batch file
-            this.serverBat = batchFileName;
-            log.debug(`Using batch file from installPath: ${batchFileName}`);
-          }
+        // CUSTOM LAUNCHER mode: the stored path points at the operator's own
+        // .bat/.sh/.exe, not a directory the panel manages. Extract the
+        // directory to run in and the launcher file to run.
+        const launchMode = resolveLaunchMode(activeServer);
+        this.launchMode = launchMode.mode;
+        if (launchMode.mode === "custom") {
+          const batchFileName = path.basename(launchMode.launcherPath);
+          serverDir = path.dirname(launchMode.launcherPath);
+          this.serverBat = batchFileName;
+          log.debug(`Using custom launcher: ${batchFileName}`);
         }
 
         if (serverDir) {
