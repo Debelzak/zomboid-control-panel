@@ -29,9 +29,11 @@ import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 vi.mock("../database/init.js", () => ({
   getActiveServer: vi.fn(),
   getRoleByName: mockGetRoleByName,
+  getServers: vi.fn(),
+  getSetting: vi.fn(),
 }));
 
-const { getActiveServer } = await import("../database/init.js");
+const { getActiveServer, getServers, getSetting } = await import("../database/init.js");
 const { default: router } = await import("../routes/chunks.js");
 
 // ── sql.js setup for a real vehicles.db fixture ────────────────────────────
@@ -155,6 +157,12 @@ beforeEach(() => {
     zomboidDataPath: dataRoot,
     isRemote: false,
   });
+  // bug-hunt-2026-08-27: delete-chunks/delete-region now require a
+  // customPath to match a configured server's zomboidDataPath (or an
+  // OS-standard candidate) via assertKnownSaveRoot -- default to none
+  // configured, so tests that use customPath must opt in explicitly.
+  getServers.mockReset().mockResolvedValue([]);
+  getSetting.mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -652,5 +660,94 @@ describe("delete-chunks/delete-region: an undetermined server state must refuse,
     expect(res.getStatusCode()).toBe(503);
     expect(res.getBody()).toMatchObject({ code: "SERVER_STATE_UNKNOWN" });
     expect(fs.existsSync(chunk)).toBe(true);
+  });
+});
+
+// bug-hunt-2026-08-27, item (C): a customPath used to only need to LOOK
+// Zomboid-related (inspectZomboidPath's hasZomboidMarker/isInsideSavesDir
+// signals are pure substring matches on the path string, satisfiable with
+// zero real filesystem structure). Verified empirically that tightening
+// just that heuristic doesn't change what's actually deletable, though --
+// delete-chunks/delete-region's own fs.existsSync(savePath) check already
+// independently requires a real Saves/Multiplayer/<saveName> subtree to
+// exist before anything can be deleted, regardless of which inspection
+// signal passed. The real gap is that ANY host location satisfying that
+// shape works, not just ones the panel already trusts. assertKnownSaveRoot
+// closes that: a delete-chunks/delete-region customPath must now resolve
+// to either a configured server's own zomboidDataPath (servers.manage-
+// gated -- chunks.manage alone can't create one) or one of the panel's own
+// OS-standard auto-detected candidate paths, not an arbitrary directory
+// that merely has (or was made to have) the right shape.
+describe("customPath must resolve to a location the panel already recognizes", () => {
+  it("refuses delete-chunks when customPath matches no configured server and no OS-standard candidate", async () => {
+    // A real Saves/Multiplayer/<SAVE_NAME> subtree with real chunk content
+    // -- exactly the shape that used to be sufficient on its own -- but
+    // getServers() (mocked in beforeEach) has nothing pointing at it.
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+
+    const res = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0/0.bin", x: 0, y: 0 }],
+      customPath: dataRoot,
+    });
+
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/isn't a location the panel already recognizes/i);
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("refuses delete-region the same way", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 1,
+      minY: 0,
+      maxY: 1,
+      customPath: dataRoot,
+    });
+
+    expect(res.getStatusCode()).toBe(400);
+    expect(res.getBody().error).toMatch(/isn't a location the panel already recognizes/i);
+    expect(fs.existsSync(chunk)).toBe(true);
+  });
+
+  it("still deletes via customPath when it matches a DIFFERENT configured server's zomboidDataPath (not just the active one)", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+    // The active server (from the outer beforeEach) points elsewhere;
+    // dataRoot belongs to a second, non-active configured server -- proves
+    // the allowlist checks ALL configured servers, not just the active one.
+    getServers.mockResolvedValue([
+      { id: "server-1", zomboidDataPath: path.join(os.tmpdir(), "unrelated-active-server") },
+      { id: "server-2", zomboidDataPath: dataRoot },
+    ]);
+
+    const res = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0/0.bin", x: 0, y: 0 }],
+      customPath: dataRoot,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(chunk)).toBe(false);
+  });
+
+  it("still deletes when no customPath is given at all (the active server's own path is trusted by default, unaffected by this gate)", async () => {
+    const chunk = path.join(savePath, "map", "0", "0.bin");
+    writeFileDeep(chunk, "a");
+
+    const res = await postAs("/delete-chunks", {
+      saveName: SAVE_NAME,
+      chunks: [{ file: "0/0.bin", x: 0, y: 0 }],
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(chunk)).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import {
   setSetting,
   getActiveServer,
   updateServer,
+  getServers,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { requirePermission, getRoleByName } from "../services/permissions.js";
@@ -357,6 +358,93 @@ function resolveCustomOrDefaultDataPath(customPath) {
     checks: verdict.checks,
     parentSuggestion: verdict.parentSuggestion || null,
   };
+  throw error;
+}
+
+// inspectZomboidPath()'s acceptance criteria (hasSavesDir, hasMultiplayerDir,
+// isInsideSavesDir, hasZomboidMarker, hasSaveArtifacts -- any ONE is enough)
+// was designed to guide an operator's folder PICKER: "does this look like
+// the right kind of folder, or should we suggest the parent?" Two of those
+// five signals -- isInsideSavesDir and hasZomboidMarker -- are pure
+// substring matches against the PATH STRING ITSELF and require the caller
+// to control no filesystem state at all, just an absolute path whose text
+// happens to contain "saves" or "zomboid" somewhere. Used here to reject
+// the most obviously-bogus customPath values fast, with a clear message,
+// on the READ path (GET /chunks/:saveName) -- a wrong guess there just
+// shows an empty save list either way, this only makes the failure faster
+// and clearer. NOT the real gate for the destructive routes; see
+// assertKnownSaveRoot below for those.
+function assertRealSaveDataPath(zomboidDataPath) {
+  const verdict = inspectZomboidPath(zomboidDataPath);
+  const hasStructuralEvidence =
+    verdict.checks.hasSavesDir ||
+    verdict.checks.hasMultiplayerDir ||
+    verdict.checks.hasSaveArtifacts;
+  if (!hasStructuralEvidence) {
+    const error = new Error(
+      "This custom path doesn't contain an actual Saves/Multiplayer folder or " +
+        "recognizable save data -- refusing to delete from it for safety. " +
+        "Point at a real Zomboid data folder, not just a path with a suggestive name.",
+    );
+    error.statusCode = 400;
+    error.details = { reason: "no-structural-save-evidence", checks: verdict.checks };
+    throw error;
+  }
+}
+
+// The REAL gate for delete-chunks/delete-region (bug-hunt-2026-08-27, item
+// C). assertRealSaveDataPath above only asks "does this directory contain
+// SOMETHING that looks like save data" -- and by the time delete-chunks/
+// delete-region reach their own fs.existsSync(savePath) check, a matching
+// Saves/Multiplayer/<saveName> subtree already has to exist for the delete
+// to proceed at all, which independently forces hasSavesDir-shaped
+// structural evidence to be present regardless. So a "does this look like
+// real save content" check alone doesn't change what customPath values can
+// actually reach a delete -- verified empirically (see
+// chunksDeletionLogic.test.js): a fake directory with zero real structure
+// gets refused before this function is even reached (404 Save not found,
+// via the existsSync check), not bypassed. The genuine residual risk isn't
+// "the panel can be fooled into thinking a bogus folder is real" -- it's
+// "chunks.manage lets an operator direct the panel process to delete named
+// files at ANY host location the process can reach, as long as SOMETHING
+// matching a Saves/Multiplayer/<name> shape exists (or can be created)
+// there" -- a location the panel process may have broader filesystem
+// access to than the operator does through any other route. Closing that
+// means constraining WHICH locations a destructive action can target, not
+// making the "does it look right" heuristic stricter: customPath must
+// resolve to somewhere the panel already recognizes -- a configured
+// server's own zomboidDataPath (servers.manage-gated, so creating a new
+// one requires a capability chunks.manage doesn't include) or one of the
+// panel's own OS-standard auto-detected candidate locations
+// (getCandidateZomboidPaths() -- computed from platform conventions, not
+// request input). Deliberately NOT applied to the read routes (GET
+// /saves, /chunks/:saveName, /stats/:saveName) -- ChunkCleaner.tsx's
+// custom-path field is a real, intentional feature for BROWSING save data
+// outside the active server's own configured location, and constraining
+// reads the same way would remove that flexibility for no safety benefit
+// a read doesn't need.
+async function assertKnownSaveRoot(zomboidDataPath) {
+  const resolved = path.resolve(zomboidDataPath);
+  const configuredServers = await getServers();
+  const matchesConfiguredServer = configuredServers.some(
+    (s) => s.zomboidDataPath && path.resolve(s.zomboidDataPath) === resolved,
+  );
+  if (matchesConfiguredServer) return;
+
+  const candidates = getCandidateZomboidPaths();
+  const matchesCandidate = candidates.some((c) => path.resolve(c.path) === resolved);
+  if (matchesCandidate) return;
+
+  const legacyPath = await getSetting("zomboidDataPath");
+  if (legacyPath && path.resolve(normalizeUserPath(legacyPath)) === resolved) return;
+
+  const error = new Error(
+    "This custom path isn't a location the panel already recognizes -- not a configured " +
+      "server's data folder, and not one of the standard OS locations Zomboid saves usually " +
+      "live in. Refusing to delete from it for safety.",
+  );
+  error.statusCode = 400;
+  error.details = { reason: "not-a-known-save-root", tried: resolved };
   throw error;
 }
 
@@ -773,6 +861,7 @@ router.get("/chunks/:saveName", async (req, res) => {
     let zomboidDataPath;
     if (customPath) {
       zomboidDataPath = resolveCustomOrDefaultDataPath(String(customPath));
+      assertRealSaveDataPath(zomboidDataPath);
     } else {
       zomboidDataPath = await getZomboidDataPath();
     }
@@ -1225,6 +1314,7 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
         code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
       });
     }
+    if (customPath) await assertKnownSaveRoot(zomboidDataPath);
 
     const savesPath = resolveSavesPath(zomboidDataPath);
     const savePath = path.join(savesPath, sanitizedSaveName);
@@ -1613,6 +1703,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
         code: ErrorCode.CHUNKS_DATA_PATH_NOT_SET,
       });
     }
+    if (customPath) await assertKnownSaveRoot(zomboidDataPath);
 
     const savesPath = resolveSavesPath(zomboidDataPath);
     const savePath = path.join(savesPath, sanitizedSaveName);
