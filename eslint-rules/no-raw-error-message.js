@@ -26,13 +26,24 @@
  * this is what's been found so far, not a closed set. If a fourth turns up,
  * add it here rather than assuming three is now complete either.
  *
- * TWO KINDS OF GAP, ON DIFFERENT AXES -- both real, only one currently live.
- * "How far the rule traces" (accepted, no currently-actionable site found):
- * no variable-flow tracing across a `const msg = ...; toast({description: msg})`
- * two-step, and the ternary only matches a bare `instanceof Error`, not an
+ * THREE KINDS OF GAP FOUND SO FAR, ON DIFFERENT AXES.
+ * "How far the rule traces, part 1" -- CLOSED (Jim, 2026-08-27), NOT
+ * theoretical after all: the two-step `const msg = <shape>; toast({
+ * description: msg })` was carried in this file's own comment as "accepted,
+ * no currently-actionable site found" -- wrong. ServerFinder.tsx's
+ * fetchServers() shipped exactly this shape live (fixed 7bfd32d, found by an
+ * unrelated verification pass, NOT by this rule), and a dedicated sweep for
+ * the same pattern afterward found four more: Servers.tsx:1014,
+ * WorldMap.tsx:2494/2600/2653. A ONE-HOP variable-flow check now closes
+ * this -- see checkVariableFlowGap below for the mechanism and its own
+ * still-open limit (a two-HOP chain through a helper function, ServerSetup.tsx's
+ * shape, is a known, separate, NOT-closed gap; see that function's comment).
+ * "How far the rule traces, part 2" (still accepted, no currently-actionable
+ * site found): the ternary only matches a bare `instanceof Error`, not an
  * `instanceof ApiError` or other subclass (2026-08-26 self-audit: exactly one
- * site in the whole client matches that shape, and it's already exempt for
- * the two-step reason above, so widening it today would flag nothing).
+ * site in the whole client matches that shape, and it was ALSO two-step, so
+ * it's now caught by the fix above without needing this widened separately --
+ * re-checked 2026-08-27, still true, still zero-actionable on its own).
  * "Where the rule looks" (Jim, 2026-08-26, WITH live sites): the sink check
  * below only recognised `toast(...)`/`set*(...)` call arguments -- it never
  * entered a JSX expression container at all, so `{error.message}` rendered
@@ -43,9 +54,10 @@
  * needed isBareErrorMessageAccess's object check widened from "bare
  * identifier" to "chain ending in an error-like property" (isErrorLikeReference)
  * -- the JSX gap alone wasn't sufficient to catch these two without that.
- * Live evidence is what changes the calculus versus the accepted gaps above:
- * a demonstrated site earns the fix; a theoretical one doesn't, per the same
- * standard applied when those two were left alone.
+ * Live evidence is what changes the calculus versus an accepted gap: a
+ * demonstrated site earns the fix; a theoretical one doesn't -- and the
+ * lesson from part 1 above is that "no currently-actionable site found" is a
+ * claim about a search's own coverage, not a permanent fact about the code.
  *
  * All three (now four) shapes are flagged ONLY when feeding a value a user
  * will actually see: the direct argument to `toast(...)`, or the direct argument to a
@@ -63,11 +75,13 @@
  * legitimate uses alone with no file-level exemption needed -- none of them
  * is a toast()/set*() argument.
  *
- * Known limitation, accepted rather than chased: a two-step
- * `const msg = x instanceof Error ? x.message : y; toast({ description: msg
- * })` is NOT caught (this rule doesn't trace variable flow across
- * statements). Every real site found used the direct-argument shape; this
- * covers the shapes that actually appear, not a theoretical superset.
+ * UPDATE 2026-08-27: the two-step limitation this paragraph used to
+ * describe as accepted is now CAUGHT (see checkVariableFlowGap and the
+ * VariableDeclarator visitor below) -- five real sites were found using it.
+ * Remaining known limitation, still accepted: a TWO-hop chain through an
+ * intermediate function call (`const raw = <shape>; const msg =
+ * helper(raw); toast({ description: msg })`, ServerSetup.tsx's real shape)
+ * is still not caught -- see checkVariableFlowGap's own comment for why.
  *
  * THE FIX IS THE SAME CALL EVERYWHERE, INCLUDING "BUCKET C" SITES: replace
  * any of the three shapes with `getUserErrorMessage(error, fallback)`. That
@@ -228,6 +242,79 @@ function isFeedingUserVisibleSink(node) {
   return false;
 }
 
+// Finds `name` in `scope` or any enclosing scope -- a plain lexical lookup,
+// not full data-flow: this is deliberately only strong enough to resolve a
+// `const`/`let` declarator's own binding from where it was declared, the
+// single relationship the ONE-HOP check below needs.
+function findVariableInScope(scope, name) {
+  let current = scope;
+  while (current) {
+    const found = current.variables.find((v) => v.name === name);
+    if (found) return found;
+    current = current.upper;
+  }
+  return null;
+}
+
+// ONE-HOP variable-flow check (2026-08-27): closes the two-step gap this
+// rule used to document as "accepted, no currently-actionable site found" --
+// `const msg = <shape>; toast({ description: msg })`. That claim turned out
+// to be wrong: ServerFinder.tsx's fetchServers() shipped exactly this shape
+// live (fixed 7bfd32d, found by a verification pass, not by this rule) and a
+// sweep for the same pattern afterward found four more (Servers.tsx,
+// WorldMap.tsx x3), all `const msg = <shape>; toast({ description: msg })`
+// or `... err.message : fallback` one binding away from a direct-argument
+// toast()/set*() call.
+//
+// Deliberately ONE hop, not a general data-flow search, same philosophy as
+// isFeedingUserVisibleSink's own bounded ancestor walk: for a `const`/`let`
+// declarator whose init matches one of the three raw shapes, look up the
+// declared variable and check whether ANY read reference of it is itself
+// feeding a sink (reusing isFeedingUserVisibleSink unchanged, just started
+// from the reference's identifier instead of the shape node). A `var` is
+// skipped -- this doesn't reason about reassignment across branches, and
+// every real site found used const/let. A variable used ONLY as a
+// comparison operand (Setup.tsx's `message === 'SETUP_TOKEN_REQUIRED' ? ... :
+// getUserErrorMessage(...)`) is correctly left alone: isFeedingUserVisibleSink
+// only recognizes specific sink-shaped ancestors, and a BinaryExpression
+// comparison isn't one of them.
+//
+// STILL NOT CAUGHT, same "one hop" reasoning why: `const raw = <shape>; const
+// msg = helper(raw); toast({ description: msg })` -- ServerSetup.tsx's real
+// shape, which routes the raw text through installationErrorGuidance() before
+// display. Catching that needs tracing an arbitrary function's own return
+// value back to its parameter, a genuinely different (and much larger) class
+// of analysis than "does this exact binding's own reference feed a sink" --
+// left as a known, named gap rather than chased, same disposition this file
+// already gives its other accepted limitations.
+//
+// Deferred to Program:exit rather than checked inline in the
+// VariableDeclarator visitor: ESLint sets a node's `.parent` when it is
+// ENTERED during the main traversal, in document order -- a reference that
+// occurs LATER in the same block (the toast() call after the const) has not
+// been entered yet, and so has no `.parent`, at the point a VariableDeclarator
+// visitor for an EARLIER statement would run. Collecting candidates during
+// the main pass and walking their references only after the whole file has
+// been traversed (Program:exit) guarantees every reference's ancestor chain
+// is fully linked before isFeedingUserVisibleSink ever walks it.
+function checkVariableFlowGap(context, candidateDeclarators) {
+  for (const declarator of candidateDeclarators) {
+    const scope = context.sourceCode.getScope(declarator);
+    const variable = findVariableInScope(scope, declarator.id.name);
+    if (!variable) continue;
+
+    const feedsASink = variable.references.some(
+      (reference) =>
+        reference.identifier !== declarator.id &&
+        reference.isRead() &&
+        isFeedingUserVisibleSink(reference.identifier),
+    );
+    if (feedsASink) {
+      context.report({ node: declarator.init, messageId: "rawMessage" });
+    }
+  }
+}
+
 export default {
   meta: {
     type: "problem",
@@ -243,6 +330,8 @@ export default {
   },
 
   create(context) {
+    const candidateDeclarators = [];
+
     return {
       ConditionalExpression(node) {
         if (!isSameErrorMessageTernary(node)) return;
@@ -258,6 +347,23 @@ export default {
         if (!isBareErrorMessageAccess(node)) return;
         if (!isFeedingUserVisibleSink(node)) return;
         context.report({ node, messageId: "rawMessage" });
+      },
+      VariableDeclarator(node) {
+        if (!node.init || node.id.type !== "Identifier") return;
+        if (node.parent.type !== "VariableDeclaration" || node.parent.kind === "var") return;
+        // isBareErrorMessageAccess expects an unwrapped MemberExpression --
+        // the MemberExpression visitor above receives that directly because
+        // ESLint's traversal reaches the inner node regardless of its
+        // ChainExpression wrapper, but `node.init` here IS that wrapper for
+        // an optional-chained `err?.message` and must be unwrapped first.
+        const isShape =
+          isSameErrorMessageTernary(node.init) ||
+          isRawMessageLogicalOr(node.init) ||
+          isBareErrorMessageAccess(unwrapChain(node.init));
+        if (isShape) candidateDeclarators.push(node);
+      },
+      "Program:exit"() {
+        checkVariableFlowGap(context, candidateDeclarators);
       },
     };
   },

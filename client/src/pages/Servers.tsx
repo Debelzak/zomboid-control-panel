@@ -1011,7 +1011,7 @@ export default function Servers() {
             filesActuallyDeleted = true
           }
         } catch (e) {
-          const msg = e instanceof Error ? e.message : t('toasts.couldNotDeleteFiles')
+          const msg = getUserErrorMessage(e, t('toasts.couldNotDeleteFiles'))
           toast({
             title: t('toasts.warningTitle'),
             description: t('toasts.removingFromPanelAnyway', { message: msg }),

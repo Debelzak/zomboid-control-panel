@@ -51,6 +51,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { reportClientError } from "@/lib/client-errors";
+import { getUserErrorMessage, rawErrorMessageIntentional } from "@/lib/errorMessage";
 import { cn, copyText, formatUptime } from "@/lib/utils";
 import {
   Select,
@@ -193,13 +194,26 @@ function formatBytes(bytes: number): string {
 
 const LINUX_SERVICE_INSTALL_PATH = "/opt/zomboid-panel/data/pzserver";
 
-function installationErrorGuidance(
-  message: string,
+// rawMessage is used ONLY to pattern-match the server's literal English
+// string and, when matched, to embed the exact unwritable path back into the
+// guidance text -- the same "raw text for internal logic, not display"
+// legitimate use errorMessage.ts's own getRecoveryUrl() has (see
+// eslint-rules/no-raw-error-message.js). displayMessage is what actually
+// reaches the user everywhere else: previously this function returned
+// rawMessage unchanged for every installation error OTHER than the
+// not-writable one, showing fully raw/untranslated text and discarding any
+// registered error code's translation (2026-08-27 lint-rule blind-spot
+// sweep finding -- the raw ternary that used to compute rawMessage was
+// invisible to no-raw-error-message.js because it fed this function, not a
+// toast()/set*() call, directly).
+export function installationErrorGuidance(
+  rawMessage: string,
+  displayMessage: string,
   t: (key: string, opts?: Record<string, unknown>) => string,
   platform: string | null,
 ) {
-  if (!message.startsWith("Installation path is not writable:")) {
-    return message;
+  if (!rawMessage.startsWith("Installation path is not writable:")) {
+    return displayMessage;
   }
   // The suffix tells the user to edit zomboid-panel.service and restart it
   // via systemd -- meaningless (and unfollowable) advice on Windows/macOS,
@@ -210,11 +224,11 @@ function installationErrorGuidance(
   // loading, or the fetch failed) falls back to the plain message rather
   // than guessing.
   if (platform !== "linux") {
-    return message;
+    return displayMessage;
   }
 
   return t("toasts.installationErrorGuidance", {
-    message,
+    message: rawMessage,
     path: LINUX_SERVICE_INSTALL_PATH,
   });
 }
@@ -882,8 +896,9 @@ export default function ServerSetup() {
       // still tell the user something was attempted, instead of forgetting.
       writeInstallInFlightMarker({ installPath, serverName, startedAt: Date.now() });
     } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : t("common.unknownError");
-      const msg = installationErrorGuidance(rawMessage, t, serverPlatform);
+      const rawMessage = rawErrorMessageIntentional(error, t("common.unknownError"));
+      const displayMessage = getUserErrorMessage(error, t("common.unknownError"));
+      const msg = installationErrorGuidance(rawMessage, displayMessage, t, serverPlatform);
       addLog("error", msg);
       setInstalling(false);
       toast({

@@ -49,10 +49,6 @@ describe('local/no-raw-error-message', () => {
       // rule targets.
       "logSomething(error instanceof Error ? error.message : 'fallback')",
 
-      // Assigned to a plain variable, not passed directly -- the
-      // documented two-step limitation.
-      "const msg = error instanceof Error ? error.message : 'fallback'; toast({ description: msg })",
-
       // Shape 2 (`x?.message || fallback`), legitimate uses: reading a
       // normal API response/progress field, not a caught error -- real
       // sites found for both (Backups.tsx's backupProgress, Debug.tsx's
@@ -75,11 +71,40 @@ describe('local/no-raw-error-message', () => {
       // not error-like either, so isErrorLikeReference must reject it
       // rather than matching on ANY member access ending in a plausible word.
       'const el = <p>{this.state.error.count}</p>',
-      // `.message` accessed on a chain, but not inside a JSX expression
-      // container and not a toast()/set*() argument either -- plain
-      // variable assignment, the same two-step limitation shape 3 already
-      // accepts above, now confirmed for the chained-object case too.
+      // `.message` accessed on a chain, with no other statement referencing
+      // the variable at all -- the one-hop check (2026-08-27) has nothing to
+      // walk, so this stays valid the same way a totally unused variable
+      // would.
       'const msg = this.state.error.message',
+
+      // One-hop check (2026-08-27), Setup.tsx's real shape: the two-step
+      // variable is used ONLY as a comparison operand, never fed to a sink
+      // -- isFeedingUserVisibleSink correctly rejects a BinaryExpression
+      // test as an ancestor shape, so this must stay valid even though the
+      // variable IS referenced again.
+      "const message = err instanceof Error ? err.message : ''; setError(message === 'SETUP_TOKEN_REQUIRED' ? t('errors.invalidSetupToken') : getUserErrorMessage(err, t('errors.setupFailed')))",
+
+      // `var`, not `const`/`let` -- the one-hop check deliberately does not
+      // reason about var's reassignment/hoisting semantics.
+      "var msg = error instanceof Error ? error.message : 'fallback'; toast({ description: msg })",
+
+      // Two-HOP chain through an intermediate function call -- the real
+      // ServerSetup.tsx shape (`raw` feeds installationErrorGuidance(),
+      // NOT a sink directly; the helper's return value, a different
+      // variable, is what reaches toast()). Documented as a known,
+      // still-open gap in checkVariableFlowGap's own comment, not chased:
+      // this must stay valid.
+      "const raw = error instanceof Error ? error.message : t('common.unknownError'); const msg = installationErrorGuidance(raw, t, platform); toast({ description: msg })",
+
+      // ANOTHER still-open gap, different shape -- the real Servers.tsx:1014
+      // site: the two-step variable is embedded inside an i18n
+      // interpolation (`t(key, { message: msg })`), and it is t()'s RETURN
+      // VALUE, not msg itself, that reaches toast()'s description. Catching
+      // this needs the walk to treat a `t(...)` call as a transparent
+      // pass-through -- a different, broader widening than the one-hop
+      // variable check adds here, and not attempted (see this rule's top
+      // comment). Must stay valid until/unless that's built.
+      "const msg = e instanceof Error ? e.message : t('toasts.couldNotDeleteFiles'); toast({ title: t('toasts.warningTitle'), description: t('toasts.removingFromPanelAnyway', { message: msg }), variant: 'destructive' })",
     ],
     invalid: [
       {
@@ -157,6 +182,37 @@ describe('local/no-raw-error-message', () => {
         // (`this.props.error`), confirming isErrorLikeReference isn't
         // hardcoded to `state`.
         code: 'const el = <pre>{this.props.error.message}</pre>',
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // The one-hop variable-flow gap (2026-08-27): this used to be a
+        // VALID case in this file, documented as the accepted two-step
+        // limitation, until ServerFinder.tsx's fetchServers() shipped this
+        // exact shape live (fixed 7bfd32d, found by an unrelated
+        // verification pass, not by this rule).
+        code: "const msg = error instanceof Error ? error.message : 'fallback'; toast({ description: msg })",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // The exact WorldMap.tsx shape (three near-identical real sites):
+        // an early-return guard between the try and the two-step
+        // assignment doesn't change the shape. Wrapped in a function --
+        // `return` is only valid inside one.
+        code: "function f() { if (!mountedRef.current) return; const msg = err instanceof Error ? err.message : t('toasts.areaNotLoaded'); toast({ title: t('toasts.airdropFailedTitle'), description: msg, variant: 'destructive' }) }",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 2, one-hop: no live site found for this exact combination,
+        // but the mechanism is general -- verifying it fires for shape 2
+        // (not just shape 1) rather than assuming.
+        code: "const msg = err?.message || t('fallback'); setDetectError(msg)",
+        errors: [{ messageId: 'rawMessage' }],
+      },
+      {
+        // Shape 3, one-hop, functional-update sink -- combines the
+        // one-hop check with the pre-existing nested-functional-update
+        // sink walk, confirming the two widen independently.
+        code: "const msg = err?.message; setCollectionStatus((s) => ({ ...s, loading: false, error: msg }))",
         errors: [{ messageId: 'rawMessage' }],
       },
     ],
