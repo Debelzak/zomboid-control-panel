@@ -2049,14 +2049,26 @@ router.post("/write-to-ini", async (req, res) => {
       let content = readTextFile(iniPath);
 
       // Update or add Mods= (mod IDs like NeatUI_Framework)
-      if (content.includes("Mods=")) {
+      //
+      // Existence must be checked with the SAME anchored regex used to
+      // replace it, not a plain .includes() -- .includes("Mods=") matches
+      // those characters ANYWHERE in the file, including inside operator
+      // free text (PublicDescription, ServerWelcomeMessage). When that
+      // happened, this took the replace branch, the anchored regex matched
+      // nothing, content.replace() returned the string unchanged, and the
+      // write proceeded anyway -- backup taken, route returns success,
+      // the operator's mod-list change silently never lands. Found
+      // 2026-08-27 auditing this file's write surface for the "cannot
+      // fail" class; the correct pattern already existed at 5 of the file's
+      // 18 ini-write sites (this fix brings the other 13 in line with it).
+      if (content.match(/^Mods=.*/m)) {
         content = content.replace(/^Mods=.*/m, `Mods=${modIdList}`);
       } else {
         content += `\nMods=${modIdList}`;
       }
 
       // Update or add WorkshopItems= (workshop IDs like 3508537032)
-      if (content.includes("WorkshopItems=")) {
+      if (content.match(/^WorkshopItems=.*/m)) {
         content = content.replace(
           /^WorkshopItems=.*/m,
           `WorkshopItems=${workshopIdList}`,
@@ -2067,7 +2079,7 @@ router.post("/write-to-ini", async (req, res) => {
 
       // Update or add Map= (only if we have custom maps)
       if (detectedMapFolders && detectedMapFolders.length > 0) {
-        if (content.includes("Map=")) {
+        if (content.match(/^Map=.*/m)) {
           content = content.replace(/^Map=.*/m, `Map=${mapList}`);
         } else {
           content += `\nMap=${mapList}`;
@@ -2267,7 +2279,13 @@ router.post("/toggle-mod-id", async (req, res) => {
       }
 
       const newModList = sanitizeModIdList(currentModIds);
-      if (content.includes("Mods=")) {
+      // Reuse modsMatch (already computed above) as the existence check --
+      // a separate content.includes("Mods=") would match those characters
+      // anywhere in the file (e.g. operator free text), taking this branch
+      // while the anchored replace below matches nothing and silently
+      // no-ops. See the 2026-08-27 comment on this file's first ini-write
+      // site for the full explanation.
+      if (modsMatch) {
         content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
@@ -2397,7 +2415,9 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       }
 
       const newModList = sanitizeModIdList(currentModIds);
-      if (content.includes("Mods=")) {
+      // Reuse modsMatch (see this file's first ini-write site for why a
+      // separate .includes("Mods=") is wrong here).
+      if (modsMatch) {
         content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
@@ -2542,8 +2562,10 @@ router.post("/add-to-ini", async (req, res) => {
       }
       const newModList = sanitizeModIdList(currentModIds);
 
-      // Update WorkshopItems=
-      if (content.includes("WorkshopItems=")) {
+      // Update WorkshopItems= -- reuse workshopMatch (computed above) as the
+      // existence check, not a separate .includes() (see this file's first
+      // ini-write site for why).
+      if (workshopMatch) {
         content = content.replace(
           /^WorkshopItems=.*/m,
           `WorkshopItems=${newWorkshopList}`,
@@ -2552,9 +2574,9 @@ router.post("/add-to-ini", async (req, res) => {
         content += `\nWorkshopItems=${newWorkshopList}`;
       }
 
-      // Update Mods= if we have a modId
+      // Update Mods= if we have a modId -- reuse modsMatch.
       if (detectedModId) {
-        if (content.includes("Mods=")) {
+        if (modsMatch) {
           content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
         } else {
           content += `\nMods=${newModList}`;
@@ -2577,7 +2599,7 @@ router.post("/add-to-ini", async (req, res) => {
         }
 
         const newMapList = currentMaps.join(";");
-        if (content.includes("Map=")) {
+        if (mapMatch) {
           content = content.replace(/^Map=.*/m, `Map=${newMapList}`);
         } else {
           content += `\nMap=${newMapList}`;
@@ -3316,7 +3338,7 @@ router.post("/remove-from-ini", async (req, res) => {
           }
 
           const newMapList = currentMaps.join(";");
-          if (content.includes("Map=")) {
+          if (mapMatch) {
             content = content.replace(/^Map=.*/m, `Map=${newMapList}`);
           } else {
             content += `\nMap=${newMapList}`;
@@ -3324,8 +3346,10 @@ router.post("/remove-from-ini", async (req, res) => {
         }
       }
 
-      // Update WorkshopItems=
-      if (content.includes("WorkshopItems=")) {
+      // Update WorkshopItems= -- reuse workshopMatch/modsMatch (computed
+      // above) instead of a separate .includes(), same fix as this file's
+      // first ini-write site.
+      if (workshopMatch) {
         content = content.replace(
           /^WorkshopItems=.*/m,
           `WorkshopItems=${sanitizeIniList(workshopIds)}`,
@@ -3333,7 +3357,7 @@ router.post("/remove-from-ini", async (req, res) => {
       }
 
       // Update Mods=
-      if (content.includes("Mods=")) {
+      if (modsMatch) {
         content = content.replace(
           /^Mods=.*/m,
           `Mods=${sanitizeModIdList(modIds)}`,
@@ -3487,20 +3511,22 @@ router.post("/batch-remove", async (req, res) => {
 
             if (iniMaps.length === 0) iniMaps = ["Muldraugh, KY"];
 
-            // Write back
-            if (content.includes("WorkshopItems=")) {
+            // Write back -- reuse workshopMatch/modsMatch/mapMatch (computed
+            // above) instead of a separate .includes(), same fix as this
+            // file's first ini-write site.
+            if (workshopMatch) {
               content = content.replace(
                 /^WorkshopItems=.*/m,
                 `WorkshopItems=${sanitizeIniList(iniWorkshopIds)}`,
               );
             }
-            if (content.includes("Mods=")) {
+            if (modsMatch) {
               content = content.replace(
                 /^Mods=.*/m,
                 `Mods=${sanitizeModIdList(iniModIds)}`,
               );
             }
-            if (content.includes("Map=")) {
+            if (mapMatch) {
               content = content.replace(
                 /^Map=.*/m,
                 `Map=${sanitizeIniList(iniMaps)}`,
@@ -3675,7 +3701,9 @@ router.post("/repair-map-entries", async (req, res) => {
       let backupWarning = null;
       if (removedEntries.length > 0 || addedEntries.length > 0) {
         const newMapLine = validEntries.join(";");
-        if (content.includes("Map=")) {
+        // Reuse mapMatch (computed above), same fix as this file's first
+        // ini-write site.
+        if (mapMatch) {
           content = content.replace(/^Map=.*/m, `Map=${newMapLine}`);
         }
         backupWarning = backupWarningFor(
@@ -3896,7 +3924,9 @@ router.post("/add-missing-dep", async (req, res) => {
         // (2026-08-26 bug hunt finding 14) rather than rely on a guard that
         // lives in a different function than the write it protects.
         const wsLine = `WorkshopItems=${sanitizeIniList(currentWs)}`;
-        if (content.includes("WorkshopItems=")) {
+        // Reuse wsMatch (computed above), same fix as this file's first
+        // ini-write site.
+        if (wsMatch) {
           content = content.replace(/^WorkshopItems=.*/m, wsLine);
         } else {
           content += `\n${wsLine}`;
@@ -3911,7 +3941,9 @@ router.post("/add-missing-dep", async (req, res) => {
         const currentMods = modsMatch?.[1]?.split(";").filter(Boolean) || [];
         if (!currentMods.includes(resolvedModId)) {
           currentMods.push(resolvedModId);
-          if (content.includes("Mods=")) {
+          // Reuse modsMatch (computed above), same fix as this file's
+          // first ini-write site.
+          if (modsMatch) {
             content = content.replace(
               /^Mods=.*/m,
               `Mods=${sanitizeModIdList(currentMods)}`,
@@ -3935,7 +3967,9 @@ router.post("/add-missing-dep", async (req, res) => {
           }
         }
         if (mapsChanged) {
-          if (content.includes("Map="))
+          // Reuse mapMatch (computed above), same fix as this file's first
+          // ini-write site.
+          if (mapMatch)
             content = content.replace(
               /^Map=.*/m,
               `Map=${currentMaps.join(";")}`,
@@ -4083,17 +4117,19 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       const modsLine = sanitizeModIdList(Array.from(currentMods));
       const mapLine = currentMaps.join(";");
 
-      if (content.includes("WorkshopItems="))
+      // Reuse wsMatch/modsMatch/mapMatch (computed above) instead of a
+      // separate .includes(), same fix as this file's first ini-write site.
+      if (wsMatch)
         content = content.replace(
           /^WorkshopItems=.*/m,
           `WorkshopItems=${wsLine}`,
         );
       else content += `\nWorkshopItems=${wsLine}`;
-      if (content.includes("Mods="))
+      if (modsMatch)
         content = content.replace(/^Mods=.*/m, `Mods=${modsLine}`);
       else content += `\nMods=${modsLine}`;
       if (allMapFolders.length > 0) {
-        if (content.includes("Map="))
+        if (mapMatch)
           content = content.replace(/^Map=.*/m, `Map=${mapLine}`);
         else content += `\nMap=${mapLine}`;
       }
@@ -4673,7 +4709,9 @@ router.post("/sync-mod-ids", async (req, res) => {
       }
 
       const newModList = sanitizeModIdList(finalModIds);
-      if (content.includes("Mods=")) {
+      // Reuse modsMatch (computed above), same fix as this file's first
+      // ini-write site.
+      if (modsMatch) {
         content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
@@ -5047,15 +5085,18 @@ router.post("/presets/:id/apply", async (req, res) => {
     await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
+      // Existence must be checked with the same anchored regex used to
+      // replace it, not a plain .includes() -- see this file's first
+      // ini-write site for why.
       const workshopLine = `WorkshopItems=${sanitizeIniList(preset.workshop_ids || [])}`;
-      if (content.includes("WorkshopItems=")) {
+      if (content.match(/^WorkshopItems=.*/m)) {
         content = content.replace(/^WorkshopItems=.*/m, workshopLine);
       } else {
         content += `\n${workshopLine}`;
       }
 
       const modsLine = `Mods=${sanitizeModIdList(preset.mods || [])}`;
-      if (content.includes("Mods=")) {
+      if (content.match(/^Mods=.*/m)) {
         content = content.replace(/^Mods=.*/m, modsLine);
       } else {
         content += `\n${modsLine}`;
@@ -5130,7 +5171,9 @@ router.post("/save-order", async (req, res) => {
       let content = readTextFile(iniPath);
 
       const modsLine = `Mods=${sanitizeModIdList(modIds)}`;
-      if (content.includes("Mods=")) {
+      // Same fix as this file's first ini-write site: check the anchored
+      // regex, not a plain .includes().
+      if (content.match(/^Mods=.*/m)) {
         content = content.replace(/^Mods=.*/m, modsLine);
       } else {
         content += `\n${modsLine}`;
@@ -5426,7 +5469,9 @@ router.post("/add-mod-advanced", async (req, res) => {
       const newWorkshopList = sanitizeIniList(currentWorkshopIds);
       const newModList = sanitizeModIdList(currentModIds);
 
-      if (content.includes("WorkshopItems=")) {
+      // Reuse workshopMatch/modsMatch (computed above) instead of a
+      // separate .includes(), same fix as this file's first ini-write site.
+      if (workshopMatch) {
         content = content.replace(
           /^WorkshopItems=.*/m,
           `WorkshopItems=${newWorkshopList}`,
@@ -5435,7 +5480,7 @@ router.post("/add-mod-advanced", async (req, res) => {
         content += `\nWorkshopItems=${newWorkshopList}`;
       }
 
-      if (content.includes("Mods=")) {
+      if (modsMatch) {
         content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
@@ -5455,7 +5500,7 @@ router.post("/add-mod-advanced", async (req, res) => {
         }
 
         const newMapList = currentMaps.join(";");
-        if (content.includes("Map=")) {
+        if (mapMatch) {
           content = content.replace(/^Map=.*/m, `Map=${newMapList}`);
         } else {
           content += `\nMap=${newMapList}`;
