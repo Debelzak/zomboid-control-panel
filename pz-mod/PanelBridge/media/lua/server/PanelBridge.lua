@@ -1622,7 +1622,9 @@ local function processQueuedCommands(budget)
                     PanelBridge.queueState.lastCommandSeq = nextSeq
 
                     local cmd = queued.command or queued
-                    processSingleCommand(cmd)
+                    if processSingleCommand(cmd) then
+                        processed = processed + 1
+                    end
 
                     -- Keep files compact after consumption.
                     PanelBridge.clearFile(fileName)
@@ -1631,7 +1633,6 @@ local function processQueuedCommands(budget)
             end
 
             if shouldAdvance then
-                processed = processed + 1
                 PanelBridge.queueState.lastCommandSeq = nextSeq
                 PanelBridge.writeInboxCursor(nextSeq)
                 advanced = true
@@ -7501,8 +7502,9 @@ function PanelBridge.processCommands()
             break
         end
 
-        processSingleCommand(cmd)
-        processedCount = processedCount + 1
+        if processSingleCommand(cmd) then
+            processedCount = processedCount + 1
+        end
     end
 
     if processedCount > 0 then
