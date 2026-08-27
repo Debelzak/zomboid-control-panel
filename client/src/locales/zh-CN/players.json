@@ -328,6 +328,12 @@
     "downloadExportAria": "下载 {{username}} 的已保存导出",
     "deleteExportAria": "删除 {{username}} 的已保存导出"
   },
+  "importConfirm": {
+    "title": "要覆盖 {{player}} 的角色吗？",
+    "description": "这会用粘贴的数据替换 {{player}} 的经验值、天赋、技能、特质、物品栏和已穿戴物品。{{player}} 的当前状态会先保存到已保存的导出中，如果这是错误的玩家或错误的文件，你可以从那里恢复。",
+    "cancel": "取消",
+    "confirm": "是，覆盖角色"
+  },
   "actions": {
     "kickPlayer": "踢出玩家",
     "banPlayer": "封禁玩家",

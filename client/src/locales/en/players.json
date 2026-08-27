@@ -328,6 +328,12 @@
     "downloadExportAria": "Download {{username}}'s saved export",
     "deleteExportAria": "Delete {{username}}'s saved export"
   },
+  "importConfirm": {
+    "title": "Overwrite {{player}}'s character?",
+    "description": "This replaces {{player}}'s XP, perks, skills, traits, inventory, and worn items with the pasted data. {{player}}'s current state is saved to Saved Exports first, so you can restore it from there if this is the wrong player or the wrong file.",
+    "cancel": "Cancel",
+    "confirm": "Yes, Overwrite Character"
+  },
   "actions": {
     "kickPlayer": "Kick player",
     "banPlayer": "Ban player",

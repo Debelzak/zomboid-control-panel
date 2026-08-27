@@ -328,6 +328,12 @@
     "downloadExportAria": "Descargar la exportación guardada de {{username}}",
     "deleteExportAria": "Eliminar la exportación guardada de {{username}}"
   },
+  "importConfirm": {
+    "title": "¿Sobrescribir el personaje de {{player}}?",
+    "description": "Esto reemplaza la XP, perks, habilidades, rasgos, inventario y objetos equipados de {{player}} con los datos pegados. El estado actual de {{player}} se guarda primero en Exportaciones guardadas, para que puedas restaurarlo desde ahí si este era el jugador equivocado o el archivo equivocado.",
+    "cancel": "Cancelar",
+    "confirm": "Sí, sobrescribir personaje"
+  },
   "actions": {
     "kickPlayer": "Expulsar jugador",
     "banPlayer": "Banear jugador",

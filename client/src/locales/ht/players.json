@@ -328,6 +328,12 @@
     "downloadExportAria": "Telechaje ekspòte sovgade pou {{username}}",
     "deleteExportAria": "Efase ekspòte sovgade pou {{username}}"
   },
+  "importConfirm": {
+    "title": "Ekraze karaktè {{player}} a?",
+    "description": "Sa a ranplase XP, perks, konpetans, trè, envantè, ak bagay {{player}} genyen sou li ak done ou kole yo. Eta aktyèl {{player}} sove nan Ekspòtasyon Sovgade yo anvan, konsa ou ka restore l soti la si se te move jwè a oswa move fichye a.",
+    "cancel": "Anile",
+    "confirm": "Wi, Ekraze Karaktè a"
+  },
   "actions": {
     "kickPlayer": "Mete jwè a deyò",
     "banPlayer": "Bani jwè a",

@@ -328,6 +328,12 @@
     "downloadExportAria": "Télécharger l'export enregistré de {{username}}",
     "deleteExportAria": "Supprimer l'export enregistré de {{username}}"
   },
+  "importConfirm": {
+    "title": "Écraser le personnage de {{player}} ?",
+    "description": "Cela remplace l'XP, les perks, les compétences, les traits, l'inventaire et les objets portés de {{player}} par les données collées. L'état actuel de {{player}} est d'abord enregistré dans les exports sauvegardés, afin que vous puissiez le restaurer depuis là si c'était le mauvais joueur ou le mauvais fichier.",
+    "cancel": "Annuler",
+    "confirm": "Oui, écraser le personnage"
+  },
   "actions": {
     "kickPlayer": "Expulser le joueur",
     "banPlayer": "Bannir le joueur",

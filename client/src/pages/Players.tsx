@@ -351,6 +351,8 @@ export default function Players() {
   const [importing, setImporting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [importExportOpen, setImportExportOpen] = useState(false)
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false)
+  const [pendingImportData, setPendingImportData] = useState<Record<string, unknown> | null>(null)
 
   // Bridge status for character export/import
   const [bridgeConnected, setBridgeConnected] = useState(false)
@@ -768,6 +770,43 @@ export default function Players() {
       setSelectedPlayer('')
       searchInputRef.current?.focus()
     })
+  }
+
+  // Overwrites the target player's XP/perks/skills/traits/inventory/wornItems --
+  // split out of the Apply button so the confirm dialog can hold the parsed
+  // data until the operator confirms the target player by name.
+  const runCharacterImport = async (data: Record<string, unknown>) => {
+    setImporting(true)
+    try {
+      const { panelBridgeApi } = await import('@/lib/api')
+      const response = await panelBridgeApi.importCharacter(selectedPlayer, data)
+      const restored = response.data?.restored
+      // Submitted a non-empty perks/inventory section but restored
+      // nothing from it: the Lua side counts honestly (see
+      // PanelBridge.lua importPlayerData) but a caller that only
+      // reads the counts from the description, not the title,
+      // would still see an unconditionally success-styled toast.
+      const submittedPerks = data && typeof data.perks === 'object' && data.perks !== null && Object.keys(data.perks).length > 0
+      const submittedItems = Array.isArray((data as { inventory?: unknown[] })?.inventory) && (data as { inventory: unknown[] }).inventory.length > 0
+      const noneApplied = (restored?.perks ?? 0) === 0 && (restored?.items ?? 0) === 0 && (submittedPerks || submittedItems)
+      toast({
+        title: t(noneApplied ? 'toasts.characterImportedTitleNoneApplied' : 'toasts.characterImportedTitle'),
+        description: noneApplied
+          ? t('toasts.characterImportedDescNoneApplied', { player: selectedPlayer })
+          : t('toasts.characterImportedDesc', { perks: restored?.perks ?? 0, items: restored?.items ?? 0, player: selectedPlayer }),
+      })
+      setImportCharacterData('')
+    } catch (error) {
+      toast({
+        title: t('toasts.importFailedTitle'),
+        description: error instanceof Error ? error.message : t('toasts.importFailedFallback'),
+        variant: 'destructive',
+      })
+    } finally {
+      setImporting(false)
+      setImportConfirmOpen(false)
+      setPendingImportData(null)
+    }
   }
 
   const handleBan = () => {
@@ -2935,7 +2974,7 @@ export default function Players() {
               <div className="flex gap-2">
                 <Button
                   disabled={importing || !selectedPlayer || !importCharacterData.trim()}
-                  onClick={async () => {
+                  onClick={() => {
                     let data
                     try {
                       data = JSON.parse(importCharacterData)
@@ -2947,36 +2986,8 @@ export default function Players() {
                       })
                       return
                     }
-
-                    setImporting(true)
-                    try {
-                      const { panelBridgeApi } = await import('@/lib/api')
-                      const response = await panelBridgeApi.importCharacter(selectedPlayer, data)
-                      const restored = response.data?.restored
-                      // Submitted a non-empty perks/inventory section but restored
-                      // nothing from it: the Lua side counts honestly (see
-                      // PanelBridge.lua importPlayerData) but a caller that only
-                      // reads the counts from the description, not the title,
-                      // would still see an unconditionally success-styled toast.
-                      const submittedPerks = data && typeof data.perks === 'object' && data.perks !== null && Object.keys(data.perks).length > 0
-                      const submittedItems = Array.isArray(data?.inventory) && data.inventory.length > 0
-                      const noneApplied = (restored?.perks ?? 0) === 0 && (restored?.items ?? 0) === 0 && (submittedPerks || submittedItems)
-                      toast({
-                        title: t(noneApplied ? 'toasts.characterImportedTitleNoneApplied' : 'toasts.characterImportedTitle'),
-                        description: noneApplied
-                          ? t('toasts.characterImportedDescNoneApplied', { player: selectedPlayer })
-                          : t('toasts.characterImportedDesc', { perks: restored?.perks ?? 0, items: restored?.items ?? 0, player: selectedPlayer }),
-                      })
-                      setImportCharacterData('')
-                    } catch (error) {
-                      toast({
-                        title: t('toasts.importFailedTitle'),
-                        description: error instanceof Error ? error.message : t('toasts.importFailedFallback'),
-                        variant: 'destructive',
-                      })
-                    } finally {
-                      setImporting(false)
-                    }
+                    setPendingImportData(data)
+                    setImportConfirmOpen(true)
                   }}
                   size="sm"
                   className="flex-1"
@@ -3111,6 +3122,34 @@ export default function Players() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Character Import Confirmation -- the failure mode here is the wrong
+          player, so the target's name is the title, not a line inside the
+          body. Pam's panelBridge.js snapshots the target's current data to
+          Saved Exports before overwriting; if that snapshot fails the server
+          refuses the import instead of proceeding, so this is honestly
+          recoverable and the copy says so. */}
+      <AlertDialog open={importConfirmOpen} onOpenChange={(open) => { if (!open) { setImportConfirmOpen(false); setPendingImportData(null) } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('importConfirm.title', { player: selectedPlayer })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('importConfirm.description', { player: selectedPlayer })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={importing}>{t('importConfirm.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={importing}
+              onClick={(e) => { e.preventDefault(); if (pendingImportData) runCharacterImport(pendingImportData) }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {t('importConfirm.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Spawn browser dialogs — items + vehicles, stay-open workflow */}
       <SpawnBrowser
