@@ -29,8 +29,21 @@ function getFileWriter(path)
 end
 `;
 
+// bug-hunt-2026-08-26 / commit 036a538: these two cases used to assert the
+// bug's own behavior as the spec. processQueuedCommands incremented its
+// `processed` budget counter unconditionally (moved outside the
+// decode-success branch entirely for the malformed case), so 205 queued
+// entries that were all skips -- never a real attempted command -- burned
+// the 200-per-tick budget and left 5 genuine entries stranded for the next
+// tick. processSingleCommand's return value now gates the increment (false
+// on all 4 skip paths: malformed/no-id/duplicate/expired; true only when a
+// command was actually attempted), so a run of skips no longer counts
+// against the budget at all -- the loop keeps advancing until it runs out
+// of queued files, not until it runs out of budget. All 205 seed files here
+// are skips, so the cursor should reach the true end of the queue (205),
+// not stall at the tick budget (200).
 describe("PanelBridge command budget", () => {
-  it("counts duplicate entries toward the per-tick queue budget", () => {
+  it("does not count duplicate entries toward the per-tick queue budget", () => {
     const bridge = loadPanelBridge(LUA_PATH, FILE_STUBS);
     bridge.run(`
       for i = 1, 205 do
@@ -42,10 +55,10 @@ describe("PanelBridge command budget", () => {
     `);
 
     const queueState = bridge.getGlobal("PanelBridgeModule").queueState;
-    expect(queueState.lastCommandSeq).toBe(200);
+    expect(queueState.lastCommandSeq).toBe(205);
   });
 
-  it("counts malformed entries toward the per-tick queue budget", () => {
+  it("does not count malformed entries toward the per-tick queue budget", () => {
     const bridge = loadPanelBridge(LUA_PATH, FILE_STUBS);
     bridge.run(`
       for i = 1, 205 do
@@ -56,6 +69,6 @@ describe("PanelBridge command budget", () => {
     `);
 
     const queueState = bridge.getGlobal("PanelBridgeModule").queueState;
-    expect(queueState.lastCommandSeq).toBe(200);
+    expect(queueState.lastCommandSeq).toBe(205);
   });
 });
