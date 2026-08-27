@@ -59,11 +59,21 @@ function getLayer(routePath, method) {
   );
 }
 
-// POST / now has requireRole("admin", "technician") ahead of the real
-// handler (see roles.test.js for coverage of that gate itself) — grab the
-// last stack entry rather than the first, same as getUpdateHandler() below,
-// so this keeps working regardless of how many gating middlewares precede
-// the handler.
+// POST / and PUT /:id (below) both have requirePermission("servers.manage")
+// ahead of the real handler -- grab the last stack entry rather than the
+// first, so this keeps working regardless of how many gating middlewares
+// precede the handler. This intentionally SKIPS that gate: it's testing the
+// handler's own business logic, not authorization. The stale claim that
+// used to sit here ("see roles.test.js for coverage of that gate itself")
+// was WRONG -- roles.test.js only ever imported routes/auth.js and
+// routes/docker.js, never routes/servers.js -- so nothing tested the
+// servers.manage gate on these two routes (or POST /:id/activate) at all
+// until server/tests/serversManageGateCoverage.test.js was added
+// (bug-hunt-2026-08-27, if-your-change-is-in-middleware-a-handler-only-
+// test-is-blind-to-it): confirmed by break-verify that stripping
+// requirePermission from all three routes left every test in THIS file
+// green, while that dedicated file caught it immediately. See that file
+// for the actual gate coverage.
 function getCreateHandler() {
   const layer = getLayer("/", "post");
   return layer.route.stack[layer.route.stack.length - 1].handle;
