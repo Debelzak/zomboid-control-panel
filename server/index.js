@@ -7,6 +7,7 @@ import { permissionsPolicy } from "./middleware/permissionsPolicy.js";
 import { logSetupTokenIfNeeded } from "./utils/setupToken.js";
 import { computeInlineScriptCspHash } from "./utils/cspScriptHash.js";
 import { parseTrustProxySetting } from "./utils/trustProxy.js";
+import { isUncompressedBinaryProxyPath } from "./utils/compressionFilter.js";
 import { createServer } from "http";
 import { createServer as createHttpsServer } from "https";
 import { Server } from "socket.io";
@@ -732,8 +733,17 @@ app.use("/api/debug/client-errors", express.json({ limit: "16kb" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-// Compress all HTTP responses (gzip/deflate)
-app.use(compression({ threshold: 1024 }));
+// Compress all HTTP responses (gzip/deflate) EXCEPT the <img>-tag-loaded
+// binary proxy routes -- see compressionFilter.js for why.
+app.use(
+  compression({
+    threshold: 1024,
+    filter: (req, res) => {
+      if (isUncompressedBinaryProxyPath(req)) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 // Rate limiting — applied before auth to protect against unauthenticated floods
 const apiLimiter = rateLimit({
