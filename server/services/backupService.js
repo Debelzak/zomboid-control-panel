@@ -926,72 +926,19 @@ export class BackupService {
       return { success: false, message: "Backup in progress, please wait" };
     }
 
-    // Restoring under a live server destroys the save: the running process
-    // holds the map files open, and writes its in-memory world back over
-    // whatever we extract. Prefer the richer process-state API because the
-    // boolean helper collapses a failed scan into a confirmed stop.
-    if (options.force !== true) {
-      if (!this.serverManager) {
-        // Same defect shape as the getServerProcessDetails-missing branch
-        // below, one level up: "the check isn't wired" must refuse, not
-        // silently skip straight to restore. Currently unreachable in
-        // production -- server/index.js calls setServerManager() at boot,
-        // before the only caller (routes/backup.js) is reachable, and that
-        // route also runs its own independent getServerProcessDetails check
-        // before ever calling here -- but both of those are call-graph
-        // coincidences, not guarantees this method can rely on by itself.
-        log.warn("Could not confirm server is stopped: no server manager wired");
-        return {
-          success: false,
-          message:
-            "Could not confirm the server is stopped because no server manager is available. Stop the server and try again.",
-        };
-      }
-      try {
-        let running;
-        if (typeof this.serverManager.getServerProcessDetails === "function") {
-          const processDetails =
-            await this.serverManager.getServerProcessDetails();
-          if (!processDetails || processDetails.scanFailed) {
-            log.warn("Could not confirm server is stopped: process scan failed");
-            return {
-              success: false,
-              message:
-                "Could not confirm the server is stopped because process detection failed. Stop the server and try again.",
-            };
-          }
-          running = processDetails.running;
-        } else {
-          // No fallback to checkServerRunning() here even for an older
-          // injected manager that only implements it -- that call collapses
-          // a failed scan into a plain `false`, indistinguishable from a
-          // confirmed-stopped server, which is exactly the bug this whole
-          // guard exists to avoid. Treat "the richer check isn't available"
-          // as equivalent to a failed scan and refuse, same shape as
-          // server/index.js's Docker-update gate (handlePanelUpdateDownload).
-          return {
-            success: false,
-            message:
-              "Could not confirm the server is stopped because process detection is unavailable. Stop the server and try again.",
-          };
-        }
-
-        if (running) {
-          return {
-            success: false,
-            message:
-              "Server is still running. Stop the server before restoring a backup, otherwise the running world will overwrite the restored save.",
-          };
-        }
-      } catch (error) {
-        log.warn(`Could not confirm server is stopped: ${error.message}`);
-        return {
-          success: false,
-          message: `Could not confirm the server is stopped (${error.message}). Stop the server and try again.`,
-        };
-      }
-    }
-
+    // Claim the lock BEFORE any await, not after. This used to be set only
+    // once the async server-running check below had already resolved,
+    // which left a real window: two near-simultaneous restoreBackup() calls
+    // both read restoreInProgress as false (neither had reached the
+    // assignment yet), both proceeded past every guard, and both extracted
+    // + swapped the save directory concurrently -- the second rename to
+    // finish silently wins over the first, with BOTH callers reported
+    // success:true and no error anywhere. Confirmed empirically (two
+    // concurrent calls, force !== true, an artificial delay inside
+    // getServerProcessDetails to widen the window), not just reasoned
+    // about -- bug-hunt-2026-08-27, backup-restore hunt. Every early return
+    // below now happens inside the try/finally so the flag is still always
+    // released, same as the pre-restore-backup-failure path already was.
     this.restoreInProgress = true;
     const startTime = Date.now();
     let stagingPath = null;
@@ -1007,9 +954,75 @@ export class BackupService {
       }
     };
 
-    emitProgress("preparing", 5, "Preparing restore...");
-
     try {
+      // Restoring under a live server destroys the save: the running process
+      // holds the map files open, and writes its in-memory world back over
+      // whatever we extract. Prefer the richer process-state API because the
+      // boolean helper collapses a failed scan into a confirmed stop.
+      if (options.force !== true) {
+        if (!this.serverManager) {
+          // Same defect shape as the getServerProcessDetails-missing branch
+          // below, one level up: "the check isn't wired" must refuse, not
+          // silently skip straight to restore. Currently unreachable in
+          // production -- server/index.js calls setServerManager() at boot,
+          // before the only caller (routes/backup.js) is reachable, and that
+          // route also runs its own independent getServerProcessDetails check
+          // before ever calling here -- but both of those are call-graph
+          // coincidences, not guarantees this method can rely on by itself.
+          log.warn("Could not confirm server is stopped: no server manager wired");
+          return {
+            success: false,
+            message:
+              "Could not confirm the server is stopped because no server manager is available. Stop the server and try again.",
+          };
+        }
+        try {
+          let running;
+          if (typeof this.serverManager.getServerProcessDetails === "function") {
+            const processDetails =
+              await this.serverManager.getServerProcessDetails();
+            if (!processDetails || processDetails.scanFailed) {
+              log.warn("Could not confirm server is stopped: process scan failed");
+              return {
+                success: false,
+                message:
+                  "Could not confirm the server is stopped because process detection failed. Stop the server and try again.",
+              };
+            }
+            running = processDetails.running;
+          } else {
+            // No fallback to checkServerRunning() here even for an older
+            // injected manager that only implements it -- that call collapses
+            // a failed scan into a plain `false`, indistinguishable from a
+            // confirmed-stopped server, which is exactly the bug this whole
+            // guard exists to avoid. Treat "the richer check isn't available"
+            // as equivalent to a failed scan and refuse, same shape as
+            // server/index.js's Docker-update gate (handlePanelUpdateDownload).
+            return {
+              success: false,
+              message:
+                "Could not confirm the server is stopped because process detection is unavailable. Stop the server and try again.",
+            };
+          }
+
+          if (running) {
+            return {
+              success: false,
+              message:
+                "Server is still running. Stop the server before restoring a backup, otherwise the running world will overwrite the restored save.",
+            };
+          }
+        } catch (error) {
+          log.warn(`Could not confirm server is stopped: ${error.message}`);
+          return {
+            success: false,
+            message: `Could not confirm the server is stopped (${error.message}). Stop the server and try again.`,
+          };
+        }
+      }
+
+      emitProgress("preparing", 5, "Preparing restore...");
+
       const backupsPath = await this.getBackupsPath();
       const savesPath = await this.getSavesPath();
 

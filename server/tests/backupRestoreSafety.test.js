@@ -352,6 +352,57 @@ describe("restoreBackup archive safety", () => {
 
     expect(leftovers).toEqual([]);
   });
+
+  // bug-hunt-2026-08-27, backup-restore hunt: restoreInProgress used to be
+  // set only AFTER the async getServerProcessDetails() check resolved, not
+  // before it. Two calls arriving close together (a double-click before the
+  // UI disables the button, two admin sessions, a retried request) both read
+  // restoreInProgress as false -- neither had reached the assignment yet --
+  // both passed every guard, and both extracted + swapped the save directory
+  // concurrently. The second rename to finish silently won; BOTH callers got
+  // success:true with no error anywhere. Confirmed with a real race before
+  // fixing it, not assumed: an artificial delay inside getServerProcessDetails
+  // widened the window enough to prove it deterministically rather than
+  // relying on real clock timing (same "control the clock" idea as tonight's
+  // startup-script-collision fix, applied to a lock instead of a filename).
+  it("a second restoreBackup() call arriving while the first is still checking the server-running state is refused, not run concurrently", async () => {
+    const service = createService();
+    // Widen the await window between the initial guard check and the flag
+    // actually being set, so a genuine regression reproduces on demand
+    // instead of depending on real scheduler timing.
+    service.setServerManager({
+      getServerProcessDetails: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return { running: false, scanFailed: false };
+      },
+    });
+
+    const backupA = path.join(backupsPath, "a.zip");
+    const backupB = path.join(backupsPath, "b.zip");
+    await writeValidBackup(backupA, "BACKUP_A");
+    await writeValidBackup(backupB, "BACKUP_B");
+
+    const [resultA, resultB] = await Promise.all([
+      service.restoreBackup("a.zip", { createPreRestoreBackup: false }),
+      service.restoreBackup("b.zip", { createPreRestoreBackup: false }),
+    ]);
+
+    const results = [resultA, resultB];
+    const blocked = results.filter((r) => r.message === "Restore already in progress");
+    const completed = results.filter((r) => r.success);
+
+    // Exactly one call proceeds; the other is refused outright, not left to
+    // race it to the finish line.
+    expect(blocked.length).toBe(1);
+    expect(completed.length).toBe(1);
+
+    // The live save reflects exactly the one restore that was allowed to
+    // run -- not a partial mix of both, and not silently overwritten by the
+    // refused call (which must never have touched the filesystem at all).
+    const finalMarker = fs.readFileSync(path.join(savesPath, "map_meta.bin"), "utf8");
+    expect(["BACKUP_A", "BACKUP_B"]).toContain(finalMarker);
+    expect(finalMarker).toBe(completed[0].message.includes("a.zip") ? "BACKUP_A" : "BACKUP_B");
+  });
 });
 
 describe("createBackup archive safety", () => {
