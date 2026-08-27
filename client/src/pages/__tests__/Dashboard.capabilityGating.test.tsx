@@ -300,6 +300,32 @@ describe('Dashboard.tsx: Stop/Force Stop/Restart/Save share server.control, gate
 
     await waitFor(() => expect(stop).toHaveBeenCalledTimes(1))
   })
+
+  // bug-hunt-2026-08-27: Pam found DisabledReason-inside-Trigger-asChild
+  // silently breaks the GRANTED case (not the disabled one) on Players.tsx,
+  // and flagged that a suite which only asserts toBeDisabled()/
+  // not.toBeDisabled() would sit green through exactly that kind of break.
+  // This page doesn't use that composition (grep confirms zero
+  // AlertDialogTrigger/DialogTrigger usage -- both dialogs here are
+  // open={state}-controlled), but the lesson applies regardless: prove the
+  // granted path reaches the real API end to end, not just that the
+  // control looks enabled.
+  it('holding server.control: Restart Now opens its confirm dialog and calls restart(0) once confirmed', async () => {
+    mockCanControl = true
+    await setUpCommon()
+    await setUpOnlineServer()
+
+    renderDashboard()
+    const menu = await openMoreActionsMenu()
+    const restartNowItem = within(menu).getByRole('menuitem', { name: /restart now/i })
+    expect(restartNowItem).not.toHaveAttribute('aria-disabled', 'true')
+
+    fireEvent.click(restartNowItem)
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /restart server now/i }))
+
+    await waitFor(() => expect(restart).toHaveBeenCalledWith(0))
+  })
 })
 
 describe('Dashboard.tsx: Wipe is gated on server.wipe, independently of server.control', () => {
@@ -333,7 +359,7 @@ describe('Dashboard.tsx: Wipe is gated on server.wipe, independently of server.c
     expect(wipe).not.toHaveBeenCalled()
   })
 
-  it('holding both server.control and server.wipe: Wipe is enabled and opens its dialog', async () => {
+  it('holding both server.control and server.wipe: Wipe opens its dialog and reaches the real wipe API end to end', async () => {
     mockCanControl = true
     mockCanWipe = true
     await setUpCommon()
@@ -346,6 +372,8 @@ describe('Dashboard.tsx: Wipe is gated on server.wipe, independently of server.c
       running: false, startTime: null, uptime: 0, serverPath: 'C:/servers/ashenwood',
       configured: true, rcon: { host: '', port: 0, connected: false },
     } as Awaited<ReturnType<typeof serverApi.getStatus>>)
+    wipePreview.mockResolvedValue({ totalFiles: 5, totalSize: 1024, preview: {} })
+    wipe.mockResolvedValue({ success: true, backupCreated: false, backupName: null })
 
     renderDashboard()
 
@@ -354,6 +382,15 @@ describe('Dashboard.tsx: Wipe is gated on server.wipe, independently of server.c
     expect(wipeItem).not.toHaveAttribute('aria-disabled', 'true')
 
     fireEvent.click(wipeItem)
-    await screen.findByRole('alertdialog')
+    const dialog = await screen.findByRole('alertdialog')
+
+    // Not just "the dialog opened" -- the granted path has to survive both
+    // steps of the existing preview-then-wipe flow this fix must not weaken.
+    fireEvent.click(within(dialog).getByRole('button', { name: /^preview$/i }))
+    const wipeNowButton = await within(dialog).findByRole('button', { name: /wipe now/i })
+    expect(wipeNowButton).not.toBeDisabled()
+    fireEvent.click(wipeNowButton)
+
+    await waitFor(() => expect(wipe).toHaveBeenCalledTimes(1))
   })
 })
