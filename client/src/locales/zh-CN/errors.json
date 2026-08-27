@@ -411,6 +411,7 @@
   "PLAYERS_EXPORT_NOT_FOUND": "未找到导出文件",
   "SCHEDULER_REQUEST_BODY_INVALID": "请求正文必须是一个对象",
   "SCHEDULER_TASK_FIELDS_REQUIRED": "名称、cron 表达式和命令均为必填项",
+  "SCHEDULER_CRON_EXPRESSION_REQUIRED": "cron 表达式为必填项",
   "SCHEDULER_INVALID_TASK_NAME": "任务名称无效（最多 100 个字符）",
   "SCHEDULER_INVALID_COMMAND": "命令无效（最多 2000 个字符）",
   "SCHEDULER_INVALID_CRON_FORMAT": "cron 表达式格式无效",

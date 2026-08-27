@@ -833,6 +833,7 @@ export const schedulerApi = {
     apiPost("/scheduler/validate-cron", { cronExpression }) as Promise<{
       valid: boolean;
       error?: string;
+      code?: string;
     }>,
   getHistory: (limit?: number, taskId?: number) => {
     const params = new URLSearchParams();

@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { reportClientError } from '@/lib/client-errors'
 import { getUserErrorMessage } from '@/lib/errorMessage'
+import { resolveRegisteredTranslation } from '@/lib/paramTranslation'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -149,7 +150,7 @@ export default function Scheduler() {
   // never gates Save. The server re-validates independently and is the real
   // source of truth, so a failed/slow preview call must never block or
   // second-guess what create/update will actually decide.
-  const [cronValidation, setCronValidation] = useState<{ valid: boolean; error?: string } | null>(null)
+  const [cronValidation, setCronValidation] = useState<{ valid: boolean; error?: string; code?: string } | null>(null)
   const cronValidationIdRef = useRef(0)
 
   // Simple Scheduler State
@@ -775,7 +776,9 @@ export default function Scheduler() {
                         ) : (
                           <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         )}
-                        {cronValidation.valid ? t('dialog.cronValidExpression') : cronValidation.error}
+                        {cronValidation.valid
+                          ? t('dialog.cronValidExpression')
+                          : (cronValidation.code && resolveRegisteredTranslation('errors', cronValidation.code, undefined)) || cronValidation.error}
                       </p>
                     )}
                   </TabsContent>

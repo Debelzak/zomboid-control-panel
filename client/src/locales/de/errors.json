@@ -411,6 +411,7 @@
   "PLAYERS_EXPORT_NOT_FOUND": "Export nicht gefunden",
   "SCHEDULER_REQUEST_BODY_INVALID": "Der Request-Body muss ein Objekt sein",
   "SCHEDULER_TASK_FIELDS_REQUIRED": "Name, Cron-Ausdruck und Befehl sind erforderlich",
+  "SCHEDULER_CRON_EXPRESSION_REQUIRED": "Cron-Ausdruck ist erforderlich",
   "SCHEDULER_INVALID_TASK_NAME": "Ungültiger Aufgabenname (max. 100 Zeichen)",
   "SCHEDULER_INVALID_COMMAND": "Ungültiger Befehl (max. 2000 Zeichen)",
   "SCHEDULER_INVALID_CRON_FORMAT": "Ungültiges Cron-Ausdrucksformat",

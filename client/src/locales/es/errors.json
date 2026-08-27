@@ -411,6 +411,7 @@
   "PLAYERS_EXPORT_NOT_FOUND": "No se encontró la exportación",
   "SCHEDULER_REQUEST_BODY_INVALID": "El cuerpo de la solicitud debe ser un objeto",
   "SCHEDULER_TASK_FIELDS_REQUIRED": "Se requieren nombre, expresión cron y comando",
+  "SCHEDULER_CRON_EXPRESSION_REQUIRED": "Se requiere una expresión cron",
   "SCHEDULER_INVALID_TASK_NAME": "Nombre de tarea no válido (máx. 100 caracteres)",
   "SCHEDULER_INVALID_COMMAND": "Comando no válido (máx. 2000 caracteres)",
   "SCHEDULER_INVALID_CRON_FORMAT": "Formato de expresión cron no válido",

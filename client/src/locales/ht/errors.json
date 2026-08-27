@@ -411,6 +411,7 @@
   "PLAYERS_EXPORT_NOT_FOUND": "Ekspòte a pa jwenn",
   "SCHEDULER_REQUEST_BODY_INVALID": "Kò demand lan dwe yon objè",
   "SCHEDULER_TASK_FIELDS_REQUIRED": "Non, ekspresyon cron, ak kòmand obligatwa",
+  "SCHEDULER_CRON_EXPRESSION_REQUIRED": "Ekspresyon cron obligatwa",
   "SCHEDULER_INVALID_TASK_NAME": "Non tach envalid (maks 100 karaktè)",
   "SCHEDULER_INVALID_COMMAND": "Kòmand envalid (maks 2000 karaktè)",
   "SCHEDULER_INVALID_CRON_FORMAT": "Fòma ekspresyon cron envalid",

@@ -411,6 +411,7 @@
   "PLAYERS_EXPORT_NOT_FOUND": "Export not found",
   "SCHEDULER_REQUEST_BODY_INVALID": "Request body must be an object",
   "SCHEDULER_TASK_FIELDS_REQUIRED": "Name, cron expression, and command are required",
+  "SCHEDULER_CRON_EXPRESSION_REQUIRED": "Cron expression is required",
   "SCHEDULER_INVALID_TASK_NAME": "Invalid task name (max 100 characters)",
   "SCHEDULER_INVALID_COMMAND": "Invalid command (max 2000 characters)",
   "SCHEDULER_INVALID_CRON_FORMAT": "Invalid cron expression format",

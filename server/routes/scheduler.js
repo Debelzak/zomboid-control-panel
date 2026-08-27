@@ -112,12 +112,12 @@ router.post('/validate-cron', async (req, res) => {
   try {
     const cronExpression = req.body?.cronExpression;
     if (!cronExpression) {
-      return res.status(400).json({ valid: false, error: 'cronExpression is required' });
+      return res.status(400).json({ valid: false, error: 'cronExpression is required', code: ErrorCode.SCHEDULER_CRON_EXPRESSION_REQUIRED });
     }
 
     const isValid = cron.validate(cronExpression);
     if (!isValid) {
-      return res.json({ valid: false, error: 'Invalid cron expression format' });
+      return res.json({ valid: false, error: 'Invalid cron expression format', code: ErrorCode.SCHEDULER_INVALID_CRON_EXPRESSION });
     }
 
     // Keep this preview endpoint's verdict consistent with what POST /tasks
@@ -127,6 +127,7 @@ router.post('/validate-cron', async (req, res) => {
       return res.json({
         valid: false,
         error: 'The panel does not support seconds-precision schedules. Use exactly 5 fields: minute hour day month weekday.',
+        code: ErrorCode.SCHEDULER_CRON_SECONDS_UNSUPPORTED,
       });
     }
 
@@ -134,6 +135,7 @@ router.post('/validate-cron', async (req, res) => {
       return res.json({
         valid: false,
         error: 'Tasks cannot run more frequently than every 5 minutes',
+        code: ErrorCode.SCHEDULER_CRON_TOO_FREQUENT,
       });
     }
 

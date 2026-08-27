@@ -1610,6 +1610,12 @@ export const ErrorCode = Object.freeze({
    * missing. PUT /tasks/:id has no equivalent (all fields optional there,
    * a partial update), so this is not shared. */
   SCHEDULER_TASK_FIELDS_REQUIRED: "SCHEDULER_TASK_FIELDS_REQUIRED",
+  /** server/routes/scheduler.js -- POST /validate-cron, `cronExpression` is
+   * missing entirely. Deliberately its own code rather than reusing
+   * SCHEDULER_TASK_FIELDS_REQUIRED: that one's translated text names three
+   * required fields (name/cronExpression/command) for task creation, which
+   * would be misleading on this single-field preview endpoint. */
+  SCHEDULER_CRON_EXPRESSION_REQUIRED: "SCHEDULER_CRON_EXPRESSION_REQUIRED",
   /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
    * `name` present but not a string or exceeds 100 characters. Identical
    * wording/meaning both sites, shared code. */
@@ -1623,19 +1629,21 @@ export const ErrorCode = Object.freeze({
    * node-cron's own validator -- see SCHEDULER_INVALID_CRON_EXPRESSION for
    * that one). PUT /tasks/:id has no equivalent standalone check. */
   SCHEDULER_INVALID_CRON_FORMAT: "SCHEDULER_INVALID_CRON_FORMAT",
-  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
-   * node-cron's own cron.validate() rejects the expression. Identical
-   * wording/meaning both sites, shared code. */
+  /** server/routes/scheduler.js (3 sites: POST /tasks, PUT /tasks/:id,
+   * POST /validate-cron) -- node-cron's own cron.validate() rejects the
+   * expression. Identical meaning at all three sites; the raw English text
+   * differs at the validate-cron site (a shorter preview-only phrasing) but
+   * the client translates by this code, not the raw string, so that's fine. */
   SCHEDULER_INVALID_CRON_EXPRESSION: "SCHEDULER_INVALID_CRON_EXPRESSION",
-  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
-   * a 6-field (seconds-precision) cron expression; the panel only supports
-   * the standard 5-field form. Identical wording/meaning both sites,
-   * shared code. */
+  /** server/routes/scheduler.js (3 sites: POST /tasks, PUT /tasks/:id,
+   * POST /validate-cron) -- a 6-field (seconds-precision) cron expression;
+   * the panel only supports the standard 5-field form. Identical
+   * wording/meaning all three sites, shared code. */
   SCHEDULER_CRON_SECONDS_UNSUPPORTED: "SCHEDULER_CRON_SECONDS_UNSUPPORTED",
-  /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
-   * isCronTooFrequent() rejects a schedule firing more than once every 5
-   * minutes (DoS guard). Identical wording/meaning both sites, shared
-   * code. */
+  /** server/routes/scheduler.js (3 sites: POST /tasks, PUT /tasks/:id,
+   * POST /validate-cron) -- isCronTooFrequent() rejects a schedule firing
+   * more than once every 5 minutes (DoS guard). Identical wording/meaning
+   * all three sites, shared code. */
   SCHEDULER_CRON_TOO_FREQUENT: "SCHEDULER_CRON_TOO_FREQUENT",
   /** server/routes/scheduler.js (2 sites: POST /tasks, PUT /tasks/:id) --
    * an explicitly given `serverId` doesn't match any known server.
