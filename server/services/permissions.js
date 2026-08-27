@@ -245,7 +245,7 @@ export const CAPABILITIES = [
     group: "Panel Diagnostics & Settings",
     label: "View panel diagnostics",
     description:
-      "View logs, performance history and CORS diagnostics, relocate the panel's own data/log directories, and clear stale lock files.",
+      "View logs, performance history, CORS diagnostics and database statistics, back up the database, compact it -- which permanently trims old records, relocate the panel's own data/log directories, and clear stale lock files.",
   },
   {
     key: "panel.settings",
