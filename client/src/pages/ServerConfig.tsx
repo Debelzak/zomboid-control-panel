@@ -751,6 +751,13 @@ export default function ServerConfig() {
   const [sandboxData, setSandboxData] = useState<SandboxData | null>(null)
   const [spawnPoints, setSpawnPoints] = useState<SpawnPointsByProfession>({})
   const [spawnRegions, setSpawnRegions] = useState<SpawnRegion[]>([])
+  // GET /server-files/ini already detects this server-side (utils/
+  // iniDuplicateKeys.js) -- same signal Mods.tsx's own duplicateKeys
+  // warning reads from GET /mods/current-config, just never wired up here.
+  // parseIni()'s line-by-line loop lets the LAST occurrence win, so
+  // iniSettings above silently reflects that one; this state is only for
+  // telling the operator the file has more than one candidate value.
+  const [duplicateKeys, setDuplicateKeys] = useState<Array<{ key: string; count: number }>>([])
 
   // Raw content for raw editing mode
   const [rawContent, setRawContent] = useState('')
@@ -964,6 +971,7 @@ export default function ServerConfig() {
         const merged = mergeSchemaDefaults(iniData.settings)
         setIniSettings(merged)
         setOriginalIniSettings(merged)
+        setDuplicateKeys(iniData.duplicateKeys || [])
       }
 
       const sandboxRes = paths.exists.sandbox
@@ -1970,6 +1978,33 @@ export default function ServerConfig() {
             </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* Duplicate-key warning: a setting appears more than once as its own
+          line in the raw INI. This editor's parseIni() (a line-by-line
+          `result[key] = value` loop) lets the LAST occurrence win, while the
+          Mods page's own reads/writes only ever see the FIRST -- two screens
+          the operator can both have open at once, showing different values
+          for the same nominal setting. Same idiom as Mods.tsx's own
+          duplicateKeysWarning (d725dbe) on purpose: one condition, one
+          visual language, not two. See server/utils/iniDuplicateKeys.js. */}
+      {duplicateKeys.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3 sm:items-center">
+            <AlertTriangle className="w-5 h-5 text-warning" />
+            <div>
+              <p className="font-medium text-warning">
+                {t('duplicateKeysWarning.title', {
+                  count: duplicateKeys.length,
+                  keys: duplicateKeys.map(d => d.key).join(', '),
+                })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('duplicateKeysWarning.desc')}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       <PageHeader

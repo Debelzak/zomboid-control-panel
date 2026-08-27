@@ -6,6 +6,11 @@
     "title": "You don't have access to Server Configuration",
     "description": "This page requires the \"Manage server files\" permission. Ask an administrator to grant it to your role if you need to edit server settings here."
   },
+  "duplicateKeysWarning": {
+    "title_one": "\"{{keys}}\" appears more than once in this configuration file",
+    "title_other": "{{count}} settings appear more than once in this configuration file: {{keys}}",
+    "desc": "This editor reads the last copy and the Mods page reads the first, so the two can show different values for the same setting."
+  },
   "pageHeader": {
     "title": "Server Configuration",
     "description": "Edit the live INI, sandbox, spawn, and mod settings for this server.",

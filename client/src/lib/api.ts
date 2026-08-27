@@ -1842,6 +1842,7 @@ export const serverFilesApi = {
       settings: Record<string, string>;
       path: string;
       serverName: string;
+      duplicateKeys?: Array<{ key: string; count: number }>;
     }>,
   saveIni: (settings: Record<string, string>) =>
     apiPut("/server-files/ini", { settings }) as Promise<{
