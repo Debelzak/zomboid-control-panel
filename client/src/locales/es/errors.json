@@ -464,6 +464,7 @@
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord rechazó el mensaje. Verifica el ID del canal de notificaciones y que el bot pueda publicar allí.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Se requiere la configuración de eventos",
   "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Se requiere el objeto de permisos",
+  "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED": "No se puede cambiar el nivel de Discord para {{detail}} sin tener tú mismo esa capacidad.",
   "SIM_TEMPLATE_NOT_FOUND": "Plantilla no encontrada",
   "SIM_TEMPLATE_SERVER_NOT_FOUND": "Servidor no encontrado",
   "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "El servidor no tiene una ruta de configuración establecida",

@@ -464,6 +464,7 @@
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord rejte mesaj la. Verifye ID chanèl notifikasyon an ak si bot la ka poste la.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Konfigirasyon evènman obligatwa",
   "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Objè pèmisyon obligatwa",
+  "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED": "Pa ka chanje nivo Discord pou {{detail}} si ou pa gen kapasite sa a ou menm.",
   "SIM_TEMPLATE_NOT_FOUND": "Modèl pa jwenn",
   "SIM_TEMPLATE_SERVER_NOT_FOUND": "Sèvè pa jwenn",
   "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Sèvè a pa gen yon chemen konfigirasyon defini",

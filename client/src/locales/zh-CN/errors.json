@@ -464,6 +464,7 @@
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord 拒绝了该消息。请检查通知频道 ID，以及机器人是否可以在该频道发送消息。",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "需要事件配置",
   "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "需要权限对象",
+  "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED": "无法更改 {{detail}} 的 Discord 权限等级，因为你自己没有该权限。",
   "SIM_TEMPLATE_NOT_FOUND": "未找到模板",
   "SIM_TEMPLATE_SERVER_NOT_FOUND": "未找到服务器",
   "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "该服务器未配置配置文件路径",

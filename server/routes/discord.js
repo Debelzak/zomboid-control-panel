@@ -3,11 +3,34 @@ import { createLogger } from "../utils/logger.js";
 import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { normalizeChatRelayScope } from "../services/discordBot.js";
 import { describeStartFailure } from "../services/discordStartFailure.js";
-import { requirePermission } from "../services/permissions.js";
+import { requirePermission, getRoleByName } from "../services/permissions.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 const log = createLogger("API:Discord");
 
 const router = express.Router();
+
+// Maps each Discord slash command to the panel capability that gates the
+// identical action on the panel's own side -- same shape as
+// services/scheduler.js's requiredCapabilityForScheduledCommand(): a
+// curated action must cost at least as much to hand out as it costs to run.
+// `null` means the command has no panel-side capability gate to match
+// against (server.js's own GET /status is likewise ungated for every role),
+// so retuning its own tier needs nothing beyond integrations.manage itself.
+// Checked individually against each command's own real route rather than a
+// blanket rule, same discipline as the bridge:saveWorld carve-out earlier
+// tonight -- one family rule would have gotten at least "start"/"stop"
+// wrong if a future command reused a generic verb.
+const DISCORD_COMMAND_CAPABILITY = {
+  status: null,
+  players: "players.view",
+  save: "server.control",
+  broadcast: "server.world_events",
+  kick: "players.moderate",
+  start: "server.control",
+  stop: "server.control",
+  restart: "server.control",
+  rcon: "rcon.execute",
+};
 
 // Bot config/lifecycle/permissions — "config" is technician's job per the
 // role brief; moderator has no need to reconfigure the Discord integration.
@@ -581,6 +604,45 @@ router.put("/permissions", async (req, res) => {
       return res.status(400).json({
         error: "Permissions object required",
         code: ErrorCode.DISCORD_PERMISSIONS_OBJECT_REQUIRED,
+      });
+    }
+
+    // Retuning a command's Discord tier is handing out an authority through
+    // a second, unaudited door (Discord's own role check, not the panel's)
+    // -- an integrations.manage holder cannot grant an authority they do
+    // not themselves hold in the panel, e.g. dropping /rcon to "everyone"
+    // without holding rcon.execute. Only a tier that would actually CHANGE
+    // is checked: the settings UI may resend every tier on each save
+    // (Settings' PUT /app-settings and serverFiles.js's PUT /ini hit this
+    // same shape earlier tonight), and re-submitting an unchanged value
+    // must never require a capability the caller never needed for the
+    // status quo.
+    const current = discordBot.getCommandPermissions();
+    const missing = [];
+    let callerCapabilities = null;
+    for (const [command, tier] of Object.entries(permissions)) {
+      const requiredCapability = DISCORD_COMMAND_CAPABILITY[command];
+      if (!requiredCapability) continue; // unmapped/no-op key, or status (null)
+      if (!(command in current) || current[command] === tier) continue;
+      if (callerCapabilities === null) {
+        const role = req.user ? await getRoleByName(req.user.role) : null;
+        callerCapabilities = Array.isArray(role?.capabilities)
+          ? role.capabilities
+          : [];
+      }
+      if (!callerCapabilities.includes(requiredCapability)) {
+        missing.push({ command, requiredCapability });
+      }
+    }
+    if (missing.length > 0) {
+      const detail = missing
+        .map((m) => `"${m.command}" needs ${m.requiredCapability}`)
+        .join(", ");
+      return res.status(403).json({
+        error: `Cannot change the Discord tier for ${detail} without holding that capability yourself.`,
+        code: ErrorCode.DISCORD_PERMISSIONS_CAPABILITY_REQUIRED,
+        params: sanitizeErrorParams({ detail }),
+        missing,
       });
     }
 

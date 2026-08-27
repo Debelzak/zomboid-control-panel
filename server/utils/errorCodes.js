@@ -1835,6 +1835,13 @@ export const ErrorCode = Object.freeze({
   /** server/routes/discord.js -- PUT /permissions, `permissions` missing
    * or not an object. */
   DISCORD_PERMISSIONS_OBJECT_REQUIRED: "DISCORD_PERMISSIONS_OBJECT_REQUIRED",
+  /** server/routes/discord.js -- PUT /permissions, caller tried to CHANGE
+   * a command's Discord authorization tier without holding the panel
+   * capability that command maps to (e.g. lowering /rcon's tier to
+   * "everyone" without holding rcon.execute). Setting a Discord tier is
+   * handing out an authority through a second, unaudited door; you cannot
+   * hand out one you do not hold yourself in the panel. */
+  DISCORD_PERMISSIONS_CAPABILITY_REQUIRED: "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED",
 
   // --- server/routes/templates.js + server/services/templateService.js:
   // the "simulation template" system (server/data/templates/*.json, sparse

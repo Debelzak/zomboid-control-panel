@@ -464,6 +464,7 @@
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord hat die Nachricht abgelehnt. Überprüfe die Benachrichtigungskanal-ID und ob der Bot dort posten kann.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Ereigniskonfiguration erforderlich",
   "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Berechtigungsobjekt erforderlich",
+  "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED": "Kann die Discord-Stufe für {{detail}} nicht ändern, ohne diese Berechtigung selbst zu besitzen.",
   "SIM_TEMPLATE_NOT_FOUND": "Vorlage nicht gefunden",
   "SIM_TEMPLATE_SERVER_NOT_FOUND": "Server nicht gefunden",
   "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Für den Server ist kein Konfigurationspfad eingerichtet",

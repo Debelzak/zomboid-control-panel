@@ -464,6 +464,7 @@
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord a rejeté le message. Vérifiez l'ID du salon de notification et que le bot peut y publier.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Configuration des événements requise",
   "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Objet de permissions requis",
+  "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED": "Impossible de modifier le niveau Discord pour {{detail}} sans détenir vous-même cette capacité.",
   "SIM_TEMPLATE_NOT_FOUND": "Modèle introuvable",
   "SIM_TEMPLATE_SERVER_NOT_FOUND": "Serveur introuvable",
   "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Aucun chemin de configuration défini pour ce serveur",

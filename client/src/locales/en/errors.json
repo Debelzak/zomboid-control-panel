@@ -464,6 +464,7 @@
   "DISCORD_TEST_MESSAGE_REJECTED": "Discord rejected the message. Check the notification channel ID and that the bot can post there.",
   "DISCORD_EVENTS_CONFIG_REQUIRED": "Events configuration required",
   "DISCORD_PERMISSIONS_OBJECT_REQUIRED": "Permissions object required",
+  "DISCORD_PERMISSIONS_CAPABILITY_REQUIRED": "Cannot change the Discord tier for {{detail}} without holding that capability yourself.",
   "SIM_TEMPLATE_NOT_FOUND": "Template not found",
   "SIM_TEMPLATE_SERVER_NOT_FOUND": "Server not found",
   "SIM_TEMPLATE_SERVER_NO_CONFIG_PATH": "Server has no configured config path",
