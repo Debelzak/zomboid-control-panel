@@ -137,7 +137,7 @@
     "server": {
       "control": {
         "label": "Iniciar, detener, reiniciar y guardar el servidor",
-        "description": "Iniciar, detener, forzar la detención, reiniciar o guardar el servidor en ejecución."
+        "description": "Iniciar, detener, forzar la detención, reiniciar o guardar el servidor en ejecución, sin importar cómo esté desplegado, incluido uno gestionado con Docker. El estado, las estadísticas y las acciones directas del contenedor de Docker son una capacidad aparte (docker.manage)."
       },
       "install": {
         "label": "Instalar y actualizar el servidor",
@@ -227,7 +227,7 @@
     "docker": {
       "manage": {
         "label": "Administrar el contenedor de Docker",
-        "description": "Ver el estado y las estadísticas, e iniciar, detener o reiniciar el contenedor del servidor de juego."
+        "description": "Ver el estado y las estadísticas del contenedor de Docker, y ejecutar acciones directas sobre el contenedor desde la pantalla de Docker. Iniciar, detener y reiniciar el propio servidor — esté gestionado con Docker o no — lo controla server.control, no esta capacidad."
       }
     },
     "chunks": {

@@ -137,7 +137,7 @@
     "server": {
       "control": {
         "label": "Server starten, stoppen, neu starten & speichern",
-        "description": "Den laufenden Server starten, stoppen, erzwungen stoppen, neu starten oder speichern."
+        "description": "Den laufenden Server starten, stoppen, erzwungen stoppen, neu starten oder speichern — unabhängig davon, wie er bereitgestellt wird, auch bei einem per Docker verwalteten Server. Docker-Container-Status, -Statistiken und direkte Container-Aktionen sind eine eigene Berechtigung (docker.manage)."
       },
       "install": {
         "label": "Server installieren & aktualisieren",
@@ -227,7 +227,7 @@
     "docker": {
       "manage": {
         "label": "Docker-Container verwalten",
-        "description": "Status/Statistiken einsehen und den Container des Spielservers starten, stoppen oder neu starten."
+        "description": "Docker-Container-Status und -Statistiken einsehen und direkte Container-Aktionen über den Docker-Bildschirm ausführen. Das Starten, Stoppen und Neustarten des Servers selbst — ob per Docker verwaltet oder nicht — wird von server.control geregelt, nicht von dieser Berechtigung."
       }
     },
     "chunks": {

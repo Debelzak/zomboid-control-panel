@@ -137,7 +137,7 @@
     "server": {
       "control": {
         "label": "启动、停止、重启与保存服务器",
-        "description": "启动、停止、强制停止、重启或保存正在运行的服务器。"
+        "description": "启动、停止、强制停止、重启或保存正在运行的服务器——无论其部署方式如何，包括由 Docker 管理的服务器。Docker 容器的状态、统计信息以及直接的容器操作属于另一项独立权限（docker.manage）。"
       },
       "install": {
         "label": "安装与更新服务器",
@@ -227,7 +227,7 @@
     "docker": {
       "manage": {
         "label": "管理 Docker 容器",
-        "description": "查看状态/统计信息，并启动、停止或重启游戏服务器容器。"
+        "description": "查看 Docker 容器的状态和统计信息，并在 Docker 界面中执行直接的容器操作。启动、停止和重启服务器本身——无论是否由 Docker 管理——都由 server.control 控制，而非此权限。"
       }
     },
     "chunks": {

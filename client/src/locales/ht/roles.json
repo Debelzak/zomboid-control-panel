@@ -137,7 +137,7 @@
     "server": {
       "control": {
         "label": "Demare, sispann, redemare & sove sèvè a",
-        "description": "Demare, sispann, fòse sispann, redemare oswa sove sèvè k ap fonksyone a."
+        "description": "Demare, sispann, fòse sispann, redemare oswa sove sèvè k ap fonksyone a — kèlkeswa fason li deplwaye, ki gen ladan yon sèvè ki jere ak Docker. Estati kontenè Docker la, estatistik li ak aksyon dirèk sou kontenè a se yon dwa apa (docker.manage)."
       },
       "install": {
         "label": "Enstale & mete ajou sèvè a",
@@ -227,7 +227,7 @@
     "docker": {
       "manage": {
         "label": "Jere kontenè Docker la",
-        "description": "Gade estati/estatistik epi demare, sispann oswa redemare kontenè sèvè jwèt la."
+        "description": "Gade estati ak estatistik kontenè Docker la, epi fè aksyon dirèk sou kontenè a nan ekran Docker la. Demare, sispann ak redemare sèvè a li menm — kit li jere ak Docker kit li pa jere konsa — se server.control ki kontwole sa, se pa dwa sa a."
       }
     },
     "chunks": {

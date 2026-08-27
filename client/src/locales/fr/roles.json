@@ -137,7 +137,7 @@
     "server": {
       "control": {
         "label": "Démarrer, arrêter, redémarrer et sauvegarder le serveur",
-        "description": "Démarrer, arrêter, forcer l'arrêt, redémarrer ou sauvegarder le serveur en cours d'exécution."
+        "description": "Démarrer, arrêter, forcer l'arrêt, redémarrer ou sauvegarder le serveur en cours d'exécution — quel que soit son mode de déploiement, y compris un serveur géré via Docker. Le statut, les statistiques et les actions directes sur le conteneur Docker relèvent d'une capacité distincte (docker.manage)."
       },
       "install": {
         "label": "Installer et mettre à jour le serveur",
@@ -227,7 +227,7 @@
     "docker": {
       "manage": {
         "label": "Gérer le conteneur Docker",
-        "description": "Voir le statut/les statistiques et démarrer, arrêter ou redémarrer le conteneur du serveur de jeu."
+        "description": "Voir le statut et les statistiques du conteneur Docker, et exécuter des actions directes sur le conteneur depuis l'écran Docker. Démarrer, arrêter et redémarrer le serveur lui-même — qu'il soit géré via Docker ou non — relève de server.control, pas de cette capacité."
       }
     },
     "chunks": {

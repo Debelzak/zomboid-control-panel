@@ -137,7 +137,7 @@
     "server": {
       "control": {
         "label": "Start, stop, restart & save the server",
-        "description": "Start, stop, force-stop, restart or save the running server."
+        "description": "Start, stop, force-stop, restart or save the running server — however it is deployed, including a Docker-managed one. Docker container status, stats and direct container actions are a separate capability (docker.manage)."
       },
       "install": {
         "label": "Install & update the server",
@@ -227,7 +227,7 @@
     "docker": {
       "manage": {
         "label": "Manage the Docker container",
-        "description": "View status/stats and start, stop or restart the game server's container."
+        "description": "View Docker container status and stats, and run direct container actions from the Docker screen. Starting, stopping and restarting the server itself — Docker-managed or not — is governed by server.control, not this capability."
       }
     },
     "chunks": {

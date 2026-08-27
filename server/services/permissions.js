@@ -89,7 +89,8 @@ export const CAPABILITIES = [
     key: "server.control",
     group: "Server Lifecycle",
     label: "Start, stop, restart & save the server",
-    description: "Start, stop, force-stop, restart or save the running server.",
+    description:
+      "Start, stop, force-stop, restart or save the running server -- however it is deployed, including a Docker-managed one. Docker container status, stats and direct container actions are a separate capability (docker.manage).",
   },
   {
     key: "server.install",
@@ -220,7 +221,8 @@ export const CAPABILITIES = [
     key: "docker.manage",
     group: "Infrastructure",
     label: "Manage the Docker container",
-    description: "View status/stats and start, stop or restart the game server's container.",
+    description:
+      "View Docker container status and stats, and run direct container actions from the Docker screen. Starting, stopping and restarting the server itself -- Docker-managed or not -- is governed by server.control, not this capability.",
   },
   {
     key: "chunks.manage",
