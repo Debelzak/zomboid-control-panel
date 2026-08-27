@@ -952,7 +952,17 @@ export function regenerateStartupScriptsWithBackup(installPath, files) {
       const knownHash = fingerprints[fileName];
       const currentHash = hashScriptContent(existingContent);
       if (!knownHash || knownHash !== currentHash) {
-        const backupPath = `${filePath}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+        // toISOString() is millisecond-resolution, and two regenerations detected close
+        // together (e.g. two hand-edits regenerated back to back in the same test, or two
+        // rapid Starts) can land in the same millisecond -- especially on a fast filesystem
+        // -- which would make the second backup silently overwrite the first. Disambiguate
+        // with a counter suffix so two backups from the same tick never collide.
+        let backupPath = `${filePath}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+        if (fs.existsSync(backupPath)) {
+          let suffix = 2;
+          while (fs.existsSync(`${backupPath}-${suffix}`)) suffix++;
+          backupPath = `${backupPath}-${suffix}`;
+        }
         try {
           fs.copyFileSync(filePath, backupPath);
           backupMessages.push(
