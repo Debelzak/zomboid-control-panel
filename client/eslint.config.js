@@ -4,6 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import noRawErrorMessage from '../eslint-rules/no-raw-error-message.js'
+import noDuplicateInterfaceName from '../eslint-rules/no-duplicate-interface-name.js'
 
 export default tseslint.config(
   {
@@ -19,7 +20,12 @@ export default tseslint.config(
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
-      local: { rules: { 'no-raw-error-message': noRawErrorMessage } },
+      local: {
+        rules: {
+          'no-raw-error-message': noRawErrorMessage,
+          'no-duplicate-interface-name': noDuplicateInterfaceName,
+        },
+      },
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -37,6 +43,13 @@ export default tseslint.config(
       // does and does not catch, and errorMessage.ts's own comment above
       // rawErrorMessageIntentional() for the (rare) escape hatch.
       'local/no-raw-error-message': 'error',
+
+      // 2026-08-27 api.ts type-architecture survey: api.ts had `BackupFile`
+      // declared twice for two genuinely different real shapes (config-file
+      // backups vs full server backups), and tsc's declaration merging
+      // silently unioned them into a type requiring fields neither producer
+      // returns. See eslint-rules/no-duplicate-interface-name.js.
+      'local/no-duplicate-interface-name': 'error',
     },
   },
   {

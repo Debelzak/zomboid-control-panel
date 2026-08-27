@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { useSocket } from '@/contexts/SocketContext'
-import { backupApi, serversApi, BackupStatus, BackupFile, BackupHistoryRecord, BackupSnapshot } from '@/lib/api'
+import { backupApi, serversApi, BackupStatus, ServerBackupArchive, BackupHistoryRecord, BackupSnapshot } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { PageHeader } from '@/components/PageHeader'
@@ -69,7 +69,7 @@ export default function Backups() {
 
   // State
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
-  const [backups, setBackups] = useState<BackupFile[]>([])
+  const [backups, setBackups] = useState<ServerBackupArchive[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [creatingBackup, setCreatingBackup] = useState(false)

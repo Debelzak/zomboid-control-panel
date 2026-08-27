@@ -1765,7 +1765,17 @@ export interface UtilitiesChangeResult {
   persistReason?: string | null;
 }
 
-export interface BackupFile {
+// server-files/backups' own shape (config-file .bak backups made by the
+// server-files subsystem -- see serverFiles.js's GET /backups) -- distinct
+// from backup.js/backupService.js's full .zip server backups below
+// (ServerBackupArchive). These two were both named BackupFile until
+// 2026-08-27: TypeScript silently merged the same-named interfaces into one
+// type requiring every field from both, so the merged type falsely claimed
+// this shape always carries name/path too (see ServerBackupArchive's
+// comment for the mirror image of this note, and
+// eslint-rules/no-duplicate-interface-name.js for the rule that now catches
+// this class of collision repo-wide).
+export interface ConfigBackupFile {
   filename: string;
   size: number;
   created: string;
@@ -1906,7 +1916,7 @@ export const serverFilesApi = {
   // Backups
   getBackups: () =>
     apiGet("/server-files/backups") as Promise<{
-      backups: BackupFile[];
+      backups: ConfigBackupFile[];
       path: string;
     }>,
   restoreBackup: (filename: string) =>
@@ -2722,7 +2732,11 @@ export interface BackupStatus extends BackupSettings {
   savesExists: boolean;
 }
 
-export interface BackupFile {
+// backup.js/backupService.js's own shape (full .zip server backups --
+// listBackups()/createBackup() in backupService.js) -- distinct from
+// server-files/backups' config-file .bak backups above (ConfigBackupFile).
+// See that interface's comment for why these have separate names now.
+export interface ServerBackupArchive {
   name: string;
   path: string;
   size: number;
@@ -2744,7 +2758,7 @@ export const backupApi = {
   getInfo: (): Promise<BackupContentsInfo> => apiGet("/backup/info"),
 
   // Get list of backups
-  listBackups: (): Promise<{ backups: BackupFile[] }> => apiGet("/backup/list"),
+  listBackups: (): Promise<{ backups: ServerBackupArchive[] }> => apiGet("/backup/list"),
 
   getHistory: (serverId?: string | number) =>
     apiGet(`/backup/history${serverId != null ? `?serverId=${encodeURIComponent(serverId)}` : ""}`) as Promise<{
@@ -2765,7 +2779,7 @@ export const backupApi = {
     includeDb?: boolean;
   }): Promise<{
     success: boolean;
-    backup?: BackupFile;
+    backup?: ServerBackupArchive;
     duration?: number;
     message?: string;
   }> => apiPost("/backup/create", options || {}),

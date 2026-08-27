@@ -96,7 +96,7 @@ import {
   modsApi,
   ApiError,
   BackupStatus,
-  BackupFile,
+  ServerBackupArchive,
   PanelUpdateStatus,
   PanelUpdatePreflight,
   ServerInstance,
@@ -474,7 +474,7 @@ export default function Settings() {
 
   // Backup state
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
-  const [backups, setBackups] = useState<BackupFile[]>([]);
+  const [backups, setBackups] = useState<ServerBackupArchive[]>([]);
   const [backupsLoadError, setBackupsLoadError] = useState(false);
   const [backupStatusLoadError, setBackupStatusLoadError] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
