@@ -96,9 +96,15 @@ describe('Chat.tsx: sending gates on server.world_events', () => {
 
     const input = await screen.findByRole('textbox', { name: 'Chat message' })
     const sendButton = screen.getByRole('button', { name: 'send' })
-    expect(sendButton).toBeDisabled()
 
+    // bug-hunt-2026-08-27 (Angela's fixture-masking finding): Send's
+    // disabled expression is `sending || !message.trim() ||
+    // !canSendChat` -- with the input still empty, `!message.trim()`
+    // alone already disables it regardless of the capability check, so
+    // asserting disabled here (before typing) would pass even with the
+    // capability gate deleted entirely. Type first, then assert.
     fireEvent.change(input, { target: { value: 'hello players' } })
+    expect(sendButton).toBeDisabled()
     fireEvent.click(sendButton)
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -134,9 +140,14 @@ describe('Chat.tsx: quick-broadcast preset management gates on panel.settings', 
     await screen.findByText('Test preset')
     fireEvent.click(screen.getByRole('button', { name: 'Edit presets' }))
 
+    // bug-hunt-2026-08-27 (Angela's fixture-masking finding): Add's
+    // disabled expression is `!newPresetDraft.trim() ||
+    // !canManagePresets` -- with the draft still empty,
+    // `!newPresetDraft.trim()` alone already disables it regardless of
+    // the capability check. Type first, then assert.
     const addInput = screen.getByPlaceholderText('add a new quick message…')
-    expect(screen.getByLabelText('Add preset')).toBeDisabled()
     fireEvent.change(addInput, { target: { value: 'A new preset' } })
+    expect(screen.getByLabelText('Add preset')).toBeDisabled()
     fireEvent.click(screen.getByLabelText('Add preset'))
     fireEvent.keyDown(addInput, { key: 'Enter' })
 

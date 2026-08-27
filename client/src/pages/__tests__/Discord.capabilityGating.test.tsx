@@ -113,6 +113,15 @@ describe('Discord.tsx: every mutating control gates on integrations.manage', () 
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Stop Bot' })).toBeInTheDocument())
 
+    // bug-hunt-2026-08-27 (Angela's fixture-masking finding): Verify
+    // Token's disabled expression is `testing || !token ||
+    // !canManageIntegrations` -- with no token typed, `!token` alone
+    // already disables it regardless of the capability check, so a denied
+    // assertion here would pass even with the capability gate deleted
+    // entirely. Type a token first so canManageIntegrations is the only
+    // thing left disabling it.
+    fireEvent.change(screen.getByLabelText(/Bot Token/), { target: { value: 'fake-token-value' } })
+
     const buttonNames = ['Stop Bot', 'Send Test', 'Verify Token', 'Wipe Discord Setup', 'Save Changes', 'Save Events', 'Save Permissions']
     const buttons = buttonNames.map((name) => screen.getByRole('button', { name }))
     for (const button of buttons) {
