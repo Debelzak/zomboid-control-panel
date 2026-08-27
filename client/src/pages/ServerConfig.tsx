@@ -126,7 +126,8 @@ import {
   getSandboxSettingDescription,
   getSandboxSettingOptionLabel,
   getSandboxCategoryLabel,
-  getSandboxCategoryGroupLabel
+  getSandboxCategoryGroupLabel,
+  getUnrecognizedSandboxOptionWarning
 } from '@/lib/serverConfigSchema'
 
 type EditorMode = 'structured' | 'raw'
@@ -411,7 +412,7 @@ const IniSettingRow = memo(({
 })
 IniSettingRow.displayName = 'IniSettingRow'
 
-const SandboxSettingRow = memo(({
+export const SandboxSettingRow = memo(({
   setting,
   value,
   originalValue,
@@ -428,6 +429,18 @@ const SandboxSettingRow = memo(({
   const isModified = originalValue !== undefined && JSON.stringify(value) !== JSON.stringify(originalValue)
   const isDifferentFromDefault = setting.default !== undefined && JSON.stringify(value) !== JSON.stringify(setting.default)
   const numberIsInvalid = setting.type === 'number' && String(value ?? '').trim() !== '' && parseNumericSettingValue(value, setting) === null
+  // A live value with no matching option -- PZ shipped a value this panel's
+  // schema doesn't know (the class of bug the enum audit found: MetaEvent=3
+  // when the panel only offered 1-2). The save path never coerces this (see
+  // the audit report), so the value itself is safe -- this is purely making
+  // that visible instead of rendering a blank Select.
+  const hasUnrecognizedValue =
+    setting.type === 'select' &&
+    !!setting.options &&
+    value !== undefined &&
+    value !== null &&
+    value !== '' &&
+    !setting.options.some((o) => o.value === Number(value))
 
   return (
     <div className={`perf-content-auto grid gap-2 rounded-md border-b py-3 pl-3 pr-4 transition-colors last:border-0 ${
@@ -473,16 +486,29 @@ const SandboxSettingRow = memo(({
                 />
               </div>
             ) : setting.type === 'select' && setting.options ? (
-              <Select value={String(value || '')} onValueChange={(v) => onChange(setting, Number(v))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {setting.options.map(opt => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>{getSandboxSettingOptionLabel(setting, opt.value)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div>
+                <Select value={String(value || '')} onValueChange={(v) => onChange(setting, Number(v))}>
+                  <SelectTrigger className={hasUnrecognizedValue ? 'border-warning/60' : ''}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {hasUnrecognizedValue && (
+                      <SelectItem value={String(value)} disabled>
+                        {String(value)} (?)
+                      </SelectItem>
+                    )}
+                    {setting.options.map(opt => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>{getSandboxSettingOptionLabel(setting, opt.value)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {hasUnrecognizedValue && (
+                  <div className="flex items-start gap-1.5 mt-1.5 text-xs text-warning">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{getUnrecognizedSandboxOptionWarning(String(value))}</span>
+                  </div>
+                )}
+              </div>
             ) : (
               <div>
                 <Input

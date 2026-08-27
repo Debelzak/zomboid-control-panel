@@ -4802,6 +4802,24 @@ export function getSandboxSettingOptionLabel(setting: SandboxSetting, value: num
   return translatedSandboxLabel(`${setting.category}.${setting.key}.options.${value}.label`, fallback)
 }
 
+// Runtime belt-and-braces for the class of bug the enum audit found (a live
+// value with no matching option): even a fully-corrected, drift-gated
+// schema can go stale the moment PZ ships a new option before this panel
+// regenerates. The save path never coerces an unrecognized select value
+// (verified during the audit -- it survives untouched unless the operator
+// explicitly re-picks that field), so the value itself is safe; the only
+// thing missing was telling the human. Uses translatedOrFallback's own
+// pattern (no locale-file change required, translatable later exactly like
+// every other string in this file) rather than a bare useTranslation() key,
+// which would need a same-day addition to all six locale files to avoid the
+// gap this file's own translation machinery exists to prevent.
+export function getUnrecognizedSandboxOptionWarning(value: number | string): string {
+  return translatedOrFallback(
+    'unrecognizedSandboxOptionWarning',
+    `This server is currently set to ${value}, which this panel does not recognize. The value is preserved and will not be changed unless you pick a different option here.`,
+  )
+}
+
 export function getSandboxCategoryLabel(category: { id: string; label: string }): string {
   return translatedOrFallback(`sandboxCategories.${category.id}.label`, category.label)
 }
