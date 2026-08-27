@@ -22,8 +22,17 @@ import { ErrorCode } from "../utils/errorCodes.js";
 // hardening (every-minute, range-step, comma-separated, hour-pinned burst)
 // regressed.
 
+// Every test body below uses command: "restart" -- incidental to what's
+// actually under test here (cron-expression validation), so the role just
+// needs whatever capability "restart" requires (server.control, see
+// requiredCapabilityForScheduledCommand in services/scheduler.js) to clear
+// the permission check cleanly and reach the cron logic these tests exist
+// to exercise.
 const ROLES = {
-  automation_only: { name: "automation_only", capabilities: ["automation.manage"] },
+  automation_only: {
+    name: "automation_only",
+    capabilities: ["automation.manage", "server.control"],
+  },
 };
 
 vi.mock("../database/init.js", () => ({

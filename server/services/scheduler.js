@@ -55,6 +55,48 @@ export function classifyScheduledCommand(command) {
   return "raw";
 }
 
+// Extracts the action name from a `bridge:<action>` scheduled command (the
+// part before any JSON args blob), preserving original casing since
+// PanelBridge action names are case-sensitive. Shared by executeBridgeAction
+// (which needs the name to dispatch) and requiredCapabilityForScheduledCommand
+// below (which needs it to tell saveWorld apart from every other bridge:
+// action) so the two can't parse it two different ways.
+function parseBridgeActionName(rawCommand) {
+  const body = rawCommand.slice("bridge:".length).trim();
+  const firstSpace = body.indexOf(" ");
+  return (firstSpace === -1 ? body : body.slice(0, firstSpace)).trim();
+}
+
+// The single source of truth for which panel capability a scheduled command
+// requires -- the SAME capability its direct/interactive equivalent route
+// requires, because scheduling an action must not cost less than performing
+// it (docs/qa/kevin-adversarial-findings.md Finding 1 established this for
+// raw/rcon.execute specifically; this generalises it to the other three
+// curated classifications, closing the gap Finding 1's own fix never
+// checked -- automation.manage was verified against rcon.execute, never
+// against server.world_events or server.control).
+// routes/scheduler.js's write-time (POST/PUT /tasks) and run-time
+// (POST /tasks/:id/run) permission checks all call this, so they can never
+// silently drift on what a given command needs -- same reasoning as
+// classifyScheduledCommand's own header comment, extended.
+//
+// bridge:saveWorld is the one bridge: action that is NOT a world event: it's
+// PanelBridge's own equivalent of POST /server/save and POST
+// /panel-bridge/world/save, both gated server.control (panelBridge.js:2003)
+// -- not server.world_events, which every OTHER schedulable bridge action
+// (weather/sound/utilities/chat) matches exactly.
+export function requiredCapabilityForScheduledCommand(command) {
+  const kind = classifyScheduledCommand(command);
+  if (kind === "restart" || kind === "save") return "server.control";
+  if (kind === "servermsg") return "server.world_events";
+  if (kind === "bridge") {
+    return parseBridgeActionName(String(command ?? "")) === "saveWorld"
+      ? "server.control"
+      : "server.world_events";
+  }
+  return "rcon.execute"; // kind === "raw"
+}
+
 export class Scheduler {
   constructor(rconService, serverManager) {
     this.rconService = rconService;
@@ -397,11 +439,11 @@ export class Scheduler {
     const body = rawCommand.slice("bridge:".length).trim();
     if (!body) throw new Error("bridge: action missing");
 
-    // First whitespace separates the action name from its args blob.
+    // action comes from the same shared parser requiredCapabilityForScheduledCommand
+    // uses, so dispatch and permission-checking can never disagree on which
+    // action a given command names.
+    const action = parseBridgeActionName(rawCommand);
     const firstSpace = body.indexOf(" ");
-    const action = (
-      firstSpace === -1 ? body : body.slice(0, firstSpace)
-    ).trim();
     const argsRaw = firstSpace === -1 ? "" : body.slice(firstSpace + 1).trim();
 
     if (!SCHEDULABLE_BRIDGE_ACTIONS.has(action)) {

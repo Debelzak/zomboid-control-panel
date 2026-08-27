@@ -11,12 +11,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // over the socket once the underlying promise resolves, in addition to (not
 // instead of) the immediate "accepted" response.
 
+// "save" (the command every /tasks/:id/run test below uses) requires
+// server.control -- see requiredCapabilityForScheduledCommand in
+// services/scheduler.js -- so the mock role needs it to clear the
+// permission check and reach the socket-emission behavior under test.
+const ROLES = {
+  automation_and_control: {
+    name: "automation_and_control",
+    capabilities: ["automation.manage", "server.control"],
+  },
+};
+
 vi.mock("../database/init.js", () => ({
   getScheduledTasks: vi.fn(),
   getActiveServer: vi.fn().mockResolvedValue(null),
   logScheduleExecution: vi.fn().mockResolvedValue(),
   updateTaskLastRun: vi.fn().mockResolvedValue(),
   logServerEvent: vi.fn().mockResolvedValue(),
+  getRoleByName: vi.fn((name) => Promise.resolve(ROLES[name] || null)),
 }));
 
 const { getScheduledTasks, getActiveServer } = await import("../database/init.js");
@@ -164,6 +176,7 @@ describe("scheduler:action_result socket emission", () => {
     await getHandler("/tasks/:id/run", "post")(
       {
         params: { id: "3" },
+        user: { role: "automation_and_control" },
         app: { get: (key) => (key === "scheduler" ? { runTaskNow } : key === "io" ? { emit } : null) },
       },
       response,

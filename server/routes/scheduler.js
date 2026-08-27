@@ -15,7 +15,7 @@ import {
   getServer
 } from '../database/init.js';
 import { requirePermission } from '../services/permissions.js';
-import { classifyScheduledCommand } from '../services/scheduler.js';
+import { requiredCapabilityForScheduledCommand } from '../services/scheduler.js';
 import {
   hasUnsupportedCronFieldCount,
   isCronTooFrequent,
@@ -52,25 +52,61 @@ const router = express.Router();
 // /restart-now.
 router.use(requirePermission('automation.manage'));
 
-// automation.manage alone only covers the curated, validated verbs
-// classifyScheduledCommand() recognises (restart/save/servermsg/bridge:).
-// Anything else is a RAW RCON command — the exact power routes/rcon.js
-// gates behind rcon.execute, admin+technician only, deliberately not
-// moderator. Without this, a role built with only automation.manage (a
-// real, supported thing to do via Roles & Permissions — its own label,
-// "manage scheduled tasks", says nothing about RCON) could create a task
+// automation.manage alone only covers "manage scheduled tasks" as a
+// concept — it says nothing about what a given scheduled command actually
+// DOES once it fires, and a scheduled command can do anything from an
+// arbitrary RCON command to a world-wide broadcast to a full server
+// restart. If scheduling an action performs the action, scheduling it
+// cannot cost less than performing it directly — so every curated
+// classification requires the SAME capability its own direct/interactive
+// route requires, not automation.manage alone:
+//   restart/save        -> server.control   (matches POST /server/restart,
+//                                             /server/save)
+//   servermsg, bridge:*  -> server.world_events (matches POST
+//                                             /server/message and most
+//                                             PanelBridge world-event
+//                                             routes) — except
+//                                             bridge:saveWorld specifically,
+//                                             which matches server.control
+//                                             instead (PanelBridge's own
+//                                             equivalent of /server/save)
+//   raw (unrecognised)   -> rcon.execute     (the exact power routes/rcon.js
+//                                             gates behind, admin+technician
+//                                             only, deliberately not
+//                                             moderator)
+// requiredCapabilityForScheduledCommand() in services/scheduler.js is the
+// single source of truth for this mapping — both the checks below and
+// executeTask()'s own dispatch draw from it, so they can never silently
+// drift on what a given command needs.
+//
+// This closes two related but DIFFERENT gaps found the same night:
+// docs/qa/kevin-adversarial-findings.md Finding 1 (raw commands reaching
+// RCON with only automation.manage, fixed 4a7dc86) verified automation.manage
+// against rcon.execute ONLY — a role built with only automation.manage (a
+// real, supported thing to do via Roles & Permissions) could create a task
 // with any RCON command and either wait for it to fire or "Run now" it
-// immediately, shutting the server down or banning anyone, invisibly
-// (the scheduled-task fallback in services/scheduler.js runs with
-// skipLog:true, so it never appears in RCON history). See
-// docs/qa/kevin-adversarial-findings.md Finding 1.
+// immediately, shutting the server down or banning anyone, invisibly (the
+// scheduled-task fallback in services/scheduler.js runs with skipLog:true,
+// so it never appears in RCON history). NOBODY ever cross-checked
+// automation.manage against server.world_events or server.control for the
+// curated verbs Finding 1's fix deliberately left alone — a role with
+// automation.manage but NOT server.world_events could still schedule a
+// servermsg broadcast and "Run now" it, reaching the exact effect
+// POST /server/message (server.world_events) exists to gate, through a
+// door that only checked a different, unrelated capability.
 //
 // A cron fire has no request and no req.user, so the gate can't live at
 // execution time for the unattended case — it has to live at the only
-// moments a raw command can actually enter the system with a real,
-// checkable identity behind the request: creating/editing a task (below),
-// and manually triggering one via "Run now" (also request-bound, checked
-// separately at that route). Reuses requirePermission() itself rather than
+// moments a scheduled command can actually enter or manually run with a
+// real, checkable identity behind the request: creating/editing a task
+// (below), and manually triggering one via "Run now" (also request-bound,
+// checked separately at that route). The cron firing itself is deliberately
+// left unchecked: authorisation happened at create/edit time, when a real
+// user session existed to check it against; the cron tick later is
+// execution, not authorisation, and a capability check there would mean
+// every existing task whose creator later loses a role starts failing
+// silently on its own schedule, with nobody watching — a worse outage than
+// the escalation this closes. Reuses requirePermission() itself rather than
 // re-deriving the role/capability lookup — same fail-closed behaviour,
 // same error shape, zero risk of drifting from what the middleware form
 // does. If requirePermission finds the caller lacks the capability it
@@ -170,11 +206,14 @@ router.post('/tasks', async (req, res) => {
       return res.status(400).json({ error: 'Invalid cron expression format', code: ErrorCode.SCHEDULER_INVALID_CRON_FORMAT });
     }
 
-    // A raw (non restart/save/servermsg/bridge:) command reaches RCON with
-    // the same power as rcon.execute's own console -- require it explicitly
-    // rather than letting automation.manage alone grant that silently.
-    if (classifyScheduledCommand(command) === 'raw') {
-      const allowed = await requireCapabilityInline('rcon.execute', req, res);
+    // Scheduling an action must not cost less than performing it directly --
+    // see the router-level comment above for the full mapping and why.
+    {
+      const allowed = await requireCapabilityInline(
+        requiredCapabilityForScheduledCommand(command),
+        req,
+        res,
+      );
       if (!allowed) return;
     }
 
@@ -263,13 +302,17 @@ router.put('/tasks/:id', async (req, res) => {
     if (command !== undefined && (typeof command !== 'string' || command.length > 2000)) {
       return res.status(400).json({ error: 'Invalid command (max 2000 characters)', code: ErrorCode.SCHEDULER_INVALID_COMMAND });
     }
-    // Only gate on rcon.execute when THIS request is actually setting the
-    // command to something raw -- a caller who only toggles enabled/name/
-    // serverId on a task someone else created shouldn't need rcon.execute
-    // just because that task's untouched, pre-existing command happens to
-    // be raw.
-    if (command !== undefined && classifyScheduledCommand(command) === 'raw') {
-      const allowed = await requireCapabilityInline('rcon.execute', req, res);
+    // Only gate on the command's required capability when THIS request is
+    // actually setting the command -- a caller who only toggles enabled/
+    // name/serverId on a task someone else created shouldn't need any
+    // particular capability just because that task's untouched, pre-existing
+    // command happens to need one.
+    if (command !== undefined) {
+      const allowed = await requireCapabilityInline(
+        requiredCapabilityForScheduledCommand(command),
+        req,
+        res,
+      );
       if (!allowed) return;
     }
     if (
@@ -426,11 +469,18 @@ router.post('/tasks/:id/run', async (req, res) => {
     // Unlike a cron fire, "Run now" IS a live request with a real req.user
     // -- check the STORED command (not request body; there isn't one here)
     // against the caller's CURRENT capabilities, not whoever created the
-    // task. A task saved as raw by someone who legitimately held
-    // rcon.execute at the time still needs it to be manually triggered by
-    // someone who doesn't hold it now.
-    if (classifyScheduledCommand(task.command) === 'raw') {
-      const allowed = await requireCapabilityInline('rcon.execute', req, res);
+    // task. A task saved by someone who legitimately held the required
+    // capability at the time still needs it to be manually triggered by
+    // someone who doesn't hold it now -- this is HALF of the
+    // schedule-is-cheaper-than-doing escalation this whole check exists to
+    // close (the other half is create/edit-time, above); the cron firing
+    // itself is deliberately left unchecked, see the router-level comment.
+    {
+      const allowed = await requireCapabilityInline(
+        requiredCapabilityForScheduledCommand(task.command),
+        req,
+        res,
+      );
       if (!allowed) return;
     }
 
