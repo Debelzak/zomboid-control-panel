@@ -143,6 +143,8 @@
     "loadSavesFailedTitle": "Impossible de charger les mondes",
     "loadSavesFailedFallback": "Échec du chargement des dossiers de sauvegarde.",
     "pathSavedTitle": "Chemin enregistré",
+    "liveVehicleCleanupNoPermissionTitle": "Nettoyage des véhicules en direct ignoré",
+    "liveVehicleCleanupNoPermissionDesc": "Les chunks et leurs enregistrements de véhicules ont été supprimés. Retirer des véhicules déjà chargés du serveur en direct nécessite la permission bridge.command, que ce rôle ne possède pas -- un administrateur peut l'accorder, ou le véhicule obsolète disparaîtra de lui-même au prochain rechargement de la zone.",
     "pathSavedServerDesc": "Enregistré dans la configuration du serveur actif — le panneau utilisera ce chemin la prochaine fois.",
     "pathSavedPanelDesc": "Enregistré dans les paramètres du panneau.",
     "pathSaveFailedTitle": "Impossible d'enregistrer le chemin",

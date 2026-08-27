@@ -1950,8 +1950,24 @@ export default function ChunkCleaner() {
             maxX: maxGX,
             maxY: maxGY,
           });
-        } catch {
-          /* server stopped — fine, DB cleanup will handle it */
+        } catch (err) {
+          // Bridge unreachable (server stopped, bridge not running) is
+          // benign here — the authoritative vehicles.db cleanup above
+          // already ran server-side, so live removal was only ever a
+          // cosmetic "no ghost car for a second" nicety. A 403 is a
+          // DIFFERENT failure the operator can act on: it means this
+          // role has chunks.manage (or it couldn't have reached this far)
+          // but not bridge.command, so live removal will silently skip
+          // on every future deletion too until an admin grants it or
+          // adds it to the role. Previously both cases hit the same bare
+          // catch and looked identical — 2026-08-27 bug-hunt silent-
+          // swallow-class fix.
+          if (err instanceof ApiError && err.status === 403) {
+            toast({
+              title: t("toasts.liveVehicleCleanupNoPermissionTitle"),
+              description: t("toasts.liveVehicleCleanupNoPermissionDesc"),
+            });
+          }
         }
       }
 
