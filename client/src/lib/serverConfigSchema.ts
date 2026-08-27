@@ -2173,11 +2173,14 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'select',
     options: [
       { value: 1, label: 'Instant' },
-      { value: 2, label: '0-30 Days' },
-      { value: 3, label: '0-2 Months' },
-      { value: 4, label: '0-6 Months' },
-      { value: 5, label: '0-1 Year' },
-      { value: 6, label: '0-5 Years' }
+      { value: 2, label: '0 - 30 Days' },
+      { value: 3, label: '0 - 2 Months' },
+      { value: 4, label: '0 - 6 Months' },
+      { value: 5, label: '0 - 1 Year' },
+      { value: 6, label: '0 - 5 Years' },
+      { value: 7, label: '2 - 6 Months' },
+      { value: 8, label: '6 - 12 Months' },
+      { value: 9, label: 'Disabled' }
     ],
     default: 2,
     category: 'environment',
@@ -2822,7 +2825,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     options: [
       { value: 1, label: 'Never' },
       { value: 2, label: 'Once' },
-      { value: 3, label: 'Sometimes' }
+      { value: 3, label: 'Sometimes' },
+      { value: 4, label: 'Often' }
     ],
     default: 2,
     category: 'survival',
@@ -2835,7 +2839,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'select',
     options: [
       { value: 1, label: 'Never' },
-      { value: 2, label: 'Sometimes' }
+      { value: 2, label: 'Sometimes' },
+      { value: 3, label: 'Often' }
     ],
     default: 2,
     category: 'survival',
@@ -2848,7 +2853,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
     type: 'select',
     options: [
       { value: 1, label: 'Never' },
-      { value: 2, label: 'Sometimes' }
+      { value: 2, label: 'Sometimes' },
+      { value: 3, label: 'Often' }
     ],
     default: 1,
     category: 'survival',
@@ -3752,7 +3758,8 @@ export const SANDBOX_SCHEMA: SandboxSetting[] = [
       { value: 3, label: 'Rare' },
       { value: 4, label: 'Sometimes' },
       { value: 5, label: 'Often' },
-      { value: 6, label: 'Very Often' }
+      { value: 6, label: 'Very Often' },
+      { value: 7, label: 'Always Tries' }
     ],
     default: 3,
     category: 'world',
