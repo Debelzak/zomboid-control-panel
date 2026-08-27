@@ -292,11 +292,15 @@ describe('Servers.tsx: capability gating', () => {
     expect(steamUpdate).not.toHaveBeenCalled()
     expect(steamVerify).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: en.steamDialog.clearFolderButton }))
-    await screen.findByRole('heading', { name: en.clearInstallDialog.title })
-    const clearButton = screen.getByRole('button', { name: en.clearInstallDialog.clearFolder })
-    expect(clearButton).toBeDisabled()
-    fireEvent.click(clearButton)
+    // Fixed 2026-08-27 (stock-role hunt): this button used to stay fully
+    // clickable regardless of permission -- only the confirm dialog's own
+    // button checked server.wipe, so an unauthorized role could open the
+    // dialog and just not complete it. Now the opener itself is gated too,
+    // so the dialog never opens at all.
+    const clearFolderButton = screen.getByRole('button', { name: en.steamDialog.clearFolderButton })
+    expect(clearFolderButton).toBeDisabled()
+    fireEvent.click(clearFolderButton)
+    expect(screen.queryByRole('heading', { name: en.clearInstallDialog.title })).not.toBeInTheDocument()
     expect(deleteFiles).not.toHaveBeenCalled()
   })
 

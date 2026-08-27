@@ -2743,15 +2743,20 @@ export default function Servers() {
                 disabled
                 className="font-mono text-sm bg-muted"
               />
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={steamRunning || clearingInstall}
-                onClick={() => setConfirmClearInstall(true)}
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-2" /> {t('steamDialog.clearFolderButton')}
-              </Button>
+              <DisabledReason reason={!canServerWipe ? t('clearInstallDialog.noPermission') : null}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={steamRunning || clearingInstall || !canServerWipe}
+                  onClick={() => {
+                    if (!canServerWipe) return
+                    setConfirmClearInstall(true)
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-2" /> {t('steamDialog.clearFolderButton')}
+                </Button>
+              </DisabledReason>
               <p className="text-xs text-muted-foreground">
                 {t('steamDialog.clearFolderHint')}
               </p>
