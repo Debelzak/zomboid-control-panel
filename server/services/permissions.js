@@ -160,8 +160,7 @@ export const CAPABILITIES = [
     key: "bridge.diagnostics",
     group: "PanelBridge Integration",
     label: "PanelBridge diagnostics",
-    description:
-      "View the mod's debug log and stats, and run item/vehicle catalog scans.",
+    description: "Run item and vehicle catalog scans against the mod.",
   },
   {
     key: "bridge.command",
