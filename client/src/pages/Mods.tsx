@@ -128,6 +128,7 @@ interface IniConfig {
   iniPath?: string
   error?: string
   workshopModMap?: Record<string, Array<{ id: string; name: string; enabled: boolean; require?: string[] }>>
+  duplicateKeys?: Array<{ key: string; count: number }>
 }
 
 // ── Pure helper — parse workshop ID from URL or numeric input ──
@@ -2600,6 +2601,33 @@ export default function Mods() {
               <RefreshCw className={`w-4 h-4 mr-2 ${checking ? 'animate-spin' : ''}`} />
               {t('staleFlag.checkNow')}
             </Button>
+          </div>
+        )}
+
+        {/* Duplicate-key warning: a setting appears more than once as its own
+            line in the raw INI. This page's own reads/writes (content.match()
+            with no /g, server-side) only ever see the FIRST copy; the Server
+            Configuration editor's line-by-line parser lets the LAST copy win.
+            Two screens the operator can both have open at once, showing
+            different values for the same nominal setting, with nothing else
+            telling either of them the file is like this. See
+            server/utils/iniDuplicateKeys.js. */}
+        {iniConfig?.duplicateKeys && iniConfig.duplicateKeys.length > 0 && (
+          <div className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3 sm:items-center">
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              <div>
+                <p className="font-medium text-warning">
+                  {t('duplicateKeysWarning.title', {
+                    count: iniConfig.duplicateKeys.length,
+                    keys: iniConfig.duplicateKeys.map(d => d.key).join(', '),
+                  })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('duplicateKeysWarning.desc')}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

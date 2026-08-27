@@ -48,6 +48,11 @@
     "desc": "Der Workshop-Ordner enthält neuere Dateien, als das Panel erfasst hat. Führe eine Prüfung aus, um den Status der einzelnen Mods zu aktualisieren.",
     "checkNow": "Jetzt prüfen"
   },
+  "duplicateKeysWarning": {
+    "title_one": "\"{{keys}}\" kommt in dieser Konfigurationsdatei mehr als einmal vor",
+    "title_other": "{{count}} Einstellungen kommen in dieser Konfigurationsdatei mehr als einmal vor: {{keys}}",
+    "desc": "Diese Seite liest die erste Kopie, der Server-Konfigurationseditor liest die letzte — daher können beide unterschiedliche Werte für dieselbe Einstellung anzeigen."
+  },
   "nav": {
     "aria": "Bereiche der Mod-Verwaltung",
     "groupMods": "Mods",

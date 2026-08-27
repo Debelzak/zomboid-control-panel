@@ -48,6 +48,11 @@
     "desc": "The Workshop folder shows newer files than the panel has on record. Run a check to update the per-mod state.",
     "checkNow": "Check Now"
   },
+  "duplicateKeysWarning": {
+    "title_one": "\"{{keys}}\" appears more than once in this configuration file",
+    "title_other": "{{count}} settings appear more than once in this configuration file: {{keys}}",
+    "desc": "This page reads the first copy and the Server Configuration editor reads the last, so the two can show different values for the same setting."
+  },
   "nav": {
     "aria": "Mod management sections",
     "groupMods": "Mods",

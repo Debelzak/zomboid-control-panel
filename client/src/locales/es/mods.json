@@ -48,6 +48,11 @@
     "desc": "La carpeta de Workshop muestra archivos más recientes que los registrados por el panel. Ejecutar una comprobación para actualizar el estado de cada mod.",
     "checkNow": "Comprobar ahora"
   },
+  "duplicateKeysWarning": {
+    "title_one": "\"{{keys}}\" aparece más de una vez en este archivo de configuración",
+    "title_other": "{{count}} ajustes aparecen más de una vez en este archivo de configuración: {{keys}}",
+    "desc": "Esta página lee la primera copia y el editor de configuración del servidor lee la última, por lo que ambos pueden mostrar valores distintos para el mismo ajuste."
+  },
   "nav": {
     "aria": "Secciones de gestión de mods",
     "groupMods": "Mods",

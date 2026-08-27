@@ -48,6 +48,11 @@
     "desc": "Dosye Workshop la montre fichye ki pi nouvo pase sa panèl la genyen nan achiv li. Fè yon tchekaj pou mete estati chak mod ajou.",
     "checkNow": "Tcheke Kounye a"
   },
+  "duplicateKeysWarning": {
+    "title_one": "\"{{keys}}\" parèt plis pase yon fwa nan fichye konfigirasyon sa a",
+    "title_other": "{{count}} paramèt parèt plis pase yon fwa nan fichye konfigirasyon sa a: {{keys}}",
+    "desc": "Paj sa a li premye kopi a, epi editè konfigirasyon sèvè a li dènye a — konsa toude ka montre valè diferan pou menm paramèt la."
+  },
   "nav": {
     "aria": "Seksyon jesyon mods",
     "groupMods": "Mods",

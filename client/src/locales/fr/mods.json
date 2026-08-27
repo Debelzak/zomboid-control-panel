@@ -48,6 +48,11 @@
     "desc": "Le dossier Workshop contient des fichiers plus récents que ce que le panneau a enregistré. Lancez une vérification pour mettre à jour l'état de chaque mod.",
     "checkNow": "Vérifier maintenant"
   },
+  "duplicateKeysWarning": {
+    "title_one": "\"{{keys}}\" apparaît plus d'une fois dans ce fichier de configuration",
+    "title_other": "{{count}} paramètres apparaissent plus d'une fois dans ce fichier de configuration : {{keys}}",
+    "desc": "Cette page lit la première copie et l'éditeur de configuration du serveur lit la dernière — les deux peuvent donc afficher des valeurs différentes pour le même paramètre."
+  },
   "nav": {
     "aria": "Sections de gestion des mods",
     "groupMods": "Mods",
