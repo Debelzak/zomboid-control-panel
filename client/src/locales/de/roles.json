@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "Panel-Diagnose einsehen",
-        "description": "Protokolle, Leistungsverlauf, Datenbank-Wartungswerkzeuge und CORS-Diagnose einsehen."
+        "description": "Protokolle, Leistungsverlauf und CORS-Diagnose einsehen sowie die eigenen Daten-/Protokollverzeichnisse des Panels verlagern."
       }
     },
     "panel": {

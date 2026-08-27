@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "Voir les diagnostics du panneau",
-        "description": "Consulter les journaux, l'historique de performance, les outils de maintenance de la base de données et les diagnostics CORS."
+        "description": "Consulter les journaux, l'historique de performance et les diagnostics CORS, et déplacer les répertoires de données/journaux propres au panneau."
       }
     },
     "panel": {

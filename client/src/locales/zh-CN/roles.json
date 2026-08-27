@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "查看面板诊断",
-        "description": "查看日志、性能历史、数据库维护工具及 CORS 诊断信息。"
+        "description": "查看日志、性能历史及 CORS 诊断信息，并迁移面板自身的数据/日志目录。"
       }
     },
     "panel": {

@@ -245,7 +245,7 @@
     "diagnostics": {
       "manage": {
         "label": "View panel diagnostics",
-        "description": "View logs, performance history, database maintenance tools and CORS diagnostics."
+        "description": "View logs, performance history and CORS diagnostics, and relocate the panel's own data/log directories."
       }
     },
     "panel": {
