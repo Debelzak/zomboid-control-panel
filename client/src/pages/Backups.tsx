@@ -47,6 +47,7 @@ import { backupApi, serversApi, BackupStatus, ServerBackupArchive, BackupHistory
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { PageHeader } from '@/components/PageHeader'
+import { DisabledReason } from '@/components/DisabledReason'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
@@ -529,19 +530,20 @@ export default function Backups() {
         icon={<Archive className="w-5 h-5 text-primary" />}
         actions={
           <>
-            <Button
-              onClick={handleCreateBackup}
-              disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists || activeServerRemote}
-              className="gap-2"
-              title={activeServerRemote ? t('pageHeader.remoteDisabledTitle') : undefined}
-            >
-              {creatingBackup ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Archive className="w-4 h-4" />
-              )}
-              {creatingBackup ? t('pageHeader.creating') : t('pageHeader.createBackup')}
-            </Button>
+            <DisabledReason reason={activeServerRemote ? t('pageHeader.remoteDisabledTitle') : null}>
+              <Button
+                onClick={handleCreateBackup}
+                disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists || activeServerRemote}
+                className="gap-2"
+              >
+                {creatingBackup ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Archive className="w-4 h-4" />
+                )}
+                {creatingBackup ? t('pageHeader.creating') : t('pageHeader.createBackup')}
+              </Button>
+            </DisabledReason>
             <input
               ref={fileInputRef}
               type="file"

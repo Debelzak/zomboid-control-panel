@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HelpTip } from "@/components/HelpTip";
+import { DisabledReason } from "@/components/DisabledReason";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
@@ -711,28 +712,29 @@ export default function Discord() {
             const isLocked = i > maxReachableStep;
             return (
               <div key={i} className="flex items-center flex-1 last:flex-none">
-                <button
-                  onClick={() => !isLocked && setSetupStep(i)}
-                  disabled={isLocked}
-                  aria-disabled={isLocked}
-                  title={isLocked ? t("wizard.stepLocked") : undefined}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium shrink-0 ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : isDone
-                        ? "bg-primary/10 text-primary hover:bg-primary/15"
-                        : isLocked
-                          ? "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
-                          : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                >
-                  {isDone ? (
-                    <Check className="w-4 h-4" />
-                  ) : (
-                    <Icon className="w-4 h-4" />
-                  )}
-                  <span className="hidden md:inline">{step.label}</span>
-                </button>
+                <DisabledReason reason={isLocked ? t("wizard.stepLocked") : null}>
+                  <button
+                    onClick={() => !isLocked && setSetupStep(i)}
+                    disabled={isLocked}
+                    aria-disabled={isLocked}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium shrink-0 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : isDone
+                          ? "bg-primary/10 text-primary hover:bg-primary/15"
+                          : isLocked
+                            ? "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {isDone ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Icon className="w-4 h-4" />
+                    )}
+                    <span className="hidden md:inline">{step.label}</span>
+                  </button>
+                </DisabledReason>
                 {i < SETUP_STEPS.length - 1 && (
                   <div
                     className={`flex-1 h-px mx-2 ${isDone ? "bg-primary/30" : "bg-border"}`}
