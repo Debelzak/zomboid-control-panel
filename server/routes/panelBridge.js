@@ -107,7 +107,7 @@ async function resolveSftpLogConfig(input = {}) {
 }
 
 // Valid PanelBridge actions (defense-in-depth — Lua side also validates)
-const VALID_ACTIONS = new Set([
+export const VALID_ACTIONS = new Set([
   "ping",
   "getServerInfo",
   "getWeather",
@@ -233,7 +233,7 @@ const VALID_ACTIONS = new Set([
 // automation, but never granted players.moderate, gets full kick/ban/
 // ban-by-IP/ban-by-SteamID power as an undocumented side effect.
 // bug-hunt-2026-08-27: Pam's cross-route-family capability sweep.
-const BRIDGE_ACTION_CAPABILITY = {
+export const BRIDGE_ACTION_CAPABILITY = {
   moderationKickUser: "players.moderate",
   moderationBanUser: "players.moderate",
   moderationBanIP: "players.moderate",
