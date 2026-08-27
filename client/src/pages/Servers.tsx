@@ -824,6 +824,14 @@ export default function Servers() {
         hasRcon: config.hasRcon
       }]
     })
+
+    if (!config.hasRcon) {
+      toast({
+        title: t('toasts.rconNotConfiguredTitle'),
+        description: t('toasts.rconNotConfiguredDesc'),
+        variant: 'destructive'
+      })
+    }
   }
 
   // Select a detected server config

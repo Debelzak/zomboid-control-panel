@@ -37,6 +37,15 @@ import en from '../../locales/en/servers.json'
 // to 2026-08-27T04-52-25-949Z-bf9c01): pinning behaviour, not chasing
 // coverage, so only the credential-precedence rule and its immediate
 // siblings (import unavailable -> manual entry required) are covered here.
+//
+// Follow-up (2026-08-27T05-03-43-634Z-098280): the manual-detect path
+// (handleSelectServerConfig) showed a destructive "RCON not configured"
+// toast when the selected config has no RCON password; the auto-scan path
+// (handleSelectScannedConfig) did not, even though the underlying
+// required-password/disabled logic is identical on both paths -- a missing
+// notification, not a missing guard, so no security behaviour changes here.
+// Added the same toast (verbatim copy, reused rather than re-written) to
+// the auto-scan path and pinned it below.
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
@@ -54,6 +63,7 @@ vi.mock('@/lib/api', async () => {
     serversDetectApi: {
       ...actual.serversDetectApi,
       detect: vi.fn(),
+      autoScan: vi.fn(),
     },
     dockerApi: {
       ...actual.dockerApi,
@@ -82,6 +92,7 @@ const discoverMounts = vi.mocked(serversApi.discoverMounts)
 const create = vi.mocked(serversApi.create)
 const activate = vi.mocked(serversApi.activate)
 const detect = vi.mocked(serversDetectApi.detect)
+const autoScan = vi.mocked(serversDetectApi.autoScan)
 const dockerGetStatus = vi.mocked(dockerApi.getStatus)
 const getAppSettings = vi.mocked(configApi.getAppSettings)
 const updateGetStatus = vi.mocked(updateApi.getStatus)
@@ -163,6 +174,7 @@ beforeEach(() => {
   getAppSettings.mockReset().mockResolvedValue({ settings: {} } as never)
   updateGetStatus.mockReset().mockResolvedValue({} as never)
   detect.mockReset()
+  autoScan.mockReset()
   create.mockReset().mockResolvedValue({ server: { id: 2 } } as never)
   activate.mockReset().mockResolvedValue({} as never)
   toastSpy.mockClear()
@@ -242,5 +254,84 @@ describe('Servers -- Add Existing Server credential precedence (manual entry alw
     const payload = create.mock.calls[0][0] as Record<string, unknown>
     expect(payload.rconPassword).toBe('a-real-password')
     expect(payload).not.toHaveProperty('importIniFrom')
+  })
+
+  it('warns on the manual-detect path when the detected config has no RCON password', async () => {
+    renderServers()
+    await openAddExistingServerDialog()
+
+    detect.mockResolvedValue({
+      valid: true,
+      dataPath: '/srv/norcon/data',
+      serverConfigPath: '/srv/norcon/data/Server/norcon.ini',
+      installPath: '/srv/norcon',
+      validInstallPath: true,
+      hasNoSteam: false,
+      detectedServers: [
+        { serverName: 'norcon', iniFile: 'norcon.ini', rconPort: 27015, serverPort: 16261, publicName: 'No RCON Server', hasRcon: false },
+      ],
+    } as never)
+
+    fireEvent.change(screen.getByPlaceholderText(en.localForm.dataPathPlaceholder), {
+      target: { value: '/srv/norcon/data' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.localForm.detect }))
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: en.toasts.rconNotConfiguredTitle,
+          description: en.toasts.rconNotConfiguredDesc,
+          variant: 'destructive',
+        }),
+      ),
+    )
+  })
+
+  it('warns on the auto-scan path too, with the identical toast, when the scanned config has no RCON password', async () => {
+    renderServers()
+    await openAddExistingServerDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: en.localForm.autoScan }))
+    fireEvent.change(screen.getByPlaceholderText(en.localForm.scanPathPlaceholder), {
+      target: { value: '/srv/scan-root' },
+    })
+
+    autoScan.mockResolvedValue({
+      scanPath: '/srv/scan-root',
+      installPaths: ['/srv/scan-root/install'],
+      dataPaths: ['/srv/scan-root/data'],
+      customBatFiles: [],
+      detectedConfigs: [
+        {
+          dataPath: '/srv/scan-root/data',
+          serverConfigPath: '/srv/scan-root/data/Server/norcon.ini',
+          dockerContainerName: '',
+          serverName: 'norcon',
+          iniFile: 'norcon.ini',
+          rconPort: 27015,
+          serverPort: 16261,
+          publicName: 'No RCON Scanned Server',
+          hasRcon: false,
+        },
+      ],
+    } as never)
+
+    fireEvent.click(screen.getByRole('button', { name: en.localForm.scan }))
+
+    const configButtonName = en.localForm.selectScannedConfigAria.replace('{{name}}', 'No RCON Scanned Server')
+    fireEvent.click(await screen.findByRole('button', { name: configButtonName }))
+
+    // Same condition, same operator-facing copy as the manual-detect path --
+    // reused verbatim rather than a second message for the same thing.
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: en.toasts.rconNotConfiguredTitle,
+          description: en.toasts.rconNotConfiguredDesc,
+          variant: 'destructive',
+        }),
+      ),
+    )
   })
 })
