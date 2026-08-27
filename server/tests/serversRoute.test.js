@@ -4,6 +4,7 @@ const createServer = vi.fn();
 const updateServer = vi.fn();
 const getServers = vi.fn();
 const getSetting = vi.fn();
+const getAllSettings = vi.fn();
 const testRconConnection = vi.fn();
 
 import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
@@ -11,6 +12,7 @@ import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 vi.mock("../database/init.js", () => ({
   getServers,
   getSetting,
+  getAllSettings,
   getServer: vi.fn(),
   getActiveServer: vi.fn(),
   createServer,
@@ -531,6 +533,10 @@ describe("GET /api/servers/rcon-status", () => {
 });
 
 describe("GET /api/servers", () => {
+  beforeEach(() => {
+    getAllSettings.mockReset().mockResolvedValue({});
+  });
+
   it("masks rconPassword/adminPassword for every server in the list", async () => {
     getServers.mockResolvedValue([
       { id: 1, name: "A", rconPassword: "secret-a", adminPassword: "admin-a" },
@@ -545,6 +551,58 @@ describe("GET /api/servers", () => {
     expect(payload.servers[0].rconPassword).not.toBe("secret-a");
     expect(payload.servers[0].adminPassword).not.toBe("admin-a");
     expect(payload.servers[1].rconPassword).not.toBe("secret-b");
+  });
+
+  // The Layout.tsx sidebar nav only ever reads remoteConfigConfigured off
+  // the entry it finds in THIS list's response (see GET /active, which sets
+  // the same field, is a dead end for that consumer -- nothing calls it).
+  // A regression here silently re-locks Server Configuration/Templates for
+  // every remote-server operator, with no error and no failed request.
+  it("marks a remote server as remoteConfigConfigured when SFTP-based remote config is set up", async () => {
+    getAllSettings.mockResolvedValue({
+      panelBridgeSftpHost: "192.168.1.50",
+      panelBridgeSftpConfigPath: "/home/pz/Server",
+    });
+    getServers.mockResolvedValue([
+      { id: 1, name: "Remote", isRemote: true },
+    ]);
+    const response = createResponse();
+    const layer = getLayer("/", "get");
+
+    await layer.route.stack[0].handle({}, response);
+
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.servers[0].remoteConfigConfigured).toBe(true);
+  });
+
+  it("does NOT mark a remote server as remoteConfigConfigured when SFTP is not set up", async () => {
+    getServers.mockResolvedValue([
+      { id: 1, name: "Remote", isRemote: true },
+    ]);
+    const response = createResponse();
+    const layer = getLayer("/", "get");
+
+    await layer.route.stack[0].handle({}, response);
+
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.servers[0].remoteConfigConfigured).toBe(false);
+  });
+
+  it("does NOT mark a local server as remoteConfigConfigured even when SFTP is set up (unused for local servers)", async () => {
+    getAllSettings.mockResolvedValue({
+      panelBridgeSftpHost: "192.168.1.50",
+      panelBridgeSftpConfigPath: "/home/pz/Server",
+    });
+    getServers.mockResolvedValue([
+      { id: 1, name: "Local", isRemote: false },
+    ]);
+    const response = createResponse();
+    const layer = getLayer("/", "get");
+
+    await layer.route.stack[0].handle({}, response);
+
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.servers[0].remoteConfigConfigured).toBe(false);
   });
 });
 

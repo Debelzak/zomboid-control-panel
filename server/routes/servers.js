@@ -489,11 +489,27 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
   }
 });
 
+// Shared by GET / and GET /active so the two routes can't drift on what
+// "remote config configured" means -- the client's only consumer of this
+// field (Layout.tsx's nav) reads it off the list from GET /, not GET
+// /active, so this must actually run in both places, not just one.
+// isRemoteConfigConfigured() only checks already-loaded settings fields
+// (no I/O), so computing it per row here costs nothing beyond the one
+// getAllSettings() call already made for the whole list.
+function computeRemoteConfigConfigured(server, settings) {
+  return server.isRemote ? isRemoteConfigConfigured(settings) : false;
+}
+
 // Get all servers
 router.get("/", async (req, res) => {
   try {
     const servers = await getServers();
-    res.json({ servers: sanitizeServerResponseList(servers) });
+    const settings = await getAllSettings();
+    const withRemoteConfig = servers.map((server) => ({
+      ...server,
+      remoteConfigConfigured: computeRemoteConfigConfigured(server, settings),
+    }));
+    res.json({ servers: sanitizeServerResponseList(withRemoteConfig) });
   } catch (error) {
     log.error(`Failed to get servers: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -618,9 +634,10 @@ router.get("/active", async (req, res) => {
     }
     // Lets the UI stop hiding file-based pages once a remote server's Server
     // folder is reachable over SFTP.
-    const remoteConfigConfigured = server.isRemote
-      ? isRemoteConfigConfigured(await getAllSettings())
-      : false;
+    const remoteConfigConfigured = computeRemoteConfigConfigured(
+      server,
+      await getAllSettings(),
+    );
     res.json({
       server: sanitizeServerResponse({ ...server, remoteConfigConfigured }),
     });
