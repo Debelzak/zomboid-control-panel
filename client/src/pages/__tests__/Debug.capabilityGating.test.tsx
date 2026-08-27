@@ -5,7 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ConfirmProvider } from '@/contexts/ConfirmContext'
 import { getRequiredCapabilityForCheck } from '../Debug'
 import Debug from '../Debug'
-import { apiFetch, modsApi } from '@/lib/api'
+import { apiFetch, modsApi, serverApi, rconApi, backupApi, panelBridgeApi, serverFilesApi } from '@/lib/api'
 
 // bug-hunt-2026-08-26/27: Jim's catalogue (catalogue-debug-tsx-destructive-
 // auto-fixes) confirmed all 11 automated diagnostics fixes are already
@@ -43,11 +43,21 @@ vi.mock('@/lib/api', async () => {
     ...actual,
     apiFetch: vi.fn(),
     modsApi: { ...actual.modsApi, batchToggleModIds: vi.fn() },
+    serverApi: { ...actual.serverApi, start: vi.fn() },
+    rconApi: { ...actual.rconApi, connect: vi.fn() },
+    backupApi: { ...actual.backupApi, createBackup: vi.fn() },
+    panelBridgeApi: { ...actual.panelBridgeApi, autoConfigure: vi.fn() },
+    serverFilesApi: { ...actual.serverFilesApi, repairSandbox: vi.fn() },
   }
 })
 
 const mockedApiFetch = vi.mocked(apiFetch)
 const batchToggleModIds = vi.mocked(modsApi.batchToggleModIds)
+const serverStart = vi.mocked(serverApi.start)
+const rconConnect = vi.mocked(rconApi.connect)
+const createBackup = vi.mocked(backupApi.createBackup)
+const bridgeAutoConfigure = vi.mocked(panelBridgeApi.autoConfigure)
+const repairSandbox = vi.mocked(serverFilesApi.repairSandbox)
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -60,7 +70,7 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 const diagnosticsFixture = {
   timestamp: '2026-08-27T00:00:00.000Z',
   overall: 'fail',
-  summary: { ok: 0, warn: 0, fail: 2, info: 0, skip: 0 },
+  summary: { ok: 0, warn: 0, fail: 7, info: 0, skip: 0 },
   categories: {
     mods: { label: 'Mods', order: 1 },
     server: { label: 'Server', order: 2 },
@@ -81,6 +91,54 @@ const diagnosticsFixture = {
       status: 'fail',
       severity: 'critical',
       message: 'Stale lock files found under the save directory.',
+      category: 'server',
+    },
+    {
+      id: 'server.process',
+      label: 'Server not running',
+      status: 'fail',
+      severity: 'critical',
+      message: 'The server process is not running.',
+      category: 'server',
+    },
+    {
+      id: 'rcon.connected',
+      label: 'RCON not connected',
+      status: 'fail',
+      severity: 'warning',
+      message: 'RCON is not connected.',
+      category: 'server',
+    },
+    {
+      id: 'db.backup',
+      label: 'No recent database backup',
+      status: 'fail',
+      severity: 'warning',
+      message: 'No recent backup was found.',
+      category: 'server',
+    },
+    {
+      id: 'bridge.configured',
+      label: 'Bridge not configured',
+      status: 'fail',
+      severity: 'warning',
+      message: 'The panel bridge is not configured.',
+      category: 'server',
+    },
+    {
+      id: 'server.sandboxCorrupt',
+      label: 'SandboxVars corrupt',
+      status: 'fail',
+      severity: 'critical',
+      message: 'SandboxVars.lua is corrupt.',
+      category: 'server',
+    },
+    {
+      id: 'server.recentCrash',
+      label: 'Recent crash detected',
+      status: 'fail',
+      severity: 'warning',
+      message: 'A recent crash was detected in the server log.',
       category: 'server',
     },
   ],
@@ -207,5 +265,168 @@ describe('Debug.tsx: automated fixes are gated on their own capability, not one 
         expect.objectContaining({ method: 'POST' }),
       ),
     )
+  })
+})
+
+// god (2026-08-27, bug-hunt-2026-08-26): "the failure mode here is gating a
+// fix on the wrong one of the seven, which no disabled-state assertion can
+// detect either." The two suites above prove the wiring is generic and
+// correct for mods.manage + diagnostics.manage; this suite proves it holds
+// for the remaining five capabilities too, each one clicking all the way
+// through to its OWN real (mocked) API call -- not just "not disabled."
+describe('Debug.tsx: every automated fix reaches its own real API when granted its own capability (not a neighbor\'s)', () => {
+  it('server.control: the server-not-running fix calls serverApi.start', async () => {
+    mockCan = () => true
+    setUpApiFetch()
+    serverStart.mockResolvedValue({ success: true, message: 'Starting...' })
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /start server/i })
+    expect(fixButton).not.toBeDisabled()
+
+    fireEvent.click(fixButton)
+    await waitFor(() => expect(serverStart).toHaveBeenCalledTimes(1))
+  })
+
+  it('server.control withheld: the server-not-running fix is disabled and never calls serverApi.start', async () => {
+    mockCan = (capability) => capability !== 'server.control'
+    setUpApiFetch()
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /start server/i })
+    expect(fixButton).toBeDisabled()
+
+    fireEvent.click(fixButton)
+    expect(serverStart).not.toHaveBeenCalled()
+  })
+
+  it('rcon.execute: the RCON-disconnected fix calls rconApi.connect', async () => {
+    mockCan = () => true
+    setUpApiFetch()
+    rconConnect.mockResolvedValue({ success: true, connected: true, message: 'Connected' })
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /reconnect rcon/i })
+    expect(fixButton).not.toBeDisabled()
+
+    fireEvent.click(fixButton)
+    await waitFor(() => expect(rconConnect).toHaveBeenCalledTimes(1))
+  })
+
+  it('rcon.execute withheld: the RCON-disconnected fix is disabled and never calls rconApi.connect', async () => {
+    mockCan = (capability) => capability !== 'rcon.execute'
+    setUpApiFetch()
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /reconnect rcon/i })
+    expect(fixButton).toBeDisabled()
+
+    fireEvent.click(fixButton)
+    expect(rconConnect).not.toHaveBeenCalled()
+  })
+
+  it('backups.manage: the no-recent-backup fix calls backupApi.createBackup', async () => {
+    mockCan = () => true
+    setUpApiFetch()
+    createBackup.mockResolvedValue({ success: true, backup: { name: 'backup-1.json' } })
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /create database backup/i })
+    expect(fixButton).not.toBeDisabled()
+
+    fireEvent.click(fixButton)
+    await waitFor(() => expect(createBackup).toHaveBeenCalledWith(expect.objectContaining({ includeDb: true })))
+  })
+
+  it('backups.manage withheld: the no-recent-backup fix is disabled and never calls backupApi.createBackup', async () => {
+    mockCan = (capability) => capability !== 'backups.manage'
+    setUpApiFetch()
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /create database backup/i })
+    expect(fixButton).toBeDisabled()
+
+    fireEvent.click(fixButton)
+    expect(createBackup).not.toHaveBeenCalled()
+  })
+
+  it('bridge.setup: the bridge-not-configured fix calls panelBridgeApi.autoConfigure', async () => {
+    mockCan = () => true
+    setUpApiFetch()
+    bridgeAutoConfigure.mockResolvedValue({ success: true, serverName: 'MyServer' })
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /auto-configure bridge/i })
+    expect(fixButton).not.toBeDisabled()
+
+    fireEvent.click(fixButton)
+    await waitFor(() => expect(bridgeAutoConfigure).toHaveBeenCalledTimes(1))
+  })
+
+  it('bridge.setup withheld: the bridge-not-configured fix is disabled and never calls panelBridgeApi.autoConfigure', async () => {
+    mockCan = (capability) => capability !== 'bridge.setup'
+    setUpApiFetch()
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /auto-configure bridge/i })
+    expect(fixButton).toBeDisabled()
+
+    fireEvent.click(fixButton)
+    expect(bridgeAutoConfigure).not.toHaveBeenCalled()
+  })
+
+  it('serverfiles.manage: the sandbox-corrupt fix calls serverFilesApi.repairSandbox', async () => {
+    mockCan = () => true
+    setUpApiFetch()
+    repairSandbox.mockResolvedValue({ success: true, alreadyValid: false, message: 'Repaired.', changes: ['fixed brace'] })
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /repair sandboxvars/i })
+    expect(fixButton).not.toBeDisabled()
+
+    fireEvent.click(fixButton)
+    await waitFor(() => expect(repairSandbox).toHaveBeenCalledTimes(1))
+  })
+
+  it('serverfiles.manage withheld: the sandbox-corrupt fix is disabled and never calls serverFilesApi.repairSandbox', async () => {
+    mockCan = (capability) => capability !== 'serverfiles.manage'
+    setUpApiFetch()
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /repair sandboxvars/i })
+    expect(fixButton).toBeDisabled()
+
+    fireEvent.click(fixButton)
+    expect(repairSandbox).not.toHaveBeenCalled()
+  })
+})
+
+// god (2026-08-27): "Gating a control that needs no capability hides a
+// working button, which is the same class of harm as leaving a real one
+// open." server.recentCrash's automated fix only calls setActiveTab -- no
+// API, no capability -- so it must stay enabled even when every capability
+// is withheld.
+describe('Debug.tsx: the one automated fix with no API call is never gated', () => {
+  it('server.recentCrash stays enabled and switches tabs even when every capability is withheld', async () => {
+    mockCan = () => false
+    setUpApiFetch()
+
+    renderDebug()
+
+    const fixButton = await screen.findByRole('button', { name: /view crash logs/i })
+    expect(fixButton).not.toBeDisabled()
+
+    fireEvent.click(fixButton)
+    await waitFor(() => expect(screen.getByRole('tab', { name: /crash/i })).toHaveAttribute('aria-selected', 'true'))
   })
 })
