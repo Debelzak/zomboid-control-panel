@@ -1515,6 +1515,7 @@ export default function Players() {
                               setUnbanSteamId(ban.steamId)
                               setUnbanSteamIdDialogOpen(true)
                             }}
+                            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Unban {steamId}"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                             title={t('roster.unbanTitle', { steamId: ban.steamId })}
                           >
                             {t('roster.unbanButton')}
@@ -1570,6 +1571,7 @@ export default function Players() {
                               className="shrink-0"
                               onClick={() => handleAction(t('actions.removeFromWhitelist'), () => playersApi.removeFromWhitelist(account.username), () => { void fetchWhitelist() })}
                               disabled={loading || !canModerate}
+                              // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Remove {username} from whitelist"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                               title={t('roster.removeTitle', { username: account.username })}
                             >
                               <UserMinus className="mr-1.5 h-3.5 w-3.5" />
@@ -1615,6 +1617,7 @@ export default function Players() {
                         className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                         onClick={() => handleAction(t('actions.removeAllowedSteamId'), () => playersApi.removeAllowedSteamId(steamId), () => { void fetchWhitelist() })}
                         disabled={loading || !canModerate}
+                        // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Remove allowed Steam ID {steamId}"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                         title={t('roster.removeAllowedTitle', { steamId })}
                       >
                         <Trash2 className="mr-1 h-3.5 w-3.5" /> {t('roster.removeAllowedButton')}
@@ -1757,6 +1760,7 @@ export default function Players() {
                             onClick={() => setKickDialogOpen(true)}
                             disabled={!canModerate}
                             className="h-8 gap-1.5 border-amber-500/40 text-xs font-medium text-amber-300 hover:border-amber-500/60 hover:bg-amber-500/10 hover:text-amber-200"
+                            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Kick player"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                             title={t('dossier.kickTitle')}
                           >
                             <UserX className="h-3.5 w-3.5" />
@@ -1770,6 +1774,7 @@ export default function Players() {
                             onClick={() => setBanDialogOpen(true)}
                             disabled={!canModerate}
                             className="h-8 gap-1.5 border-destructive/45 text-xs font-medium text-destructive hover:border-destructive/65 hover:bg-destructive/10"
+                            // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Ban player"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                             title={t('dossier.banTitle')}
                           >
                             <Ban className="h-3.5 w-3.5" />
@@ -2144,6 +2149,7 @@ export default function Players() {
                   <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={voiceBanDialogOpen} onOpenChange={setVoiceBanDialogOpen}>
                     <DialogTrigger asChild>
+                      {/* eslint-disable-next-line local/no-dead-disabled-title -- pure hint (explains what voice-banning does); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27. */}
                       <button type="button" disabled={!canModerate} title={t('actionTiles.voiceBanTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<MicOff className="w-4 h-4" />} label={t('actionTiles.voiceBanLabel')} compact />
                       </button>
@@ -2205,6 +2211,7 @@ export default function Players() {
                   <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={steamIdBanDialogOpen} onOpenChange={setSteamIdBanDialogOpen}>
                     <DialogTrigger asChild>
+                      {/* eslint-disable-next-line local/no-dead-disabled-title -- pure hint (explains what SteamID banning does); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27. */}
                       <button type="button" disabled={!canModerate} title={t('actionTiles.steamIdBanTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<Ban className="w-4 h-4" />} label={t('actionTiles.steamIdBanLabel')} emphasis="danger" compact />
                       </button>
@@ -2258,6 +2265,7 @@ export default function Players() {
                   <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
                     <DialogTrigger asChild>
+                      {/* eslint-disable-next-line local/no-dead-disabled-title -- pure hint (explains what adding a user does); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27. */}
                       <button type="button" disabled={!canModerate} title={t('actionTiles.addUserTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label={t('actionTiles.addUserLabel')} compact />
                       </button>
@@ -2310,6 +2318,7 @@ export default function Players() {
                   <DisabledReason className="w-full" reason={!canModerate ? t('permissions.noModerate') : null}>
                   <Dialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
                     <DialogTrigger asChild>
+                      {/* eslint-disable-next-line local/no-dead-disabled-title -- pure hint (explains what unbanning by username does); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27. */}
                       <button type="button" disabled={!canModerate} title={t('actionTiles.unbanTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label={t('actionTiles.unbanLabel')} compact />
                       </button>
@@ -2344,6 +2353,7 @@ export default function Players() {
                     else setUnbanSteamId('')
                   }}>
                     <DialogTrigger asChild>
+                      {/* eslint-disable-next-line local/no-dead-disabled-title -- pure hint (explains what lifting a SteamID ban does); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27. */}
                       <button type="button" disabled={!canModerate} title={t('actionTiles.unbanSteamIdTooltip')} className="block h-auto w-full p-0 text-left">
                         <ActionTile icon={<UserPlus className="w-4 h-4" />} label={t('actionTiles.unbanSteamIdLabel')} compact />
                       </button>

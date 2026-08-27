@@ -935,6 +935,7 @@ export default function Scheduler() {
                 disabled={loading || !serverRunning || !canRestartNow}
                 variant="outline"
                 size="sm"
+                // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Restart in 15 minutes with countdown warnings"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                 title={t('manualRestart.restartIn15Title')}
               >
                 <Clock className="w-4 h-4 mr-2" />
@@ -947,6 +948,7 @@ export default function Scheduler() {
                 disabled={loading || !serverRunning || !canRestartNow}
                 variant="outline"
                 size="sm"
+                // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Restart in 10 minutes with countdown warnings"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                 title={t('manualRestart.restartIn10Title')}
               >
                 <Clock className="w-4 h-4 mr-2" />
@@ -959,6 +961,7 @@ export default function Scheduler() {
                 disabled={loading || !serverRunning || !canRestartNow}
                 variant="outline"
                 size="sm"
+                // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Restart in 5 minutes with countdown warnings"); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                 title={t('manualRestart.restartIn5Title')}
               >
                 <Clock className="w-4 h-4 mr-2" />
@@ -972,6 +975,7 @@ export default function Scheduler() {
                   disabled={loading || !serverRunning || !canRestartNow}
                   variant="warning"
                   size="sm"
+                  // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Restart in 1 minute — short warning, requires confirmation", describing the action's own confirm-dialog behavior, not why it's disabled); the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
                   title={t('manualRestart.restartIn1Title')}
                 >
                   <Clock className="w-4 h-4 mr-2" />
@@ -1177,6 +1181,7 @@ export default function Scheduler() {
                         size="sm"
                         onClick={() => handleRunNow(task)}
                         disabled={loading || runningTaskId !== null}
+                        // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Run task now"); disables only on transient UI state (a page-wide loading flag, or another task already running), not a permission gate -- no DisabledReason-worthy reason to lose. Triaged 2026-08-27.
                         title={t('scheduledTasks.runNowTitle')}
                         aria-label={t('scheduledTasks.runNowAria', { name: task.name })}
                       >
@@ -1191,6 +1196,7 @@ export default function Scheduler() {
                         size="sm"
                         onClick={() => handleEditTask(task)}
                         disabled={loading}
+                        // eslint-disable-next-line local/no-dead-disabled-title -- pure hint ("Edit task"); disables only on the page-wide loading flag, not a permission gate -- no DisabledReason-worthy reason to lose. Triaged 2026-08-27.
                         title={t('scheduledTasks.editTitle')}
                         aria-label={t('scheduledTasks.editAria', { name: task.name })}
                       >
