@@ -115,7 +115,10 @@
     "progressDownloading": "下载中...",
     "progressValidating": "校验文件中...",
     "progressVerifying": "校验安装中...",
-    "progressComplete": "完成！"
+    "progressComplete": "完成！",
+    "noPermissionInstall": "安装服务器需要 server.install 权限，而该角色没有此权限。",
+    "noPermissionSettings": "保存此设置需要 panel.settings 权限，而该角色没有此权限。",
+    "noPermissionControl": "启动服务器需要 server.control 权限，而该角色没有此权限。"
   },
   "full": {
     "pageTitle": "全新安装",

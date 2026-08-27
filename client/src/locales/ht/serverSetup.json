@@ -115,7 +115,10 @@
     "progressDownloading": "N ap telechaje...",
     "progressValidating": "N ap valide fichye...",
     "progressVerifying": "N ap verifye enstalasyon...",
-    "progressComplete": "Fini!"
+    "progressComplete": "Fini!",
+    "noPermissionInstall": "Pou ou enstale yon sèvè, ou bezwen pèmisyon server.install, e wòl sa a pa genyen li.",
+    "noPermissionSettings": "Pou ou sove paramèt sa a, ou bezwen pèmisyon panel.settings, e wòl sa a pa genyen li.",
+    "noPermissionControl": "Pou ou demare sèvè a, ou bezwen pèmisyon server.control, e wòl sa a pa genyen li."
   },
   "full": {
     "pageTitle": "Nouvèl Enstalasyon",

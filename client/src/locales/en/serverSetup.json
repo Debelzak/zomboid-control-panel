@@ -115,7 +115,10 @@
     "progressDownloading": "Downloading...",
     "progressValidating": "Validating files...",
     "progressVerifying": "Verifying installation...",
-    "progressComplete": "Complete!"
+    "progressComplete": "Complete!",
+    "noPermissionInstall": "Installing a server requires the server.install permission, which this role doesn't have.",
+    "noPermissionSettings": "Saving this setting requires the panel.settings permission, which this role doesn't have.",
+    "noPermissionControl": "Starting the server requires the server.control permission, which this role doesn't have."
   },
   "full": {
     "pageTitle": "Fresh Install",

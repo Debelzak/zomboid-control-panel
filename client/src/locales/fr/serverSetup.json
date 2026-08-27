@@ -115,7 +115,10 @@
     "progressDownloading": "Téléchargement...",
     "progressValidating": "Validation des fichiers...",
     "progressVerifying": "Vérification de l'installation...",
-    "progressComplete": "Terminé !"
+    "progressComplete": "Terminé !",
+    "noPermissionInstall": "Installer un serveur nécessite la permission server.install, que ce rôle ne possède pas.",
+    "noPermissionSettings": "Enregistrer ce paramètre nécessite la permission panel.settings, que ce rôle ne possède pas.",
+    "noPermissionControl": "Démarrer le serveur nécessite la permission server.control, que ce rôle ne possède pas."
   },
   "full": {
     "pageTitle": "Nouvelle installation",

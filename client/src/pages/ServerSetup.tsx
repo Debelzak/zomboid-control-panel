@@ -30,7 +30,9 @@ import {
 import { configApi, serverApi, serversApi, debugApi, apiFetch } from "@/lib/api";
 import { HelpTip } from "@/components/HelpTip";
 import { NumberInput } from "@/components/NumberInput";
+import { DisabledReason } from "@/components/DisabledReason";
 import { getInstallProgressMessage } from "@/lib/installProgressMessage";
+import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -300,9 +302,23 @@ export default function ServerSetup() {
   const [steamCmdStatus, setSteamCmdStatus] = useState<string>("");
 
   const { toast } = useToast();
+  const { can } = useAuth();
   const socket = useContext(SocketContext);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  // POST /server/steamcmd/download, /server/install, /server/quick-setup all
+  // require server.install (server.js:3643/2062/2679); PUT /config/app-settings
+  // requires panel.settings at the route (config.js:256) -- a DIFFERENT
+  // capability from its server.install-gated neighbors, which is exactly why
+  // TECHNICIAN (holds server.install/server.control/servers.manage but not
+  // panel.settings, server/services/permissions.js:299-320) hits a silent
+  // 403 saving the SteamCMD path manually today; POST /server/start requires
+  // server.control (server.js:1045). Open/true when capabilities are
+  // unknown/null, same convention as every other capability check in the app.
+  const canInstall = can("server.install");
+  const canSaveSteamCmdPath = can("panel.settings");
+  const canControlServer = can("server.control");
   const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [startingServer, setStartingServer] = useState(false);
 
@@ -771,6 +787,7 @@ export default function ServerSetup() {
   };
 
   const handleAutoDownloadSteamCmd = async () => {
+    if (!canInstall) return;
     setDownloadingSteamCmd(true);
     setSteamCmdStatus(t("toasts.startingDownloadLog"));
     try {
@@ -852,6 +869,7 @@ export default function ServerSetup() {
   };
 
   const handleInstall = async () => {
+    if (!canInstall) return;
     if (!adminPassword) {
       toast({
         title: t("toasts.adminPasswordRequiredTitle"),
@@ -910,6 +928,7 @@ export default function ServerSetup() {
   };
 
   const handleQuickSetup = async () => {
+    if (!canInstall) return;
     if (!adminPassword) {
       toast({
         title: t("toasts.adminPasswordRequiredTitle"),
@@ -1041,6 +1060,7 @@ export default function ServerSetup() {
   };
 
   const handleSaveSteamCmdPath = async () => {
+    if (!canSaveSteamCmdPath) return;
     try {
       await configApi.updateAppSettings({ steamcmdPath: steamCmdPath });
       setHasSteamCmd(true);
@@ -1054,6 +1074,32 @@ export default function ServerSetup() {
         description: t("toasts.saveFailedDesc"),
         variant: "destructive",
       });
+    }
+  };
+
+  // Shared by both post-install "Start Server Now" buttons (full-wizard and
+  // quick-setup completion screens) -- was duplicated inline at each render
+  // site before this gate; extracted so the server.control guard lives in
+  // one place instead of needing to be copied into two identical blocks.
+  const handleStartServerNow = async () => {
+    if (!canControlServer) return;
+    setStartingServer(true);
+    try {
+      await serverApi.start();
+      toast({
+        title: t("toasts.serverStartingTitle"),
+        description: t("toasts.serverStartingDesc"),
+      });
+      navigateTimerRef.current = setTimeout(() => navigate("/"), 2000);
+    } catch (error) {
+      toast({
+        title: t("toasts.startFailedTitle"),
+        description:
+          error instanceof Error ? error.message : t("common.unknownError"),
+        variant: "destructive",
+      });
+    } finally {
+      setStartingServer(false);
     }
   };
 
@@ -1392,24 +1438,26 @@ export default function ServerSetup() {
                     </TooltipProvider>
                   </div>
 
-                  <Button
-                    onClick={handleAutoDownloadSteamCmd}
-                    disabled={downloadingSteamCmd}
-                    className="w-full"
-                    size="lg"
-                  >
-                    {downloadingSteamCmd ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        {steamCmdStatus || t("full.step1.installingButton")}
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4 mr-2" />
-                        {t("full.step1.installButton")}
-                      </>
-                    )}
-                  </Button>
+                  <DisabledReason reason={!canInstall ? t("common.noPermissionInstall") : null}>
+                    <Button
+                      onClick={handleAutoDownloadSteamCmd}
+                      disabled={downloadingSteamCmd || !canInstall}
+                      className="w-full"
+                      size="lg"
+                    >
+                      {downloadingSteamCmd ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {steamCmdStatus || t("full.step1.installingButton")}
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          {t("full.step1.installButton")}
+                        </>
+                      )}
+                    </Button>
+                  </DisabledReason>
                 </div>
               </div>
             </CardContent>
@@ -1476,7 +1524,11 @@ export default function ServerSetup() {
                     >
                       <FolderOpen className="w-4 h-4" />
                     </Button>
-                    <Button onClick={handleSaveSteamCmdPath}>{t("full.step1.savePathButton")}</Button>
+                    <DisabledReason reason={!canSaveSteamCmdPath ? t("common.noPermissionSettings") : null}>
+                      <Button onClick={handleSaveSteamCmdPath} disabled={!canSaveSteamCmdPath}>
+                        {t("full.step1.savePathButton")}
+                      </Button>
+                    </DisabledReason>
                   </div>
                 </div>
               </AccordionContent>
@@ -2105,24 +2157,26 @@ export default function ServerSetup() {
       </div>
 
       {/* Install Button */}
-      <Button
-        onClick={handleInstall}
-        disabled={installing || missingAdminPassword}
-        className="w-full"
-        size="lg"
-      >
-        {installing ? (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            {t("full.step4.installingButton")}
-          </>
-        ) : (
-          <>
-            <Download className="w-4 h-4 mr-2" />
-            {t("full.step4.installButton")}
-          </>
-        )}
-      </Button>
+      <DisabledReason reason={!canInstall ? t("common.noPermissionInstall") : null}>
+        <Button
+          onClick={handleInstall}
+          disabled={installing || missingAdminPassword || !canInstall}
+          className="w-full"
+          size="lg"
+        >
+          {installing ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              {t("full.step4.installingButton")}
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4 mr-2" />
+              {t("full.step4.installButton")}
+            </>
+          )}
+        </Button>
+      </DisabledReason>
 
       {missingAdminPassword && (
         <p className="text-sm text-warning">
@@ -2207,46 +2261,24 @@ export default function ServerSetup() {
             </div>
 
             <div className="flex gap-3">
-              <Button
-                onClick={async () => {
-                  setStartingServer(true);
-                  try {
-                    await serverApi.start();
-                    toast({
-                      title: t("toasts.serverStartingTitle"),
-                      description: t("toasts.serverStartingDesc"),
-                    });
-                    navigateTimerRef.current = setTimeout(
-                      () => navigate("/"),
-                      2000,
-                    );
-                  } catch (error) {
-                    toast({
-                      title: t("toasts.startFailedTitle"),
-                      description:
-                        error instanceof Error
-                          ? error.message
-                          : t("common.unknownError"),
-                      variant: "destructive",
-                    });
-                  } finally {
-                    setStartingServer(false);
-                  }
-                }}
-                disabled={startingServer}
-                className="flex-1"
-              >
-                {startingServer ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
-                    {t("common.startingButton")}
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" /> {t("common.startServerButton")}
-                  </>
-                )}
-              </Button>
+              <DisabledReason reason={!canControlServer ? t("common.noPermissionControl") : null}>
+                <Button
+                  onClick={handleStartServerNow}
+                  disabled={startingServer || !canControlServer}
+                  className="flex-1"
+                >
+                  {startingServer ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
+                      {t("common.startingButton")}
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" /> {t("common.startServerButton")}
+                    </>
+                  )}
+                </Button>
+              </DisabledReason>
               <Button variant="outline" onClick={() => navigate("/")}>
                 {t("common.openDashboardButton")}
               </Button>
@@ -2754,9 +2786,10 @@ export default function ServerSetup() {
       </Card>
 
       {/* Create Button */}
+      <DisabledReason reason={!canInstall ? t("common.noPermissionInstall") : null}>
       <Button
         onClick={handleQuickSetup}
-        disabled={installing || missingAdminPassword}
+        disabled={installing || missingAdminPassword || !canInstall}
         className="w-full"
         size="lg"
       >
@@ -2772,6 +2805,7 @@ export default function ServerSetup() {
           </>
         )}
       </Button>
+      </DisabledReason>
 
       {missingAdminPassword && (
         <p className="text-sm text-warning">
@@ -2820,46 +2854,24 @@ export default function ServerSetup() {
             </div>
 
             <div className="flex gap-3">
-              <Button
-                onClick={async () => {
-                  setStartingServer(true);
-                  try {
-                    await serverApi.start();
-                    toast({
-                      title: t("toasts.serverStartingTitle"),
-                      description: t("toasts.serverStartingDesc"),
-                    });
-                    navigateTimerRef.current = setTimeout(
-                      () => navigate("/"),
-                      2000,
-                    );
-                  } catch (error) {
-                    toast({
-                      title: t("toasts.startFailedTitle"),
-                      description:
-                        error instanceof Error
-                          ? error.message
-                          : t("common.unknownError"),
-                      variant: "destructive",
-                    });
-                  } finally {
-                    setStartingServer(false);
-                  }
-                }}
-                disabled={startingServer}
-                className="flex-1"
-              >
-                {startingServer ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
-                    {t("common.startingButton")}
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" /> {t("common.startServerButton")}
-                  </>
-                )}
-              </Button>
+              <DisabledReason reason={!canControlServer ? t("common.noPermissionControl") : null}>
+                <Button
+                  onClick={handleStartServerNow}
+                  disabled={startingServer || !canControlServer}
+                  className="flex-1"
+                >
+                  {startingServer ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
+                      {t("common.startingButton")}
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" /> {t("common.startServerButton")}
+                    </>
+                  )}
+                </Button>
+              </DisabledReason>
               <Button variant="outline" onClick={() => navigate("/")}>
                 {t("common.openDashboardButton")}
               </Button>

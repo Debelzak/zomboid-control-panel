@@ -28,6 +28,24 @@ vi.mock('@/lib/api', async () => {
   }
 })
 
+// bug-hunt-2026-08-27: ServerSetup.tsx gained its first useAuth() call for
+// capability gating -- outside an AuthProvider that throws, which this file
+// never wrapped in one because it never needed one before. can() fails open
+// (returns true) so none of the assertions below, none of which are about
+// capability gating, are affected by it.
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: { id: 'u1', username: 'someone', role: 'admin', capabilities: [] },
+    authEnabled: true,
+    isAuthenticated: true,
+    isLoading: false,
+    needsSetup: false,
+    logout: vi.fn(),
+    getToken: () => 'fake-token',
+    can: () => true,
+  }),
+}))
+
 // useToast's own store is a module-level singleton (memoryState, not React
 // state) with no reset hook -- toasts from an earlier test in this same file
 // would otherwise still be sitting in the DOM (TOAST_LIMIT=5) when the next

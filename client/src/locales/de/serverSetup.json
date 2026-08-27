@@ -115,7 +115,10 @@
     "progressDownloading": "Wird heruntergeladen…",
     "progressValidating": "Dateien werden validiert…",
     "progressVerifying": "Installation wird überprüft…",
-    "progressComplete": "Abgeschlossen!"
+    "progressComplete": "Abgeschlossen!",
+    "noPermissionInstall": "Die Installation eines Servers erfordert die Berechtigung server.install, über die diese Rolle nicht verfügt.",
+    "noPermissionSettings": "Das Speichern dieser Einstellung erfordert die Berechtigung panel.settings, über die diese Rolle nicht verfügt.",
+    "noPermissionControl": "Das Starten des Servers erfordert die Berechtigung server.control, über die diese Rolle nicht verfügt."
   },
   "full": {
     "pageTitle": "Neuinstallation",

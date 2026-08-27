@@ -115,7 +115,10 @@
     "progressDownloading": "Descargando…",
     "progressValidating": "Validando archivos…",
     "progressVerifying": "Verificando instalación…",
-    "progressComplete": "¡Completado!"
+    "progressComplete": "¡Completado!",
+    "noPermissionInstall": "Instalar un servidor requiere el permiso server.install, del cual este rol no dispone.",
+    "noPermissionSettings": "Guardar este ajuste requiere el permiso panel.settings, del cual este rol no dispone.",
+    "noPermissionControl": "Iniciar el servidor requiere el permiso server.control, del cual este rol no dispone."
   },
   "full": {
     "pageTitle": "Instalación nueva",
