@@ -751,3 +751,153 @@ describe("customPath must resolve to a location the panel already recognizes", (
     expect(fs.existsSync(chunk)).toBe(false);
   });
 });
+
+// bug-hunt-2026-08-27, card delete-region-two-completeness-gaps-vs-its-
+// sibling (ranked #4/46): delete-region did measurably less of the same
+// destructive cleanup than /delete-chunks -- silently, since both return a
+// plain success response either way. Two gaps named by the card, both
+// confirmed still real at HEAD before being fixed:
+// (a) delete-region's own scan never walked the chunkdata/ folder at all,
+//     so a cell whose ONLY record is a chunkdata entry (no map/X/Y.bin)
+//     survived a region delete untouched -- GET /chunks/:saveName and
+//     /delete-chunks both handle this source.
+// (b) delete-region's B42/B41 classification used the narrower
+//     `xDirs.length > 0` (does map/ currently have numeric subdirectories)
+//     instead of the shared detectSaveIsB42Sync() (also checks B42
+//     indicator files) -- misreads a B42 save with a fresh or emptied-out
+//     map/ folder as B41, picking the wrong cell divisor.
+// A third gap falls directly out of fixing (a) correctly rather than just
+// "not crashing" on chunkdata entries: the vehicles.db cleanup box for a
+// chunkdata entry must span its WHOLE cell, not one chunk -- delete-chunks
+// already knows this (see its own "chunkdata covers the whole cell" box-
+// building comment); porting chunkdata support into delete-region without
+// the same expansion would have shipped a new, narrower silent-miss in the
+// same request that closes the other two.
+describe("delete-region: chunkdata-only cells (gap a)", () => {
+  it("deletes a chunkdata-only cell inside the region even though it has no matching map/X/Y.bin file at all", async () => {
+    // Unrelated real B42 chunk elsewhere, purely so xDirs.length > 0 and
+    // this test exercises gap (a) in isolation from gap (b)'s detection fix.
+    const unrelatedChunk = path.join(savePath, "map", "50", "50.bin");
+    writeFileDeep(unrelatedChunk, "u");
+
+    // Cell (0,0): ONLY a chunkdata record, no map/0/0.bin -- the exact shape
+    // the card's "chunkdata-only entries" gap describes.
+    // Bare "X_Y.bin" -- the per-entry chunkdata scan format used by GET
+    // /chunks/:saveName and /delete-chunks (NOT the "chunkdata_X_Y.bin" cell-
+    // AUX naming cleanupEmptyCellFiles uses -- a different file, different
+    // purpose, same folder).
+    const chunkDataOnly = path.join(savePath, "chunkdata", "0_0.bin");
+    writeFileDeep(chunkDataOnly, "cd");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(chunkDataOnly), "the chunkdata-only cell must be deleted").toBe(false);
+    expect(fs.existsSync(unrelatedChunk), "unrelated cell must survive").toBe(true);
+  });
+
+  it("leaves a chunkdata entry outside the region untouched, and invert:true deletes it instead while sparing the in-region one", async () => {
+    // 9_9.bin's displayX/Y lands outside [0,5] under either B42 or B41 math
+    // (288 or 270), so this test doesn't need to isolate gap (b) separately.
+    const insideRegion = path.join(savePath, "chunkdata", "0_0.bin"); // displayX/Y = 0,0
+    const outsideRegion = path.join(savePath, "chunkdata", "9_9.bin"); // displayX/Y = 288 or 270
+    writeFileDeep(insideRegion, "a");
+    writeFileDeep(outsideRegion, "b");
+
+    const res1 = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+      invert: false,
+    });
+    expect(res1.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(insideRegion)).toBe(false);
+    expect(fs.existsSync(outsideRegion), "outside the region -- must survive a non-inverted delete").toBe(true);
+
+    const res2 = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+      invert: true,
+    });
+    expect(res2.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(outsideRegion), "inverted delete removes what's outside the region").toBe(false);
+  });
+});
+
+describe("delete-region: B42 vs B41 classification for chunkdata coordinates (gap b)", () => {
+  it("converts chunkdata cell coords using the B42 divisor (32), not B41 (30), even when map/ has no numeric subdirectories yet", async () => {
+    // map/ exists but is EMPTY -- xDirs.length === 0, the exact "fresh or
+    // empty map/ folder" shape the card names. The old `xDirs.length > 0`
+    // heuristic would misread this as B41; a B42 indicator file at the save
+    // root is the only evidence detectSaveIsB42Sync has to go on here.
+    fs.mkdirSync(path.join(savePath, "map"), { recursive: true });
+    writeFileDeep(path.join(savePath, "WorldDictionary.bin"), "indicator");
+
+    // 1_0.bin: rawX=1 -> displayX = 32 under correct B42 math, or 30 under
+    // the old buggy B41-shaped math. Region [31,40] straddles that exact
+    // gap: only the correct (B42) conversion falls inside it.
+    const cell = path.join(savePath, "chunkdata", "1_0.bin");
+    writeFileDeep(cell, "cd");
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 31,
+      maxX: 40,
+      minY: 0,
+      maxY: 0,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(expect.objectContaining({ success: true, deleted: 1 }));
+    expect(fs.existsSync(cell), "misclassifying this save as B41 would compute displayX=30, outside [31,40], and silently skip it").toBe(false);
+  });
+});
+
+describe("delete-region: chunkdata deletion prunes vehicles across the WHOLE cell, not just its corner chunk", () => {
+  it("prunes a vehicle sitting in the cell's interior (well outside the corner chunk's own 8x8 tile box) when deleting a chunkdata-only cell", async () => {
+    writeFileDeep(path.join(savePath, "map", "50", "50.bin"), "u"); // xDirs.length > 0, isolates this from gap (b)
+
+    const chunkDataOnly = path.join(savePath, "chunkdata", "0_0.bin"); // cell (0,0)
+    writeFileDeep(chunkDataOnly, "cd");
+
+    const dbPath = path.join(savePath, "vehicles.db");
+    await createVehiclesDb(dbPath, [
+      // Cell (0,0) at B42 spans tiles [0,256)x[0,256); the corner chunk
+      // alone only spans [0,8)x[0,8). x:100,y:50 is inside the cell but far
+      // outside the corner chunk -- only reachable if the box was expanded
+      // to the full cell. wx/wy deliberately far off so the chunk-coord
+      // fallback pass can't accidentally cover for a missing expansion.
+      { wx: 999, wy: 999, x: 100, y: 50 },
+      { wx: 999, wy: 999, x: 500, y: 500 }, // outside the cell entirely -- must survive
+    ]);
+
+    const res = await postAs("/delete-region", {
+      saveName: SAVE_NAME,
+      minX: 0,
+      maxX: 5,
+      minY: 0,
+      maxY: 5,
+      deleteVehicles: true,
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    expect(res.getBody()).toEqual(
+      expect.objectContaining({ success: true, deleted: 1, vehiclesDeleted: 1 }),
+    );
+    const remaining = await readVehicleIds(dbPath);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toEqual(expect.objectContaining({ x: 500, y: 500 }));
+  });
+});

@@ -1718,6 +1718,17 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
 
     const mapExists = fs.existsSync(mapPath);
 
+    // B42 vs B41 detection — filesystem-based (see detectSaveIsB42Sync's
+    // comment above), not inferred from whether map/ currently has numeric
+    // subdirectories. A B42 save with a fresh or emptied-out map/ folder (no
+    // chunks generated yet, or a prior pass already deleted every chunk in
+    // it) has xDirs.length === 0 even though it's genuinely B42 -- reading
+    // that as B41 would silently pick the wrong cell divisor/tile size for
+    // the cell-aux cleanup and vehicle-bbox math below. Computed once, before
+    // the chunk scan, so the chunkdata scan below (display-coordinate
+    // conversion) and the deletion pass share one answer.
+    const regionIsB42 = detectSaveIsB42Sync(savePath);
+
     // Get all chunks - handle B42 directory structure, B41 flat files in map/, and B41 flat files in save root
     const chunksToDelete = [];
     let mapContents = [];
@@ -1818,6 +1829,51 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       }
     }
 
+    // Also check the chunkdata folder for additional chunk data in range.
+    // Mirrors GET /chunks/:saveName and /delete-chunks (see the comment on
+    // that scan): a chunkdata entry can be the ONLY record of a cell's state
+    // (no matching map/X/Y.bin), so a region delete that only walked map/
+    // would silently leave those cells' chunkdata behind while still
+    // reporting success -- the operator believes the region is clean and it
+    // partially is not. Coordinates are converted to display (chunk-scale)
+    // space the same way the GET scan does, so the same minX/maxX/minY/maxY
+    // (and invert) bounds check applies uniformly across all three sources.
+    {
+      const chunkDataPath = path.join(savePath, "chunkdata");
+      if (fs.existsSync(chunkDataPath)) {
+        const chunkDataFiles = await fs.promises.readdir(chunkDataPath);
+        const validFiles = chunkDataFiles.filter((f) => f.endsWith(".bin"));
+
+        for (const file of validFiles) {
+          const match = file.match(/^(\d+)_(\d+)(?:_\d+)?\.bin$/i);
+          if (!match) continue;
+
+          const rawX = parseInt(match[1], 10);
+          const rawY = parseInt(match[2], 10);
+          const displayX = regionIsB42 ? rawX * 32 : rawX * 30;
+          const displayY = regionIsB42 ? rawY * 32 : rawY * 30;
+
+          const inRegion =
+            displayX >= minX &&
+            displayX <= maxX &&
+            displayY >= minY &&
+            displayY <= maxY;
+          const shouldDelete = invert ? !inRegion : inRegion;
+
+          if (shouldDelete) {
+            chunksToDelete.push({
+              file,
+              x: displayX,
+              y: displayY,
+              source: "chunkdata",
+              cellX: rawX,
+              cellY: rawY,
+            });
+          }
+        }
+      }
+    }
+
     if (chunksToDelete.length === 0) {
       return res.json({
         success: true,
@@ -1845,15 +1901,25 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       );
       await fs.promises.mkdir(backupPath, { recursive: true });
 
-      // Parallel backup
+      // Parallel backup. Source-tagged filename prefix (matching
+      // /delete-chunks) so a B42 map chunk, a B41 save-root chunk, and a
+      // chunkdata entry can't collide into the same backup filename.
       await Promise.all(
         chunksToDelete.map(async (chunk) => {
+          const srcTag =
+            chunk.source === "saveroot"
+              ? "saveroot"
+              : chunk.source === "chunkdata"
+                ? "chunkdata"
+                : "map";
           const srcFile =
             chunk.source === "saveroot"
               ? path.join(savePath, chunk.file)
-              : path.join(mapPath, chunk.file);
+              : chunk.source === "chunkdata"
+                ? path.join(savePath, "chunkdata", chunk.file)
+                : path.join(mapPath, chunk.file);
           try {
-            const backupName = `map_${chunk.file.replace(/[/\\]/g, "_")}`;
+            const backupName = `${srcTag}_${chunk.file.replace(/[/\\]/g, "_")}`;
             await copyChunkBackup(
               srcFile,
               path.join(backupPath, backupName),
@@ -1888,7 +1954,6 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
     let deleted = 0;
     const errors = [];
     const touchedCells = new Set();
-    const regionIsB42 = xDirs.length > 0;
     const regionCellDiv = cellDivisorFor(regionIsB42);
 
     await Promise.all(
@@ -1897,7 +1962,9 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
           const chunkFile =
             chunk.source === "saveroot"
               ? path.join(savePath, chunk.file)
-              : path.join(mapPath, chunk.file);
+              : chunk.source === "chunkdata"
+                ? path.join(savePath, "chunkdata", chunk.file)
+                : path.join(mapPath, chunk.file);
           await fs.promises.unlink(chunkFile);
           deleted++;
           touchedCells.add(
@@ -1948,7 +2015,27 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
         createBackup && typeof backupPath === "string"
           ? path.join(backupPath, "vehicles.db.bak")
           : null;
+      // chunkdata-source entries cover a whole cell (not just one chunk) —
+      // expand their box so a region delete doesn't miss vehicles in the
+      // other cellDivisor²-1 chunks of that cell. Matches /delete-chunks.
+      const cellTileSpan = regionCellDiv * tilesPerChunk;
       const boxes = chunksToDelete.map((c) => {
+        if (c.source === "chunkdata") {
+          const x0 = c.cellX * cellTileSpan;
+          const y0 = c.cellY * cellTileSpan;
+          const wx0 = c.cellX * regionCellDiv;
+          const wy0 = c.cellY * regionCellDiv;
+          return {
+            x0,
+            x1: x0 + cellTileSpan,
+            y0,
+            y1: y0 + cellTileSpan,
+            wx0,
+            wx1: wx0 + regionCellDiv,
+            wy0,
+            wy1: wy0 + regionCellDiv,
+          };
+        }
         const x0 = c.x * tilesPerChunk;
         const y0 = c.y * tilesPerChunk;
         return {
