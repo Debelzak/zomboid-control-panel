@@ -1,4 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Cross-producer shape gate (2026-08-27 api.ts type-architecture survey,
 // build order item 3): compares what MULTIPLE real routes actually return
@@ -182,6 +185,15 @@ describe("cross-producer shape gate: Server (server/routes/servers.js)", () => {
   // server/tests/rconRejectionGroundTruth.test.js: if one of these routes
   // starts returning the field, THIS assertion breaks and forces someone to
   // update or remove the exception, not silently keep passing.
+  //
+  // But the exception's OWN justification ("nothing reads it there") is
+  // exactly the shape that created the original bug -- true right up until
+  // it wasn't. See the "reader count" describe block below, which applies
+  // the same self-cleaning trick to THIS exception's premise, not just to
+  // the exception itself: it asserts Layout.tsx stays the field's only
+  // client reader, so a second reader sourced from one of these four
+  // routes fails loudly instead of silently shipping under a comment that
+  // says it's fine.
   const ROUTES_WITHOUT_REMOTE_CONFIG_FIELD = new Set([
     "GET /:id",
     "POST / (create)",
@@ -257,6 +269,58 @@ describe("cross-producer shape gate: Server (server/routes/servers.js)", () => {
       }
     },
   );
+});
+
+// Self-cleaning guard on the exception above, not just the exception
+// itself: "nothing reads remoteConfigConfigured off those four routes" is
+// exactly the kind of premise that was true right up until it wasn't --
+// the field going unread everywhere except GET / is the whole reason the
+// original bug was invisible. Same technique as KNOWN_BROKEN_PATTERNS in
+// server/tests/rconRejectionGroundTruth.test.js: don't just assert the
+// exception, assert the FACT that justifies it, so the exception can't go
+// stale silently.
+//
+// 2026-08-27: exactly two hits for "remoteConfigConfigured" in client/src
+// -- client/src/lib/api.ts:1546 (the type's own declaration, not a read)
+// and client/src/components/Layout.tsx:314 (the one real read). This is a
+// grep-count check, deliberately not clever: it does not parse the AST or
+// distinguish a real property read from an incidental comment mention. If
+// it ever produces a false positive (a file that merely mentions the name
+// without reading it), that is a five-minute look, not a real incident --
+// cheap enough to be worth the loud failure on the day a second REAL
+// reader shows up sourced from one of the four excepted routes above.
+describe("remoteConfigConfigured reader-count guard (justifies the exception above)", () => {
+  const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/src");
+  const API_TS = path.join(CLIENT_SRC, "lib", "api.ts");
+
+  function listSourceFiles(dir) {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push(...listSourceFiles(full));
+      } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  it("has exactly one client-side reader of remoteConfigConfigured, and it's Layout.tsx", () => {
+    const files = listSourceFiles(CLIENT_SRC);
+    expect(files.length, "found zero source files under client/src -- the path resolution above is wrong, this check would otherwise pass vacuously").toBeGreaterThan(0);
+
+    const readers = files
+      .filter((f) => f !== API_TS) // the interface's own declaration is not a read
+      .filter((f) => /remoteConfigConfigured/.test(fs.readFileSync(f, "utf8")))
+      .map((f) => path.relative(CLIENT_SRC, f).replace(/\\/g, "/"));
+
+    expect(
+      readers,
+      "the set of client-side readers of remoteConfigConfigured changed -- this is the exact premise the four-route exception above relies on. For each new file listed here: does it source its server data from GET /servers (safe, already carries the field), or from GET /servers/:id, POST /servers, PUT /servers/:id, or POST /servers/:id/activate (all four are missing the field today -- this new reader will silently see undefined)? If any of the latter, either fix the route to attach remoteConfigConfigured or fix the reader to source from GET / instead, then update this list and the exception above together.",
+    ).toEqual(["components/Layout.tsx"]);
+  });
 });
 
 describe("cross-producer shape gate: ServerBackupArchive (server/routes/backup.js)", () => {
