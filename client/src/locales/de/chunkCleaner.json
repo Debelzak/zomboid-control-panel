@@ -87,7 +87,7 @@
     "loadingChunks": "Chunks werden geladen…",
     "noChunksTitle": "Keine Chunks gefunden",
     "noChunksDesc": "Der Kartenordner dieses Spielstands ist möglicherweise leer, oder der konfigurierte Pfad muss angepasst werden. Wähle oben einen anderen Spielstand aus, oder überprüfe den Pfad in den Einstellungen.",
-    "ariaLabel": "Chunk-Karte — Bereiche zur Bereinigung auswählen"
+    "ariaLabel": "Chunk-Karte. Das Auswählen von Bereichen zur Bereinigung erfordert eine Maus oder ein Touchscreen; diese Karte ist nicht per Tastatur bedienbar."
   },
   "help": {
     "hide": "Hilfe ausblenden",

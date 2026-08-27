@@ -87,7 +87,7 @@
     "loadingChunks": "Cargando chunks…",
     "noChunksTitle": "No se encontraron chunks",
     "noChunksDesc": "La carpeta del mapa de esta partida puede estar vacía, o la ruta configurada necesita ajustarse. Prueba con otra partida de la lista de arriba, o revisa la ruta en Configuración.",
-    "ariaLabel": "Mapa de chunks — seleccionar áreas para limpiar"
+    "ariaLabel": "Mapa de chunks. Seleccionar áreas para limpiar requiere un ratón o pantalla táctil; este mapa no se puede usar con el teclado."
   },
   "help": {
     "hide": "Ocultar ayuda",

@@ -87,7 +87,7 @@
     "loadingChunks": "Loading chunks…",
     "noChunksTitle": "No chunks found",
     "noChunksDesc": "This save's map folder may be empty, or the configured path needs adjusting. Try a different save from the list above, or check the path in Settings.",
-    "ariaLabel": "Chunk map — select areas to clean up"
+    "ariaLabel": "Chunk map. Selecting areas to clean up requires a mouse or touchscreen; this map is not keyboard-operable."
   },
   "help": {
     "hide": "Hide help",

@@ -87,7 +87,7 @@
     "loadingChunks": "Chargement des chunks…",
     "noChunksTitle": "Aucun chunk trouvé",
     "noChunksDesc": "Le dossier de carte de cette sauvegarde est peut-être vide, ou le chemin configuré doit être ajusté. Essayez une autre sauvegarde dans la liste ci-dessus, ou vérifiez le chemin dans les paramètres.",
-    "ariaLabel": "Carte des chunks — sélectionnez des zones à nettoyer"
+    "ariaLabel": "Carte des chunks. La sélection des zones à nettoyer nécessite une souris ou un écran tactile ; cette carte n'est pas utilisable au clavier."
   },
   "help": {
     "hide": "Masquer l'aide",

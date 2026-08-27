@@ -2866,7 +2866,6 @@ export default function ChunkCleaner() {
                         height={canvasSize.height}
                         role="img"
                         aria-label={t("canvas.ariaLabel")}
-                        tabIndex={0}
                         style={{
                           width: canvasSize.width,
                           height: canvasSize.height,
