@@ -24,6 +24,8 @@ import { useToast } from '@/components/ui/use-toast'
 import { panelBridgeApi, playersApi, configApi } from '@/lib/api'
 import { useSocket } from '@/contexts/SocketContext'
 import { useConfirm } from '@/contexts/ConfirmContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { DisabledReason } from '@/components/DisabledReason'
 import { EmptyState } from '@/components/EmptyState'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
@@ -65,6 +67,23 @@ export default function Chat() {
   const { toast } = useToast()
   const confirm = useConfirm()
   const socket = useSocket()
+  // Two genuinely different capabilities on this one page (bug-hunt-2026-08-27
+  // Tier-3 sweep): sending on any channel (server/admin/general, all three
+  // dedicated POST /panel-bridge/chat/* routes) requires server.world_events
+  // -- the same capability that gates weather/zombie/climate tools, not a
+  // chat- or moderation-specific one (server/routes/panelBridge.js:3947,
+  // 4006, 4062; deliberate per server/services/permissions.js:322-327, but
+  // still a distinct capability from the one below). Managing the quick-
+  // broadcast preset list (add/edit/delete, PUT /config/app-settings with
+  // chatPresets) requires panel.settings instead (server/routes/config.js:256;
+  // chatPresets is confirmed NOT in that route's per-key SETTINGS_KEY_CAPABILITY
+  // elevation map, so no secondary check applies). TECHNICIAN and MODERATOR
+  // both hold server.world_events but neither holds panel.settings by
+  // default, so every non-admin stock role can send chat today but cannot
+  // save presets -- a live gap, not a hypothetical one.
+  const { can } = useAuth()
+  const canSendChat = can('server.world_events')
+  const canManagePresets = can('panel.settings')
 
   // Track whether the user is parked at (or near) the bottom of the
   // scroll viewport. We only auto-scroll on new messages when they are,
@@ -157,7 +176,12 @@ export default function Chat() {
   }, [socket])
 
   const sendMessage = async () => {
-    if (!message.trim() || sendingRef.current) return
+    if (!message.trim() || sendingRef.current || !canSendChat) return
+    // This guard is the real gate -- it covers both the Send button's
+    // onClick and the Enter-keydown path in handleKeyDown below, since both
+    // call this same function. The disabled attribute on the Send button is
+    // only the affordance (bug-hunt-2026-08-27 floor rule, from Angela's
+    // Console.tsx Enter-key finding).
     sendingRef.current = true
     setSending(true)
     try {
@@ -236,6 +260,11 @@ export default function Chat() {
   }, [defaultPresets])
 
   const persistPresets = useCallback(async (next: string[]) => {
+    // The real gate for all three mutating preset actions (add, save-edit,
+    // delete) -- each of handleAddPreset/handleSaveEdit/handleDeletePreset
+    // calls this one function, including their Enter-key paths, so guarding
+    // here covers every entry point rather than each caller individually.
+    if (!canManagePresets) return
     let previous: string[] = []
     setPresets(prev => {
       previous = prev
@@ -252,7 +281,7 @@ export default function Chat() {
         variant: 'destructive',
       })
     }
-  }, [toast])
+  }, [toast, canManagePresets])
 
   const handleAddPreset = useCallback(() => {
     const trimmed = newPresetDraft.trim()
@@ -428,13 +457,15 @@ export default function Chat() {
                     maxLength={500}
                     className="h-10 flex-1 bg-card/70 border-border/55 focus-visible:border-primary/60"
                   />
-                  <Button
-                    onClick={sendMessage}
-                    disabled={sending || !message.trim()}
-                    className="h-10 min-w-20 sm:min-w-24 gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em]"
-                  >
-                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Send className="w-3.5 h-3.5" />{t('input.sendButton')}</>}
-                  </Button>
+                  <DisabledReason reason={!canSendChat ? t('input.noPermission') : null}>
+                    <Button
+                      onClick={sendMessage}
+                      disabled={sending || !message.trim() || !canSendChat}
+                      className="h-10 min-w-20 sm:min-w-24 gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em]"
+                    >
+                      {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Send className="w-3.5 h-3.5" />{t('input.sendButton')}</>}
+                    </Button>
+                  </DisabledReason>
                 </div>
                 <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/65">
                   <span>
@@ -528,9 +559,11 @@ export default function Chat() {
                         autoFocus
                         className="h-9 flex-1 text-sm"
                       />
-                      <Button variant="ghost" size="icon" className="h-9 w-9" onClick={handleSaveEdit} aria-label={t('quickBroadcasts.saveAria')}>
-                        <Check className="w-4 h-4" />
-                      </Button>
+                      <DisabledReason reason={!canManagePresets ? t('quickBroadcasts.noPermission') : null}>
+                        <Button variant="ghost" size="icon" className="h-9 w-9" onClick={handleSaveEdit} disabled={!canManagePresets} aria-label={t('quickBroadcasts.saveAria')}>
+                          <Check className="w-4 h-4" />
+                        </Button>
+                      </DisabledReason>
                       <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => { setEditingIdx(null); setEditingDraft('') }} aria-label={t('quickBroadcasts.cancelAria')}>
                         <X className="w-4 h-4" />
                       </Button>
@@ -555,15 +588,18 @@ export default function Chat() {
                       {quickMsg}
                     </button>
                     {presetsEditing && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 text-destructive hover:text-destructive"
-                        onClick={() => handleDeletePreset(idx)}
-                        aria-label={t('quickBroadcasts.deleteAria', { index: idx + 1 })}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <DisabledReason reason={!canManagePresets ? t('quickBroadcasts.noPermission') : null}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 text-destructive hover:text-destructive"
+                          onClick={() => handleDeletePreset(idx)}
+                          disabled={!canManagePresets}
+                          aria-label={t('quickBroadcasts.deleteAria', { index: idx + 1 })}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </DisabledReason>
                     )}
                   </div>
                 )
@@ -580,16 +616,18 @@ export default function Chat() {
                     maxLength={500}
                     className="h-9 flex-1 text-sm bg-card/70 border-border/55"
                   />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9"
-                    onClick={handleAddPreset}
-                    disabled={!newPresetDraft.trim()}
-                    aria-label={t('quickBroadcasts.addAria')}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
+                  <DisabledReason reason={!canManagePresets ? t('quickBroadcasts.noPermission') : null}>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={handleAddPreset}
+                      disabled={!newPresetDraft.trim() || !canManagePresets}
+                      aria-label={t('quickBroadcasts.addAria')}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </DisabledReason>
                 </div>
               )}
             </div>

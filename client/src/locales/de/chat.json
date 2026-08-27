@@ -27,7 +27,8 @@
     "placeholderAdmin": "nur für Admins — Enter zum Senden…",
     "placeholderGeneral": "als Admin posten — Enter zum Senden…",
     "placeholderServer": "an alle Spieler senden — Enter zum Senden…",
-    "sendButton": "senden"
+    "sendButton": "senden",
+    "noPermission": "Du hast keine Berechtigung, Chat-Nachrichten zu senden."
   },
   "footer": {
     "adminOnly": "nur für Admins — für normale Spieler ausgeblendet",
@@ -54,7 +55,8 @@
     "deleteAria": "Vorlage {{index}} löschen",
     "deleteConfirmTitle": "Diese Vorlage löschen?",
     "deleteConfirmDescription": "\"{{preset}}\" ist gemeinsam genutzt -- jeder Admin, der Schnellansagen verwendet, verliert sie ebenfalls. Du kannst sie jederzeit wieder hinzufügen.",
-    "deleteConfirmButton": "Vorlage löschen"
+    "deleteConfirmButton": "Vorlage löschen",
+    "noPermission": "Du hast keine Berechtigung, Schnell-Broadcast-Vorlagen zu verwalten."
   },
   "toasts": {
     "adminSentTitle": "Admin-Nachricht gesendet",
