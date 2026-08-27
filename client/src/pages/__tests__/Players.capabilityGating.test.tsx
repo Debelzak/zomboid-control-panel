@@ -246,13 +246,28 @@ describe('Players.tsx: capability gating', () => {
     const spawnVehicleButton = screen.getByText('Spawn vehicles').closest('button')
     expect(giveItemButton).toBeDisabled()
     expect(spawnVehicleButton).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Give XP/ })).toBeDisabled()
+    // Give XP is NOT asserted here (bug-hunt-2026-08-27 gating-test audit):
+    // it's also gated on !selectedPerk, and no perk is selected in this
+    // fixture, so .toBeDisabled() would pass regardless of canGmTools --
+    // exactly the fixture-masking shape Angela found on Dashboard's Wipe
+    // button. Confirmed empirically (not assumed) that a real Select pick
+    // can't drive this in jsdom either: fireEvent.pointerDown+click on the
+    // combobox throws inside @radix-ui/react-select itself
+    // (target.hasPointerCapture is not a function, then
+    // candidate?.scrollIntoView is not a function) -- genuine missing jsdom
+    // APIs, not a wrong-event mistake like Tabs/DropdownMenu turned out to
+    // be. A real, confirmed (not just suspected) jsdom limitation for Radix
+    // Select specifically, matching Kevin's original ChunkCleaner
+    // reasoning -- see zzHighRiskDiagnostic's throwaway run for the full
+    // stack. Give XP's canGmTools gate is untested here as a result; the
+    // other three gm_tools triggers on this tab (Teleport, Give Items,
+    // Spawn Vehicle) still are.
     if (giveItemButton) fireEvent.click(giveItemButton)
     if (spawnVehicleButton) fireEvent.click(spawnVehicleButton)
-    fireEvent.click(screen.getByRole('button', { name: /Give XP/ }))
     expect(addItem).not.toHaveBeenCalled()
     expect(addVehicle).not.toHaveBeenCalled()
-    expect(addXp).not.toHaveBeenCalled()
+    // addXp not asserted here -- Give XP is never clicked in this test
+    // (see the comment above), so it would be a vacuous assertion.
 
     // Powers tab -- bridge.command AND players.gm_tools (server c3083d5
     // added the gm_tools requirement on top of bridge.command for these
