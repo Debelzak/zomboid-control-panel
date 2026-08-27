@@ -7,7 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-08-27
+
 ### Security
+
+- **Live log, performance, and player-list streams over the socket connection were gated on being
+  logged in, not on permission.** The equivalent web requests already checked the specific
+  capability each of those needed - diagnostics access for logs and performance, player-list access
+  for players - but the socket subscriptions feeding the dashboard's live updates only checked that
+  a session existed. A moderator account, which never holds diagnostics access under the default
+  roles, could still subscribe to the same live diagnostics stream an administrator sees. All three
+  subscriptions now check the same capability their web equivalents require.
+
+- **A password typed into an RCON command reached the logs, the command history, and a live
+  broadcast to every connected dashboard, in plain text.** Typing `adduser` to whitelist a player -
+  or anything else typed directly into the RCON console - is the one command that carries a real
+  password, and six separate places wrote it out unredacted: the saved command history, a
+  debug-level log line, two warning-level log lines shown when the server rejects a command, the
+  log line written for every command run through the console, and the live broadcast that pushes
+  each command and its response to every dashboard subscribed to the log stream. Two of the six
+  fire at the default log level, so no special configuration was needed to leak. All six now redact
+  the password before it leaves the function that would have written or sent it.
+
+- **The server's RCON and join passwords were readable in plain text in more places than the
+  console.** Scanning for existing servers copied a discovered server's real RCON password into the
+  browser and back on every scan. The raw and structured configuration-file editors returned the
+  live password in the response and displayed it in a visible field. Saving a configuration template
+  kept a permanent, plain-text copy of whichever password was set at the time, with no way for a
+  later password change to ever reach it. All four now mask or omit the password at the point it
+  would have left the server, and saving a masked field back no longer overwrites the real password
+  with the placeholder.
+
+- **A role granted a broad automation capability could reach specific, more sensitive actions it was
+  never meant to.** Kicking, banning, or banning by IP or Steam ID; god mode, invisibility, noclip,
+  and healing any player; and scheduling a server restart, save, or broadcast message each has its
+  own capability when reached directly - but all of them could also be reached through the generic
+  PanelBridge command relay or the task scheduler using only the broader capability those systems
+  require, bypassing the narrower one entirely. Not reachable through any built-in role, which
+  already holds both capabilities involved, but a custom role built around automation or
+  world-event permissions could gain moderation or GM-tool power as an unintended side effect. All
+  of the affected actions now also check the same specific capability their direct route requires.
+
+- **Sending a message as the server, or endangering a specific player, required only the same
+  permission as changing the weather.** Eleven actions that can put words in the server's mouth or
+  put a named player in danger without their consent - admin and general chat broadcasts, spawning
+  zombies near or behind a player, triggering a horde, and playing a gunshot, alarm, or other sound
+  at a player's location - shared a capability with genuinely world-wide, non-impersonating effects.
+  They now have their own capability, admin-only by default for both moderators and technicians,
+  including when scheduled rather than triggered directly.
+
+- **Eight of the permissions an administrator can grant undersold what they actually allowed.**
+  Diagnostics access can copy the entire data directory - including every server's RCON password and
+  the panel's own signing secret - to any path outside a short system-directory blocklist. RCON
+  access grants read access to the full, unredacted command history. Mod management can extract the
+  operator's live Steam session from their browser and overwrite the panel's stored Steam
+  credentials. Five more descriptions had similar gaps. All eight now name what they actually grant,
+  in every language the panel supports.
+
+- **Deleting a server's install folder or map data checked that the target folder looked right, not
+  that it was the right folder.** Deleting an install folder only required a marker file with a
+  recognizable name to exist somewhere in the target directory - trivial to create anywhere on the
+  host - and the map-chunk deletion tools accepted a custom path validated mostly by matching pieces
+  of its name against expected words. Both now require the path to genuinely belong to a server or
+  save location the panel already knows about, not just look like one.
 
 - **The panel handed out a live Steam login token over its own API.** Extracting Steam credentials
   from a browser profile returned the session cookie and login token in the response body, so an
@@ -27,6 +89,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step. It is ignored rather than used, and the panel behaves as though no name were set.
 
 ### Fixed
+
+- **Two backups taken within the same millisecond silently destroyed one of them.** Startup-script
+  backups and configuration-file backups were both named from a timestamp precise to the
+  millisecond, so two taken close together - an edit saved twice quickly, several servers backed up
+  in the same pass - produced the same filename, and the second silently overwrote the first with no
+  warning. Both now add a counter to the name the moment a collision would occur, so every backup
+  taken is kept.
+
+- **Fixing the collision above broke which backup got deleted first.** The counter added to a
+  colliding backup's filename sorts before the plain name it disambiguates from as plain text, so
+  the configuration-backup pruner - which compared filenames as text rather than the time the file
+  was actually created - could rank the newest backup in a colliding pair as older than it really
+  was, and delete it first while keeping the truly older one. This is very likely the cause of a
+  report received today that backups looked inconsistent, with the most recent one over a week old.
+  The pruner now sorts by the backup file's real creation time.
+
+- **Two restore requests arriving close together could both run at once.** The panel refuses to
+  start a second backup restore while one is already in progress, but the flag that blocks it was
+  only set after an earlier check finished, leaving a window where two requests - a double-click
+  before the button disabled, two admin sessions, a retried request - could both pass the check and
+  restore concurrently, silently mixing or losing data. The flag is now set before that check begins.
 
 - **Docker panel updates no longer stop after building with a duplicate container-name error.**
   The updater now gracefully replaces an existing manually created panel container before Compose
@@ -142,6 +225,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmation and warning styles were reviewed against a single rule - how recoverable is it, and
   does it affect anyone but you - so that the serious ones stand out instead of blending into the
   routine ones.
+
+- **Buttons for actions your role could not perform were often still clickable.** The server was
+  already the real authority - every one of these routes was already gated there - but roughly a
+  dozen pages let you click through to a request the server would then refuse, sometimes only after
+  a confirmation dialog and a wait. Servers, Mods, Players, Discord, the RCON console, Scheduler,
+  Chat, the Dashboard, server setup, Backups, ChunkCleaner, WorldMap, Templates, and server
+  configuration now disable or hide those controls up front, and a new lint rule stops a future page
+  from shipping the same gap.
 
 - **Installation guides for every setup**, in `docs/install/`: Windows, Linux, Docker and Unraid,
   rented/managed servers, and a symptom-first troubleshooting guide. They ship inside the release
