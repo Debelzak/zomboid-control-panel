@@ -8,7 +8,14 @@ import {
   parseClampedInteger,
 } from '../utils/queryNumbers.js';
 import { sanitizeError } from '../utils/sanitize.js';
-import { testRconConnection } from '../services/rcon.js';
+import { redactRconCommandSecrets } from '../utils/rconCommandRedaction.js';
+import {
+  testRconConnection,
+  checkTcpReachable,
+  RCON_UNREACHABLE_DETAIL,
+  RCON_AUTH_FAILED_DETAIL,
+  RCON_USER_ACTION_TIMEOUT_MS,
+} from '../services/rcon.js';
 import { requirePermission } from '../services/permissions.js';
 import { ErrorCode } from '../utils/errorCodes.js';
 
@@ -56,8 +63,12 @@ router.post('/execute', requirePermission('rcon.execute'), async (req, res) => {
   try {
     const rconService = req.app.get('rconService');
     const command = req.body?.command;
-    log.info(`POST /execute: ${typeof command === 'string' ? command.substring(0, 100) : ''}`);
-    
+    // Redact BEFORE truncating: the redaction regex needs the password
+    // argument's closing quote to match (rconCommandRedaction.js), which a
+    // 100-char cut partway through the password would strip, leaving a
+    // partial cleartext fragment logged instead of a redacted one.
+    log.info(`POST /execute: ${typeof command === 'string' ? redactRconCommandSecrets(command).substring(0, 100) : ''}`);
+
     if (!command) {
       return res.status(400).json({ error: 'Command is required', code: ErrorCode.RCON_COMMAND_REQUIRED });
     }
@@ -68,12 +79,17 @@ router.post('/execute', requirePermission('rcon.execute'), async (req, res) => {
     }
     
     const result = await rconService.execute(command);
-    
-    // Emit to connected clients
+
+    // Emit to connected clients. Redact both fields before broadcasting --
+    // this is the FULL, untruncated command reaching every socket in the
+    // "logs" room, unlike the 100-char log.info above, and command_history
+    // (database/init.js's logCommand) already redacts both command and
+    // response for the identical reason: `response` is defense-in-depth in
+    // case a verbose RCON reply ever echoes the command it's replying to.
     const io = req.app.get('io');
     if (io) io.to('logs').emit('rcon:response', {
-      command,
-      response: result.response || result.error,
+      command: redactRconCommandSecrets(command),
+      response: redactRconCommandSecrets(result.response || result.error),
       success: result.success,
       timestamp: new Date().toISOString()
     });
@@ -132,13 +148,42 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
     if (host !== undefined || port !== undefined || password !== undefined) {
       rconService.updateConfig(host, normalizedPort, password);
     }
-    
-    const connected = await rconService.connect();
-    if (connected) {
-      res.json({ success: true, message: 'Connected to RCON' });
-    } else {
-      res.status(503).json({ success: false, error: 'Could not connect to RCON. Is the server running and RCON enabled?', code: ErrorCode.RCON_CONNECT_FAILED });
+
+    let connected;
+    try {
+      connected = await rconService.connect();
+    } catch {
+      // rconService.connect() throws for some failures (e.g. authenticate()
+      // rejecting) and resolves false for others (e.g. the port never opened)
+      // -- both just mean "did not connect" here. Which one it was gets
+      // reclassified by the reachability probe below, the same way /test
+      // classifies it, rather than by sniffing this error's message.
+      connected = false;
     }
+
+    if (connected) {
+      return res.json({ success: true, message: 'Connected to RCON' });
+    }
+
+    // Reused from /api/rcon/test (below): same probe, same two canonical
+    // detail strings, so the dashboard's reconnect action -- the path a
+    // user hits FIRST -- tells "never reachable" apart from "reachable, but
+    // the password is wrong" exactly as well as the Servers page already
+    // does, instead of the one generic message this used to return for both.
+    const { host: configuredHost, port: configuredPort } = rconService.getConfig();
+    const reachable = await checkTcpReachable(configuredHost, configuredPort, RCON_USER_ACTION_TIMEOUT_MS);
+    if (!reachable) {
+      return res.status(503).json({
+        success: false,
+        error: RCON_UNREACHABLE_DETAIL,
+        code: ErrorCode.RCON_CONNECT_UNREACHABLE,
+      });
+    }
+    return res.status(503).json({
+      success: false,
+      error: RCON_AUTH_FAILED_DETAIL,
+      code: ErrorCode.RCON_CONNECT_AUTH_FAILED,
+    });
   } catch (error) {
     log.error(`RCON connect failed: ${error.message}`);
     const rconService = req.app.get('rconService');
@@ -149,10 +194,35 @@ router.post('/connect', requirePermission('rcon.execute'), async (req, res) => {
 
 // Test arbitrary RCON credentials without applying them — lets the UI
 // validate host/port/password before the user saves a server's settings.
-router.post('/test', requirePermission('rcon.execute'), async (req, res) => {
+// requirePermission('rcon.execute') ALONE used to be the only gate here,
+// but this route makes the panel open a raw TCP connection (and attempt an
+// RCON auth handshake) against ANY host/port the caller names — CodeQL
+// js/request-forgery #26/#333 (2026-08-27 CodeQL triage): rcon.execute's
+// own description ("execute arbitrary console commands" against the
+// configured server) never promised "connect to arbitrary hosts," so a
+// role holding only rcon.execute could use this endpoint as a blind
+// internal-network TCP prober. Chained a second requirePermission() rather
+// than an inline check since the requirement is static, not conditional on
+// request content (unlike scheduler.js's requireCapabilityInline, which
+// exists specifically because ITS second capability depends on parsed
+// body content) — operator's own framing: you need the power to ADD a
+// server to be allowed to test one, so servers.manage is the natural
+// second gate, not a new capability. Confirmed both capabilities'
+// descriptions still read correctly after this change: rcon.execute no
+// longer implies arbitrary-host reach, and servers.manage's "add, edit...
+// a server entry" already covers testing a connection as part of that
+// workflow — neither needed a text change.
+router.post('/test', requirePermission('rcon.execute'), requirePermission('servers.manage'), async (req, res) => {
   try {
     const { host, port, password } = req.body || {};
-    log.info(`POST /test (host=${host || 'none'}, port=${port || 'none'})`);
+    // host/port only, for audit — NEVER the password. Run through the
+    // shared redaction helper as defense-in-depth (the same discipline
+    // every other RCON log line in this file uses) even though this
+    // specific template can't currently produce an adduser-shaped match —
+    // six separate RCON credential leak sites were found and fixed
+    // tonight, and a bespoke "just don't interpolate password" line is
+    // exactly the kind of ad-hoc logic that produced those.
+    log.info(redactRconCommandSecrets(`POST /test (host=${host || 'none'}, port=${port || 'none'})`));
 
     const validationError = validateTestInput(host, port, password);
     if (validationError) {

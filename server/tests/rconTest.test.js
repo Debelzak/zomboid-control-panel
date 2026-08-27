@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import net from 'net';
-import { testRconConnection } from '../services/rcon.js';
+import { testRconConnection, RCON_UNREACHABLE_DETAIL } from '../services/rcon.js';
 import router from '../routes/rcon.js';
+import { ErrorCode } from '../utils/errorCodes.js';
 
 function createResponse() {
   const response = {};
@@ -142,13 +143,38 @@ describe('POST /api/rcon/connect route updates', () => {
     await getConnectHandler()(
       {
         body: { password: '' },
-        app: { get: () => ({ updateConfig, connect }) },
+        app: {
+          // Mirrors the real RconService (services/rcon.js) enough to
+          // survive the unreachable-vs-auth-failed classification a failed
+          // connect() falls through to: getConfig() for the reachability
+          // re-probe, getUserFriendlyError() for the outer catch's
+          // fallback. A mock missing either one crashes here instead of in
+          // production -- exactly what happened when this test's mock went
+          // stale against a real /connect change; see
+          // routeRoleSweep.test.js:298 for the same lesson learned earlier.
+          get: () => ({
+            updateConfig,
+            connect,
+            getConfig: () => ({ host: '127.0.0.1', port: 39822 }),
+            getUserFriendlyError: () => 'stub error',
+          }),
+        },
       },
       res,
     );
 
+    // The behaviour this test is named for: an explicitly empty password is
+    // passed through, not dropped for being falsy.
     expect(updateConfig).toHaveBeenCalledWith(undefined, undefined, '');
+    // 39822: nothing listens there in the test environment (same convention
+    // as this file's other tests above), so the failed connect() above is
+    // deliberately classified as unreachable -- not just "didn't crash".
     expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({
+      success: false,
+      error: RCON_UNREACHABLE_DETAIL,
+      code: ErrorCode.RCON_CONNECT_UNREACHABLE,
+    });
   });
 
   it('returns a client error for a missing body', async () => {
@@ -188,5 +214,72 @@ describe('RCON route malformed request handling', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body.code).toBe('RCON_COMMAND_INVALID');
+  });
+});
+
+// 2026-08-27 bug hunt: POST /execute broadcasts its command AND response to
+// the "logs" socket room via rcon:response, and separately logs the command
+// via log.info -- both were the raw, unredacted string. logCommand()
+// (database/init.js) already redacts an adduser password before persisting
+// to command_history for exactly this reason (see rconCommandRedaction.js);
+// these two sites were never brought in line, so `adduser "Bob" "hunter2"`
+// still reached every diagnostics.manage-holding socket, and every log
+// line, in cleartext. Wire-level coverage: calls the real handler and
+// asserts on what actually got emitted/logged, not on source text.
+describe('RCON /execute -- redacts secrets before they leave the route', () => {
+  function createIoMock() {
+    const emitted = [];
+    return {
+      emitted,
+      to: () => ({
+        emit: (event, payload) => emitted.push({ event, payload }),
+      }),
+    };
+  }
+
+  it('redacts the adduser password in the rcon:response broadcast, both command and response fields', async () => {
+    const res = createResponse();
+    const io = createIoMock();
+    const rconService = {
+      execute: vi.fn(async () => ({
+        success: true,
+        response: 'Command received: adduser "Bob" "hunter2" -> User added',
+      })),
+    };
+
+    await getHandler('/execute')(
+      {
+        body: { command: 'adduser "Bob" "hunter2"' },
+        app: { get: (key) => (key === 'rconService' ? rconService : io) },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(undefined); // res.json(), no explicit status -- 200 default
+    const broadcast = io.emitted.find((e) => e.event === 'rcon:response');
+    expect(broadcast.payload.command).toBe('adduser "Bob" "[REDACTED]"');
+    expect(broadcast.payload.response).toBe(
+      'Command received: adduser "Bob" "[REDACTED]" -> User added',
+    );
+  });
+
+  it('does not alter a command with no password to redact', async () => {
+    const res = createResponse();
+    const io = createIoMock();
+    const rconService = {
+      execute: vi.fn(async () => ({ success: true, response: 'players: Bob' })),
+    };
+
+    await getHandler('/execute')(
+      {
+        body: { command: 'players' },
+        app: { get: (key) => (key === 'rconService' ? rconService : io) },
+      },
+      res,
+    );
+
+    const broadcast = io.emitted.find((e) => e.event === 'rcon:response');
+    expect(broadcast.payload.command).toBe('players');
+    expect(broadcast.payload.response).toBe('players: Bob');
   });
 });

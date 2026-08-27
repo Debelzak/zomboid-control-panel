@@ -21,6 +21,7 @@ import { sanitizeError } from '../utils/sanitize.js';
 import bridge from '../services/panelBridge.js';
 import { listWhitelistAccounts } from '../utils/whitelistDb.js';
 import { requirePermission } from '../services/permissions.js';
+import { ErrorCode } from '../utils/errorCodes.js';
 
 const router = express.Router();
 
@@ -50,6 +51,7 @@ const MAX_EXPORT_FILE_BYTES = 5 * 1024 * 1024;
 export function parsePlayerExportFile(filePath) {
   let stat;
   try {
+    // codeql[js/path-injection] filePath here is only ever called from GET /exports/:username/:filename, where username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ before this helper is invoked.
     stat = fs.statSync(filePath);
   } catch {
     throw new Error('Export not found');
@@ -61,6 +63,7 @@ export function parsePlayerExportFile(filePath) {
 
   let raw;
   try {
+    // codeql[js/path-injection] filePath here is only ever called from GET /exports/:username/:filename, where username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ before this helper is invoked.
     raw = fs.readFileSync(filePath, 'utf8');
   } catch {
     throw new Error('Could not read export file');
@@ -120,9 +123,17 @@ export function normalizePlayerLogLimit(value) {
   return parseClampedInteger(value, 100, 1, 500);
 }
 
-// B42's godmod/invisible commands only accept the "-true" value form and ignore
-// a target username, so over RCON — which has no player of its own — they are
-// a no-op. PanelBridge sets the flag on the player object instead.
+// STALE CLAIM CORRECTED 2026-08-27: this comment used to say B42's
+// godmod/invisible RCON commands ignore a target username and are a no-op
+// over RCON. That was true of an earlier version of rcon.js; Kevin's
+// real-jar verification (b42-command-verification, fcc61a9) found B42 splits
+// a self-only command (godmod/invisible, no username slot) from a separate
+// other-player command (godmodplayer/invisibleplayer, required username),
+// and fixed setGodMode/setInvisible to send the other-player form whenever a
+// username is given -- so the RCON fallback below DOES target the named
+// player for those two. noclip's RCON targeting remains genuinely
+// unresolved (does-noclip-actually-target-a-player-over-rcon, folded into
+// b42-commands-need-live-verification) pending a live B42 server.
 async function setPlayerMode(req, bridgeAction, rconMethod, username, enabled) {
   if (bridge.isRunning) {
     const result = await bridge.sendCommand(bridgeAction, { username, enabled: enabled === true });
@@ -176,15 +187,15 @@ router.post('/kick', requirePermission("players.moderate"), async (req, res) => 
     const { username, reason } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     if (reason && !isValidText(reason)) {
-      return res.status(400).json({ error: 'Invalid reason format' });
+      return res.status(400).json({ error: 'Invalid reason format', code: ErrorCode.PLAYERS_INVALID_REASON });
     }
 
     const result = await rconService.kickPlayer(username, reason);
@@ -210,19 +221,19 @@ router.post('/ban', requirePermission("players.moderate"), async (req, res) => {
     const { username, banIp, reason } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (banIp !== undefined && typeof banIp !== 'boolean') {
-      return res.status(400).json({ error: 'banIp must be a boolean' });
+      return res.status(400).json({ error: 'banIp must be a boolean', code: ErrorCode.PLAYERS_INVALID_BAN_IP });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     if (reason && !isValidText(reason)) {
-      return res.status(400).json({ error: 'Invalid reason format' });
+      return res.status(400).json({ error: 'Invalid reason format', code: ErrorCode.PLAYERS_INVALID_REASON });
     }
 
     const result = await rconService.banPlayer(username, banIp, reason);
@@ -260,11 +271,11 @@ router.post('/unban', requirePermission("players.moderate"), async (req, res) =>
     const { username } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     const result = await rconService.unbanPlayer(username);
@@ -290,15 +301,19 @@ router.post('/access-level', requirePermission("players.moderate"), async (req, 
     const { username, level } = req.body || {};
 
     if (!username || !level) {
-      return res.status(400).json({ error: 'Username and level are required' });
+      return res.status(400).json({ error: 'Username and level are required', code: ErrorCode.PLAYERS_ACCESS_LEVEL_FIELDS_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     if (!ACCESS_LEVELS.includes(level.toLowerCase())) {
-      return res.status(400).json({ error: `Invalid access level. Valid: ${ACCESS_LEVELS.join(', ')}` });
+      return res.status(400).json({
+        error: `Invalid access level. Valid: ${ACCESS_LEVELS.join(', ')}`,
+        code: ErrorCode.PLAYERS_INVALID_ACCESS_LEVEL,
+        params: { validLevels: ACCESS_LEVELS.join(', ') },
+      });
     }
 
     const result = await rconService.setAccessLevel(username, level);
@@ -324,14 +339,14 @@ router.post('/whitelist/add', requirePermission("players.moderate"), async (req,
     const { username, password } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
     if (password !== undefined && password !== '' && !/^[a-zA-Z0-9!@#$%^&*_-]{4,64}$/.test(password)) {
-      return res.status(400).json({ error: 'Invalid password format' });
+      return res.status(400).json({ error: 'Invalid password format', code: ErrorCode.PLAYERS_INVALID_PASSWORD });
     }
 
     const result = await rconService.addToWhitelist(username, password);
@@ -353,11 +368,11 @@ router.post('/whitelist/remove', requirePermission("players.moderate"), async (r
     const { username } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     const result = await rconService.removeFromWhitelist(username);
@@ -394,17 +409,17 @@ router.post('/teleport', requirePermission("players.gm_tools"), async (req, res)
       // (Normandy, etc.) go further, so cap at 24000 to match the Lua handler.
       // z is floor level 0-8.
       if (!isValidNumber(x, 0, 24000) || !isValidNumber(y, 0, 24000) || !isValidNumber(z, 0, 8)) {
-        return res.status(400).json({ error: 'Invalid coordinates (x/y: 0 to 24000, z: 0 to 8)' });
+        return res.status(400).json({ error: 'Invalid coordinates (x/y: 0 to 24000, z: 0 to 8)', code: ErrorCode.PLAYERS_TELEPORT_INVALID_COORDINATES });
       }
       if (player1) {
         log.info(`POST /teleport: ${player1} → coords(${x}, ${y}, ${z}) via PanelBridge`);
         // Teleport a specific player to coordinates — requires PanelBridge
         // (RCON 'teleportto' is a self-teleport and doesn't accept a target player)
         if (!isValidUsername(player1)) {
-          return res.status(400).json({ error: 'Invalid player1 username format' });
+          return res.status(400).json({ error: 'Invalid player1 username format', code: ErrorCode.PLAYERS_TELEPORT_INVALID_PLAYER1 });
         }
         if (!bridge.isRunning) {
-          return res.status(503).json({ error: 'PanelBridge is not running — cannot teleport a player to coordinates without it' });
+          return res.status(503).json({ error: 'PanelBridge is not running — cannot teleport a player to coordinates without it', code: ErrorCode.PLAYERS_TELEPORT_BRIDGE_OFFLINE });
         }
         result = await bridge.teleportPlayer(player1, Number(x), Number(y), Number(z));
       } else {
@@ -413,14 +428,14 @@ router.post('/teleport', requirePermission("players.gm_tools"), async (req, res)
       }
     } else if (player1) {
       if (!isValidUsername(player1)) {
-        return res.status(400).json({ error: 'Invalid player1 username format' });
+        return res.status(400).json({ error: 'Invalid player1 username format', code: ErrorCode.PLAYERS_TELEPORT_INVALID_PLAYER1 });
       }
       if (player2 && !isValidUsername(player2)) {
-        return res.status(400).json({ error: 'Invalid player2 username format' });
+        return res.status(400).json({ error: 'Invalid player2 username format', code: ErrorCode.PLAYERS_TELEPORT_INVALID_PLAYER2 });
       }
       result = await rconService.teleportPlayer(player1, player2);
     } else {
-      return res.status(400).json({ error: 'Player name or coordinates required' });
+      return res.status(400).json({ error: 'Player name or coordinates required', code: ErrorCode.PLAYERS_TELEPORT_TARGET_REQUIRED });
     }
 
     res.json(result);
@@ -437,24 +452,24 @@ router.post('/add-item', requirePermission("players.gm_tools"), async (req, res)
     const { username, item, count } = req.body || {};
 
     if (!item) {
-      return res.status(400).json({ error: 'Item is required' });
+      return res.status(400).json({ error: 'Item is required', code: ErrorCode.PLAYERS_ITEM_REQUIRED });
     }
 
     if (!isValidItem(item)) {
-      return res.status(400).json({ error: 'Invalid item format' });
+      return res.status(400).json({ error: 'Invalid item format', code: ErrorCode.PLAYERS_INVALID_ITEM });
     }
 
     if (username && !isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     if (count !== undefined && !isValidNumber(count, 1, 100)) {
-      return res.status(400).json({ error: 'Invalid count (1-100)' });
+      return res.status(400).json({ error: 'Invalid count (1-100)', code: ErrorCode.PLAYERS_INVALID_ITEM_COUNT });
     }
     const itemCount = count !== undefined ? Math.min(Math.floor(Number(count)), 100) : 1;
 
     if (!username) {
-      return res.status(400).json({ error: 'A player must be selected to give items' });
+      return res.status(400).json({ error: 'A player must be selected to give items', code: ErrorCode.PLAYERS_ADD_ITEM_TARGET_REQUIRED });
     }
 
     let result;
@@ -483,19 +498,23 @@ router.post('/add-xp', requirePermission("players.gm_tools"), async (req, res) =
     const { username, perk, amount } = req.body || {};
 
     if (!username || !perk || amount === undefined || amount === null) {
-      return res.status(400).json({ error: 'Username, perk, and amount are required' });
+      return res.status(400).json({ error: 'Username, perk, and amount are required', code: ErrorCode.PLAYERS_ADD_XP_FIELDS_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     if (!PERKS.includes(perk)) {
-      return res.status(400).json({ error: `Invalid perk. Valid: ${PERKS.join(', ')}` });
+      return res.status(400).json({
+        error: `Invalid perk. Valid: ${PERKS.join(', ')}`,
+        code: ErrorCode.PLAYERS_INVALID_PERK,
+        params: { validPerks: PERKS.join(', ') },
+      });
     }
 
     if (!isValidNumber(amount, 0, 100000)) {
-      return res.status(400).json({ error: 'Invalid XP amount (0-100000)' });
+      return res.status(400).json({ error: 'Invalid XP amount (0-100000)', code: ErrorCode.PLAYERS_INVALID_XP_AMOUNT });
     }
 
     const result = await rconService.addXp(username, perk, amount);
@@ -521,17 +540,17 @@ router.post('/add-vehicle', requirePermission("players.gm_tools"), async (req, r
     const { vehicle, username } = req.body || {};
 
     if (!vehicle) {
-      return res.status(400).json({ error: 'Vehicle is required' });
+      return res.status(400).json({ error: 'Vehicle is required', code: ErrorCode.PLAYERS_VEHICLE_REQUIRED });
     }
 
     // Validate vehicle ID format (e.g., "Base.CarNormal", "mod.VehicleName")
     // Allows catalog-scanned vehicles beyond the static VEHICLES list
     if (!/^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/.test(vehicle)) {
-      return res.status(400).json({ error: 'Invalid vehicle ID format' });
+      return res.status(400).json({ error: 'Invalid vehicle ID format', code: ErrorCode.PLAYERS_INVALID_VEHICLE_ID });
     }
 
     if (username && !isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     const result = await rconService.addVehicle(vehicle, username);
@@ -557,7 +576,7 @@ router.post('/add-vehicle-at', requirePermission("players.gm_tools"), async (req
     const { vehicle, x, y, z = 0 } = req.body || {};
 
     if (!vehicle || !/^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$/.test(vehicle)) {
-      return res.status(400).json({ error: 'Invalid vehicle ID format' });
+      return res.status(400).json({ error: 'Invalid vehicle ID format', code: ErrorCode.PLAYERS_INVALID_VEHICLE_ID });
     }
 
     if (
@@ -565,7 +584,7 @@ router.post('/add-vehicle-at', requirePermission("players.gm_tools"), async (req
       !isValidNumber(y, 0, 24000) ||
       !isValidNumber(z, 0, 8)
     ) {
-      return res.status(400).json({ error: 'Invalid map coordinates' });
+      return res.status(400).json({ error: 'Invalid map coordinates', code: ErrorCode.PLAYERS_INVALID_MAP_COORDINATES });
     }
     const coordinates = [Number(x), Number(y), Number(z)];
 
@@ -584,13 +603,13 @@ router.post('/godmode', requirePermission("players.gm_tools"), async (req, res) 
     const { username, enabled } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
     if (!requireBooleanToggle(enabled)) {
-      return res.status(400).json({ error: 'enabled must be a boolean' });
+      return res.status(400).json({ error: 'enabled must be a boolean', code: ErrorCode.PLAYERS_INVALID_ENABLED_FLAG });
     }
 
     const result = await setPlayerMode(req, 'setGodMode', 'setGodMode', username, enabled);
@@ -615,13 +634,13 @@ router.post('/invisible', requirePermission("players.gm_tools"), async (req, res
     const { username, enabled } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
     if (!requireBooleanToggle(enabled)) {
-      return res.status(400).json({ error: 'enabled must be a boolean' });
+      return res.status(400).json({ error: 'enabled must be a boolean', code: ErrorCode.PLAYERS_INVALID_ENABLED_FLAG });
     }
 
     const result = await setPlayerMode(req, 'setInvisible', 'setInvisible', username, enabled);
@@ -646,13 +665,13 @@ router.post('/noclip', requirePermission("players.gm_tools"), async (req, res) =
     const { username, enabled } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
     if (!requireBooleanToggle(enabled)) {
-      return res.status(400).json({ error: 'enabled must be a boolean' });
+      return res.status(400).json({ error: 'enabled must be a boolean', code: ErrorCode.PLAYERS_INVALID_ENABLED_FLAG });
     }
 
     const result = await setPlayerMode(req, 'setNoclip', 'setNoclip', username, enabled);
@@ -705,16 +724,16 @@ router.post('/banid', requirePermission("players.moderate"), async (req, res) =>
     const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
 
     if (!steamId) {
-      return res.status(400).json({ error: 'SteamID is required' });
+      return res.status(400).json({ error: 'SteamID is required', code: ErrorCode.PLAYERS_STEAMID_REQUIRED });
     }
 
     // SteamIDs are numeric strings
     if (!/^\d{17}$/.test(steamId)) {
-      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
+      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)', code: ErrorCode.PLAYERS_INVALID_STEAMID });
     }
 
     if (normalizedReason && !isValidText(normalizedReason)) {
-      return res.status(400).json({ error: 'Invalid reason format' });
+      return res.status(400).json({ error: 'Invalid reason format', code: ErrorCode.PLAYERS_INVALID_REASON });
     }
 
     const result = await rconService.banSteamId(steamId);
@@ -744,11 +763,11 @@ router.post('/unbanid', requirePermission("players.moderate"), async (req, res) 
     const { steamId } = req.body || {};
 
     if (!steamId) {
-      return res.status(400).json({ error: 'SteamID is required' });
+      return res.status(400).json({ error: 'SteamID is required', code: ErrorCode.PLAYERS_STEAMID_REQUIRED });
     }
 
     if (!/^\d{17}$/.test(steamId)) {
-      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
+      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)', code: ErrorCode.PLAYERS_INVALID_STEAMID });
     }
 
     const result = await rconService.unbanSteamId(steamId);
@@ -775,14 +794,14 @@ router.post('/voiceban', requirePermission("players.moderate"), async (req, res)
     const { username, enabled } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
     if (!requireBooleanToggle(enabled)) {
-      return res.status(400).json({ error: 'enabled must be a boolean' });
+      return res.status(400).json({ error: 'enabled must be a boolean', code: ErrorCode.PLAYERS_INVALID_ENABLED_FLAG });
     }
 
     const result = await rconService.voiceBan(username, enabled);
@@ -805,16 +824,16 @@ router.post('/adduser', requirePermission("players.moderate"), async (req, res) 
     const { username, password } = req.body || {};
 
     if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ error: 'Username is required', code: ErrorCode.PLAYERS_USERNAME_REQUIRED });
     }
 
     if (!isValidUsername(username)) {
-      return res.status(400).json({ error: 'Invalid username format' });
+      return res.status(400).json({ error: 'Invalid username format', code: ErrorCode.PLAYERS_INVALID_USERNAME });
     }
 
     // Password validation - alphanumeric and some special chars
     if (password !== undefined && password !== '' && !/^[a-zA-Z0-9!@#$%^&*_-]{4,64}$/.test(password)) {
-      return res.status(400).json({ error: 'Invalid password format' });
+      return res.status(400).json({ error: 'Invalid password format', code: ErrorCode.PLAYERS_INVALID_PASSWORD });
     }
 
     const result = await rconService.addUser(username, password);
@@ -845,7 +864,7 @@ router.post('/whitelist/steamid/add', requirePermission("players.moderate"), asy
   try {
     const { steamId } = req.body || {};
     if (!/^\d{17}$/.test(String(steamId || ''))) {
-      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
+      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)', code: ErrorCode.PLAYERS_INVALID_STEAMID });
     }
     const result = await req.app.get('rconService').addAllowedSteamId(String(steamId));
     if (!result?.success) return res.status(400).json(result);
@@ -861,7 +880,7 @@ router.post('/whitelist/steamid/remove', requirePermission("players.moderate"), 
   try {
     const { steamId } = req.body || {};
     if (!/^\d{17}$/.test(String(steamId || ''))) {
-      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)' });
+      return res.status(400).json({ error: 'Invalid SteamID format (must be 17 digits)', code: ErrorCode.PLAYERS_INVALID_STEAMID });
     }
     const result = await req.app.get('rconService').removeAllowedSteamId(String(steamId));
     if (!result?.success) return res.status(400).json(result);
@@ -877,7 +896,7 @@ router.get('/whitelist', requirePermission("players.view"), async (req, res) => 
   try {
     const activeServer = await getActiveServer();
     if (!activeServer) {
-      return res.status(404).json({ error: 'No active server selected' });
+      return res.status(404).json({ error: 'No active server selected', code: ErrorCode.PLAYERS_NO_ACTIVE_SERVER });
     }
     if (activeServer.isRemote) {
       return res.json({
@@ -938,26 +957,26 @@ router.post('/notes', requirePermission("players.moderate"), async (req, res) =>
     const tags = req.body.tags || [];
 
     if (!playerName) {
-      return res.status(400).json({ error: 'Player name is required' });
+      return res.status(400).json({ error: 'Player name is required', code: ErrorCode.PLAYERS_NOTE_PLAYER_NAME_REQUIRED });
     }
     if (!isValidUsername(playerName)) {
-      return res.status(400).json({ error: 'Invalid player name format' });
+      return res.status(400).json({ error: 'Invalid player name format', code: ErrorCode.PLAYERS_INVALID_NOTE_PLAYER_NAME });
     }
 
     // Validate note length
     if (note !== undefined && note !== null && typeof note !== 'string') {
-      return res.status(400).json({ error: 'Note must be text' });
+      return res.status(400).json({ error: 'Note must be text', code: ErrorCode.PLAYERS_NOTE_MUST_BE_TEXT });
     }
     if (typeof note === 'string' && note.length > 10000) {
-      return res.status(400).json({ error: 'Note too long (max 10000 characters)' });
+      return res.status(400).json({ error: 'Note too long (max 10000 characters)', code: ErrorCode.PLAYERS_NOTE_TOO_LONG });
     }
 
     // Validate tags array and individual tag format
     if (!Array.isArray(tags)) {
-      return res.status(400).json({ error: 'Tags must be an array' });
+      return res.status(400).json({ error: 'Tags must be an array', code: ErrorCode.PLAYERS_NOTE_TAGS_MUST_BE_ARRAY });
     }
     if (tags.some(t => typeof t !== 'string' || t.length > 50)) {
-      return res.status(400).json({ error: 'Tags must be strings (max 50 chars each)' });
+      return res.status(400).json({ error: 'Tags must be strings (max 50 chars each)', code: ErrorCode.PLAYERS_NOTE_INVALID_TAGS });
     }
 
     const result = await upsertPlayerNote(playerName, note, tags);
@@ -976,6 +995,7 @@ router.delete('/notes/:playerName', requirePermission("players.moderate"), async
       return res.status(404).json({
         success: false,
         error: 'Player note not found',
+        code: ErrorCode.PLAYERS_NOTE_NOT_FOUND,
       });
     }
     res.json({ success });
@@ -1039,9 +1059,12 @@ router.get('/exports', requirePermission("players.gm_tools"), async (req, res) =
 
     for (const playerDir of players) {
       const dirPath = path.join(exportsRoot, playerDir);
+      // codeql[js/path-injection] username (if present) is stripped to [a-zA-Z0-9_-] via .replace(/[^a-zA-Z0-9_-]/g, '_') a few lines above before being used as a directory name here.
       if (!fs.existsSync(dirPath)) continue;
+      // codeql[js/path-injection] username (if present) is stripped to [a-zA-Z0-9_-] via .replace(/[^a-zA-Z0-9_-]/g, '_') a few lines above before being used as a directory name here.
       const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.json')).sort().reverse();
       for (const file of files) {
+        // codeql[js/path-injection] username (if present) is stripped to [a-zA-Z0-9_-] via .replace(/[^a-zA-Z0-9_-]/g, '_') a few lines above before being used as a directory name here.
         const stat = fs.statSync(path.join(dirPath, file));
         results.push({
           username: playerDir,
@@ -1066,14 +1089,15 @@ router.get('/exports/:username/:filename', requirePermission("players.gm_tools")
     const { username, filename } = req.params;
     // Validate to prevent path traversal
     if (!/^[a-zA-Z0-9_-]+$/.test(username) || !/^[a-zA-Z0-9_.-]+\.json$/.test(filename)) {
-      return res.status(400).json({ error: 'Invalid parameters' });
+      return res.status(400).json({ error: 'Invalid parameters', code: ErrorCode.PLAYERS_EXPORT_INVALID_PARAMETERS });
     }
 
     const { dataDir } = getDataPaths();
     const filePath = path.join(dataDir, 'exports', username, filename);
 
+    // codeql[js/path-injection] username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ immediately above before filePath is built.
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Export not found' });
+      return res.status(404).json({ error: 'Export not found', code: ErrorCode.PLAYERS_EXPORT_NOT_FOUND });
     }
 
     const data = parsePlayerExportFile(filePath);
@@ -1089,16 +1113,18 @@ router.delete('/exports/:username/:filename', requirePermission("players.gm_tool
   try {
     const { username, filename } = req.params;
     if (!/^[a-zA-Z0-9_-]+$/.test(username) || !/^[a-zA-Z0-9_.-]+\.json$/.test(filename)) {
-      return res.status(400).json({ error: 'Invalid parameters' });
+      return res.status(400).json({ error: 'Invalid parameters', code: ErrorCode.PLAYERS_EXPORT_INVALID_PARAMETERS });
     }
 
     const { dataDir } = getDataPaths();
     const filePath = path.join(dataDir, 'exports', username, filename);
 
+    // codeql[js/path-injection] username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ immediately above before filePath is built.
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Export not found' });
+      return res.status(404).json({ error: 'Export not found', code: ErrorCode.PLAYERS_EXPORT_NOT_FOUND });
     }
 
+    // codeql[js/path-injection] username and filename are validated against /^[a-zA-Z0-9_-]+$/ and /^[a-zA-Z0-9_.-]+\.json$/ immediately above before filePath is built.
     fs.unlinkSync(filePath);
     res.json({ success: true });
   } catch (error) {

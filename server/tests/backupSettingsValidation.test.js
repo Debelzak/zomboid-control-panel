@@ -104,7 +104,26 @@ describe("BackupService.updateSettings schedule validation", () => {
 
     await expect(service.deleteBackupsOlderThan(Number.NaN)).resolves.toEqual({
       success: false,
-      message: "Invalid days parameter. Must be a number >= 1",
+      message: "Invalid days parameter. Must be a whole number >= 1",
     });
+  });
+
+  // bug-hunt-2026-08-26: this was unreachable only because
+  // Backups.tsx's delete-days field clamped to whole numbers client-side
+  // (and, separately, fought the operator's typing near its own bound --
+  // see NumberInput's own header comment). Migrating that field onto the
+  // shared NumberInput (type-anything, let the server refuse) makes a
+  // fractional value reachable for the first time; without this guard it
+  // would have silently reached setDate(getDate() - days), which
+  // reinterprets a fractional day count rather than using it as typed.
+  it("rejects a fractional bulk-delete day value instead of letting it reach date arithmetic", async () => {
+    const service = new BackupService();
+    const listBackups = vi.spyOn(service, "listBackups");
+
+    await expect(service.deleteBackupsOlderThan(1.5)).resolves.toEqual({
+      success: false,
+      message: "Invalid days parameter. Must be a whole number >= 1",
+    });
+    expect(listBackups).not.toHaveBeenCalled();
   });
 });

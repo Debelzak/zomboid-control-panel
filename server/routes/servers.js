@@ -19,6 +19,7 @@ import {
   deleteServer,
   setActiveServer,
   getAllSettings,
+  setSetting,
 } from "../database/init.js";
 import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
 import { requirePermission } from "../services/permissions.js";
@@ -33,7 +34,8 @@ import {
   parseClampedInteger,
 } from "../utils/queryNumbers.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
-import { GAME_PORT_MAX } from "./server.js";
+import { GAME_PORT_MAX, applyUpnpToIni } from "./server.js";
+import { resolveLaunchMode } from "../services/serverManager.js";
 
 const router = express.Router();
 const RCON_HOST_REGEX = /^[a-zA-Z0-9.-]{1,255}$/;
@@ -52,6 +54,67 @@ function isValidServerName(value) {
 
 function isValidDockerContainerRef(value) {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value);
+}
+
+const INSTALL_PATH_MAX_LENGTH = 1024;
+
+// HARDEN (operator ruling 2026-08-27, card
+// custom-launcher-as-a-real-supported-mode-not-an-accident): neither
+// installPath nor serverPath was validated at all before this, despite
+// silently controlling MANAGED vs CUSTOM LAUNCHER mode (serverManager.js's
+// resolveLaunchMode() -- the same predicate this calls, so a saved value's
+// shape and the mode it will actually resolve to at load time can never
+// disagree). A launcher-shaped value (.bat/.sh/.exe) is accepted without
+// requiring it to exist yet -- the operator may be configuring this before
+// the file is in place, matching installPath's own existing not-yet-
+// installed allowance for a fresh, not-yet-downloaded server. A
+// directory-shaped value must actually BE a directory if something already
+// exists at that path; a value that already exists as a plain file with no
+// recognized launcher extension is rejected outright -- that combination
+// (file-shaped, unrecognized) is exactly the unvalidated case that used to
+// silently break regeneration (server.js's refreshLaunchTargetBeforeStart()
+// would join a filename onto a file, not a directory).
+function validateInstallPathShape(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return { valid: false, error: "Install path must be a non-empty string" };
+  }
+  if (value.length > INSTALL_PATH_MAX_LENGTH) {
+    return { valid: false, error: "Install path is too long" };
+  }
+  if (/[\x00-\x1f]/.test(value)) {
+    return { valid: false, error: "Install path contains invalid characters" };
+  }
+  const { mode } = resolveLaunchMode({ installPath: value });
+  if (mode === "custom") {
+    return { valid: true, mode };
+  }
+  try {
+    if (fs.existsSync(value) && !fs.statSync(value).isDirectory()) {
+      return {
+        valid: false,
+        error:
+          "Install path exists but is not a directory. If this is meant to point at a custom launcher script, its filename must end in .bat, .sh, or .exe.",
+      };
+    }
+  } catch {
+    // Unreadable (permissions, a transient mount hiccup) -- don't hard-fail
+    // a save over a stat error; a genuinely unusable path still surfaces a
+    // real error at install/start time.
+  }
+  return { valid: true, mode };
+}
+
+// Run a requirePermission() check outside of route-level middleware, for a
+// capability that only applies to one branch of a handler (importIniFrom
+// below needs servers.discover -- the same capability that gates /auto-scan
+// and /detect's own filesystem reads -- in addition to this route's regular
+// servers.manage gate). Mirrors routes/scheduler.js's identical helper.
+async function requireCapabilityInline(capability, req, res) {
+  let passed = false;
+  await requirePermission(capability)(req, res, () => {
+    passed = true;
+  });
+  return passed;
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
@@ -125,6 +188,14 @@ export function parseDiscoveredPort(value, fallback, max = 65535) {
   }
   if (typeof value !== "string") return null;
   if (value.trim() === "") return fallback;
+  // Ports are unsigned. parseBoundedInteger alone would accept an explicit
+  // "+27015" (it's a general integer parser reused elsewhere for values
+  // that legitimately can be negative), but mountDiscovery.js's parsePort
+  // -- the other reader of this same ini field, used by
+  // create-from-discovery -- has always enforced digits-only. Without this
+  // check the same ini line was a valid server on one route and an invalid
+  // one on the other.
+  if (!/^\d+$/.test(value.trim())) return null;
   return parseBoundedInteger(value, null, 1, max);
 }
 
@@ -239,10 +310,26 @@ function scanForPzPaths(rootPath, maxDepth = 3) {
   return results;
 }
 
-// Auto-scan a folder to find PZ server install paths and data paths
-// Reads arbitrary local server .ini files and returns their RCON passwords
-// in plaintext to prefill the "create server" form — admin-only, same
-// sensitivity tier as chunks delete / panel-bridge command execution.
+// Auto-scan a folder to find PZ server install paths and data paths.
+// Reads arbitrary local server .ini files -- admin-only, same sensitivity
+// tier as chunks delete / panel-bridge command execution -- but the RCON
+// password read off each ini is never put on the wire (hasRcon says
+// whether one is set). POST / re-reads it server-side at creation time via
+// importIniFrom, keyed off dataPath+serverName, instead of round-tripping
+// the real value through the browser.
+//
+// 2026-08-27: this route's local parseIni() duplicates
+// services/mountDiscovery.js's readServerIniSettings -- checked, not just
+// filed. The two line-parsing loops are behaviourally identical (11
+// fixtures: duplicate key, inline comment, section header, blank value,
+// CRLF, a value containing "=", leading whitespace, both comment styles,
+// eqIndex===0, lone-CR -- no divergence, not merged, since a refactor with
+// no behavioural difference is pure risk). The paired port validators
+// DID diverge -- parseDiscoveredPort (below) accepted "RCONPort=+27015"
+// while mountDiscovery.js's parsePort (digits-only) rejected it, so the
+// same ini line was a valid server on this route and not on
+// create-from-discovery. Fixed by making parseDiscoveredPort digits-only
+// too; see server/tests/serversRoute.test.js.
 router.post("/auto-scan", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { scanPath, maxDepth = 3 } = req.body || {};
@@ -329,7 +416,6 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
             serverName,
             iniFile,
             rconPort,
-            rconPassword: settings.RCONPassword || "",
             serverPort,
             publicName: settings.PublicName || serverName,
             hasRcon: !!settings.RCONPassword,
@@ -361,7 +447,8 @@ router.post("/auto-scan", requirePermission("servers.discover"), async (req, res
 });
 
 // Detect server settings from data path (folder containing Server/, Saves/, Logs/)
-// Same as /auto-scan: exposes RCON passwords read straight off disk.
+// Same as /auto-scan: reads RCON passwords straight off disk but never
+// returns them -- see the comment above /auto-scan.
 router.post("/detect", requirePermission("servers.discover"), async (req, res) => {
   try {
     const { dataPath, installPath } = req.body || {};
@@ -462,7 +549,6 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
             serverName,
             iniFile,
             rconPort,
-            rconPassword: settings.RCONPassword || "",
             serverPort,
             publicName: settings.PublicName || serverName,
             hasRcon: !!settings.RCONPassword,
@@ -488,11 +574,27 @@ router.post("/detect", requirePermission("servers.discover"), async (req, res) =
   }
 });
 
+// Shared by GET / and GET /active so the two routes can't drift on what
+// "remote config configured" means -- the client's only consumer of this
+// field (Layout.tsx's nav) reads it off the list from GET /, not GET
+// /active, so this must actually run in both places, not just one.
+// isRemoteConfigConfigured() only checks already-loaded settings fields
+// (no I/O), so computing it per row here costs nothing beyond the one
+// getAllSettings() call already made for the whole list.
+function computeRemoteConfigConfigured(server, settings) {
+  return server.isRemote ? isRemoteConfigConfigured(settings) : false;
+}
+
 // Get all servers
 router.get("/", async (req, res) => {
   try {
     const servers = await getServers();
-    res.json({ servers: sanitizeServerResponseList(servers) });
+    const settings = await getAllSettings();
+    const withRemoteConfig = servers.map((server) => ({
+      ...server,
+      remoteConfigConfigured: computeRemoteConfigConfigured(server, settings),
+    }));
+    res.json({ servers: sanitizeServerResponseList(withRemoteConfig) });
   } catch (error) {
     log.error(`Failed to get servers: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -617,9 +719,10 @@ router.get("/active", async (req, res) => {
     }
     // Lets the UI stop hiding file-based pages once a remote server's Server
     // folder is reachable over SFTP.
-    const remoteConfigConfigured = server.isRemote
-      ? isRemoteConfigConfigured(await getAllSettings())
-      : false;
+    const remoteConfigConfigured = computeRemoteConfigConfigured(
+      server,
+      await getAllSettings(),
+    );
     res.json({
       server: sanitizeServerResponse({ ...server, remoteConfigConfigured }),
     });
@@ -664,6 +767,78 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       `POST / — creating server: name=${config?.name}, remote=${!!config?.isRemote}`,
     );
 
+    // /auto-scan and /detect never put the ini's RCON password on the wire.
+    // A server created from one of their results instead sends back which
+    // config it picked (dataPath + serverName) and we re-read the password
+    // here, server-side, from that exact ini -- same shape as
+    // discovery.js's create-from-discovery, adapted for this route's scan
+    // being an arbitrary-path scan (gated by servers.discover) rather than
+    // discovery.js's fixed, pre-enumerated mount list: there's no discovered
+    // set to validate the reference against here, so the extra guard is
+    // requiring servers.discover again, inline, for this branch specifically
+    // -- the same capability that already gates reading arbitrary local ini
+    // files on /auto-scan and /detect. Without it, a servers.manage-only
+    // caller (who cannot call /auto-scan or /detect at all) could otherwise
+    // use this branch to make the server read any *.ini path on the host.
+    if (config.importIniFrom && typeof config.importIniFrom === "object") {
+      const allowed = await requireCapabilityInline("servers.discover", req, res);
+      if (!allowed) return;
+
+      const { dataPath: importDataPath, serverName: importServerName } =
+        config.importIniFrom;
+      if (
+        typeof importDataPath !== "string" ||
+        importDataPath.length > 500 ||
+        !path.isAbsolute(importDataPath)
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Invalid importIniFrom.dataPath" });
+      }
+      if (!isValidServerName(importServerName)) {
+        return res
+          .status(400)
+          .json({ error: "Invalid importIniFrom.serverName" });
+      }
+      const resolvedImportData = path.resolve(importDataPath);
+      const importServerConfigPath = path.join(resolvedImportData, "Server");
+      if (!fs.existsSync(importServerConfigPath)) {
+        return res.status(400).json({
+          error: "Not a valid Zomboid data folder (no Server subfolder found)",
+        });
+      }
+      const importIniPath = path.join(
+        importServerConfigPath,
+        `${importServerName}.ini`,
+      );
+      if (!fs.existsSync(importIniPath)) {
+        return res
+          .status(400)
+          .json({ error: `${importServerName}.ini not found` });
+      }
+      let importedSettings;
+      try {
+        const importedContent = fs
+          .readFileSync(importIniPath, "utf-8")
+          .replace(/\r\n/g, "\n");
+        importedSettings = parseIni(importedContent);
+      } catch (err) {
+        return res.status(400).json({
+          error: `Failed to read ${importServerName}.ini: ${sanitizeError(err.message)}`,
+        });
+      }
+      if (!importedSettings.RCONPassword) {
+        return res.status(400).json({
+          error: `RCON password not set in ${importServerName}.ini — set RCONPassword on the server, then retry.`,
+        });
+      }
+      // The freshly-read value always wins over anything the client sent
+      // directly, so a bogus client-supplied rconPassword paired with a
+      // valid importIniFrom can't stick.
+      config.rconPassword = importedSettings.RCONPassword;
+      if (!config.serverName) config.serverName = importServerName;
+    }
+
     // Fall back to env-configured paths (docker-compose PZ_SERVER_PATH /
     // PZ_SAVE_PATH) when the request body doesn't set them explicitly.
     if (!config.installPath)
@@ -684,6 +859,13 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
         return res
           .status(400)
           .json({ error: `Missing required field: ${field}` });
+      }
+    }
+
+    if (!isRemote) {
+      const installPathCheck = validateInstallPathShape(config.installPath);
+      if (!installPathCheck.valid) {
+        return res.status(400).json({ error: installPathCheck.error });
       }
     }
 
@@ -746,7 +928,7 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       }
     }
 
-    for (const key of ["useNoSteam", "useDebug"]) {
+    for (const key of ["useNoSteam", "useDebug", "useUpnp"]) {
       if (config[key] !== undefined && typeof config[key] !== "boolean") {
         return res.status(400).json({ error: `${key} must be a boolean` });
       }
@@ -769,6 +951,7 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       maxMemory: normalizeMemoryGb(config.maxMemory, 8),
       useNoSteam: config.useNoSteam === true,
       useDebug: config.useDebug === true,
+      useUpnp: config.useUpnp !== false,
       isRemote: isRemote,
     });
 
@@ -801,12 +984,23 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   "maxMemory",
   "useNoSteam",
   "useDebug",
+  // Was absent from this list entirely (2026-08-26 same-night audit) --
+  // there was no edit-screen path to fix a missing/wrong UPnP setting the
+  // way adminPassword had one, because there was no per-server column for
+  // it to update in the first place.
+  "useUpnp",
   "isRemote",
   "startCommand",
-  "startBat",
-  "batFile",
   "description",
   "adminPassword",
+  // startBat/batFile used to be allowed here too. Re-confirmed dead
+  // (2026-08-27, custom-launcher-as-a-real-supported-mode-not-an-accident):
+  // grepped serverManager.js, database/init.js and all of client/src --
+  // zero reads of either field anywhere. Removed rather than repurposed:
+  // the real, now-supported mechanism for "point at a specific launcher
+  // file" is a serverPath/installPath ending in .bat/.sh/.exe (see
+  // resolveLaunchMode()), and keeping these next to that would have been a
+  // third, unused mechanism sitting beside the two real ones.
 ];
 
 export function parseServerId(value) {
@@ -875,6 +1069,21 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
       updates.dockerContainerName = value || null;
     }
 
+    // HARDEN (operator ruling 2026-08-27): neither field was validated at
+    // all before this, despite silently controlling MANAGED vs CUSTOM
+    // LAUNCHER mode (serverManager.js's resolveLaunchMode()) -- an
+    // unvalidated path that silently changes launch behavior was the whole
+    // bug this feature closes. serverPath is the same shape as installPath
+    // and follows the same rule.
+    for (const key of ["installPath", "serverPath"]) {
+      if (updates[key] !== undefined && updates[key] !== "") {
+        const check = validateInstallPathShape(updates[key]);
+        if (!check.valid) {
+          return res.status(400).json({ error: check.error });
+        }
+      }
+    }
+
     // GET responses mask rconPassword/adminPassword (sanitizeServerResponse).
     // If the client echoes that masked value back unmodified, drop the field
     // so the real stored secret isn't overwritten with bullets.
@@ -929,7 +1138,7 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     }
 
     // Parse boolean fields
-    for (const key of ["useNoSteam", "useDebug", "isRemote"]) {
+    for (const key of ["useNoSteam", "useDebug", "isRemote", "useUpnp"]) {
       if (updates[key] !== undefined) {
         if (typeof updates[key] !== "boolean") {
           return res.status(400).json({ error: `${key} must be a boolean` });
@@ -974,8 +1183,6 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
         "useNoSteam",
         "useDebug",
         "startCommand",
-        "startBat",
-        "batFile",
         "serverName",
       ].some((k) => Object.prototype.hasOwnProperty.call(updates, k));
 
@@ -1019,6 +1226,43 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
 
       if (Object.prototype.hasOwnProperty.call(updates, "installPath")) {
         await refreshWorkshopCheckerIfAvailable(req);
+      }
+
+      // Persisting useUpnp on the server record alone changes nothing PZ
+      // actually reads (2026-08-26: adding it to ALLOWED_SERVER_UPDATE_FIELDS
+      // without this would have recreated the exact "checkbox does nothing"
+      // bug being fixed, one layer over -- found by a same-night audit
+      // before this shipped). The real toggle is the UPnP= line in the
+      // server's own .ini, the same one /configure-network writes -- reused
+      // here via applyUpnpToIni() rather than duplicated.
+      if (
+        Object.prototype.hasOwnProperty.call(updates, "useUpnp") &&
+        server.serverConfigPath &&
+        server.serverName
+      ) {
+        const result = await applyUpnpToIni(
+          server.serverConfigPath,
+          server.serverName,
+          updates.useUpnp,
+        );
+        if (result.applied) {
+          await setSetting("useUpnp", updates.useUpnp);
+          // PZ only reads this file at its own boot -- the .ini write above
+          // is immediate, but its EFFECT is not, whether the server is
+          // currently running (reads the old value until the next restart)
+          // or currently stopped (reads the new value on its next start
+          // either way). Saying so explicitly rather than letting "saved"
+          // imply "live", same defect class as the two silent-failure fixes
+          // earlier tonight -- a confident status the app cannot back.
+          reloadWarnings.push(
+            "UPnP setting saved and written to the server config -- takes effect the next time this server starts, not immediately.",
+          );
+        } else {
+          log.warn(`Could not apply UPnP setting to ini: ${result.reason}`);
+          reloadWarnings.push(
+            `UPnP setting saved, but could not be applied to the server config (${result.reason}). Start the server once to generate its config file, then edit UPnP again.`,
+          );
+        }
       }
     }
 

@@ -198,7 +198,23 @@ router.post("/create", requirePermission("backups.manage"), async (req, res) => 
     const result = await backupService.createBackup({ ...req.body, io });
 
     if (result.success) {
-      res.json(result);
+      // 2026-08-26 bug hunt: createBackup surfaces skipped files rather than
+      // deciding policy -- this is the routine/manual path, so a skip
+      // (almost always a temp/log/lock file the live game process rotated
+      // out from under the scan) is tolerated, not fatal. Reported as a
+      // warnings array so it's visible rather than silently dropped, same
+      // convention as the reloadWarnings/scriptWarnings responses used
+      // elsewhere tonight.
+      if (result.skippedFiles?.length > 0) {
+        res.json({
+          ...result,
+          warnings: [
+            `${result.skippedFiles.length} file(s) vanished during archiving and were skipped: ${result.skippedFiles.join(", ")}. This usually means a temp, log, or lock file the running server rewrote mid-backup -- check that the backup still restores correctly if any of these look like save data.`,
+          ],
+        });
+      } else {
+        res.json(result);
+      }
     } else {
       res.status(400).json(result);
     }
@@ -324,7 +340,33 @@ router.post("/restore/:name", requirePermission("backups.restore"), async (req, 
     if (result.success) {
       res.json(result);
     } else {
-      res.status(400).json(result);
+      // restoreBackup()'s failure messages are almost all short and
+      // pathless -- but the outer catch's own error.message is NOT: an
+      // unexpected raw fs exception (ENOENT/EACCES) carries Node's default
+      // message, which includes a full absolute path, and every other
+      // error site in this codebase redacts that via sanitizeError()
+      // (see the catch three lines below). This route was the one
+      // exception, passing `result` straight through unsanitized.
+      //
+      // A blanket sanitizeError() here would fix that leak but ALSO
+      // redact the one message that deliberately needs its path visible:
+      // the rollback-failure branch, which names the exact path the
+      // preserved original save is sitting at -- the single most
+      // important string in the whole restore flow when it fires, and
+      // the operator's only way to find their data back. So this is
+      // surgical, not blanket: sanitize everything except that one
+      // deliberately-informative message. 2026-08-26 partial-failure-
+      // state hunt.
+      const isRollbackFailureMessage =
+        typeof result.message === "string" &&
+        result.message.startsWith(
+          "Restore failed and the previous save could not be put back automatically.",
+        );
+      res.status(400).json(
+        isRollbackFailureMessage
+          ? result
+          : { ...result, message: sanitizeError(result.message) },
+      );
     }
   } catch (error) {
     log.error(`Failed to restore backup: ${error.message}`);
@@ -337,10 +379,24 @@ router.post("/delete-older-than", requirePermission("backups.manage"), async (re
   try {
     const days = req.body?.days;
 
-    if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
-      return res
-        .status(400)
-        .json({ error: "Invalid days parameter. Must be a number >= 1", code: ErrorCode.BACKUP_INVALID_DAYS_PARAMETER });
+    // Number.isInteger, not just finite: a fractional value used to reach
+    // deleteBackupsOlderThan()'s setDate(getDate() - days) uncaught, where
+    // JS Date arithmetic silently reinterprets it (e.g. 1.5 behaves like 2,
+    // not a genuine half-day cutoff) -- confusing, not a safety issue in
+    // itself (rounding observed toward an EARLIER cutoff, i.e. fewer
+    // deletions), but a value the client had no way to warn about and the
+    // operator never actually typed. Was unreachable in practice only
+    // because the client-side field clamped to whole numbers; that clamp
+    // is gone (client/src/pages/Backups.tsx now lets the server refuse).
+    if (
+      typeof days !== "number" ||
+      !Number.isInteger(days) ||
+      days < 1
+    ) {
+      return res.status(400).json({
+        error: "Invalid days parameter. Must be a whole number >= 1",
+        code: ErrorCode.BACKUP_INVALID_DAYS_PARAMETER,
+      });
     }
 
     const backupService = req.app.get("backupService");

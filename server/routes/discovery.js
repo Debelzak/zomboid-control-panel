@@ -11,6 +11,7 @@ import { createServer } from "../database/init.js";
 import { requirePermission } from "../services/permissions.js";
 import {
   discoverMounts,
+  discoverMountIssues,
   probeInstallPath,
   probeDataPath,
   readServerIniSettings,
@@ -28,7 +29,11 @@ function normalizePath(value) {
 // PZ server files so Settings can offer a one-click "connect this" profile.
 router.get("/discover-mounts", requirePermission("servers.discover"), async (req, res) => {
   try {
-    res.json({ mounts: discoverMounts() });
+    // inaccessible: candidates that exist but couldn't be read (permission
+    // denied) rather than simply not being mounted -- surfaced separately so
+    // a misconfigured host permission doesn't read identically to "nothing
+    // mounted here".
+    res.json({ mounts: discoverMounts(), inaccessible: discoverMountIssues() });
   } catch (error) {
     log.error(`Mount discovery failed: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });

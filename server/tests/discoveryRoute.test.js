@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createServer = vi.fn();
 const discoverMounts = vi.fn();
+const discoverMountIssues = vi.fn(() => []);
 const probeInstallPath = vi.fn();
 const probeDataPath = vi.fn();
 const readServerIniSettings = vi.fn();
@@ -11,6 +12,7 @@ import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 vi.mock("../database/init.js", () => ({ createServer, getRoleByName: mockGetRoleByName }));
 vi.mock("../services/mountDiscovery.js", () => ({
   discoverMounts,
+  discoverMountIssues,
   probeInstallPath,
   probeDataPath,
   readServerIniSettings,
@@ -183,6 +185,23 @@ describe("GET /api/servers/discover-mounts", () => {
 
     expect(response.json).toHaveBeenCalledWith({
       mounts: [{ installPath: "/pz-server" }],
+      inaccessible: [],
+    });
+  });
+
+  it("reports permission-denied candidates separately from missing ones", async () => {
+    discoverMounts.mockReturnValue([]);
+    discoverMountIssues.mockReturnValue([
+      { path: "/pz-server", source: "common-mount", reason: "permission-denied" },
+    ]);
+
+    const response = await runDiscover();
+
+    expect(response.json).toHaveBeenCalledWith({
+      mounts: [],
+      inaccessible: [
+        { path: "/pz-server", source: "common-mount", reason: "permission-denied" },
+      ],
     });
   });
 });

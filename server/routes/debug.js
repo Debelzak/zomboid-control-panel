@@ -23,10 +23,12 @@ import {
   getPlayerLogs,
   getDb,
   getActiveServer,
+  getServers,
   getScheduledTasks,
   getTrackedMods,
   getAllSettings,
   getCircuitBreakerStatus,
+  getRoleByName,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
 import { checkSandboxBraceBalance } from "./serverFiles.js";
@@ -1442,9 +1444,25 @@ router.post("/paths", requirePermission("diagnostics.manage"), async (req, res) 
       return res.status(400).json({ error: "Invalid logs directory path" });
     }
 
+    // The panel's own data/logs directory must never overlap a configured
+    // PZ server's install or save location -- moving the database into a
+    // live PZ install (or vice versa) is exactly the kind of "wrong, not
+    // just unwritable" target that passes a plain writability check.
+    const configuredServers = await getServers();
+    const extraBlockedPaths = configuredServers
+      .flatMap((server) => [server.installPath, server.zomboidDataPath])
+      .filter((p) => typeof p === "string" && p.trim());
+
+    // 2026-08-27: moveFiles now defaults to false, not true. It used to be
+    // `moveFiles !== false`, so a request naming a new dataDir with no
+    // moveFiles key at all silently moved db.json and every *.secret file
+    // -- the destructive option by omission, not by choice. Debug.tsx (the
+    // only real caller) always sends this explicitly, so this costs the
+    // UI nothing.
     const result = await setDataPaths(
       { dataDir, logsDir },
-      moveFiles !== false,
+      moveFiles === true,
+      { extraBlockedPaths },
     );
 
     if (result.success) {
@@ -5490,7 +5508,11 @@ router.get("/crash-logs", requirePermission("diagnostics.manage"), async (req, r
     // Sort by modified date, newest first
     crashLogs.sort((a, b) => new Date(b.modified) - new Date(a.modified));
 
-    res.json({ crashLogs: crashLogs.slice(0, 20) });
+    // totalCount is the real count before the cap -- the client showed the
+    // capped array's length as if it were the total, so a server with more
+    // than 20 crash dumps (common with mod incompatibilities) displayed a
+    // stuck "20" that masked how many actually exist.
+    res.json({ crashLogs: crashLogs.slice(0, 20), totalCount: crashLogs.length });
   } catch (error) {
     log.error(`Failed to get crash logs: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
@@ -5624,6 +5646,28 @@ router.get("/activity", requirePermission("diagnostics.manage"), async (req, res
     const limit = parseClampedInteger(req.query.limit, 200, 1, 500);
     const source = req.query.source || "all"; // 'all' | 'rcon' | 'bridge' | 'player' | 'server'
 
+    // Player action logs are players.view's own territory (its description:
+    // "Read player details, status and history") -- merging them into this
+    // diagnostics.manage-gated feed let a custom role holding diagnostics.manage
+    // without players.view read full player moderation history through a door
+    // labeled "logs, performance history... and CORS diagnostics." Only resolved
+    // when a player source could actually appear -- avoids a role lookup on
+    // every rcon/bridge/server-only request. Explicitly requested is a refusal
+    // (the caller asked for something they don't hold); folded into "all" it's
+    // a silent omission (the rest of the feed is still theirs to see) rather
+    // than refusing the whole request over one source.
+    let canViewPlayers = true;
+    if (source === "all" || source === "player") {
+      const role = req.user ? await getRoleByName(req.user.role) : null;
+      canViewPlayers = Array.isArray(role?.capabilities) && role.capabilities.includes("players.view");
+    }
+
+    if (source === "player" && !canViewPlayers) {
+      return res.status(403).json({
+        error: "Viewing player activity history also requires players.view.",
+      });
+    }
+
     const entries = [];
 
     // RCON command history
@@ -5664,8 +5708,10 @@ router.get("/activity", requirePermission("diagnostics.manage"), async (req, res
       }
     }
 
-    // Player action logs
-    if (source === "all" || source === "player") {
+    // Player action logs -- gated on players.view above; source === "player"
+    // without it already returned. source === "all" without it just skips
+    // this block, same as if no player logs existed.
+    if ((source === "all" || source === "player") && canViewPlayers) {
       const playerLogs = await getPlayerLogs(null, limit);
       for (const log of playerLogs) {
         entries.push({

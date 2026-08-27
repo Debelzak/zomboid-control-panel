@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildA2SInfoQuery,
+  deriveEmptyReason,
   isPrivateIp,
   parseQueryPort,
   queryServerInfo,
@@ -131,5 +132,104 @@ describe("queryServerInfo: A2S challenge handling", () => {
         Buffer.from("Source Engine Query\0"),
       ]),
     );
+  });
+});
+
+// Regression coverage: queryServerInfo used to resolve null identically for
+// a timeout, a socket error, and a genuinely unparseable response -- GET
+// /query and GET /ping had no way to tell an operator which of the three
+// actually happened. onFailureReason is the optional, backward-compatible
+// side channel that fixes that (see the "shape unchanged" case above -- the
+// resolved value itself is untouched when the callback isn't passed).
+describe("queryServerInfo: onFailureReason distinguishes the collapsed causes", () => {
+  it("does not fire onFailureReason on a successful response", async () => {
+    const server = dgram.createSocket("udp4");
+    server.on("message", (message, remote) => {
+      const response = Buffer.from([
+        0xff, 0xff, 0xff, 0xff, 0x49, 17,
+        ...Buffer.from("OK Server\0"),
+        ...Buffer.from("Muldraugh\0"),
+        ...Buffer.from("projectzomboid\0"),
+        ...Buffer.from("Project Zomboid\0"),
+        0x78, 0x2a,
+        0, 32, 0,
+        0x64, 0x6c, 0, 1,
+        ...Buffer.from("42.13\0"),
+        0,
+      ]);
+      server.send(response, remote.port, remote.address);
+    });
+    await new Promise((resolve) => server.bind(0, "127.0.0.1", resolve));
+
+    try {
+      const port = server.address().port;
+      const reasons = [];
+      const result = await queryServerInfo("127.0.0.1", port, (r) => reasons.push(r));
+
+      expect(result).toMatchObject({ name: "OK Server" });
+      expect(reasons).toEqual([]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("reports 'unparseable-response' -- server answered, but the panel could not read it", async () => {
+    const server = dgram.createSocket("udp4");
+    server.on("message", (message, remote) => {
+      // Header byte 0x99 matches neither 'I' (0x49) nor the obsolete
+      // GoldSource 'm' (0x6d) -- parseA2SInfoResponse throws "Invalid
+      // response header" for this on purpose.
+      server.send(Buffer.from([0xff, 0xff, 0xff, 0xff, 0x99]), remote.port, remote.address);
+    });
+    await new Promise((resolve) => server.bind(0, "127.0.0.1", resolve));
+
+    try {
+      const port = server.address().port;
+      const reasons = [];
+      const result = await queryServerInfo("127.0.0.1", port, (r) => reasons.push(r));
+
+      expect(result).toBeNull();
+      expect(reasons).toEqual(["unparseable-response"]);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+// Regression coverage: GET / reported an identical `servers: []` for three
+// different causes on the master-server fallback path -- genuinely zero PZ
+// servers listed, servers listed but none answered A2S, and the master
+// itself unreachable. deriveEmptyReason is the pure decision extracted from
+// that route so the branching can be tested without standing up fake UDP
+// master servers.
+describe("deriveEmptyReason: the master-list zero-collapse, disambiguated", () => {
+  it("is undefined outside the master_server path -- steam_api source is untouched", () => {
+    expect(
+      deriveEmptyReason({ source: "steam_api", serversFound: 0, mastersReachable: false, mastersListedCount: 0 }),
+    ).toBeUndefined();
+  });
+
+  it("is undefined once any servers were actually found", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 3, mastersReachable: true, mastersListedCount: 10 }),
+    ).toBeUndefined();
+  });
+
+  it("'master-unreachable' -- every master in the list threw, none ever responded", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 0, mastersReachable: false, mastersListedCount: 0 }),
+    ).toBe("master-unreachable");
+  });
+
+  it("'no-servers-listed' -- the master answered with a genuinely empty list", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 0, mastersReachable: true, mastersListedCount: 0 }),
+    ).toBe("no-servers-listed");
+  });
+
+  it("'no-servers-responded' -- the master listed servers, but every A2S follow-up failed", () => {
+    expect(
+      deriveEmptyReason({ source: "master_server", serversFound: 0, mastersReachable: true, mastersListedCount: 40 }),
+    ).toBe("no-servers-responded");
   });
 });

@@ -80,11 +80,28 @@ export function buildA2SInfoQuery(challenge = null) {
   return challenge ? Buffer.concat([base, challenge]) : base;
 }
 
-export async function queryServerInfo(ip, port) {
+// Shared between GET /query and GET /ping so both name the same cause the
+// same way. Kept as its own map rather than inlined in either route so a
+// third caller of queryServerInfo's reason gets the same wording for free.
+export const QUERY_FAILURE_MESSAGES = {
+  timeout: 'Server did not respond (timed out)',
+  'socket-error': 'Could not reach the server (network error)',
+  'unparseable-response': 'Server responded with data the panel could not parse',
+};
+
+// onFailureReason, if given, is invoked with 'timeout' | 'socket-error' |
+// 'unparseable-response' right before a null resolve -- optional and
+// side-channel so the resolved value's contract (info object or null) is
+// completely unchanged for the batch caller in GET / and the existing
+// challenge-handling test, both of which only care about truthy-or-null.
+// GET /query and GET /ping pass it to turn one generic "didn't respond"
+// outcome back into the three genuinely different causes it collapsed.
+export async function queryServerInfo(ip, port, onFailureReason) {
   return new Promise((resolve) => {
     const socket = dgram.createSocket('udp4');
     let timeout = setTimeout(() => {
       socket.close();
+      onFailureReason?.('timeout');
       resolve(null);
     }, SERVER_QUERY_TIMEOUT);
     let challengeRetried = false;
@@ -92,6 +109,7 @@ export async function queryServerInfo(ip, port) {
     socket.on('error', () => {
       clearTimeout(timeout);
       socket.close();
+      onFailureReason?.('socket-error');
       resolve(null);
     });
 
@@ -107,6 +125,7 @@ export async function queryServerInfo(ip, port) {
         const challenge = msg.subarray(5, 9);
         timeout = setTimeout(() => {
           socket.close();
+          onFailureReason?.('timeout');
           resolve(null);
         }, SERVER_QUERY_TIMEOUT);
         socket.send(buildA2SInfoQuery(challenge), port, ip);
@@ -121,6 +140,7 @@ export async function queryServerInfo(ip, port) {
         resolve(info);
       } catch (e) {
         socket.close();
+        onFailureReason?.('unparseable-response');
         resolve(null);
       }
     });
@@ -397,12 +417,17 @@ export function mapSteamServer(server) {
   const versionMatch = gametype.match(/VERSION:([0-9.]+)/);
   const gameVersion = versionMatch ? versionMatch[1] : "";
 
+  // port is derived (addr first, then the raw gameport field as a
+  // fallback) rather than read directly, so an unparseable value must stay
+  // null rather than default to a guessed port (16261 is PZ's default, but
+  // guessing it here would be indistinguishable downstream from a port
+  // that was actually read -- a fabricated plausible value is worse than a
+  // null, since null is at least detectable). Matches this file's own
+  // `ping: null` convention for "we don't have this value" elsewhere.
   const addrParts = server.addr?.split(":") || [];
   const portFromAddr = parseQueryPort(addrParts[1]);
   const port =
-    portFromAddr !== null
-      ? portFromAddr
-      : parseQueryPort(server.gameport) || 16261;
+    portFromAddr !== null ? portFromAddr : parseQueryPort(server.gameport);
 
   return {
     name: server.name || "Unknown",
@@ -424,6 +449,18 @@ export function mapSteamServer(server) {
     tags,
     ping: null,
   };
+}
+
+// The master-server fallback path used to report an identical
+// `servers: []` for three genuinely different outcomes: the master
+// genuinely listed zero PZ servers, the master listed servers but none of
+// them answered the follow-up A2S query, or the master itself could never
+// be reached. Only meaningful for the master_server path with zero results
+// -- undefined otherwise, dropped from the JSON response by JSON.stringify.
+export function deriveEmptyReason({ source, serversFound, mastersReachable, mastersListedCount }) {
+  if (source !== 'master_server' || serversFound > 0) return undefined;
+  if (!mastersReachable) return 'master-unreachable';
+  return mastersListedCount > 0 ? 'no-servers-responded' : 'no-servers-listed';
 }
 
 /**
@@ -457,6 +494,14 @@ router.get('/', async (req, res) => {
     }
 
     // Fallback to master server query (less reliable but works without API key)
+    // emptyReason distinguishes three causes that used to collapse into the
+    // same "servers: []": the master genuinely listed nothing, the master
+    // listed servers but none of them answered the follow-up A2S query, or
+    // the master itself could never be reached. Only computed (and only
+    // included in the response) when this fallback path actually ran and
+    // came up empty -- the common non-empty case is untouched.
+    let mastersReachable = false;
+    let mastersListedCount = 0;
     if (servers.length === 0) {
       source = 'master_server';
       try {
@@ -466,6 +511,8 @@ router.get('/', async (req, res) => {
         for (const master of MASTER_SERVERS) {
           try {
             const masterServers = await queryMasterServer(master.host, master.port, 0xFF, filter);
+            mastersReachable = true;
+            mastersListedCount += masterServers.length;
 
             // Query each server for details (limit concurrent queries)
             const batchSize = 50;
@@ -489,6 +536,12 @@ router.get('/', async (req, res) => {
         log.error('Master server query failed:', masterError.message);
       }
     }
+    const emptyReason = deriveEmptyReason({
+      source,
+      serversFound: servers.length,
+      mastersReachable,
+      mastersListedCount,
+    });
 
     // Sort by player count (descending)
     servers.sort((a, b) => (b.players || 0) - (a.players || 0));
@@ -508,6 +561,7 @@ router.get('/', async (req, res) => {
       totalCapacity,
       servers, // Return ALL servers, frontend handles pagination
       apiKeyConfigured,
+      emptyReason, // undefined (dropped by JSON.stringify) outside the empty master_server case
     });
   } catch (error) {
     log.error('Failed to get server list:', error);
@@ -550,12 +604,14 @@ router.get('/query', async (req, res) => {
   }
 
   try {
-    const info = await queryServerInfo(ip, portNum);
+    let reason = 'timeout';
+    const info = await queryServerInfo(ip, portNum, (r) => { reason = r; });
 
     if (!info) {
       return res.status(504).json({
         success: false,
-        error: 'Server did not respond',
+        error: QUERY_FAILURE_MESSAGES[reason],
+        reason,
       });
     }
 
@@ -605,7 +661,8 @@ router.get('/ping', async (req, res) => {
   const startTime = Date.now();
 
   try {
-    const info = await queryServerInfo(ip, portNum);
+    let reason = 'timeout';
+    const info = await queryServerInfo(ip, portNum, (r) => { reason = r; });
     const ping = Date.now() - startTime;
 
     if (!info) {
@@ -613,6 +670,7 @@ router.get('/ping', async (req, res) => {
         success: true,
         ping: null,
         online: false,
+        reason,
       });
     }
 

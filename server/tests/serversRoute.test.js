@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 const createServer = vi.fn();
 const updateServer = vi.fn();
 const getServers = vi.fn();
 const getSetting = vi.fn();
+const getAllSettings = vi.fn();
 const testRconConnection = vi.fn();
 
 import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
@@ -11,6 +15,7 @@ import { mockGetRoleByName } from "./helpers/mockPermissionsDb.js";
 vi.mock("../database/init.js", () => ({
   getServers,
   getSetting,
+  getAllSettings,
   getServer: vi.fn(),
   getActiveServer: vi.fn(),
   createServer,
@@ -54,11 +59,21 @@ function getLayer(routePath, method) {
   );
 }
 
-// POST / now has requireRole("admin", "technician") ahead of the real
-// handler (see roles.test.js for coverage of that gate itself) — grab the
-// last stack entry rather than the first, same as getUpdateHandler() below,
-// so this keeps working regardless of how many gating middlewares precede
-// the handler.
+// POST / and PUT /:id (below) both have requirePermission("servers.manage")
+// ahead of the real handler -- grab the last stack entry rather than the
+// first, so this keeps working regardless of how many gating middlewares
+// precede the handler. This intentionally SKIPS that gate: it's testing the
+// handler's own business logic, not authorization. The stale claim that
+// used to sit here ("see roles.test.js for coverage of that gate itself")
+// was WRONG -- roles.test.js only ever imported routes/auth.js and
+// routes/docker.js, never routes/servers.js -- so nothing tested the
+// servers.manage gate on these two routes (or POST /:id/activate) at all
+// until server/tests/serversManageGateCoverage.test.js was added
+// (bug-hunt-2026-08-27, if-your-change-is-in-middleware-a-handler-only-
+// test-is-blind-to-it): confirmed by break-verify that stripping
+// requirePermission from all three routes left every test in THIS file
+// green, while that dedicated file caught it immediately. See that file
+// for the actual gate coverage.
 function getCreateHandler() {
   const layer = getLayer("/", "post");
   return layer.route.stack[layer.route.stack.length - 1].handle;
@@ -285,6 +300,34 @@ describe("server discovery port parsing", () => {
       expect(parseDiscoveredPort(value, 27015)).toBeNull();
     },
   );
+
+  it("agrees with mountDiscovery.js's readServerIniSettings on a signed port -- the real bug this proves", async () => {
+    // 2026-08-27, two-implementations-of-server-ini-parsing: on
+    // "RCONPort=+27015", pre-fix parseDiscoveredPort returned 27015 (a
+    // valid server) while mountDiscovery.js's parsePort -- reading the
+    // exact same ini field for create-from-discovery -- rejected it,
+    // because parseBoundedInteger's regex allows a leading sign and
+    // parsePort's does not. This test fails on the pre-fix code (asserts
+    // null, would have received 27015) and cross-checks against the real
+    // readServerIniSettings function (not a copy) on a real temp ini, so
+    // it can't drift back out of sync with mountDiscovery.js's actual
+    // behaviour the way a hand-copied fixture could.
+    expect(parseDiscoveredPort("+27015", 27015)).toBeNull();
+
+    const { readServerIniSettings } = await import("../services/mountDiscovery.js");
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "auto-scan-port-sign-"));
+    try {
+      const serverDir = path.join(tmpRoot, "Server");
+      fs.mkdirSync(serverDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(serverDir, "signedport.ini"),
+        ["RCONPort=+27015", "RCONPassword=secret", "DefaultPort=16261", "PublicName=Test"].join("\n"),
+      );
+      expect(readServerIniSettings(tmpRoot, "signedport")).toBeNull();
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("server ID parsing", () => {
@@ -531,6 +574,10 @@ describe("GET /api/servers/rcon-status", () => {
 });
 
 describe("GET /api/servers", () => {
+  beforeEach(() => {
+    getAllSettings.mockReset().mockResolvedValue({});
+  });
+
   it("masks rconPassword/adminPassword for every server in the list", async () => {
     getServers.mockResolvedValue([
       { id: 1, name: "A", rconPassword: "secret-a", adminPassword: "admin-a" },
@@ -545,6 +592,58 @@ describe("GET /api/servers", () => {
     expect(payload.servers[0].rconPassword).not.toBe("secret-a");
     expect(payload.servers[0].adminPassword).not.toBe("admin-a");
     expect(payload.servers[1].rconPassword).not.toBe("secret-b");
+  });
+
+  // The Layout.tsx sidebar nav only ever reads remoteConfigConfigured off
+  // the entry it finds in THIS list's response (see GET /active, which sets
+  // the same field, is a dead end for that consumer -- nothing calls it).
+  // A regression here silently re-locks Server Configuration/Templates for
+  // every remote-server operator, with no error and no failed request.
+  it("marks a remote server as remoteConfigConfigured when SFTP-based remote config is set up", async () => {
+    getAllSettings.mockResolvedValue({
+      panelBridgeSftpHost: "192.168.1.50",
+      panelBridgeSftpConfigPath: "/home/pz/Server",
+    });
+    getServers.mockResolvedValue([
+      { id: 1, name: "Remote", isRemote: true },
+    ]);
+    const response = createResponse();
+    const layer = getLayer("/", "get");
+
+    await layer.route.stack[0].handle({}, response);
+
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.servers[0].remoteConfigConfigured).toBe(true);
+  });
+
+  it("does NOT mark a remote server as remoteConfigConfigured when SFTP is not set up", async () => {
+    getServers.mockResolvedValue([
+      { id: 1, name: "Remote", isRemote: true },
+    ]);
+    const response = createResponse();
+    const layer = getLayer("/", "get");
+
+    await layer.route.stack[0].handle({}, response);
+
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.servers[0].remoteConfigConfigured).toBe(false);
+  });
+
+  it("does NOT mark a local server as remoteConfigConfigured even when SFTP is set up (unused for local servers)", async () => {
+    getAllSettings.mockResolvedValue({
+      panelBridgeSftpHost: "192.168.1.50",
+      panelBridgeSftpConfigPath: "/home/pz/Server",
+    });
+    getServers.mockResolvedValue([
+      { id: 1, name: "Local", isRemote: false },
+    ]);
+    const response = createResponse();
+    const layer = getLayer("/", "get");
+
+    await layer.route.stack[0].handle({}, response);
+
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.servers[0].remoteConfigConfigured).toBe(false);
   });
 });
 
