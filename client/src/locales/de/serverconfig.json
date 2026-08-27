@@ -359,6 +359,8 @@
     "loadTemplatesFailed": "Laden der gespeicherten Konfigurationen fehlgeschlagen.",
     "appliedTitle": "Angewendet",
     "applyTemplateFailed": "Anwenden der gespeicherten Konfiguration fehlgeschlagen.",
+    "applyTemplatePartialTitle": "Teilweise angewendet",
+    "applyTemplatePartialDesc": "{{applied}}-Einstellungen wurden vor diesem Fehler auf die Festplatte geschrieben: {{error}} Der Rest der gespeicherten Konfiguration wurde nicht angewendet.",
     "saveTemplateFailed": "Speichern der Konfiguration fehlgeschlagen.",
     "deletedTitle": "Gelöscht",
     "templateDeletedDesc": "Gespeicherte Konfiguration „{{name}}“ gelöscht",

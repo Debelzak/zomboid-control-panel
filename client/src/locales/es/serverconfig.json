@@ -359,6 +359,8 @@
     "loadTemplatesFailed": "No se pudieron cargar las configs guardadas.",
     "appliedTitle": "Aplicado",
     "applyTemplateFailed": "No se pudo aplicar la config guardada.",
+    "applyTemplatePartialTitle": "Aplicado parcialmente",
+    "applyTemplatePartialDesc": "Los ajustes de {{applied}} se escribieron en disco antes de este error: {{error}} El resto de la config guardada no se aplicó.",
     "saveTemplateFailed": "No se pudo guardar la configuración.",
     "deletedTitle": "Eliminado",
     "templateDeletedDesc": "Config guardada «{{name}}» eliminada",

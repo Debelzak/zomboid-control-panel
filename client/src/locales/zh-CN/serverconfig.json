@@ -359,6 +359,8 @@
     "loadTemplatesFailed": "加载已保存的配置失败。",
     "appliedTitle": "已应用",
     "applyTemplateFailed": "应用已保存的配置失败。",
+    "applyTemplatePartialTitle": "部分已应用",
+    "applyTemplatePartialDesc": "{{applied}} 设置在此次失败前已写入磁盘：{{error}} 已保存配置的其余部分未应用。",
     "saveTemplateFailed": "保存配置失败。",
     "deletedTitle": "已删除",
     "templateDeletedDesc": "已保存的配置“{{name}}”已删除",

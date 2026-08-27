@@ -213,6 +213,28 @@ export function isWorldSaveFailure(data: { persisted?: unknown } | null | undefi
   return data?.persisted === false
 }
 
+// server/routes/serverFiles.js's POST /templates/:id/apply tracks each write
+// as it actually lands, and attaches that as `partiallyApplied` on the 500
+// body when INI succeeded before Sandbox threw (the two settings groups are
+// written independently, so one can land while the other fails).
+// ApiError.data carries the raw response payload -- read it here rather than
+// showing a generic failure that would read as "nothing happened" when part
+// of the template is now live on disk. Exported as a pure predicate so the
+// decision (partial-apply toast vs. generic failure toast) is unit-testable
+// without mounting the whole page.
+export function getPartiallyAppliedFromApplyTemplateError(error: unknown): string[] | null {
+  if (
+    error instanceof ApiError &&
+    error.data &&
+    typeof error.data === 'object' &&
+    Array.isArray((error.data as { partiallyApplied?: unknown }).partiallyApplied)
+  ) {
+    const applied = (error.data as { partiallyApplied: string[] }).partiallyApplied
+    return applied.length > 0 ? applied : null
+  }
+  return null
+}
+
 // Auth-aware image preview (img tags can't send Bearer tokens)
 function AuthImage({ filePath, alt, className }: { filePath: string; alt?: string; className?: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
@@ -1781,11 +1803,27 @@ export default function ServerConfig() {
       setShowTemplates(false)
       loadData() // Reload the config data
     } catch (error) {
-      toast({
-        title: t('toasts.error'),
-        description: getUserErrorMessage(error, t('toasts.applyTemplateFailed')),
-        variant: 'destructive'
-      })
+      const partiallyApplied = getPartiallyAppliedFromApplyTemplateError(error)
+      if (partiallyApplied) {
+        toast({
+          title: t('toasts.applyTemplatePartialTitle'),
+          description: t('toasts.applyTemplatePartialDesc', {
+            applied: partiallyApplied.join(', '),
+            error: getUserErrorMessage(error, t('toasts.applyTemplateFailed')),
+          }),
+          variant: 'destructive'
+        })
+        // The part that landed is now the live config -- reload so the
+        // editor reflects disk instead of showing what was there before
+        // the apply, which would silently disagree with the real file.
+        loadData()
+      } else {
+        toast({
+          title: t('toasts.error'),
+          description: getUserErrorMessage(error, t('toasts.applyTemplateFailed')),
+          variant: 'destructive'
+        })
+      }
     } finally {
       setTemplateLoading(false)
     }

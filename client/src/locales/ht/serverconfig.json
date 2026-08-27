@@ -364,6 +364,8 @@
     "loadTemplatesFailed": "Pa t kapab chaje konfigirasyon sove yo.",
     "appliedTitle": "Aplike",
     "applyTemplateFailed": "Pa t kapab aplike konfigirasyon sove a.",
+    "applyTemplatePartialTitle": "Aplike pasyèlman",
+    "applyTemplatePartialDesc": "Paramèt {{applied}} yo te ekri sou disk anvan echèk sa a: {{error}} Rès konfigirasyon sove a pa t aplike.",
     "saveTemplateFailed": "Pa t kapab sove konfigirasyon an.",
     "deletedTitle": "Efase",
     "templateDeletedDesc": "Konfigirasyon sove \"{{name}}\" efase",
