@@ -11,6 +11,7 @@ import {
 import { SourceRconClient } from "../utils/sourceRcon.js";
 import { readSecret } from "../utils/secrets.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
+import { redactRconCommandSecrets } from "../utils/rconCommandRedaction.js";
 
 // Common accented Latin letters (French in particular -- this panel ships an
 // FR locale) transliterated to their closest plain-ASCII equivalent, for
@@ -973,7 +974,7 @@ export class RconService extends EventEmitter {
         }
       }
 
-      log.debug(`executing: ${command}`);
+      log.debug(`executing: ${redactRconCommandSecrets(command)}`);
 
       // Execute with timeout
       let timeoutId;
