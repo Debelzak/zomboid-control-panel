@@ -46,7 +46,8 @@ import {
 } from '@/components/ui/tooltip'
 import { Link } from 'react-router-dom'
 import { useToast } from '@/components/ui/use-toast'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, ApiError } from '@/lib/api'
+import { getUserErrorMessage } from '@/lib/errorMessage'
 import { copyText } from '@/lib/utils'
 
 interface GameServer {
@@ -175,10 +176,23 @@ export default function ServerFinder() {
     try {
       const url = forceRefresh ? '/api/server-finder?refresh=true' : '/api/server-finder'
       const response = await apiFetch(url.replace('/api', ''))
-      const data = await response.json()
+      const data = await response.json().catch(() => null)
 
-      if (!data.success) {
-        throw new Error(data.error || t('toasts.fetchFailedFallback'))
+      // apiFetch() is the raw, unwrapped primitive (unlike xApi.method()
+      // calls elsewhere, which go through lib/api's handleResponse()) --
+      // callers are responsible for their own status/code handling.
+      // GET /server-finder's only failure mode is an uncoded 500 with
+      // success:false (server/routes/serverFinder.js), so a plain
+      // `throw new Error(data.error)` here discarded response.status
+      // before getUserErrorMessage() below could ever translate it via
+      // the generic-500 wrapper -- same shape as the raw-fetch sites
+      // fixed earlier tonight (AuthContext.tsx, FileDiffViewer.tsx,
+      // Debug.tsx, Login.tsx).
+      if (!response.ok || !data || data.success === false) {
+        throw new ApiError(data?.error || `HTTP ${response.status}`, {
+          status: response.status,
+          code: data?.code,
+        })
       }
 
       setServers(data.servers || [])
@@ -203,8 +217,7 @@ export default function ServerFinder() {
         })
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : t('toasts.unknownError')
-      setError(message)
+      setError(getUserErrorMessage(err, t('toasts.fetchFailedFallback')))
     } finally {
       setLoading(false)
     }
