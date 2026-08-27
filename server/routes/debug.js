@@ -23,6 +23,7 @@ import {
   getPlayerLogs,
   getDb,
   getActiveServer,
+  getServers,
   getScheduledTasks,
   getTrackedMods,
   getAllSettings,
@@ -1442,9 +1443,25 @@ router.post("/paths", requirePermission("diagnostics.manage"), async (req, res) 
       return res.status(400).json({ error: "Invalid logs directory path" });
     }
 
+    // The panel's own data/logs directory must never overlap a configured
+    // PZ server's install or save location -- moving the database into a
+    // live PZ install (or vice versa) is exactly the kind of "wrong, not
+    // just unwritable" target that passes a plain writability check.
+    const configuredServers = await getServers();
+    const extraBlockedPaths = configuredServers
+      .flatMap((server) => [server.installPath, server.zomboidDataPath])
+      .filter((p) => typeof p === "string" && p.trim());
+
+    // 2026-08-27: moveFiles now defaults to false, not true. It used to be
+    // `moveFiles !== false`, so a request naming a new dataDir with no
+    // moveFiles key at all silently moved db.json and every *.secret file
+    // -- the destructive option by omission, not by choice. Debug.tsx (the
+    // only real caller) always sends this explicitly, so this costs the
+    // UI nothing.
     const result = await setDataPaths(
       { dataDir, logsDir },
-      moveFiles !== false,
+      moveFiles === true,
+      { extraBlockedPaths },
     );
 
     if (result.success) {
