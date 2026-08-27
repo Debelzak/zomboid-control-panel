@@ -13,10 +13,24 @@
  * A plain `<button disabled>` (native, or shadcn's `Button`, which forwards
  * `disabled` to a real native `<button>`) does not have this problem --
  * disabled native form controls dispatch no click, Enter, or Space
- * activation at all. That is WHY this rule deliberately does not flag
- * `<Button>`/`<button>`: demanding a redundant guard there would be noise
- * that gets the rule disabled. THE GUARD IS NEEDED EXACTLY WHERE THE
- * ELEMENT IS NOT A REAL BUTTON.
+ * activation at all. That is WHY this rule deliberately does not flag a
+ * native button for LACKING a guard: demanding one there is demanding dead
+ * code, and that is the noise that gets a rule switched off. THE GUARD IS
+ * NEEDED EXACTLY WHERE THE ELEMENT IS NOT A REAL BUTTON.
+ *
+ * But a native button is NOT exempt from the other half of this rule: if a
+ * guard exists and tests a DIFFERENT `can*` binding than the element's own
+ * `disabled` prop, that is a defect anywhere, and on a native button it is
+ * the WORST case -- because the guard is unreachable in production (a
+ * disabled native button never dispatches the click that would exercise
+ * it), NO TEST CAN EVER OBSERVE THE DISAGREEMENT AT RUNTIME. It is invisible
+ * by construction, which is exactly why this half of the rule exists:
+ * Angela break-verified this shape on Debug.tsx (2026-08-27) -- pulling the
+ * function guard broke nothing there (a real browser already refuses the
+ * click), pulling the `disabled` prop broke the tests. So MISSING is fine
+ * on a native button; MISMATCHED is not, and is the one case a human (or
+ * this rule) has to catch by reading the code, since no click-through test
+ * can ever prove it wrong.
  *
  * Real case (2026-08-27, Players.tsx dossier "..." menu): six
  * `DropdownMenuItem`s gated on `disabled={... || !canModerate}` /
@@ -43,7 +57,9 @@
  * is exactly the "mechanical, not cross-file inference" shape this floor
  * has been willing to ship rules for tonight.
  *
- * A violation requires ALL of:
+ * TWO SEPARATE CHECKS, one per element category:
+ *
+ * MISSING-GUARD (RADIX_ITEM_COMPONENTS only) -- a violation requires ALL of:
  *   1. The JSX element's tag name is one of RADIX_ITEM_COMPONENTS.
  *   2. It has a `disabled={...}` expression container that references at
  *      least one `can*`-named identifier anywhere in its expression tree
@@ -53,7 +69,25 @@
  *   4. That function's body is NOT a block whose FIRST statement is an
  *      `if (...)` testing at least one of the SAME `can*` names found in
  *      (2), with a consequent that returns (a bare `return`, or a block
- *      containing one).
+ *      containing one). A guard testing an unrelated `can*` name (not in
+ *      the disabled set) also fails this check -- there is no separate
+ *      "mismatch" message for this category, since it's just as testable
+ *      through the UI as an outright-missing guard (see 981d827's
+ *      click-through coverage), so one message covers both.
+ *
+ * MISMATCH-ONLY (NATIVE_BUTTON_COMPONENTS only) -- a violation requires ALL
+ * of:
+ *   1. The JSX element's tag name is one of NATIVE_BUTTON_COMPONENTS.
+ *   2. Same `disabled` requirement as above.
+ *   3. Same inline-function `onClick` requirement as above.
+ *   4. That function's body IS a block whose FIRST statement is an
+ *      `if (...)` that DOES reference at least one `can*` name (i.e. a
+ *      capability guard was clearly attempted) but NONE of those names
+ *      overlap the `disabled` set. A native button with NO guard at all,
+ *      or whose first `if` doesn't reference any `can*` name (ordinary
+ *      loading-state logic, unrelated to capabilities), is NOT flagged --
+ *      demanding a guard where `disabled` already blocks the click is the
+ *      noise this rule exists to avoid.
  *
  * === KNOWN GAPS, ACCEPTED RATHER THAN CHASED (same policy as this
  * directory's other rules) ===
@@ -79,10 +113,21 @@
  *     `canB` alone could still let the click through. No real site combines
  *     two capability names in one `disabled` as of landing.
  *   - Only `DropdownMenuItem`, `ContextMenuItem`, `MenubarItem`,
- *     `SelectItem`, `CommandItem` are checked -- any other Radix
- *     non-native item primitive (a checkbox/radio item variant, a custom
- *     wrapper around one) is invisible unless added to
+ *     `SelectItem`, `CommandItem` are checked for missing guards -- any
+ *     other Radix non-native item primitive (a checkbox/radio item variant,
+ *     a custom wrapper around one) is invisible unless added to
  *     RADIX_ITEM_COMPONENTS below.
+ *   - Only literal `<button>` and `<Button>` are checked for mismatched
+ *     guards -- another native-rendering wrapper component under a
+ *     different name is invisible unless added to NATIVE_BUTTON_COMPONENTS.
+ *   - The mismatch check passes on ANY overlap between the guard's `can*`
+ *     names and the `disabled` set, same policy as the missing-guard
+ *     check's own accepted gap above: `disabled={!canA || !canB}` guarded
+ *     by `if (!canA) return` is NOT flagged even though `canB` alone could
+ *     still let the click through, since a native button also has
+ *     `disabled` blocking it structurally. Kept symmetric with the
+ *     missing-guard side rather than holding one category to a stricter
+ *     standard.
  */
 
 const RADIX_ITEM_COMPONENTS = new Set([
@@ -92,6 +137,8 @@ const RADIX_ITEM_COMPONENTS = new Set([
   "SelectItem",
   "CommandItem",
 ]);
+
+const NATIVE_BUTTON_COMPONENTS = new Set(["button", "Button"]);
 
 const CAPABILITY_NAME = /^can[A-Z]/;
 
@@ -142,19 +189,27 @@ function consequentReturns(node) {
   return false;
 }
 
-// True when `fn`'s body opens with `if (<references one of capabilityNames>)
-// return...` -- the two-layer guard this rule requires.
-function isGuardedAtEntry(fn, capabilityNames) {
-  if (fn.body.type !== "BlockStatement") return false;
+// If `fn`'s body opens with `if (<expr>) <consequent>`, returns the set of
+// can*-named identifiers referenced in that `if`'s test (possibly empty).
+// Returns null when there's no qualifying opening `if` at all (expression
+// body, empty block, or first statement isn't an IfStatement).
+function firstIfGuardTestNames(fn) {
+  if (fn.body.type !== "BlockStatement") return null;
   const first = fn.body.body[0];
-  if (!first || first.type !== "IfStatement") return false;
-
+  if (!first || first.type !== "IfStatement") return null;
   const testNames = new Set();
   collectCapabilityNames(first.test, testNames);
-  const overlaps = [...testNames].some((name) => capabilityNames.has(name));
-  if (!overlaps) return false;
+  return { testNames, consequent: first.consequent };
+}
 
-  return consequentReturns(first.consequent);
+// True when `fn`'s body opens with `if (<references one of capabilityNames>)
+// return...` -- the two-layer guard the MISSING-GUARD check requires.
+function isGuardedAtEntry(fn, capabilityNames) {
+  const guard = firstIfGuardTestNames(fn);
+  if (!guard) return false;
+  const overlaps = [...guard.testNames].some((name) => capabilityNames.has(name));
+  if (!overlaps) return false;
+  return consequentReturns(guard.consequent);
 }
 
 export default {
@@ -162,19 +217,25 @@ export default {
     type: "problem",
     docs: {
       description:
-        "Flag a capability-gated Radix menu-item primitive (DropdownMenuItem/ContextMenuItem/MenubarItem/SelectItem/CommandItem) whose onClick does not start with an early return on that same capability -- Radix runs onClick regardless of disabled for these non-native items",
+        "Flag (1) a capability-gated Radix menu-item primitive (DropdownMenuItem/ContextMenuItem/MenubarItem/SelectItem/CommandItem) whose onClick does not start with an early return on that same capability -- Radix runs onClick regardless of disabled for these non-native items -- and (2) a native button/Button whose onClick guard tests a DIFFERENT capability than its own disabled prop, the one shape no click-through test can ever catch",
     },
     schema: [],
     messages: {
       unguarded:
         "This {{tag}} is disabled on {{bindings}}, but Radix runs a menu item's onClick unconditionally -- the disabled attribute is CSS/unfocusability here, not a code-level gate (it renders a <div>, not a native <button>). Add `if (!{{firstBinding}}) return` as the first line of the onClick body, matching the two-layer guard pattern already used elsewhere (see this rule's file header).",
+      mismatchedGuard:
+        "This {{tag}}'s onClick guard tests {{guardBindings}}, but its own disabled prop is on {{bindings}} -- a disabled native button never dispatches the click that would exercise this guard, so NO TEST CAN EVER OBSERVE the disagreement at runtime. It is only visible by reading the code. Make the guard's first `if` test the SAME binding(s) as disabled.",
     },
   },
 
   create(context) {
     return {
       JSXOpeningElement(node) {
-        if (node.name.type !== "JSXIdentifier" || !RADIX_ITEM_COMPONENTS.has(node.name.name)) return;
+        if (node.name.type !== "JSXIdentifier") return;
+        const tag = node.name.name;
+        const isRadixItem = RADIX_ITEM_COMPONENTS.has(tag);
+        const isNativeButton = NATIVE_BUTTON_COMPONENTS.has(tag);
+        if (!isRadixItem && !isNativeButton) return;
 
         const disabledAttr = findAttribute(node.attributes, "disabled");
         if (!disabledAttr || !disabledAttr.value || disabledAttr.value.type !== "JSXExpressionContainer") return;
@@ -189,16 +250,36 @@ export default {
         const onClickExpr = onClickAttr.value.expression;
         if (onClickExpr.type !== "ArrowFunctionExpression" && onClickExpr.type !== "FunctionExpression") return;
 
-        if (isGuardedAtEntry(onClickExpr, capabilityNames)) return;
-
         const bindings = [...capabilityNames];
+
+        if (isRadixItem) {
+          if (isGuardedAtEntry(onClickExpr, capabilityNames)) return;
+          context.report({
+            node: onClickAttr,
+            messageId: "unguarded",
+            data: {
+              tag,
+              bindings: bindings.map((name) => `!${name}`).join(" / "),
+              firstBinding: bindings[0],
+            },
+          });
+          return;
+        }
+
+        // isNativeButton: missing guard is fine (disabled already blocks the
+        // click for real); a PRESENT guard testing the wrong binding is not.
+        const guard = firstIfGuardTestNames(onClickExpr);
+        if (!guard || guard.testNames.size === 0) return;
+        const overlaps = [...guard.testNames].some((name) => capabilityNames.has(name));
+        if (overlaps) return;
+
         context.report({
           node: onClickAttr,
-          messageId: "unguarded",
+          messageId: "mismatchedGuard",
           data: {
-            tag: node.name.name,
+            tag,
             bindings: bindings.map((name) => `!${name}`).join(" / "),
-            firstBinding: bindings[0],
+            guardBindings: [...guard.testNames].map((name) => `!${name}`).join(" / "),
           },
         });
       },

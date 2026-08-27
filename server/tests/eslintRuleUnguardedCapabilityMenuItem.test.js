@@ -14,6 +14,12 @@ describe("no-unguarded-capability-menu-item", () => {
   it("flags a capability-gated Radix item onClick with no matching early-return guard, and nothing else", () => {
     ruleTester.run("no-unguarded-capability-menu-item", rule, {
       valid: [
+        // Native button, guard present and correct.
+        "<Button disabled={!canModerate} onClick={() => { if (!canModerate) return; doThing() }} />",
+        // Native button, guard present but tests something unrelated to capabilities (ordinary loading logic) -- not a mismatch.
+        "<Button disabled={!canModerate} onClick={() => { if (loading) return; doThing() }} />",
+        // Native button, disabled references no capability at all -- out of scope either way.
+        "<Button disabled={loading} onClick={() => { if (somethingElse) return; doThing() }} />",
         // Guarded: first statement is `if (!canX) return`, same binding as disabled.
         "<DropdownMenuItem disabled={!canModerate} onClick={() => { if (!canModerate) return; doThing() }} />",
         // Guard can appear after other logic is skipped -- still first statement, negation via !.
@@ -22,7 +28,7 @@ describe("no-unguarded-capability-menu-item", () => {
         "<ContextMenuItem disabled={!canGmTools} onClick={() => { if (!canGmTools) { return } doThing() }} />",
         // A regular function expression, not just an arrow.
         "<SelectItem disabled={!canModerate} onClick={function () { if (!canModerate) return; doThing() }} />",
-        // A native button is never flagged, guarded or not -- disabled genuinely blocks the click.
+        // A native button with NO guard at all is never flagged -- disabled genuinely blocks the click for real.
         "<button disabled={!canModerate} onClick={() => doThing()} />",
         "<Button disabled={!canModerate} onClick={() => doThing()} />",
         // A Radix item with no disabled at all isn't this rule's concern.
@@ -63,6 +69,18 @@ describe("no-unguarded-capability-menu-item", () => {
           // No guard at all, function expression form.
           code: "<SelectItem disabled={!canGmTools} onClick={function () { doThing() }} />",
           errors: [{ messageId: "unguarded" }],
+        },
+        {
+          // Native button: guard present, but tests a DIFFERENT capability
+          // than its own disabled prop -- Angela's Debug.tsx break-verify
+          // shape, invisible to any click-through test since disabled
+          // genuinely blocks a real click here.
+          code: "<Button disabled={!canModerate} onClick={() => { if (!canGmTools) return; doThing() }} />",
+          errors: [{ messageId: "mismatchedGuard" }],
+        },
+        {
+          code: "<button disabled={!canModerate} onClick={() => { if (!canGmTools) return; doThing() }} />",
+          errors: [{ messageId: "mismatchedGuard" }],
         },
       ],
     });
