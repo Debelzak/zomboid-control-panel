@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noManage": "Gestionar copias de seguridad requiere el permiso backups.manage, del cual este rol no dispone.",
+    "noRestore": "Restaurar una copia de seguridad requiere el permiso backups.restore, del cual este rol no dispone.",
+    "noDownload": "Descargar una copia de seguridad requiere el permiso backups.download, del cual este rol no dispone."
+  },
   "pageHeader": {
     "title": "Copias de seguridad del mundo",
     "description": "Crear, restaurar y administrar las copias de seguridad del mundo del servidor",

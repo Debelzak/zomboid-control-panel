@@ -64,6 +64,8 @@ import {
 import { chunksApi, serversApi, panelBridgeApi, ApiError } from "@/lib/api";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSocket } from "@/contexts/SocketContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { DisabledReason } from "@/components/DisabledReason";
 
 interface SaveInfo {
   name: string;
@@ -223,6 +225,12 @@ export default function ChunkCleaner() {
   const { t, i18n } = useTranslation("chunkCleaner");
   const { theme } = useTheme();
   const socket = useSocket();
+  const { can } = useAuth();
+  // Bound to routes/chunks.js's requirePermission("chunks.manage") on both
+  // /chunks/save-path and /chunks/delete-chunks -- the same capability for
+  // both, unlike WorldMap's mixed bridge.command/players.gm_tools/
+  // server.world_events split (2026-08-27 bug-hunt capability trace).
+  const canManageChunks = can("chunks.manage");
   const [saves, setSaves] = useState<SaveInfo[]>([]);
   const [selectedSave, setSelectedSave] = useState<string>("");
   const [chunks, setChunks] = useState<ChunkInfo[]>([]);
@@ -1602,7 +1610,7 @@ export default function ChunkCleaner() {
           setSelectedChunks(new Set());
           break;
         case "Delete":
-          if (selectedChunks.size > 0) {
+          if (selectedChunks.size > 0 && canManageChunks) {
             setDeleteVehicles(true);
             setDeleteDialogOpen(true);
           }
@@ -1618,7 +1626,7 @@ export default function ChunkCleaner() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedChunks.size, deleteDialogOpen, selectedSave]);
+  }, [selectedChunks.size, deleteDialogOpen, selectedSave, canManageChunks]);
 
   // ─── Mouse handlers ───
   const handleMouseDown = useCallback(
@@ -2188,17 +2196,19 @@ export default function ChunkCleaner() {
                     </p>
                     {customPath && (
                       <div className="flex gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 h-6 text-[10px]"
-                          onClick={() => void persistCurrentPath(customPath)}
-                          disabled={savingPath || loadingSaves}
-                          title={t("save.saveAsDefaultTitle")}
-                        >
-                          <Save className="w-3 h-3 mr-1" />
-                          {savingPath ? t("save.saving") : t("save.saveAsDefault")}
-                        </Button>
+                        <DisabledReason reason={!canManageChunks ? t("permissions.noManage") : null}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 h-6 text-[10px]"
+                            onClick={() => void persistCurrentPath(customPath)}
+                            disabled={savingPath || loadingSaves || !canManageChunks}
+                            title={t("save.saveAsDefaultTitle")}
+                          >
+                            <Save className="w-3 h-3 mr-1" />
+                            {savingPath ? t("save.saving") : t("save.saveAsDefault")}
+                          </Button>
+                        </DisabledReason>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -2219,18 +2229,20 @@ export default function ChunkCleaner() {
                           <CheckCircle2 className="w-3 h-3 text-primary shrink-0 mt-0.5" />
                           <span>{t("save.autoDetected")}</span>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full h-6 text-[10px]"
-                          onClick={() =>
-                            void persistCurrentPath(debugInfo.autoPicked!)
-                          }
-                          disabled={savingPath}
-                        >
-                          <Save className="w-3 h-3 mr-1" />
-                          {savingPath ? t("save.saving") : t("save.saveAsDefault")}
-                        </Button>
+                        <DisabledReason reason={!canManageChunks ? t("permissions.noManage") : null}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-6 text-[10px]"
+                            onClick={() =>
+                              void persistCurrentPath(debugInfo.autoPicked!)
+                            }
+                            disabled={savingPath || !canManageChunks}
+                          >
+                            <Save className="w-3 h-3 mr-1" />
+                            {savingPath ? t("save.saving") : t("save.saveAsDefault")}
+                          </Button>
+                        </DisabledReason>
                       </div>
                     )}
                   </CollapsibleContent>
@@ -2524,17 +2536,20 @@ export default function ChunkCleaner() {
 
             {/* Delete Button */}
             {selectedChunks.size > 0 && (
-              <Button
-                variant="destructive"
-                className="w-full h-9 text-sm"
-                onClick={() => {
-                  setDeleteVehicles(true);
-                  setDeleteDialogOpen(true);
-                }}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                {t("deleteButton", { count: selectedChunks.size })}
-              </Button>
+              <DisabledReason reason={!canManageChunks ? t("permissions.noManage") : null} className="w-full">
+                <Button
+                  variant="destructive"
+                  className="w-full h-9 text-sm"
+                  disabled={!canManageChunks}
+                  onClick={() => {
+                    setDeleteVehicles(true);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {t("deleteButton", { count: selectedChunks.size })}
+                </Button>
+              </DisabledReason>
             )}
           </div>
 

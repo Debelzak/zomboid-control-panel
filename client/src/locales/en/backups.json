@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noManage": "Managing backups requires the backups.manage permission, which this role doesn't have.",
+    "noRestore": "Restoring a backup requires the backups.restore permission, which this role doesn't have.",
+    "noDownload": "Downloading a backup requires the backups.download permission, which this role doesn't have."
+  },
   "pageHeader": {
     "title": "World Backups",
     "description": "Create, restore, and manage your server world backups",

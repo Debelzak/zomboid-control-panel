@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noManage": "La gestion des sauvegardes nécessite la permission backups.manage, que ce rôle ne possède pas.",
+    "noRestore": "La restauration d'une sauvegarde nécessite la permission backups.restore, que ce rôle ne possède pas.",
+    "noDownload": "Le téléchargement d'une sauvegarde nécessite la permission backups.download, que ce rôle ne possède pas."
+  },
   "pageHeader": {
     "title": "Sauvegardes du monde",
     "description": "Créez, restaurez et gérez les sauvegardes du monde de votre serveur",

@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noBridgeCommand": "Diese Ingame-Aktion erfordert die Berechtigung bridge.command, über die diese Rolle nicht verfügt.",
+    "noWorldEvents": "Das Auslösen von Weltereignissen erfordert die Berechtigung server.world_events, über die diese Rolle nicht verfügt.",
+    "noGmTools": "Das Spawnen eines Fahrzeugs erfordert die Berechtigung players.gm_tools, über die diese Rolle nicht verfügt."
+  },
   "pageHeader": {
     "title": "Weltkarte",
     "description": "Live-Positionen der Spieler auf der Karte von Knox County. Rechtsklick für Aktionen."

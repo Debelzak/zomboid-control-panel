@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noBridgeCommand": "Esta acción en el juego requiere el permiso bridge.command, del cual este rol no dispone.",
+    "noWorldEvents": "Activar eventos del mundo requiere el permiso server.world_events, del cual este rol no dispone.",
+    "noGmTools": "Generar un vehículo requiere el permiso players.gm_tools, del cual este rol no dispone."
+  },
   "pageHeader": {
     "title": "Mapa del mundo",
     "description": "Posiciones en vivo de los jugadores en el mapa del condado de Knox. Clic derecho para acciones."

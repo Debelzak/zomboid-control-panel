@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noBridgeCommand": "Aksyon anndan jwèt sa a bezwen pèmisyon bridge.command, e wòl sa a pa genyen li.",
+    "noWorldEvents": "Pou ou deklanche evènman mond, ou bezwen pèmisyon server.world_events, e wòl sa a pa genyen li.",
+    "noGmTools": "Pou ou fè yon veyikil parèt, ou bezwen pèmisyon players.gm_tools, e wòl sa a pa genyen li."
+  },
   "pageHeader": {
     "title": "Kat Mond",
     "description": "Pozisyon jwè an dirèk sou kat Konte Knox la. Klike-dwat pou aksyon."

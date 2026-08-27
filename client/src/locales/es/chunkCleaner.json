@@ -1,4 +1,7 @@
 {
+  "permissions": {
+    "noManage": "Limpiar los chunks del mapa requiere el permiso chunks.manage, del cual este rol no dispone."
+  },
   "pageHeader": {
     "title": "Limpieza del mapa",
     "description": "Restablecer áreas del mapa dañadas o sobreexplotadas para que el mundo pueda regenerarse limpiamente",

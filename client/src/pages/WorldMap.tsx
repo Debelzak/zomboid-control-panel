@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useSocket } from '@/contexts/SocketContext'
+import { useAuth } from '@/contexts/AuthContext'
+import { DisabledReason } from '@/components/DisabledReason'
 import {
   Map as MapIcon,
   Crosshair,
@@ -591,6 +593,21 @@ export default function WorldMap() {
   const { t } = useTranslation('worldMap')
   const { theme } = useTheme()
   const socket = useSocket()
+  const { can } = useAuth()
+  // 2026-08-27 bug-hunt capability trace: most of this page's actions go
+  // through POST /panelBridge/command, gated ONLY bridge.command server-side
+  // regardless of what the action name implies -- teleport/heal/godmode/
+  // vehicle-tool/airdrop are NOT players.gm_tools or server.world_events
+  // despite sounding like it (see panelBridge.js's BRIDGE_ACTION_CAPABILITY
+  // comment). bridge.command is admin-only by default (TECHNICIAN_CAPABILITIES
+  // omits it even though technician holds players.gm_tools/server.world_events),
+  // so gating these on the name-implied capability would show a stock
+  // technician an enabled button that 403s on click -- worse than no gate.
+  // Only addVehicleAt is genuinely players.gm_tools: it alone hits a
+  // dedicated route (POST /players/add-vehicle-at) instead of the passthrough.
+  const canRunBridgeCommand = can('bridge.command')
+  const canWorldEvents = can('server.world_events')
+  const canGmTools = can('players.gm_tools')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapWrapperRef = useRef<HTMLDivElement>(null)
@@ -3062,41 +3079,45 @@ export default function WorldMap() {
                 )}
               </div>
               <div className="px-2 py-1.5 border-t border-border/40 bg-muted/20 flex gap-1">
-                <Button
-                  size="sm" variant="ghost" className="h-7 text-xs gap-1 flex-1"
-                  disabled={actionLoading !== null}
-                  onClick={() => {
-                    setActionLoading('heal-card')
-                    panelBridgeApi.sendCommand('healPlayer', { username: selectedPlayer.username })
-                      .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: selectedPlayer.username }) }); fetchPlayerPositions() })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
-                      .finally(() => setActionLoading(null))
-                  }}
-                >
-                  <Heart className="w-3 h-3" /> {t('dossier.heal')}
-                </Button>
-                <Button
-                  size="sm" variant="ghost" className="h-7 text-xs gap-1 flex-1"
-                  disabled={actionLoading !== null}
-                  onClick={() => {
-                    setActionLoading('god-card')
-                    panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
-                      .then((response) => {
-                        const state = getBridgeVerifiedState('setGodMode', response?.data)
-                        if (state === 'unverifiable') {
-                          toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('dossier.god') }), variant: 'default' })
-                        } else if (state === 'old-bridge') {
-                          toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('dossier.god') }), variant: 'default' })
-                        } else {
-                          toast({ title: t('dossier.godModeEnabled') })
-                        }
-                      })
-                      .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
-                      .finally(() => setActionLoading(null))
-                  }}
-                >
-                  <Shield className="w-3 h-3" /> {t('dossier.god')}
-                </Button>
+                <DisabledReason reason={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : null} className="flex-1">
+                  <Button
+                    size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
+                    disabled={actionLoading !== null || !canRunBridgeCommand}
+                    onClick={() => {
+                      setActionLoading('heal-card')
+                      panelBridgeApi.sendCommand('healPlayer', { username: selectedPlayer.username })
+                        .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: selectedPlayer.username }) }); fetchPlayerPositions() })
+                        .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                        .finally(() => setActionLoading(null))
+                    }}
+                  >
+                    <Heart className="w-3 h-3" /> {t('dossier.heal')}
+                  </Button>
+                </DisabledReason>
+                <DisabledReason reason={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : null} className="flex-1">
+                  <Button
+                    size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
+                    disabled={actionLoading !== null || !canRunBridgeCommand}
+                    onClick={() => {
+                      setActionLoading('god-card')
+                      panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
+                        .then((response) => {
+                          const state = getBridgeVerifiedState('setGodMode', response?.data)
+                          if (state === 'unverifiable') {
+                            toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('dossier.god') }), variant: 'default' })
+                          } else if (state === 'old-bridge') {
+                            toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('dossier.god') }), variant: 'default' })
+                          } else {
+                            toast({ title: t('dossier.godModeEnabled') })
+                          }
+                        })
+                        .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                        .finally(() => setActionLoading(null))
+                    }}
+                  >
+                    <Shield className="w-3 h-3" /> {t('dossier.god')}
+                  </Button>
+                </DisabledReason>
               </div>
             </div>
           </div>
@@ -3188,7 +3209,9 @@ export default function WorldMap() {
                 <ContextMenuItem
                   icon={<Heart className="w-3.5 h-3.5 text-emerald-400" />}
                   label={t('contextMenu.healPlayer')}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : undefined}
                   tone="success"
+                  disabled={!canRunBridgeCommand}
                   onClick={() => {
                     panelBridgeApi.sendCommand('healPlayer', { username: contextMenu.player!.username })
                       .then(() => { toast({ title: t('dossier.healedTitle'), description: t('dossier.healedDesc', { username: contextMenu.player!.username }) }); fetchPlayerPositions() })
@@ -3249,8 +3272,10 @@ export default function WorldMap() {
                     <ContextMenuItem
                       icon={<Wrench className="w-3.5 h-3.5 text-info" />}
                       label={t('contextMenu.repairVehicle')}
+                      description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : undefined}
                       tone="info"
                       loading={actionLoading === 'vehicle-repair'}
+                      disabled={!canRunBridgeCommand}
                       onClick={() => {
                     setActionLoading('vehicle-repair')
                     // Generic /panel-bridge/command passthrough only ever
@@ -3268,8 +3293,10 @@ export default function WorldMap() {
                     <ContextMenuItem
                   icon={<Fuel className="w-3.5 h-3.5 text-info" />}
                   label={t('contextMenu.fillFuel')}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : undefined}
                   tone="info"
                   loading={actionLoading === 'vehicle-fuel'}
+                  disabled={!canRunBridgeCommand}
                   onClick={() => {
                     setActionLoading('vehicle-fuel')
                     panelBridgeApi.sendCommand('vehicleSetFuel', { vehicleId: contextMenu.vehicle!.id, percent: 100 })
@@ -3291,8 +3318,10 @@ export default function WorldMap() {
                     <ContextMenuItem
                   icon={<Battery className="w-3.5 h-3.5 text-info" />}
                   label={t('contextMenu.chargeBattery')}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : undefined}
                   tone="info"
                   loading={actionLoading === 'vehicle-battery'}
+                  disabled={!canRunBridgeCommand}
                   onClick={() => {
                     setActionLoading('vehicle-battery')
                     panelBridgeApi.sendCommand('vehicleSetBattery', { vehicleId: contextMenu.vehicle!.id, charge: 100 })
@@ -3314,7 +3343,9 @@ export default function WorldMap() {
                     <ContextMenuItem
                   icon={<Trash2 className="w-3.5 h-3.5 text-destructive" />}
                   label={t('contextMenu.removeVehicle')}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : undefined}
                   tone="danger"
+                  disabled={!canRunBridgeCommand}
                   onClick={() => {
                     const v = contextMenu.vehicle!
                     setRemoveVehicleTarget({
@@ -3329,8 +3360,10 @@ export default function WorldMap() {
                     <ContextMenuItem
                   icon={<Zap className="w-3.5 h-3.5 text-amber-400" />}
                   label={t('contextMenu.hotwire')}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : undefined}
                   tone="warning"
                   loading={actionLoading === 'vehicle-hotwire'}
+                  disabled={!canRunBridgeCommand}
                   onClick={() => {
                     setActionLoading('vehicle-hotwire')
                     panelBridgeApi.sendCommand('vehicleHotwire', { vehicleId: contextMenu.vehicle!.id })
@@ -3361,7 +3394,7 @@ export default function WorldMap() {
                       key={`tp-${pl.username}`}
                       icon={<Users className={cn('w-3.5 h-3.5', pColor)} />}
                       label={pl.displayName || pl.username}
-                      description={t('contextMenu.teleportDesc', {
+                      description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : t('contextMenu.teleportDesc', {
                         fromX: Math.round(pl.x),
                         fromY: Math.round(pl.y),
                         toX: Math.round(contextMenu.worldX),
@@ -3369,7 +3402,7 @@ export default function WorldMap() {
                       })}
                       tone="primary"
                       loading={actionLoading === 'teleport'}
-                      disabled={!bridgeConnected}
+                      disabled={!bridgeConnected || !canRunBridgeCommand}
                       onClick={() => {
                         teleportPlayerTo(pl.username, contextMenu.worldX, contextMenu.worldY, floor)
                         setContextMenu(null)
@@ -3391,24 +3424,26 @@ export default function WorldMap() {
               <ContextMenuItem
                 icon={<CloudLightning className="w-3.5 h-3.5 text-info" />}
                 label={t('contextMenu.lightningStrike')}
-                description={t('contextMenu.lightningDesc')}
+                description={!canWorldEvents ? t('permissions.noWorldEvents') : t('contextMenu.lightningDesc')}
                 tone="info"
                 loading={actionLoading === 'lightning'}
+                disabled={!canWorldEvents}
                 onClick={() => triggerLightningAt(contextMenu.worldX, contextMenu.worldY)}
               />
               <ContextMenuItem
                 icon={<Volume2 className="w-3.5 h-3.5 text-amber-400" />}
                 label={t('contextMenu.createNoise')}
-                description={t('contextMenu.createNoiseDesc')}
+                description={!canWorldEvents ? t('permissions.noWorldEvents') : t('contextMenu.createNoiseDesc')}
                 tone="warning"
                 loading={actionLoading === 'noise'}
+                disabled={!canWorldEvents}
                 onClick={() => createNoiseAt(contextMenu.worldX, contextMenu.worldY)}
               />
               <ContextMenuItem
                 icon={<Car className="w-3.5 h-3.5 text-muted-foreground" />}
                 label={t('contextMenu.spawnVehicleHere')}
-                description={t('contextMenu.spawnVehicleDesc')}
-                disabled={!bridgeConnected}
+                description={!canGmTools ? t('permissions.noGmTools') : t('contextMenu.spawnVehicleDesc')}
+                disabled={!bridgeConnected || !canGmTools}
                 onClick={() => {
                   setSpawnDialog({ x: Math.round(contextMenu.worldX), y: Math.round(contextMenu.worldY), z: floor })
                   setSpawnVehicleId('')
@@ -3423,9 +3458,9 @@ export default function WorldMap() {
               <ContextMenuItem
                 icon={<Package className="w-3.5 h-3.5 text-amber-400" />}
                 label={t('contextMenu.customDrop')}
-                description={t('contextMenu.customDropDesc')}
+                description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : t('contextMenu.customDropDesc')}
                 tone="warning"
-                disabled={!bridgeConnected}
+                disabled={!bridgeConnected || !canRunBridgeCommand}
                 onClick={() => {
                   setDropDialog({ x: Math.round(contextMenu.worldX), y: Math.round(contextMenu.worldY), z: floor })
                   // Seed from last drop if any, otherwise one empty row.
@@ -3447,10 +3482,10 @@ export default function WorldMap() {
                 <ContextMenuItem
                   icon={<RefreshCw className="w-3.5 h-3.5 text-amber-400/80" />}
                   label={t('contextMenu.repeatLastDrop')}
-                  description={lastDrop.label}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : lastDrop.label}
                   tone="warning"
                   loading={actionLoading === 'drop'}
-                  disabled={!bridgeConnected}
+                  disabled={!bridgeConnected || !canRunBridgeCommand}
                   onClick={() => {
                     callCustomDrop({
                       x: contextMenu.worldX,
@@ -3473,10 +3508,10 @@ export default function WorldMap() {
                       key={tpl.id}
                       icon={<Package className="w-3.5 h-3.5 text-amber-400/70" />}
                       label={tpl.name}
-                      description={t('dropDialog.templateItemCount', { count: tpl.items.length })}
+                      description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : t('dropDialog.templateItemCount', { count: tpl.items.length })}
                       tone="warning"
                       loading={actionLoading === 'drop'}
-                      disabled={!bridgeConnected}
+                      disabled={!bridgeConnected || !canRunBridgeCommand}
                       onClick={() => {
                         callCustomDrop({
                           x: contextMenu.worldX,
@@ -3499,10 +3534,10 @@ export default function WorldMap() {
                   key={preset.id}
                   icon={<preset.icon className="w-3.5 h-3.5 text-amber-400/80" />}
                   label={presetLabel(preset.id)}
-                  description={presetDesc(preset.id)}
+                  description={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : presetDesc(preset.id)}
                   tone="warning"
                   loading={actionLoading === 'airdrop'}
-                  disabled={!bridgeConnected}
+                  disabled={!bridgeConnected || !canRunBridgeCommand}
                   onClick={() => callAirdrop(contextMenu.worldX, contextMenu.worldY, preset.id)}
                 />
               ))}
@@ -3561,8 +3596,9 @@ export default function WorldMap() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSpawnDialog(null)}>{t('spawnDialog.cancel')}</Button>
+            <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : null}>
             <Button
-              disabled={!spawnVehicleId || actionLoading === 'spawn-vehicle'}
+              disabled={!spawnVehicleId || actionLoading === 'spawn-vehicle' || !canGmTools}
               onClick={() => {
                 if (!spawnDialog || !spawnVehicleId) return
                 setActionLoading('spawn-vehicle')
@@ -3590,6 +3626,7 @@ export default function WorldMap() {
               {actionLoading === 'spawn-vehicle' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
               {t('spawnDialog.spawn')}
             </Button>
+            </DisabledReason>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3874,8 +3911,9 @@ export default function WorldMap() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDropDialog(null)}>{t('dropDialog.cancel')}</Button>
+            <DisabledReason reason={!canRunBridgeCommand ? t('permissions.noBridgeCommand') : null}>
             <Button
-              disabled={dropItems.filter((it) => it.itemType.trim()).length === 0 || actionLoading === 'drop'}
+              disabled={dropItems.filter((it) => it.itemType.trim()).length === 0 || actionLoading === 'drop' || !canRunBridgeCommand}
               onClick={async () => {
                 if (!dropDialog) return
                 const valid = dropItems.filter((it) => it.itemType.trim())
@@ -3908,6 +3946,7 @@ export default function WorldMap() {
                 return t('dropDialog.dropButtonMulti', { count: validCount })
               })()}
             </Button>
+            </DisabledReason>
           </DialogFooter>
         </DialogContent>
       </Dialog>

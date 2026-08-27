@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noBridgeCommand": "This in-game action requires the bridge.command permission, which this role doesn't have.",
+    "noWorldEvents": "Triggering world events requires the server.world_events permission, which this role doesn't have.",
+    "noGmTools": "Spawning a vehicle requires the players.gm_tools permission, which this role doesn't have."
+  },
   "pageHeader": {
     "title": "World Map",
     "description": "Live player positions on the Knox County map. Right-click for actions."

@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "noManage": "管理备份需要 backups.manage 权限，而该角色没有此权限。",
+    "noRestore": "还原备份需要 backups.restore 权限，而该角色没有此权限。",
+    "noDownload": "下载备份需要 backups.download 权限，而该角色没有此权限。"
+  },
   "pageHeader": {
     "title": "世界备份",
     "description": "创建、恢复和管理服务器世界备份",

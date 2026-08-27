@@ -48,6 +48,7 @@ import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { PageHeader } from '@/components/PageHeader'
 import { DisabledReason } from '@/components/DisabledReason'
+import { useAuth } from '@/contexts/AuthContext'
 import { EmptyState } from '@/components/EmptyState'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
@@ -64,6 +65,14 @@ export default function Backups() {
   const { t, i18n } = useTranslation('backups')
   const { toast } = useToast()
   const socket = useSocket()
+  const { can } = useAuth()
+  // Bound to routes/backup.js's own requirePermission() gates, not to what
+  // the button label implies -- restore/download are deliberately split
+  // out from backups.manage (see that route file's header comments: restore
+  // overwrites a live world, download exfiltrates a full copy).
+  const canManageBackups = can('backups.manage')
+  const canRestoreBackups = can('backups.restore')
+  const canDownloadBackups = can('backups.download')
 
   // Refs for cleanup
   const progressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -530,10 +539,10 @@ export default function Backups() {
         icon={<Archive className="w-5 h-5 text-primary" />}
         actions={
           <>
-            <DisabledReason reason={activeServerRemote ? t('pageHeader.remoteDisabledTitle') : null}>
+            <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : activeServerRemote ? t('pageHeader.remoteDisabledTitle') : null}>
               <Button
                 onClick={handleCreateBackup}
-                disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists || activeServerRemote}
+                disabled={creatingBackup || restoringBackup !== null || !backupStatus?.savesExists || activeServerRemote || !canManageBackups}
                 className="gap-2"
               >
                 {creatingBackup ? (
@@ -554,20 +563,22 @@ export default function Backups() {
                 if (file) handleUploadFile(file)
               }}
             />
-            <Button
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingBackup || restoringBackup !== null || activeServerRemote}
-              className="gap-2"
-              title={activeServerRemote ? t('pageHeader.uploadTitleRemote') : t('pageHeader.uploadTitleLocal')}
-            >
-              {uploadingBackup ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4" />
-              )}
-              {uploadingBackup ? t('pageHeader.uploading', { percent: uploadPercent }) : t('pageHeader.uploadZip')}
-            </Button>
+            <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : activeServerRemote ? t('pageHeader.uploadTitleRemote') : null}>
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingBackup || restoringBackup !== null || activeServerRemote || !canManageBackups}
+                className="gap-2"
+                title={t('pageHeader.uploadTitleLocal')}
+              >
+                {uploadingBackup ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                {uploadingBackup ? t('pageHeader.uploading', { percent: uploadPercent }) : t('pageHeader.uploadZip')}
+              </Button>
+            </DisabledReason>
             <Button
               variant="outline"
               onClick={() => setShowSettings(!showSettings)}
@@ -688,11 +699,14 @@ export default function Backups() {
                   : t('statusCards.noScheduled')}
               </p>
             </div>
-            <Switch
-              checked={backupStatus?.enabled || false}
-              onCheckedChange={toggleBackupEnabled}
-              aria-label={t('statusCards.toggleAria')}
-            />
+            <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
+              <Switch
+                checked={backupStatus?.enabled || false}
+                onCheckedChange={toggleBackupEnabled}
+                disabled={!canManageBackups}
+                aria-label={t('statusCards.toggleAria')}
+              />
+            </DisabledReason>
           </CardContent>
         </Card>
       </div>
@@ -760,10 +774,12 @@ export default function Backups() {
                   </span>
                 )}
               </div>
-              <Button onClick={handleSaveSettings} disabled={savingSettings} size="sm" className="h-10 gap-2 self-start sm:self-auto">
-                {savingSettings && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {t('settingsPanel.saveButton')}
-              </Button>
+              <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
+                <Button onClick={handleSaveSettings} disabled={savingSettings || !canManageBackups} size="sm" className="h-10 gap-2 self-start sm:self-auto">
+                  {savingSettings && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {t('settingsPanel.saveButton')}
+                </Button>
+              </DisabledReason>
             </div>
           </CardContent>
         </Card>
@@ -834,31 +850,35 @@ export default function Backups() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {isAnySelected && (
+                <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDeleteDialog({ open: true, names: Array.from(selectedBackups) })}
+                    disabled={deletingBackups || !canManageBackups}
+                    className="h-10 gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {t('mainCard.deleteSelected', { count: selectedBackups.size })}
+                  </Button>
+                </DisabledReason>
+              )}
+              <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => setDeleteDialog({ open: true, names: Array.from(selectedBackups) })}
-                  disabled={deletingBackups}
+                  onClick={() => setDeleteOlderDialog(true)}
+                  disabled={deletingOlder || backups.length === 0 || !canManageBackups}
                   className="h-10 gap-2"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  {t('mainCard.deleteSelected', { count: selectedBackups.size })}
+                  {deletingOlder ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Clock className="w-4 h-4" />
+                  )}
+                  {t('mainCard.deleteOlder')}
                 </Button>
-              )}
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setDeleteOlderDialog(true)}
-                disabled={deletingOlder || backups.length === 0}
-                className="h-10 gap-2"
-              >
-                {deletingOlder ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Clock className="w-4 h-4" />
-                )}
-                {t('mainCard.deleteOlder')}
-              </Button>
+              </DisabledReason>
             </div>
           </div>
         </CardHeader>
@@ -868,7 +888,7 @@ export default function Backups() {
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : backups.length === 0 ? (
-            <EmptyState type="noData" title={t('mainCard.emptyTitle')} description={t('mainCard.emptyDesc')} action={{ label: t('mainCard.emptyAction'), onClick: handleCreateBackup, variant: 'default' }} />
+            <EmptyState type="noData" title={t('mainCard.emptyTitle')} description={t('mainCard.emptyDesc')} action={canManageBackups ? { label: t('mainCard.emptyAction'), onClick: handleCreateBackup, variant: 'default' } : undefined} />
           ) : (
             <div className="space-y-2">
               {/* Select All Header */}
@@ -954,52 +974,62 @@ export default function Backups() {
                         </div>
 
                         <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewSnapshot(backup.name)}
-                            className="h-9 w-9"
-                            aria-label={t('mainCard.viewSnapshotAria', { name: backup.name })}
-                            title={t('mainCard.viewSnapshotTitle')}
-                          >
-                            <FileText className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setRestoreDialog({ open: true, backupName: backup.name })}
-                            disabled={isRestoring || restoringBackup !== null || creatingBackup}
-                            className="h-9 w-9 text-warning hover:text-warning hover:bg-warning/10"
-                            aria-label={t('mainCard.restoreAria', { name: backup.name })}
-                            title={t('mainCard.restoreTitle')}
-                          >
-                            {isRestoring ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <RotateCcw className="w-4 h-4" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => backupApi.downloadBackup(backup.name)}
-                            className="h-9 w-9"
-                            aria-label={t('mainCard.downloadAria', { name: backup.name })}
-                            title={t('mainCard.downloadTitle')}
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeleteDialog({ open: true, names: [backup.name] })}
-                            disabled={deletingBackups}
-                            className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            aria-label={t('mainCard.deleteAria', { name: backup.name })}
-                            title={t('mainCard.deleteTitle')}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewSnapshot(backup.name)}
+                              disabled={!canManageBackups}
+                              className="h-9 w-9"
+                              aria-label={t('mainCard.viewSnapshotAria', { name: backup.name })}
+                              title={t('mainCard.viewSnapshotTitle')}
+                            >
+                              <FileText className="w-4 h-4" />
+                            </Button>
+                          </DisabledReason>
+                          <DisabledReason reason={!canRestoreBackups ? t('permissions.noRestore') : null}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setRestoreDialog({ open: true, backupName: backup.name })}
+                              disabled={isRestoring || restoringBackup !== null || creatingBackup || !canRestoreBackups}
+                              className="h-9 w-9 text-warning hover:text-warning hover:bg-warning/10"
+                              aria-label={t('mainCard.restoreAria', { name: backup.name })}
+                              title={t('mainCard.restoreTitle')}
+                            >
+                              {isRestoring ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </DisabledReason>
+                          <DisabledReason reason={!canDownloadBackups ? t('permissions.noDownload') : null}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => backupApi.downloadBackup(backup.name)}
+                              disabled={!canDownloadBackups}
+                              className="h-9 w-9"
+                              aria-label={t('mainCard.downloadAria', { name: backup.name })}
+                              title={t('mainCard.downloadTitle')}
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </DisabledReason>
+                          <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteDialog({ open: true, names: [backup.name] })}
+                              disabled={deletingBackups || !canManageBackups}
+                              className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              aria-label={t('mainCard.deleteAria', { name: backup.name })}
+                              title={t('mainCard.deleteTitle')}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </DisabledReason>
                         </div>
                       </div>
                     )
