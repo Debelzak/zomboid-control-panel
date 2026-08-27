@@ -10,7 +10,7 @@ import {
   updateServer,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
-import { requirePermission } from "../services/permissions.js";
+import { requirePermission, getRoleByName } from "../services/permissions.js";
 import { deleteVehiclesInBoxes } from "../utils/vehiclesDb.js";
 import { confineToRoots } from "../utils/browseRoots.js";
 import {
@@ -688,6 +688,32 @@ router.post("/save-path", requirePermission("chunks.manage"), async (req, res) =
     }
 
     const activeServer = await getActiveServer();
+
+    // This route repoints the ACTIVE SERVER's entire zomboidDataPath -- the
+    // same field serverManager.js/mods.js/server.js resolve Server/<name>.ini
+    // (RCON password included) and every server-scoped file from, not a
+    // chunk-specific setting (chunks are just files under this path; there
+    // is no separate concept to write instead). chunks.manage alone used to
+    // reach it, meaning a chunks.manage holder could point a live server at
+    // a different real Zomboid folder and have it silently start reading a
+    // different RCON password/sandbox config on next restart --
+    // config-hijack via the chunk-cleanup screen. server.configure is
+    // required in addition, matching the capability that already governs
+    // "the server's ... network/path configuration" everywhere else.
+    // Enforced on CHANGE, not presence: re-submitting the path already in
+    // effect must not require anything beyond chunks.manage.
+    const currentPath = activeServer?.zomboidDataPath || (await getSetting("zomboidDataPath")) || null;
+    if (currentPath !== validated) {
+      const role = req.user ? await getRoleByName(req.user.role) : null;
+      const capabilities = Array.isArray(role?.capabilities) ? role.capabilities : [];
+      if (!capabilities.includes("server.configure")) {
+        return res.status(403).json({
+          error: "Repointing the server's data path also requires server.configure.",
+          code: ErrorCode.CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED,
+        });
+      }
+    }
+
     if (activeServer?.id) {
       await updateServer(activeServer.id, { zomboidDataPath: validated });
       log.info(

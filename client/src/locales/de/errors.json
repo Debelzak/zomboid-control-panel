@@ -189,6 +189,7 @@
   "WIPE_PARTIAL_FAILURE": "Löschvorgang ist mittendrin fehlgeschlagen ({{reason}}). Einige der ausgewählten Ziele wurden möglicherweise nur teilweise gelöscht -- prüfe die Ergebnisse, um zu sehen, was vor dem Fehler abgeschlossen wurde.",
   "CHUNKS_SAVE_PATH_MISSING": "Fehlender Pfad.",
   "CHUNKS_SAVE_PATH_EMPTY": "Der Pfad ist nach der Normalisierung leer.",
+  "CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED": "Um den Datenpfad des Servers neu zu setzen, ist zusätzlich server.configure erforderlich.",
   "CHUNKS_INVALID_SAVE_NAME": "Ungültiger Spielstandname",
   "CHUNKS_DATA_PATH_NOT_SET": "Zomboid-Datenpfad nicht festgelegt",
   "DELETE_CHUNKS_FIELDS_REQUIRED": "Spielstandname und Chunk-Array erforderlich",

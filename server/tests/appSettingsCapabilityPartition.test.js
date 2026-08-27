@@ -26,6 +26,7 @@ const ROLES = {
       "bridge.setup",
       "integrations.manage",
       "mods.manage",
+      "servers.manage",
     ],
   },
   // Holds panel.settings (passes the route's own gate) and NOTHING else --
@@ -33,6 +34,12 @@ const ROLES = {
   settings_only: { capabilities: ["panel.settings"] },
   settings_and_configure: {
     capabilities: ["panel.settings", "server.configure"],
+  },
+  settings_and_servers_manage: {
+    capabilities: ["panel.settings", "servers.manage"],
+  },
+  settings_and_mods: {
+    capabilities: ["panel.settings", "mods.manage"],
   },
 };
 
@@ -220,6 +227,96 @@ describe("PUT /config/app-settings -- per-key capability partition", () => {
       "123456789012345678",
     );
     expect(setSetting).toHaveBeenCalledWith("steamSessionId", "new-session");
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+  });
+
+  // 2026-08-27 follow-up: zomboidDataPath/serverConfigPath/serverPath are
+  // the LEGACY mirror of the exact fields servers.js's own routes write on
+  // the active server record (confirmed by reading every real consumer --
+  // server.js's getServerConfigPath(), chunks.js's getZomboidDataPath(),
+  // modChecker.js -- all of which fall back to this legacy setting even
+  // while an active server exists, whenever that server's own field is
+  // unset). Mapped to servers.manage to match the sibling write path, not
+  // to server.configure, per the "same field two doors" rule rather than
+  // the label. workshopCollectionAutoSync joined mods.manage as the
+  // missing sibling of the three keys already mapped there.
+  it("zomboidDataPath requires servers.manage, not server.configure", async () => {
+    const blocked = await runPut(
+      { zomboidDataPath: "/new/path" },
+      "settings_and_configure", // has server.configure, NOT servers.manage
+      { zomboidDataPath: "/old/path" },
+    );
+    expect(blocked.status).toHaveBeenCalledWith(403);
+    expect(blocked.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        missing: [{ key: "zomboidDataPath", requiredCapability: "servers.manage" }],
+      }),
+    );
+
+    setSetting.mockClear();
+    const allowed = await runPut(
+      { zomboidDataPath: "/new/path" },
+      "settings_and_servers_manage",
+      { zomboidDataPath: "/old/path" },
+    );
+    expect(setSetting).toHaveBeenCalledWith("zomboidDataPath", "/new/path");
+    expect(allowed.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+  });
+
+  it("serverConfigPath and serverPath also require servers.manage", async () => {
+    const response = await runPut(
+      { serverConfigPath: "/new/cfg", serverPath: "/new/install" },
+      "settings_only",
+      { serverConfigPath: "/old/cfg", serverPath: "/old/install" },
+    );
+    expect(response.status).toHaveBeenCalledWith(403);
+    const payload = response.json.mock.calls[0][0];
+    expect(payload.missing).toEqual(
+      expect.arrayContaining([
+        { key: "serverConfigPath", requiredCapability: "servers.manage" },
+        { key: "serverPath", requiredCapability: "servers.manage" },
+      ]),
+    );
+  });
+
+  it("workshopCollectionAutoSync requires mods.manage, matching its sibling keys", async () => {
+    const blocked = await runPut(
+      { workshopCollectionAutoSync: true },
+      "settings_only",
+      { workshopCollectionAutoSync: false },
+    );
+    expect(blocked.status).toHaveBeenCalledWith(403);
+    expect(blocked.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        missing: [
+          { key: "workshopCollectionAutoSync", requiredCapability: "mods.manage" },
+        ],
+      }),
+    );
+
+    setSetting.mockClear();
+    const allowed = await runPut(
+      { workshopCollectionAutoSync: true },
+      "settings_and_mods",
+      { workshopCollectionAutoSync: false },
+    );
+    expect(setSetting).toHaveBeenCalledWith("workshopCollectionAutoSync", true);
+    expect(allowed.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+  });
+
+  it("serverPort stays unmapped -- dead legacy storage with no live consumer, needs nothing beyond panel.settings", async () => {
+    const response = await runPut(
+      { serverPort: 16262 },
+      "settings_only",
+      { serverPort: 16261 },
+    );
+    expect(setSetting).toHaveBeenCalledWith("serverPort", 16262);
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true }),
     );

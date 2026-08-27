@@ -137,17 +137,41 @@ const VALID_SETTINGS_KEYS = [
 // spans five OTHER capabilities' territory: rconPassword/rconHost/rconPort
 // (server.configure), Steam credentials (server.install), PanelBridge SFTP
 // including its password (bridge.setup), the Discord guild ID
-// (integrations.manage), and Workshop session cookies (mods.manage). A
-// panel.settings holder cannot silently rewrite any of these through this
-// one door without also holding the capability that actually governs it --
-// found in the 2026-08-26 capability-description sweep. Every key NOT
-// listed here is the genuinely app-level remainder (CORS, dark mode, mod
-// check interval, HTTPS bind config, ...) and needs nothing beyond
-// panel.settings itself, which the route is already gated on.
+// (integrations.manage), and Workshop session cookies + collection sync
+// (mods.manage). A panel.settings holder cannot silently rewrite any of
+// these through this one door without also holding the capability that
+// actually governs it -- found in the 2026-08-26 capability-description
+// sweep. Every key NOT listed here is the genuinely app-level remainder
+// (CORS, dark mode, mod check interval, HTTPS bind config, ...) and needs
+// nothing beyond panel.settings itself, which the route is already gated
+// on.
+//
+// serverPath/serverConfigPath/zomboidDataPath are the LEGACY, pre-multi-
+// server settings mirror of servers.js's own installPath/serverConfigPath/
+// zomboidDataPath fields -- not a separate concept that merely shares a
+// name. Confirmed by reading every real consumer, not assumed from the
+// label: server.js's getServerConfigPath()/console-log route, chunks.js's
+// getZomboidDataPath(), modChecker.js's ACF-path lookup, and updateChecker.js
+// all resolve `activeServer?.<field> || getSetting(<legacy key>)` -- a
+// PER-FIELD fallback that consults the legacy setting even while a real
+// active server exists, whenever that server's own field happens to be
+// unset. That makes this the same "one operation, two doors" shape closed
+// four other times tonight: servers.js's own writes to these fields are
+// gated servers.manage, so this door is mapped to match the sibling write
+// path (per the field being genuinely the same one, not the label) rather
+// than to server.configure. serverPort is the one exception -- grepped
+// every getSetting("serverPort") call site and found none outside this
+// file itself; nothing ever reads the legacy value, so it's dead storage
+// with no live consumer to create a two-doors risk. Left unmapped
+// (panel.settings only) rather than invented a requirement for a value
+// nothing acts on.
 const SETTINGS_KEY_CAPABILITY = {
   rconHost: "server.configure",
   rconPort: "server.configure",
   rconPassword: "server.configure",
+  serverPath: "servers.manage",
+  serverConfigPath: "servers.manage",
+  zomboidDataPath: "servers.manage",
   steamApiKey: "server.install",
   steamUpdateAccount: "server.install",
   steamcmdPath: "server.install",
@@ -162,6 +186,7 @@ const SETTINGS_KEY_CAPABILITY = {
   panelBridgeSftpConfigPath: "bridge.setup",
   discordGuildId: "integrations.manage",
   workshopCollectionId: "mods.manage",
+  workshopCollectionAutoSync: "mods.manage",
   steamSessionId: "mods.manage",
   steamLoginSecure: "mods.manage",
 };

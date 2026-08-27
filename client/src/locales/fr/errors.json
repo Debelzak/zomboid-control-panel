@@ -189,6 +189,7 @@
   "WIPE_PARTIAL_FAILURE": "La réinitialisation a échoué en cours de route ({{reason}}). Certaines des cibles sélectionnées ne sont peut-être que partiellement supprimées -- consultez les résultats pour voir ce qui a été terminé avant l'échec.",
   "CHUNKS_SAVE_PATH_MISSING": "Chemin manquant.",
   "CHUNKS_SAVE_PATH_EMPTY": "Le chemin est vide après normalisation.",
+  "CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED": "Rediriger le chemin de données du serveur nécessite aussi server.configure.",
   "CHUNKS_INVALID_SAVE_NAME": "Nom de sauvegarde invalide",
   "CHUNKS_DATA_PATH_NOT_SET": "Chemin de données Zomboid non défini",
   "DELETE_CHUNKS_FIELDS_REQUIRED": "Le nom de sauvegarde et le tableau de chunks sont requis",

@@ -740,6 +740,12 @@ export const ErrorCode = Object.freeze({
   /** server/routes/chunks.js -- POST /save-path, the validated path resolved
    * to an empty string after normalization. */
   CHUNKS_SAVE_PATH_EMPTY: "CHUNKS_SAVE_PATH_EMPTY",
+  /** server/routes/chunks.js -- POST /save-path, the submitted path would
+   * actually CHANGE the active server's zomboidDataPath and the caller
+   * holds chunks.manage but not server.configure. Repointing a server's
+   * entire data path (RCON credentials and every server-scoped file
+   * included) is server.configure's territory, not just chunk cleanup. */
+  CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED: "CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED",
   /** server/routes/chunks.js (4 sites: GET /chunks/:saveName, POST
    * /delete-chunks, POST /delete-region, GET /stats/:saveName) -- :saveName
    * fails the path.basename() round-trip check. Identical wording/meaning

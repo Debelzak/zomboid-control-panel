@@ -189,6 +189,7 @@
   "WIPE_PARTIAL_FAILURE": "El borrado falló a mitad de camino ({{reason}}). Algunos de los objetivos seleccionados pueden haberse eliminado solo parcialmente -- revisa los resultados para ver qué se completó antes del fallo.",
   "CHUNKS_SAVE_PATH_MISSING": "Falta la ruta.",
   "CHUNKS_SAVE_PATH_EMPTY": "La ruta queda vacía tras la normalización.",
+  "CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED": "Redirigir la ruta de datos del servidor también requiere server.configure.",
   "CHUNKS_INVALID_SAVE_NAME": "Nombre de partida guardada no válido",
   "CHUNKS_DATA_PATH_NOT_SET": "La ruta de datos de Zomboid no está establecida",
   "DELETE_CHUNKS_FIELDS_REQUIRED": "Se requieren el nombre de la partida guardada y un array de chunks",

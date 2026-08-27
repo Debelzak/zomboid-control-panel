@@ -189,6 +189,7 @@
   "WIPE_PARTIAL_FAILURE": "清除操作在执行过程中失败（{{reason}}）。所选目标中可能有部分只被删除了一部分——请查看结果，了解失败前已完成的内容。",
   "CHUNKS_SAVE_PATH_MISSING": "缺少路径。",
   "CHUNKS_SAVE_PATH_EMPTY": "路径规范化后为空。",
+  "CHUNKS_SAVE_PATH_CAPABILITY_REQUIRED": "重新指定服务器数据路径还需要 server.configure 权限。",
   "CHUNKS_INVALID_SAVE_NAME": "存档名称无效",
   "CHUNKS_DATA_PATH_NOT_SET": "未设置 Zomboid 数据路径",
   "DELETE_CHUNKS_FIELDS_REQUIRED": "存档名称和区块数组均为必填项",
