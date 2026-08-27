@@ -80,11 +80,28 @@ export function buildA2SInfoQuery(challenge = null) {
   return challenge ? Buffer.concat([base, challenge]) : base;
 }
 
-export async function queryServerInfo(ip, port) {
+// Shared between GET /query and GET /ping so both name the same cause the
+// same way. Kept as its own map rather than inlined in either route so a
+// third caller of queryServerInfo's reason gets the same wording for free.
+export const QUERY_FAILURE_MESSAGES = {
+  timeout: 'Server did not respond (timed out)',
+  'socket-error': 'Could not reach the server (network error)',
+  'unparseable-response': 'Server responded with data the panel could not parse',
+};
+
+// onFailureReason, if given, is invoked with 'timeout' | 'socket-error' |
+// 'unparseable-response' right before a null resolve -- optional and
+// side-channel so the resolved value's contract (info object or null) is
+// completely unchanged for the batch caller in GET / and the existing
+// challenge-handling test, both of which only care about truthy-or-null.
+// GET /query and GET /ping pass it to turn one generic "didn't respond"
+// outcome back into the three genuinely different causes it collapsed.
+export async function queryServerInfo(ip, port, onFailureReason) {
   return new Promise((resolve) => {
     const socket = dgram.createSocket('udp4');
     let timeout = setTimeout(() => {
       socket.close();
+      onFailureReason?.('timeout');
       resolve(null);
     }, SERVER_QUERY_TIMEOUT);
     let challengeRetried = false;
@@ -92,6 +109,7 @@ export async function queryServerInfo(ip, port) {
     socket.on('error', () => {
       clearTimeout(timeout);
       socket.close();
+      onFailureReason?.('socket-error');
       resolve(null);
     });
 
@@ -107,6 +125,7 @@ export async function queryServerInfo(ip, port) {
         const challenge = msg.subarray(5, 9);
         timeout = setTimeout(() => {
           socket.close();
+          onFailureReason?.('timeout');
           resolve(null);
         }, SERVER_QUERY_TIMEOUT);
         socket.send(buildA2SInfoQuery(challenge), port, ip);
@@ -121,6 +140,7 @@ export async function queryServerInfo(ip, port) {
         resolve(info);
       } catch (e) {
         socket.close();
+        onFailureReason?.('unparseable-response');
         resolve(null);
       }
     });
@@ -555,12 +575,14 @@ router.get('/query', async (req, res) => {
   }
 
   try {
-    const info = await queryServerInfo(ip, portNum);
+    let reason = 'timeout';
+    const info = await queryServerInfo(ip, portNum, (r) => { reason = r; });
 
     if (!info) {
       return res.status(504).json({
         success: false,
-        error: 'Server did not respond',
+        error: QUERY_FAILURE_MESSAGES[reason],
+        reason,
       });
     }
 
@@ -610,7 +632,8 @@ router.get('/ping', async (req, res) => {
   const startTime = Date.now();
 
   try {
-    const info = await queryServerInfo(ip, portNum);
+    let reason = 'timeout';
+    const info = await queryServerInfo(ip, portNum, (r) => { reason = r; });
     const ping = Date.now() - startTime;
 
     if (!info) {
@@ -618,6 +641,7 @@ router.get('/ping', async (req, res) => {
         success: true,
         ping: null,
         online: false,
+        reason,
       });
     }
 
