@@ -359,6 +359,38 @@ describe('Dashboard.tsx: Wipe is gated on server.wipe, independently of server.c
     expect(wipe).not.toHaveBeenCalled()
   })
 
+  // bug-hunt-2026-08-27, floor-wide re-check: the test above renders an
+  // ONLINE server, so its `toHaveAttribute('aria-disabled', 'true')` check
+  // is confounded -- `online` alone already satisfies this item's disabled
+  // expression regardless of canWipeServer, same fixture bug found on the
+  // sidebar Wipe button. Deleting only `|| !canWipeServer` from the
+  // dropdown item's disabled prop left the test above still green (its
+  // click-through assertion survives on the onClick guard alone, which
+  // this edit didn't touch). This dedicated offline-fixture test isolates
+  // canWipeServer as the ONLY thing keeping the item disabled.
+  it('lacking server.wipe with the server OFFLINE (so canWipeServer is the only reason left): the dropdown Wipe item is still disabled and never opens its dialog', async () => {
+    mockCanControl = true
+    mockCanWipe = false
+    await setUpCommon()
+    const offline = makeServer()
+    getResolvedActive.mockResolvedValue({ server: offline })
+    getStatus.mockResolvedValue({
+      running: false, startTime: null, uptime: 0, serverPath: 'C:/servers/ashenwood',
+      configured: true, rcon: { host: '', port: 0, connected: false },
+    } as Awaited<ReturnType<typeof serverApi.getStatus>>)
+
+    renderDashboard()
+
+    const menu = await openMoreActionsMenu()
+    const wipeItem = within(menu).getByRole('menuitem', { name: /wipe server/i })
+    expect(wipeItem).toHaveAttribute('aria-disabled', 'true')
+
+    fireEvent.click(wipeItem)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(wipePreview).not.toHaveBeenCalled()
+    expect(wipe).not.toHaveBeenCalled()
+  })
+
   it('holding both server.control and server.wipe: Wipe opens its dialog and reaches the real wipe API end to end', async () => {
     mockCanControl = true
     mockCanWipe = true
