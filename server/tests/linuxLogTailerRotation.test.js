@@ -94,6 +94,20 @@ const isLinux = process.platform !== "win32";
         "[01-01-26 10:00:00.000][info] Got message:ChatMessage{chat=Say, author='Alice', text='old session'}.\n",
       );
 
+      // beforeEach() constructs `tailer` (capturing watchStartedAt = Date.now())
+      // BEFORE this file exists, which is backwards from what "old session,
+      // already on disk when the panel starts watching" is supposed to mean
+      // in production -- and startOffsetFor's `born >= watchStartedAt` check
+      // compares two different clocks (filesystem birthtime vs Date.now())
+      // that measured up to ~20ms apart on this platform (see
+      // startOffsetFor's own comment), so leaving watchStartedAt at its
+      // construction-time value made this assertion genuinely racy under
+      // load, not just theoretically. Set it explicitly, deterministically
+      // after the file's real birthtime, the same way the rotation below
+      // already forces an unambiguous mtime with fs.utimesSync rather than
+      // relying on incidental timing.
+      tailer.watchStartedAt = fs.statSync(oldChat).birthtimeMs + 1000;
+
       const seen = [];
       tailer.on("chatMessage", (m) => seen.push(m));
 
@@ -127,6 +141,63 @@ const isLinux = process.platform !== "win32";
       // The old file's remainder buffer and size tracking must not leak
       // into the new file's state.
       expect(tailer.chatLogSize).toBe(fs.statSync(newChat).size);
+    });
+
+    it("*_chat.txt rotation where the outgoing and incoming session's logs land on the EXACT SAME mtimeMs does not get stuck on the old file", async () => {
+      // 2026-08-29, Linux gate flake investigation: `b.mtime - a.mtime` is 0
+      // on a tie, and the sort's stability then falls back to whatever order
+      // fs.readdirSync happens to return -- confirmed on real ext4 to pick
+      // the OLDER file, silently, with nothing in the UI to show it. Forced
+      // here with fs.utimesSync rather than hoped for, the same way the test
+      // above forces an unambiguous mtime difference -- a tie is just as
+      // real a filesystem state as a difference, and PZ touching an
+      // outgoing session's log and a new session's log within the same
+      // timestamp tick at a restart boundary is the realistic path to it.
+      const logsDir = path.join(dir, "Logs");
+      fs.mkdirSync(logsDir);
+      tailer.logsDir = logsDir;
+      tailer.basePath = dir;
+
+      const oldChat = path.join(logsDir, "01-01-26_chat.txt");
+      fs.writeFileSync(
+        oldChat,
+        "[01-01-26 10:00:00.000][info] Got message:ChatMessage{chat=Say, author='Alice', text='old session'}.\n",
+      );
+      tailer.watchStartedAt = fs.statSync(oldChat).birthtimeMs + 1000;
+
+      const seen = [];
+      tailer.on("chatMessage", (m) => seen.push(m));
+      await tailer.checkChatLog();
+      expect(tailer.chatLogPath).toBe(oldChat);
+
+      // The tiebreak is birthtimeMs (see logTailer.js), so the two files
+      // need a REAL gap between their births to be distinguishable by it --
+      // confirmed by reproduction that two files written back-to-back with
+      // no real elapsed time between them can tie on birthtimeMs too, on
+      // this same platform's timestamp resolution. A real PZ restart has a
+      // gap here as a matter of course (the old session actually ran for
+      // some real time before the new one started); a short real wait is
+      // the honest way to represent that in a test rather than trusting
+      // synchronous statements to take long enough on their own.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const newChat = path.join(logsDir, "02-01-26_chat.txt");
+      fs.writeFileSync(
+        newChat,
+        "[01-01-26 11:00:00.000][info] Got message:ChatMessage{chat=Say, author='Carol', text='new session'}.\n",
+      );
+
+      // The tie: both files stamped to the exact same instant.
+      const tieTime = new Date();
+      fs.utimesSync(oldChat, tieTime, tieTime);
+      fs.utimesSync(newChat, tieTime, tieTime);
+      expect(fs.statSync(oldChat).mtimeMs).toBe(fs.statSync(newChat).mtimeMs);
+
+      await tailer.checkChatLog();
+
+      expect(tailer.chatLogPath).toBe(newChat);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].author).toBe("Carol");
     });
 
     it("*_chat.txt DELETION mid-tail (real unlink, the exact case the card warns about) does not wedge the tailer on a dead handle -- the next poll simply finds nothing, then picks up a fresh file normally", async () => {
