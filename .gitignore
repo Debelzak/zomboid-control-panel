@@ -43,6 +43,8 @@ Thumbs.db
 
 # Release builds
 release/
+ZomboidControlPanel-linux.tar.gz
+ZomboidControlPanel-windows.zip
 
 # GitHub Releases are the canonical release notes
 release-notes-*.md

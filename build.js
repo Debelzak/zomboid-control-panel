@@ -1,4 +1,5 @@
 import esbuild from "esbuild";
+import archiver from "archiver";
 import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -7,6 +8,45 @@ import { pathToFileURL } from "url";
 
 const distDir = "./dist-exe";
 const releaseDir = "./release";
+const linuxArchivePath = "./ZomboidControlPanel-linux.tar.gz";
+
+// Files in the Linux release tree that must carry the executable bit. NTFS
+// has no POSIX exec bit, so a Windows host's own fs.chmodSync()/writeFileSync
+// mode option is a real no-op here -- whatever ad hoc tool later turns
+// release/ into a .tar.gz would have to guess, and every one we tried
+// guessed differently (bsdtar strips all exec bits; MSYS tar restores them
+// by file-extension heuristic, missing the extensionless binary; a DrvFs
+// mount over-grants everything). Packaging in-process with explicit
+// per-entry modes removes the guess entirely, on any host.
+const LINUX_ARCHIVE_EXECUTABLE_NAMES = new Set([
+  "ZomboidControlPanel",
+  "start.sh",
+  "install-linux-service.sh",
+]);
+
+function createLinuxReleaseArchive(sourceDir, archivePath) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(archivePath);
+    const archive = archiver("tar", { gzip: true });
+
+    output.on("close", resolve);
+    archive.on("error", reject);
+    archive.pipe(output);
+
+    archive.directory(sourceDir, false, (entry) => {
+      if (entry.stats.isDirectory()) {
+        entry.mode = 0o755;
+      } else {
+        entry.mode = LINUX_ARCHIVE_EXECUTABLE_NAMES.has(path.basename(entry.name))
+          ? 0o755
+          : 0o644;
+      }
+      return entry;
+    });
+
+    archive.finalize();
+  });
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1052,6 +1092,12 @@ Recommended safe-upgrade commands:
     console.log("  - docker-compose.install.yml");
   }
   console.log("  - README.txt");
+
+  if (targets.includes("linux")) {
+    console.log("Packaging Linux release archive...");
+    await createLinuxReleaseArchive(releaseDir, linuxArchivePath);
+    console.log(`Wrote ${linuxArchivePath}`);
+  }
 }
 
 const isMainModule =
