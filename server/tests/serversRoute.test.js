@@ -39,10 +39,13 @@ const { getServer, getActiveServer, deleteServer } = await import("../database/i
 const {
   getSteamLoginArgs,
   hasSteamManifestAccessDeniedState,
-  isSteamOperationIdle,
 } = await import(
   "../routes/server.js"
 );
+// Moved out of routes/server.js into its own module (hunt-wave5-2026-08-29)
+// so serverManager.js can check the same tracked state before spawning the
+// PZ JVM -- see services/activeSteamOperations.js's header comment.
+const { isSteamOperationIdle } = await import("../services/activeSteamOperations.js");
 
 function createResponse() {
   const response = {

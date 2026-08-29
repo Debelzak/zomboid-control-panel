@@ -21,6 +21,7 @@ import {
   createLinuxServiceLifecycle,
   isManagedLifecycleProvider,
 } from "./linuxServiceLifecycle.js";
+import { hasActiveSteamOperation } from "./activeSteamOperations.js";
 
 const isWindows = process.platform === "win32";
 // How long a live-looked-up public IP is trusted before re-checking.
@@ -1094,6 +1095,43 @@ export class ServerManager {
 
       if (!this.startCommand && !this.serverPath) {
         throw new Error("Server path not configured");
+      }
+
+      // SteamCMD (POST /install, POST /steam-update -- see
+      // ../services/activeSteamOperations.js) writes game files directly
+      // into this same directory. Spawning the PZ JVM while that write is
+      // still in flight means launching against a partially-patched
+      // install: a truncated/corrupted jar, a ClassNotFoundError, or a
+      // version mismatch between files that finished writing and ones
+      // that haven't -- not merely untidy, a real crash-or-worse shape
+      // (hunt-wave5-2026-08-29 concurrency hunt). Every path that can
+      // reach startServer() -- POST /start, performRestart()'s two start
+      // steps, the Discord bot's /start command, index.js's own
+      // auto-start-on-panel-boot, and updateChecker.js's restart-after-
+      // update -- funnels through this ONE function, so the guard lives
+      // here rather than duplicated at each caller; a guard only at the
+      // HTTP route protects the human clicking Start and nothing else.
+      // Deliberately unconditional, not nested inside the
+      // skipRunningCheck branch below: "is SteamCMD active" is orthogonal
+      // to "is the OLD PZ process confirmed stopped" -- restartServer()'s
+      // skipRunningCheck:true is specifically about skipping the latter.
+      // Thrown as a plain Error with no ErrorCode, matching every OTHER
+      // refusal already in this function (Server path not configured /
+      // already running / RCON port in use, none of which carry one
+      // either) rather than introducing the one site in this function
+      // that departs from its own neighbors' convention -- the message
+      // itself is the "named, visible, not a quiet no-op" signal here.
+      const installPathForSteamCheck =
+        this._serverRecord?.installPath || this.serverPath;
+      if (installPathForSteamCheck) {
+        const normalizedInstallPath = path
+          .normalize(installPathForSteamCheck)
+          .toLowerCase();
+        if (hasActiveSteamOperation(normalizedInstallPath)) {
+          throw new Error(
+            "A Steam install or update is currently in progress for this server's install directory. Wait for it to finish before starting the server.",
+          );
+        }
       }
 
       if (!skipRunningCheck) {

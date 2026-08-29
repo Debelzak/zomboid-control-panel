@@ -17,6 +17,13 @@ import {
 } from "../database/init.js";
 import { sanitizeError, sanitizeIniValue } from "../utils/sanitize.js";
 import { resolveLaunchMode } from "../services/serverManager.js";
+import {
+  isSteamOperationIdle,
+  getActiveSteamOperations,
+  clearActiveSteamOperation,
+  hasActiveSteamOperation,
+  STEAM_OPERATION_IDLE_TIMEOUT_MS,
+} from "../services/activeSteamOperations.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { requirePermission } from "../services/permissions.js";
@@ -331,16 +338,12 @@ async function findSteamCmdPath() {
   return null;
 }
 
-// Track active Steam operations to prevent concurrent runs on the same path
-const activeSteamOperations = new Map();
-const STEAM_OPERATION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
-
-export function isSteamOperationIdle(operation, now = Date.now()) {
-  return Boolean(
-    operation?.lastOutputAt &&
-      now - operation.lastOutputAt >= STEAM_OPERATION_IDLE_TIMEOUT_MS,
-  );
-}
+// activeSteamOperations itself, isSteamOperationIdle, clearActiveSteamOperation
+// and hasActiveSteamOperation now live in ../services/activeSteamOperations.js
+// (hunt-wave5-2026-08-29) so serverManager.js's startServer() can check the
+// same tracked state before spawning the PZ JVM -- see that module's header
+// comment for why this couldn't just be a reverse import instead.
+const activeSteamOperations = getActiveSteamOperations();
 
 // True only for the exact shape that crashes PZ on first boot: no admin
 // password configured AND this server has never actually started (its
@@ -367,34 +370,6 @@ export function isFirstBootMissingAdminPassword(activeServer) {
     activeServer.serverName,
   );
   return !fs.existsSync(saveDir);
-}
-
-function clearActiveSteamOperation(normalizedPath) {
-  const operation = activeSteamOperations.get(normalizedPath);
-  if (operation?.watchdog) clearInterval(operation.watchdog);
-  activeSteamOperations.delete(normalizedPath);
-}
-
-function hasActiveSteamOperation(normalizedPath) {
-  const operation = activeSteamOperations.get(normalizedPath);
-  if (!operation) return false;
-
-  if (Number.isInteger(operation.pid)) {
-    try {
-      process.kill(operation.pid, 0);
-      return true;
-    } catch (error) {
-      if (error.code === "ESRCH") {
-        clearActiveSteamOperation(normalizedPath);
-        log.warn(
-          `Cleared stale Steam ${operation.type} operation for ${normalizedPath}`,
-        );
-        return false;
-      }
-    }
-  }
-
-  return true;
 }
 
 // Every location serverManager.js's getServerConfig() will accept as "the"
