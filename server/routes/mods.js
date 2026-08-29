@@ -2293,21 +2293,30 @@ router.post("/toggle-mod-id", async (req, res) => {
       });
     }
 
-    // Reject attempts to ENABLE a workshop-ID-shaped value as a mod ID.
-    // (Disabling is still allowed so the Debug "Strip numeric IDs from
-    // Mods=" auto-fix can remove existing pollution.)
-    if (enabled && looksLikeWorkshopId(modId)) {
-      return res.status(400).json({
-        error:
-          "That looks like a Steam Workshop ID, not a mod ID. Workshop IDs (numeric) belong in WorkshopItems=, not Mods=.",
-        code: ErrorCode.MODS_TOGGLE_WORKSHOP_ID_IN_MODID,
-      });
-    }
+    const serverPath = await getServerPath();
 
     const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
+      const currentWorkshopIds =
+        content.match(/^WorkshopItems=(.*)$/m)?.[1]?.split(";").filter(Boolean) ||
+        [];
+
+      // Reject attempts to ENABLE a workshop-ID-shaped value as a mod ID,
+      // UNLESS a real mod.info on disk confirms it's a legitimate mod ID
+      // that just happens to look like one (e.g. "Tear All Clothes"
+      // 3519629457, see enable-disk-mod above) -- disk verification is
+      // strictly more evidence than the regex that flagged it ambiguous.
+      // Disabling is still always allowed so the Debug "Strip numeric IDs
+      // from Mods=" auto-fix can remove existing pollution.
+      if (
+        enabled &&
+        looksLikeWorkshopId(modId) &&
+        !isModIdVerifiedOnDisk(modId, currentWorkshopIds, serverPath)
+      ) {
+        return { rejected: true };
+      }
 
       if (enabled) {
         if (!currentModIds.includes(modId)) {
@@ -2317,7 +2326,15 @@ router.post("/toggle-mod-id", async (req, res) => {
         currentModIds = currentModIds.filter((id) => id !== modId);
       }
 
-      const newModList = sanitizeModIdList(currentModIds);
+      // Disk-bypass-aware sanitizer applied to the FULL list, not just the
+      // entry being toggled -- otherwise toggling any unrelated mod would
+      // silently re-strip a pre-existing, already-disk-verified numeric-ID
+      // mod elsewhere in the same Mods= line as collateral damage.
+      const newModList = sanitizeModIdListWithDiskBypass(
+        currentModIds,
+        currentWorkshopIds,
+        serverPath,
+      );
       // Reuse modsMatch (already computed above) as the existence check --
       // a separate content.includes("Mods=") would match those characters
       // anywhere in the file (e.g. operator free text), taking this branch
@@ -2335,6 +2352,15 @@ router.post("/toggle-mod-id", async (req, res) => {
       );
       return { totalMods: currentModIds.length, backupWarning };
     });
+
+    if (result.rejected) {
+      return res.status(400).json({
+        error:
+          "That looks like a Steam Workshop ID, not a mod ID. Workshop IDs (numeric) belong in WorkshopItems=, not Mods=.",
+        code: ErrorCode.MODS_TOGGLE_WORKSHOP_ID_IN_MODID,
+      });
+    }
+
     log.info(
       `Toggled mod ID "${modId}" ${enabled ? "ON" : "OFF"} in ${iniPath}`,
     );
@@ -2424,23 +2450,29 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       });
     }
 
-    // Reject batches that try to ENABLE workshop-ID-shaped values. Removal
-    // is still allowed (used by the Debug page "Strip numeric IDs" fix).
-    const badEnables = changes.filter(
-      (c) => c.enabled && looksLikeWorkshopId(c.modId),
-    );
-    if (badEnables.length > 0) {
-      return res.status(400).json({
-        error: `Refusing to add ${badEnables.length} workshop-ID-shaped entr${badEnables.length === 1 ? "y" : "ies"} to Mods= (those belong in WorkshopItems=).`,
-        code: ErrorCode.MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS,
-        params: sanitizeErrorParams({ count: badEnables.length }),
-      });
-    }
+    const serverPath = await getServerPath();
 
     const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
       const modsMatch = content.match(/^Mods=(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
+      const currentWorkshopIds =
+        content.match(/^WorkshopItems=(.*)$/m)?.[1]?.split(";").filter(Boolean) ||
+        [];
+
+      // Reject changes that try to ENABLE a workshop-ID-shaped value,
+      // UNLESS a real mod.info on disk confirms it's a legitimate mod ID
+      // (see /toggle-mod-id above for the full reasoning). Removal is still
+      // always allowed (used by the Debug page "Strip numeric IDs" fix).
+      const badEnables = changes.filter(
+        (c) =>
+          c.enabled &&
+          looksLikeWorkshopId(c.modId) &&
+          !isModIdVerifiedOnDisk(c.modId, currentWorkshopIds, serverPath),
+      );
+      if (badEnables.length > 0) {
+        return { rejectedCount: badEnables.length };
+      }
 
       // Apply all changes
       for (const { modId, enabled } of changes) {
@@ -2453,7 +2485,14 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
         }
       }
 
-      const newModList = sanitizeModIdList(currentModIds);
+      // Disk-bypass-aware sanitizer applied to the FULL list -- see
+      // /toggle-mod-id above for why this must cover every entry, not just
+      // the ones in `changes`.
+      const newModList = sanitizeModIdListWithDiskBypass(
+        currentModIds,
+        currentWorkshopIds,
+        serverPath,
+      );
       // Reuse modsMatch (see this file's first ini-write site for why a
       // separate .includes("Mods=") is wrong here).
       if (modsMatch) {
@@ -2467,6 +2506,15 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       );
       return { totalMods: currentModIds.length, backupWarning };
     });
+
+    if (result.rejectedCount) {
+      return res.status(400).json({
+        error: `Refusing to add ${result.rejectedCount} workshop-ID-shaped entr${result.rejectedCount === 1 ? "y" : "ies"} to Mods= (those belong in WorkshopItems=).`,
+        code: ErrorCode.MODS_BATCH_TOGGLE_WORKSHOP_ID_IN_MODS,
+        params: sanitizeErrorParams({ count: result.rejectedCount }),
+      });
+    }
+
     log.info(`Batch toggled ${changes.length} mod IDs in ${iniPath}`);
 
     res.json({
@@ -2995,6 +3043,58 @@ function findModIdFromWorkshop(workshopId, serverPath) {
   const mods = getModDetailsFromWorkshop(workshopId, serverPath);
   // Return the first ID found (legacy behavior)
   return mods.length > 0 ? mods[0].id : null;
+}
+
+// A workshop-ID-shaped modId is ambiguous by regex alone: some mods
+// legitimately use their Steam Workshop file ID as their mod.info id= too
+// (e.g. "Tear All Clothes" 3519629457 -- see enable-disk-mod/
+// resolve-orphan-workshop above, which already trust disk-resolved IDs
+// unconditionally for this exact reason). Disk verification is strictly
+// MORE evidence than the regex that flagged it ambiguous in the first
+// place, so toggle/batch-toggle can use it to tell a real numeric mod ID
+// apart from an actually-misplaced workshop ID, instead of rejecting both
+// alike. Checks every currently-configured WorkshopItems= entry (not just
+// one) since we don't know in advance which workshop item owns this mod ID.
+function isModIdVerifiedOnDisk(modId, currentWorkshopIds, serverPath) {
+  if (!serverPath || !currentWorkshopIds?.length) return false;
+  for (const wsId of currentWorkshopIds) {
+    try {
+      if (findAllModIdsFromWorkshop(wsId, serverPath).includes(modId)) {
+        return true;
+      }
+    } catch {
+      // Unreadable/missing workshop folder for this ID -- not evidence
+      // either way, keep checking the rest.
+    }
+  }
+  return false;
+}
+
+// Same job as sanitizeModIdList (utils/sanitize.js), plus the disk-
+// verification bypass above: a numeric-looking entry is dropped UNLESS it's
+// independently confirmed by a real mod.info on disk. Order-preserving
+// single pass -- unlike a filter-then-append union, this doesn't reshuffle
+// a disk-verified entry to the end of the list, which would silently change
+// load order as a side effect of an unrelated toggle. Used for
+// toggle/batch-toggle, which (unlike save-order/presets-apply) mutate one
+// entry in an existing list rather than replacing the whole thing, so a
+// pre-existing numeric-ID mod elsewhere in that list is also at risk of
+// being silently dropped by a completely unrelated toggle if this isn't
+// applied to the FULL list, not just the entry being toggled.
+function sanitizeModIdListWithDiskBypass(ids, currentWorkshopIds, serverPath) {
+  const out = [];
+  for (const raw of ids || []) {
+    const v = sanitizeIniValue(raw);
+    if (!v) continue;
+    if (
+      looksLikeWorkshopId(v) &&
+      !isModIdVerifiedOnDisk(v, currentWorkshopIds, serverPath)
+    ) {
+      continue;
+    }
+    out.push(v);
+  }
+  return out.join(";");
 }
 
 // Remove a single mod from server .ini file
