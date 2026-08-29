@@ -757,12 +757,32 @@ async function fetchTileWithRetry(url) {
   }
 }
 
+// hunt-wave10-2026-08-29 (suspect 4, REAL): the browser-facing tile URL
+// (/api/map/tiles/:level/:tile, no :dir segment — see the comment on
+// buildDirectTileUrl in WorldMap.tsx) carries no identifier for WHICH
+// resolved B42 build (getB42Dir()) produced the bytes at that URL, but this
+// server-side disk/mem cache IS namespaced by dir (relPath includes it for
+// the b42 routes). A long browser Cache-Control on an un-namespaced URL
+// means: if the resolved build changes (getB42Map() re-resolves at most
+// once per B42_DIR_TTL_MS, and does change over a PZ B42 beta's lifetime),
+// a browser that already cached a tile under the old build keeps serving
+// those bytes for the rest of the max-age window, silently mixed with
+// freshly-fetched new-build tiles for other coordinates -- "the operator's
+// browser keeps showing the old world" for tiles it had already visited.
+// Bounded to the SAME freshness window as /resolve's own Cache-Control
+// (below) rather than the previous 7 days, so a stale tile can never
+// outlive the client's own belief about which build is current by more
+// than an hour -- and a "miss" here is still served instantly from this
+// file's own disk/mem cache (Tier 1/2 above), so shortening this does not
+// reintroduce a real upstream round-trip on the common path.
+const TILE_BROWSER_CACHE_CONTROL = "public, max-age=3600";
+
 async function serveTile(req, res, url, contentType, relPath) {
   // Tier 1: in-memory LRU — fastest, no I/O at all.
   const hot = memCacheGet(relPath);
   if (hot) {
     res.set("Content-Type", hot.contentType);
-    res.set("Cache-Control", "public, max-age=604800"); // 7 days
+    res.set("Cache-Control", TILE_BROWSER_CACHE_CONTROL);
     res.set("X-Tile-Cache", "hit-mem");
     res.send(hot.buffer);
     return;
@@ -774,7 +794,7 @@ async function serveTile(req, res, url, contentType, relPath) {
   if (onDisk) {
     memCachePut(relPath, onDisk, contentType);
     res.set("Content-Type", contentType);
-    res.set("Cache-Control", "public, max-age=604800");
+    res.set("Cache-Control", TILE_BROWSER_CACHE_CONTROL);
     res.set("X-Tile-Cache", "hit-disk");
     res.send(onDisk);
     return;
@@ -805,7 +825,7 @@ async function serveTile(req, res, url, contentType, relPath) {
     memCachePut(relPath, buffer, contentType);
     writeDiskCacheAsync(relPath, buffer);
     res.set("Content-Type", contentType);
-    res.set("Cache-Control", "public, max-age=604800");
+    res.set("Cache-Control", TILE_BROWSER_CACHE_CONTROL);
     res.set("X-Tile-Cache", "miss");
     res.send(buffer);
   } catch (err) {
