@@ -1278,6 +1278,21 @@ export class DiscordBot {
 
     const FAILURE_THRESHOLD = 3;
     const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+    // @discordjs/rest retries a 429 indefinitely with NO attempt cap: its
+    // runRequest() re-recurses on every 429 response without ever
+    // incrementing the same `retries` counter a non-429 failure uses (that
+    // path IS capped, at options.retries = 3). Confirmed empirically against
+    // a real (mocked) Discord API that returns 429 on every attempt:
+    // channel.send() sat unresolved past 60s with nothing logged, because
+    // the catch block below — and the circuit breaker it drives — is never
+    // reached while the promise never settles. A sustained rate limit is a
+    // real scenario (global rate limit, temporary token flag), and without
+    // this bound it silently wedges every future send the same way, forever
+    // — the exact "reports nothing, reaches nobody" shape this bot exists to
+    // avoid. This does not change discord.js's own retry behavior; it only
+    // stops US from waiting on it past a sane ceiling so the breaker can do
+    // its job. See server/tests/linuxDiscordSendTimeout.test.js.
+    const SEND_TIMEOUT_MS = 30 * 1000;
     const now = Date.now();
     const breaker = this._breakerFor(channelId);
 
@@ -1291,7 +1306,24 @@ export class DiscordBot {
       if (!channel?.isTextBased?.() || typeof channel.send !== "function") {
         throw new Error("Configured channel is not a sendable text channel");
       }
-      await channel.send(message);
+      const sendPromise = channel.send(message);
+      // If the timeout wins the race, the original send is still pending
+      // somewhere inside discord.js's retry loop — swallow whatever it
+      // eventually does so it can't surface as an unhandled rejection long
+      // after we've stopped waiting on it.
+      sendPromise.catch(() => {});
+      await Promise.race([
+        sendPromise,
+        new Promise((_resolve, reject) =>
+          setTimeout(() => {
+            const timeoutError = new Error(
+              `Discord send timed out after ${SEND_TIMEOUT_MS}ms (ETIMEDOUT)`,
+            );
+            timeoutError.code = "ETIMEDOUT";
+            reject(timeoutError);
+          }, SEND_TIMEOUT_MS),
+        ),
+      ]);
       if (breaker.failures > 0 || breaker.suppressed > 0) {
         if (breaker.suppressed > 0) {
           log.info(
@@ -1304,7 +1336,19 @@ export class DiscordBot {
       return true;
     } catch (error) {
       breaker.failures++;
+      // A 5xx is Discord's own outage, not our configuration — classify it
+      // alongside the network-level codes below rather than lumping it in
+      // with "channel deleted / missing perms", which used to give a
+      // transient Discord-side outage the same 30-minute (mis)treatment as
+      // a real config problem, AND logged a misleading "misconfigured"
+      // reason for something an admin can't fix by touching settings.
+      // error.status is set by both of @discordjs/rest's own error classes
+      // (DiscordAPIError, HTTPError) — checking it is exact, unlike sniffing
+      // error.message for a status-shaped substring.
       const transient =
+        (typeof error.status === "number" &&
+          error.status >= 500 &&
+          error.status < 600) ||
         /EAI_AGAIN|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|Connect Timeout|fetch failed|UND_ERR/i.test(
           error.message || "",
         );
