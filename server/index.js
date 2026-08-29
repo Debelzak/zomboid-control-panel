@@ -49,7 +49,11 @@ import { Scheduler } from "./services/scheduler.js";
 import { DiscordBot } from "./services/discordBot.js";
 import { BackupService } from "./services/backupService.js";
 import { UpdateChecker } from "./services/updateChecker.js";
-import { PanelUpdateChecker } from "./services/panelUpdateChecker.js";
+import {
+  PanelUpdateChecker,
+  createUpdateDataBackup,
+  restorePreUpdateDataBackup,
+} from "./services/panelUpdateChecker.js";
 import {
   acknowledgeUpdateBundle,
   applyUpdateBundle,
@@ -1393,6 +1397,37 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     checker && typeof checker.getStagedUpdate === "function"
       ? checker.getStagedUpdate()
       : null;
+
+  // Pre-update database snapshot, taken exactly once per restart-and-apply
+  // request, right here -- before EITHER platform's destructive step
+  // (Windows: writing the supervisor marker and exiting so Start.bat can
+  // swap files; Linux: applyUpdateBundle() itself). This used to be taken
+  // at download/stage time (see panelUpdateChecker.js's own comment on why
+  // that became stale once download and apply became two separate,
+  // arbitrarily-far-apart user actions). The path is persisted as a
+  // setting, not just held in the journal or in memory, so it survives
+  // independently of the bundle journal's own lifecycle (deleted on both
+  // successful apply and successful rollback) -- see the acknowledge
+  // handler below, which is the one path that can need it back.
+  if (isPackaged && staged) {
+    try {
+      const dataBackupPath = createUpdateDataBackup(
+        getDataPaths(),
+        staged.version,
+      );
+      if (dataBackupPath) {
+        log.info(`Backed up panel database before update: ${dataBackupPath}`);
+        await setSetting("preUpdateDataBackupPath", dataBackupPath);
+        await flushWrites();
+      }
+    } catch (backupErr) {
+      // A failed pre-update snapshot must not block the update itself --
+      // same posture as every other best-effort backup in this codebase --
+      // but it DOES mean there is no safety net for this specific update,
+      // so this is worth a warning, not a debug line.
+      log.warn(`Could not back up panel database before update: ${backupErr.message}`);
+    }
+  }
 
   // Windows + packaged + staged update → supervisor (Start.bat v2) handoff
   // when available, otherwise legacy spawned-helper.
@@ -3000,11 +3035,46 @@ async function start() {
             })
           ) {
             log.info("Update bundle startup acknowledged; previous artifacts removed");
+            // Transaction complete -- the pre-update snapshot stays on disk
+            // (it's the operator's, not ours to delete), but the pointer to
+            // it as a "pending restore candidate" is cleared so a LATER,
+            // unrelated incident can never find and restore a stale
+            // snapshot from an update that already succeeded.
+            await setSetting("preUpdateDataBackupPath", null);
+            await flushWrites();
           }
         } catch (error) {
           log.error(
             `Update startup handshake failed [${error.code || "startup_handshake_failed"}]: ${error.message}`,
           );
+          if (error.code === "version_mismatch") {
+            // This process already completed its own full startup --
+            // including any database migration -- before reaching this
+            // handshake. acknowledgeUpdateBundle() has already rolled the
+            // BINARY and CLIENT back to the previous version by the time
+            // this catch runs, but it has no concept of a database at all
+            // (updateBundle.js is deliberately decoupled from it) -- a
+            // binary-only rollback here would leave the OLD binary running
+            // against a database this NEW version may have already
+            // migrated. Restore db.json from the pre-update snapshot taken
+            // in POST /api/panel/restart to close that half-rollback gap.
+            try {
+              const backupPath = await getSetting("preUpdateDataBackupPath");
+              if (restorePreUpdateDataBackup(getDataPaths(), backupPath)) {
+                log.warn(
+                  `Restored the pre-update database snapshot after a version-mismatch rollback: ${backupPath}`,
+                );
+              } else {
+                log.error(
+                  "Version-mismatch rollback occurred but no pre-update database snapshot was recorded to restore.",
+                );
+              }
+            } catch (restoreErr) {
+              log.error(
+                `Could not restore the pre-update database snapshot: ${restoreErr.message}`,
+              );
+            }
+          }
           process.exitCode = 76;
           setImmediate(() => process.exit(76));
           return;

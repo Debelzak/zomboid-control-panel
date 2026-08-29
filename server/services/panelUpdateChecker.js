@@ -56,6 +56,30 @@ export function createUpdateDataBackup(dataPaths, version, fsModule = fs) {
   return backupPath;
 }
 
+/**
+ * Restore db.json from a pre-update snapshot (see createUpdateDataBackup()
+ * above) after a rollback that can only be needed on ONE path: the update
+ * bundle journal's version-mismatch rollback (updateBundle.js's
+ * acknowledgeUpdateBundle()), which fires AFTER the new binary has already
+ * completed its own startup -- including any database migration -- and
+ * only rolls the BINARY and CLIENT back. Without this, that rollback is a
+ * half-rollback: the previous binary running against a database the NEW
+ * version already migrated. The bundle-transaction's OWN mid-apply rollback
+ * (applyUpdateBundle() failing before the new binary ever ran) never needs
+ * this -- nothing could have touched the database yet at that point.
+ *
+ * Returns false (never throws for a missing/absent backup -- that's the
+ * caller's own thing to log, not this function's) when there is nothing to
+ * restore. Propagates a real copy failure so the caller can tell the two
+ * apart.
+ */
+export function restorePreUpdateDataBackup(dataPaths, backupPath, fsModule = fs) {
+  const dbPath = dataPaths?.dbPath;
+  if (!dbPath || !backupPath || !fsModule.existsSync(backupPath)) return false;
+  fsModule.copyFileSync(backupPath, dbPath);
+  return true;
+}
+
 export function validateReleaseManifest(
   manifest,
   expectedVersion,
@@ -506,13 +530,18 @@ export class PanelUpdateChecker {
     let incomingClientPath = null;
 
     try {
-      const dataBackupPath = createUpdateDataBackup(
-        getDataPaths(),
-        this.latestRelease.version,
-      );
-      if (dataBackupPath) {
-        log.info(`Backed up panel database before update: ${dataBackupPath}`);
-      }
+      // 2026-08-29: the pre-update database snapshot used to be taken HERE,
+      // at download/stage time. That was correct back when download and
+      // apply were one atomic user action -- taking it right before that
+      // one action began WAS taking it right before the destructive step.
+      // The bundle-journal rewrite decoupled the two: an operator can
+      // download/stage now and click "Restart and Apply" hours or days
+      // later, making a download-time snapshot stale by the time it would
+      // actually matter (it would be missing every operator-state change
+      // made in between). The snapshot is now taken in server/index.js's
+      // POST /api/panel/restart, immediately before either platform's
+      // actual destructive apply step -- see createUpdateDataBackup()'s own
+      // call site there for why.
       log.info(
         `Downloading update: ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)} MB)`,
       );
