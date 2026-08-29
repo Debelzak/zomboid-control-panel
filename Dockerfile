@@ -96,6 +96,14 @@ RUN chmod 0755 /usr/local/bin/zomboid-panel-entrypoint
 # the case where we're reusing the base image's existing user).
 RUN mkdir -p data logs && chown -R ${UID}:${GID} /app
 
+# Build provenance. server/index.js prefers process.env.PANEL_BUILD_SHA over shelling out to
+# `git rev-parse HEAD`, which cannot work in an image: there is no .git and no git binary. Passing
+# the sha in makes the frontend/backend build-compatibility check meaningful in Docker rather than
+# merely non-fatal. CI supplies this via --build-arg; a local `docker build` without it simply
+# leaves the sha unknown, which is now harmless on its own.
+ARG PANEL_BUILD_SHA=""
+ENV PANEL_BUILD_SHA=${PANEL_BUILD_SHA}
+
 EXPOSE 3001
 
 ENV NODE_ENV=production \

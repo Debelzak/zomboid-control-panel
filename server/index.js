@@ -1346,6 +1346,13 @@ app.use("/api/permissions", permissionsRoutes);
 // In dev mode, fall back to reading package.json.
 let _pkgVersion;
 let _buildSha;
+// These are resolved SEPARATELY on purpose. They used to share one try/catch, which meant a
+// failure resolving the build sha discarded an already-successful package.json read: in a
+// container there is no .git and no git binary, `git rev-parse HEAD` throws, and the panel then
+// reported itself as 0.0.0 even though its version was sitting right there in /app/package.json.
+// That was harmless until the frontend/backend build-compatibility gate started comparing the
+// two, at which point every Docker user got "Frontend and backend versions do not match" and a
+// blocked UI. Never let an unknown sha cost us a known version.
 try {
   _pkgVersion =
     typeof PANEL_VERSION !== "undefined"
@@ -1353,13 +1360,16 @@ try {
       : JSON.parse(
           fs.readFileSync(path.join(__dirname, "../package.json"), "utf-8"),
         ).version;
+} catch {
+  _pkgVersion = "0.0.0";
+}
+try {
   _buildSha =
     typeof PANEL_BUILD_SHA !== "undefined"
       ? PANEL_BUILD_SHA
       : process.env.PANEL_BUILD_SHA ||
         execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
 } catch {
-  _pkgVersion = "0.0.0";
   _buildSha = "unknown";
 }
 const _apiContractVersion =
