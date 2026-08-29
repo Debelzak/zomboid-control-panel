@@ -13,23 +13,31 @@ import path from "path";
 // restoreBackup() carries the identical fix with the identical reasoning
 // (2026-08-27, see backupRestoreSafety.test.js).
 //
-// POST /server/steam-update (and /server/install, same shape) did NOT get
-// this fix. Reading the route: `hasActiveSteamOperation(normalizedPath)` is
+// POST /server/steam-update (and /server/install, same shape) used to
+// depart from that pattern: `hasActiveSteamOperation(normalizedPath)` was
 // checked at server.js ~3641, but the actual claim --
-// `activeSteamOperations.set(normalizedPath, ...)` -- doesn't happen until
+// `activeSteamOperations.set(normalizedPath, ...)` -- didn't happen until
 // ~3703, with a real `await saveAndResolveSteamCmdExe(steamcmdPath)` (which
 // itself awaits `getSetting`/`setSetting`) sitting in between. Two
 // steam-update requests for the SAME installPath arriving close together
-// (a double-click, a retried request, two admin sessions) can both pass the
-// check before either claims, and both end up spawning SteamCMD against the
-// same install directory concurrently -- SteamCMD is not designed for two
-// instances writing the same install dir at once (manifest lock contention,
-// partial/interleaved file writes), so this is the "genuinely unsafe, not
-// merely untidy" category god asked to identify, not the "untidy" one.
+// (a double-click, a retried request, two admin sessions) could both pass
+// the check before either claimed, and both go on to spawn SteamCMD
+// against the same install directory concurrently -- SteamCMD is not
+// designed for two instances writing the same install dir at once
+// (manifest lock contention, partial/interleaved file writes), so this was
+// the "genuinely unsafe, not merely untidy" category god asked to
+// identify, not the "untidy" one.
+//
+// FIXED by moving the check-and-claim block to AFTER
+// saveAndResolveSteamCmdExe's await (and the two synchronous manifest-
+// recovery try/catches that follow it) -- matching POST /install, whose
+// own check-and-claim pair was ALREADY in the correct position the whole
+// time (same helper, called before its own check). Nothing awaited now
+// sits between the check and the claim in either route.
 //
 // Proven here through the REAL route handler (not a reimplementation),
-// using the same "suspend the first call inside its own async gap, let the
-// second one run to completion" technique wipeConcurrency.test.js already
+// using the same "suspend one call inside its own async gap, let the other
+// run to completion first" technique wipeConcurrency.test.js already
 // established for the exact same defect shape in the same file.
 
 const getSettingMock = vi.fn(async () => null);
@@ -86,7 +94,7 @@ afterEach(() => {
 });
 
 describe("POST /api/server/steam-update concurrency guard", () => {
-  it("a second update for the SAME install path arriving while the first is still resolving steamcmdPath is allowed through too -- proving the check-then-await-then-claim gap is real, not just theoretical", async () => {
+  it("a second update for the SAME install path, suspended inside saveAndResolveSteamCmdExe while the first claims and spawns, is refused with 409 once it resumes", async () => {
     const serverManager = {
       getServerProcessDetails: async () => ({ running: false, scanFailed: false }),
     };
@@ -96,17 +104,16 @@ describe("POST /api/server/steam-update concurrency guard", () => {
     };
 
     let getSettingCalls = 0;
-    let releaseFirst;
+    let releaseSuspended;
     getSettingMock.mockImplementation(async (key) => {
       if (key !== "steamcmdPath") return null;
       getSettingCalls += 1;
       if (getSettingCalls === 1) {
-        // Suspend request A right inside saveAndResolveSteamCmdExe(), AFTER
-        // it has already passed hasActiveSteamOperation() (a synchronous
-        // check earlier in the same handler) but BEFORE it reaches the
-        // activeSteamOperations.set() claim further down.
+        // Suspend request A inside saveAndResolveSteamCmdExe(), i.e. BEFORE
+        // it ever reaches hasActiveSteamOperation() -- the check now sits
+        // AFTER this await (post-fix), so A hasn't checked anything yet.
         return new Promise((resolve) => {
-          releaseFirst = () => resolve(steamcmdPath);
+          releaseSuspended = () => resolve(steamcmdPath);
         });
       }
       return steamcmdPath;
@@ -122,40 +129,36 @@ describe("POST /api/server/steam-update concurrency guard", () => {
     const responseB = createResponse();
 
     const callA = handler(buildRequest(), responseA);
-    // Let A run up through hasActiveSteamOperation() and into the mocked
-    // getSetting() await, where it's now suspended.
+    // Let A run into the mocked getSetting() await, where it's now suspended
+    // (before its own check-and-claim, which post-fix sits AFTER this call).
     await Promise.resolve();
     await Promise.resolve();
 
-    // B starts fresh: its own hasActiveSteamOperation() check runs BEFORE A
-    // has claimed anything (A is still suspended), so B should -- per the
-    // wipe/restore precedent -- either be refused (if the gap were closed)
-    // or sail through (if it isn't).
+    // B runs uninterrupted: resolves getSetting immediately, then its own
+    // check-and-claim (now adjacent, no await between them) executes in one
+    // synchronous stretch, claiming the path and spawning before A ever gets
+    // a chance to check anything.
     const callB = handler(buildRequest(), responseB);
     await callB;
 
-    releaseFirst();
+    // A resumes now and reaches its own (post-fix) check for the first
+    // time -- B's claim is still live (its fake steamcmd.sh process hasn't
+    // had time to exit and fire the 'close' handler that clears it yet), so
+    // A must be refused instead of racing B's still-running operation.
+    releaseSuspended();
     await callA;
 
-    const status409Calls = [responseA, responseB]
-      .map((r) => r.status.mock.calls.map((c) => c[0]))
-      .flat();
+    expect(responseB.status).not.toHaveBeenCalledWith(409);
+    expect(responseA.status).toHaveBeenCalledWith(409);
+    expect(responseA.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "STEAM_OPERATION_IN_PROGRESS_SERVER" }),
+    );
 
-    // THE FINDING: neither call was refused with 409
-    // STEAM_OPERATION_IN_PROGRESS_SERVER -- both were allowed to proceed
-    // and (per the route's own code) both went on to spawn SteamCMD against
-    // the same installPath. A fixed version of this route (claiming the
-    // guard before saveAndResolveSteamCmdExe's await, exactly like
-    // wipeInProgress and restoreBackup()'s restoreInProgress already do)
-    // would make this assertion fail here instead, the same way the
-    // analogous wipe/restore tests fail pre-fix and pass post-fix.
-    expect(status409Calls).not.toContain(409);
-
-    // Both fake steamcmd.sh processes exit almost instantly, but their
-    // 'close' handlers (which call the real logServerEvent, mocked above)
-    // fire on a later tick, after this test's own assertions -- give them
-    // one to settle so they don't surface as unhandled-rejection noise on
-    // an unrelated later test.
+    // B's fake steamcmd.sh process exits almost instantly, but its 'close'
+    // handler (which calls the real logServerEvent, mocked above) fires on
+    // a later tick, after this test's own assertions -- give it one to
+    // settle so it doesn't surface as unhandled-rejection noise on an
+    // unrelated later test.
     await new Promise((resolve) => setTimeout(resolve, 200));
   });
 });

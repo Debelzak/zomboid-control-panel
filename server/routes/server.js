@@ -3636,16 +3636,6 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       });
     }
 
-    // Prevent concurrent operations on the same install path
-    const normalizedPath = path.normalize(installPath).toLowerCase();
-    if (hasActiveSteamOperation(normalizedPath)) {
-      return res.status(409).json({
-        error:
-          "A Steam operation is already in progress for this server. Please wait for it to complete.",
-        code: ErrorCode.STEAM_OPERATION_IN_PROGRESS_SERVER,
-      });
-    }
-
     // Auto-download SteamCMD on Linux instead of hard-failing — see
     // ensureSteamCmdLinux.
     // Persist steamcmdPath as the configured setting before resolving an
@@ -3694,6 +3684,28 @@ router.post("/steam-update", requirePermission("server.install"), async (req, re
       }
     } catch (error) {
       log.warn(`Could not reset blocked SteamCMD manifest: ${error.message}`);
+    }
+
+    // Prevent concurrent operations on the same install path. Deliberately
+    // placed HERE -- after every await above (saveAndResolveSteamCmdExe,
+    // ensureSteamCmdLinux), not before them -- matching POST /install's
+    // check/claim placement (which does it in this same order, right before
+    // its own activeSteamOperations.set()). This check used to sit BEFORE
+    // saveAndResolveSteamCmdExe's await, which meant two concurrent
+    // steam-update requests for the same installPath could both pass this
+    // check before either claimed the path, then both spawn SteamCMD
+    // against it concurrently (manifest lock contention / interleaved
+    // writes) -- proven via
+    // server/tests/steamUpdateConcurrency.test.js. Nothing between this
+    // check and the claim below is awaited, so there is no gap left for a
+    // second request to slip through.
+    const normalizedPath = path.normalize(installPath).toLowerCase();
+    if (hasActiveSteamOperation(normalizedPath)) {
+      return res.status(409).json({
+        error:
+          "A Steam operation is already in progress for this server. Please wait for it to complete.",
+        code: ErrorCode.STEAM_OPERATION_IN_PROGRESS_SERVER,
+      });
     }
 
     const operation = validateFiles ? "verification" : "update";
