@@ -283,6 +283,7 @@
   "MODS_SERVER_INSTALL_PATH_NOT_SET": "Serverinstallationspfad nicht festgelegt — unter Einstellungen konfigurieren",
   "MODS_SERVER_PATH_NOT_CONFIGURED": "Serverpfad nicht konfiguriert.",
   "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD": "Serverpfad nicht konfiguriert",
+  "MODS_START_ACF_PATH_NOT_SET": "Mod-Prüfung konnte nicht gestartet werden. Bitte zuerst einen gültigen Workshop-ACF-Pfad konfigurieren.",
   "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED": "Steam-Sitzungscookies nicht konfiguriert",
   "MODS_TOGGLE_ENABLED_REQUIRED": "enabled (boolescher Wert) ist erforderlich",
   "MODS_TOGGLE_MOD_ID_REQUIRED": "modId ist erforderlich",

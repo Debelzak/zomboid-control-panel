@@ -706,6 +706,7 @@ router.post("/start", async (req, res) => {
         success: false,
         error:
           "Mod checker could not start. Configure a valid Workshop ACF path first.",
+        code: ErrorCode.MODS_START_ACF_PATH_NOT_SET,
       });
     }
     res.json({ success: true, message: "Mod checker started" });

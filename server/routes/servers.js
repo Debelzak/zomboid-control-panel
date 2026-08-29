@@ -1188,7 +1188,6 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   "useUpnp",
   "isRemote",
   "startCommand",
-  "description",
   "adminPassword",
   // startBat/batFile used to be allowed here too. Re-confirmed dead
   // (2026-08-27, custom-launcher-as-a-real-supported-mode-not-an-accident):
@@ -1198,6 +1197,19 @@ const ALLOWED_SERVER_UPDATE_FIELDS = [
   // file" is a serverPath/installPath ending in .bat/.sh/.exe (see
   // resolveLaunchMode()), and keeping these next to that would have been a
   // third, unused mechanism sitting beside the two real ones.
+  //
+  // "description" removed the same way (2026-08-29): grepped for
+  // `.description` on a server-shaped object across server/ and client/src/
+  // -- every hit was mod metadata, Steam branch metadata, a toast's
+  // `description` field, or an i18n key literally named `description`, none
+  // of it this record's own field. updateServer() persists whatever lands in
+  // `updates` via `{...db.data.servers[index], ...updates}` -- a spread, not
+  // a field-by-field write -- so the value WAS being written to db.json on
+  // every update that included it, just never read back by anything. A
+  // request that still sends "description" after this change has it
+  // silently filtered out here (same as any other field never on this
+  // list) -- not a 400, just ignored, matching how startBat/batFile already
+  // behave.
 ];
 
 export function parseServerId(value) {

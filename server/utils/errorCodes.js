@@ -1077,6 +1077,10 @@ export const ErrorCode = Object.freeze({
    * MODS_SERVER_PATH_NOT_CONFIGURED below (which does have one), kept
    * separate. */
   MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD: "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD",
+  /** server/routes/mods.js -- POST /start, modChecker.start() returned false. Covers both of its
+   * false cases (workshopAcfPath unset, or set but the file doesn't exist on disk) -- same message,
+   * same fix (configure a valid install path), so one code for both is correct, not a gap. */
+  MODS_START_ACF_PATH_NOT_SET: "MODS_START_ACF_PATH_NOT_SET",
   /** server/routes/mods.js -- POST /collection/test, sessionId/loginSecure not stored. */
   MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED: "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED",
   /** server/routes/mods.js -- POST /toggle-mod-id, `enabled` not a boolean. */

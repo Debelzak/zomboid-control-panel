@@ -283,6 +283,7 @@
   "MODS_SERVER_INSTALL_PATH_NOT_SET": "未设置服务器安装路径——请在「设置」中配置",
   "MODS_SERVER_PATH_NOT_CONFIGURED": "未配置服务器路径。",
   "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD": "未配置服务器路径",
+  "MODS_START_ACF_PATH_NOT_SET": "模组检查器无法启动，请先配置有效的 Workshop ACF 路径。",
   "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED": "未配置 Steam 会话 Cookie",
   "MODS_TOGGLE_ENABLED_REQUIRED": "enabled（布尔值）为必填项",
   "MODS_TOGGLE_MOD_ID_REQUIRED": "modId 为必填项",

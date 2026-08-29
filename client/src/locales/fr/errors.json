@@ -283,6 +283,7 @@
   "MODS_SERVER_INSTALL_PATH_NOT_SET": "Chemin d'installation du serveur non défini — configurez-le dans Paramètres",
   "MODS_SERVER_PATH_NOT_CONFIGURED": "Chemin du serveur non configuré.",
   "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD": "Chemin du serveur non configuré",
+  "MODS_START_ACF_PATH_NOT_SET": "Le vérificateur de mods n'a pas pu démarrer. Veuillez d'abord configurer un chemin ACF Workshop valide.",
   "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED": "Cookies de session Steam non configurés",
   "MODS_TOGGLE_ENABLED_REQUIRED": "enabled (booléen) est requis",
   "MODS_TOGGLE_MOD_ID_REQUIRED": "modId est requis",
