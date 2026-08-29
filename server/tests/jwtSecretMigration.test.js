@@ -123,12 +123,15 @@ describe("authService.init() — JWT secret migration out of db.json", () => {
   });
 
   it("JWT_SECRET env override wins even with a legacy db.json value present, and still clears the stale db.json copy", async () => {
-    process.env.JWT_SECRET = "env-pinned-secret";
+    // 32+ chars -- long enough to clear MIN_JWT_SECRET_LENGTH (see
+    // jwtSecret.test.js for the dedicated length-guard tests); this test is
+    // about override precedence / regeneration refusal, not length.
+    process.env.JWT_SECRET = "env-pinned-secret-that-is-at-least-32-chars";
     settings.set("jwtSecret", "legacy-value-now-unused");
 
     await authService.init();
 
-    expect(authService.jwtSecret).toBe("env-pinned-secret");
+    expect(authService.jwtSecret).toBe("env-pinned-secret-that-is-at-least-32-chars");
     expect(settings.get("jwtSecret")).toBeNull();
   });
 
@@ -166,7 +169,10 @@ describe("authService.regenerateJwtSecret()", () => {
   });
 
   it("refuses when a JWT_SECRET environment override is active, with an actionable message", async () => {
-    process.env.JWT_SECRET = "env-pinned-secret";
+    // 32+ chars -- long enough to clear MIN_JWT_SECRET_LENGTH (see
+    // jwtSecret.test.js for the dedicated length-guard tests); this test is
+    // about override precedence / regeneration refusal, not length.
+    process.env.JWT_SECRET = "env-pinned-secret-that-is-at-least-32-chars";
     await expect(authService.regenerateJwtSecret()).rejects.toThrow(
       /environment variable/i,
     );
