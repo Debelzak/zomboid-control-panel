@@ -356,6 +356,22 @@ export class BackupService {
     if (this.backupInProgress) {
       return { success: false, message: "Backup already in progress" };
     }
+    // restoreBackup() already refuses a new restore (and an independent
+    // createBackup() call) while ITS OWN restoreInProgress is set -- see the
+    // `if (this.backupInProgress)` check near the top of restoreBackup()
+    // below. That guard only ever ran in one direction: a backup could
+    // still start while a restore was mid-swap (savesPath renamed out, then
+    // the extracted world renamed in), reading some files from the world
+    // being replaced and some from its replacement under the same relative
+    // names, silently. `options.isPreRestore` is the same flag
+    // restoreBackup() already passes on its OWN internal pre-restore
+    // createBackup() call (see the call site below) -- it must be exempted
+    // here, or every restore with createPreRestoreBackup !== false would
+    // refuse its own mandatory pre-restore backup the instant this check
+    // was added.
+    if (this.restoreInProgress && !options.isPreRestore) {
+      return { success: false, message: "Restore in progress, please wait" };
+    }
 
     this.backupInProgress = true;
     const startTime = Date.now();
