@@ -88,8 +88,37 @@ afterEach(() => {
   }
 });
 
+// Found while verifying an unrelated build-packaging card (hunt-wave6): all
+// six tests below fail outright on Windows, but not for the reason it looks
+// like at first ("Windows can't execute a shebang script"). makeFakeSteamcmd()
+// only ever creates a steamcmd.sh -- updateChecker.js's own resolution
+// (win32 ? "steamcmd.exe" : try "steamcmd.sh" then "steamcmd") never finds
+// it on win32, so EVERY call here throws "SteamCMD not found" during
+// resolution, before the guard logic under test ever runs. That's true even
+// for the two "refuses WITHOUT EVER SPAWNING" tests, which look like they
+// should be platform-neutral (nothing should spawn either way) but aren't:
+// their assertion is on the SPECIFIC rejection message ("already in
+// progress"), which resolution's own error pre-empts on Windows.
+//
+// One test in this file -- "claims the path for the real spawn's duration
+// and releases it afterward" (the getLatestBuildInfo version) -- would
+// currently PASS on Windows without a guard, but for the wrong reason: its
+// assertion only checks that no operation is left claimed, which is
+// trivially true when nothing was ever claimed because resolution failed
+// immediately and its own .catch(() => {}) swallows that. That's the exact
+// right-by-luck shape god named floor-wide tonight (MSYS tar marking
+// start.sh executable by extension, not by the chmod under test) -- a
+// green result here would prove nothing about claim/release, so it gets
+// skipped too rather than left as a silent false pass.
+//
+// Unlike linuxServiceLifecycle.test.js this morning, there is no
+// platform-neutral subset to preserve here -- every test in this file
+// drives the same POSIX-only fixture. Confirmed by running each individually
+// on Windows before adding these guards, not assumed from the file's shape.
+const isWindows = process.platform === "win32";
+
 describe("UpdateChecker.getLatestBuildInfo(): guarded by activeSteamOperations", () => {
-  it("refuses WITHOUT EVER SPAWNING SteamCMD when the install path already has an active Steam operation", async () => {
+  it.skipIf(isWindows)("refuses WITHOUT EVER SPAWNING SteamCMD when the install path already has an active Steam operation", async () => {
     const installPath = path.join(os.tmpdir(), "pz-install-guard-a");
     const normalized = path.normalize(installPath).toLowerCase();
     const markerFile = path.join(os.tmpdir(), `marker-${Date.now()}-a.txt`);
@@ -111,7 +140,7 @@ describe("UpdateChecker.getLatestBuildInfo(): guarded by activeSteamOperations",
     }
   });
 
-  it("is unaffected by an operation tracked for a DIFFERENT install path", async () => {
+  it.skipIf(isWindows)("is unaffected by an operation tracked for a DIFFERENT install path", async () => {
     const installPath = path.join(os.tmpdir(), "pz-install-guard-b");
     const otherPath = path.normalize(path.join(os.tmpdir(), "pz-install-other-b")).toLowerCase();
     const markerFile = path.join(os.tmpdir(), `marker-${Date.now()}-b.txt`);
@@ -132,7 +161,7 @@ describe("UpdateChecker.getLatestBuildInfo(): guarded by activeSteamOperations",
     }
   });
 
-  it("claims the path for the real spawn's duration and releases it afterward -- success, nonzero exit, and spawn error alike", async () => {
+  it.skipIf(isWindows)("claims the path for the real spawn's duration and releases it afterward -- success, nonzero exit, and spawn error alike", async () => {
     const checker = new UpdateChecker({ emit: vi.fn() });
 
     for (const exitCode of [0, 1]) {
@@ -178,7 +207,7 @@ describe("UpdateChecker.runAutoUpdate(): guarded by activeSteamOperations, refus
     return { checker, io, rconService, serverManager };
   }
 
-  it("refuses WITHOUT EVER SPAWNING SteamCMD, and records the refusal visibly (not a silent skip), when the install path already has an active Steam operation", async () => {
+  it.skipIf(isWindows)("refuses WITHOUT EVER SPAWNING SteamCMD, and records the refusal visibly (not a silent skip), when the install path already has an active Steam operation", async () => {
     const installPath = path.join(os.tmpdir(), "pz-install-guard-auto-a");
     const normalized = path.normalize(installPath).toLowerCase();
     const markerFile = path.join(os.tmpdir(), `marker-${Date.now()}-auto-a.txt`);
@@ -218,7 +247,7 @@ describe("UpdateChecker.runAutoUpdate(): guarded by activeSteamOperations, refus
     }
   });
 
-  it("still restarts a server it had already stopped, rather than leaving it needlessly down over an update that never ran", async () => {
+  it.skipIf(isWindows)("still restarts a server it had already stopped, rather than leaving it needlessly down over an update that never ran", async () => {
     const installPath = path.join(os.tmpdir(), "pz-install-guard-auto-b");
     const normalized = path.normalize(installPath).toLowerCase();
     const steamcmdPath = makeFakeSteamcmd({ markerFile: path.join(os.tmpdir(), `marker-${Date.now()}-auto-b.txt`) });
@@ -254,7 +283,7 @@ describe("UpdateChecker.runAutoUpdate(): guarded by activeSteamOperations, refus
     }
   });
 
-  it("claims the path for the real spawn's duration and releases it immediately after, before the restart step -- proven with a real fake steamcmd.sh", async () => {
+  it.skipIf(isWindows)("claims the path for the real spawn's duration and releases it immediately after, before the restart step -- proven with a real fake steamcmd.sh", async () => {
     const installPath = path.join(os.tmpdir(), "pz-install-guard-auto-c");
     const normalized = path.normalize(installPath).toLowerCase();
     const markerFile = path.join(os.tmpdir(), `marker-${Date.now()}-auto-c.txt`);

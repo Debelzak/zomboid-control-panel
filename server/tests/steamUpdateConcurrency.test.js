@@ -93,8 +93,22 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+// Found while verifying an unrelated build-packaging card (hunt-wave6):
+// fails outright on Windows, not by design. The fake fixture above is a
+// steamcmd.sh -- but the route's own SteamCmd resolution
+// (server.js getSteamCmdExe(), win32 ? "steamcmd.exe" : "steamcmd.sh") never
+// even finds it there, so the request fails during resolution with a
+// different status before the concurrency guard under test is ever
+// reached. There's no cheap way to make a fixture that resolves on both
+// platforms (a real Windows steamcmd.exe can't be a shebang script), so
+// this is a genuine "cannot be tested here", matching the convention
+// linuxServiceLifecycle.test.js established -- skipIf, not describe.skip,
+// per that convention (this file only has the one test, but the point is
+// the mechanism, not the count).
+const isWindows = process.platform === "win32";
+
 describe("POST /api/server/steam-update concurrency guard", () => {
-  it("a second update for the SAME install path, suspended inside saveAndResolveSteamCmdExe while the first claims and spawns, is refused with 409 once it resumes", async () => {
+  it.skipIf(isWindows)("a second update for the SAME install path, suspended inside saveAndResolveSteamCmdExe while the first claims and spawns, is refused with 409 once it resumes", async () => {
     const serverManager = {
       getServerProcessDetails: async () => ({ running: false, scanFailed: false }),
     };
