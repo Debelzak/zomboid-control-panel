@@ -1039,6 +1039,22 @@ export class ServerManager {
             env: { ...process.env, LD_LIBRARY_PATH: ldPath },
           });
         } else {
+          // Reached on Linux only for a no-extension custom command (the
+          // other allowed non-Windows extension besides .sh -- a compiled
+          // launcher binary or extensionless wrapper script, both common on
+          // Linux). Unlike the ".sh" branch above, this spawns resolvedCmd
+          // DIRECTLY rather than via `bash`, so the OS itself enforces the
+          // execute bit -- a freshly downloaded/copied/SteamCMD-installed
+          // file commonly lacks it, and without this chmod the spawn fails
+          // with EACCES every time, exactly the class of "worked on my
+          // Windows box, dead on Linux" bug this hunt exists to catch.
+          if (!isWindows) {
+            try {
+              fs.chmodSync(resolvedCmd, 0o750);
+            } catch (e) {
+              log.debug(`chmod on custom command failed: ${e.message}`);
+            }
+          }
           const spawnEnv = isWindows
             ? process.env
             : (() => {
