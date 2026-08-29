@@ -171,6 +171,11 @@
     "applyUpdate": "Appliquer la mise à jour",
     "viewUpdate": "Voir la mise à jour"
   },
+  "updateCheckError": {
+    "label": "Impossible de vérifier les mises à jour du panneau",
+    "dismissAria": "Ignorer l'avis de vérification de mise à jour",
+    "dismissTooltip": "Ignorer jusqu'à ce que cela change"
+  },
   "connectionError": {
     "label": "Erreur de connexion",
     "suffix": ". Certaines fonctionnalités peuvent être indisponibles.",

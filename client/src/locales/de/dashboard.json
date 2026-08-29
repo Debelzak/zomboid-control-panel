@@ -171,6 +171,11 @@
     "applyUpdate": "Update anwenden",
     "viewUpdate": "Update anzeigen"
   },
+  "updateCheckError": {
+    "label": "Panel-Updates können nicht geprüft werden",
+    "dismissAria": "Update-Prüfungshinweis ausblenden",
+    "dismissTooltip": "Ausblenden, bis sich das ändert"
+  },
   "connectionError": {
     "label": "Verbindungsfehler",
     "suffix": ". Einige Funktionen sind möglicherweise nicht verfügbar.",

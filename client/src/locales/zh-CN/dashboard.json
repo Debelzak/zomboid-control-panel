@@ -171,6 +171,11 @@
     "applyUpdate": "应用更新",
     "viewUpdate": "查看更新"
   },
+  "updateCheckError": {
+    "label": "无法检查面板更新",
+    "dismissAria": "关闭更新检查提示",
+    "dismissTooltip": "关闭，直到情况发生变化"
+  },
   "connectionError": {
     "label": "连接错误",
     "suffix": "。部分功能可能不可用。",

@@ -7,7 +7,7 @@ import { usePageShortcut } from '../hooks/useKeyboardShortcuts'
 import {
   Play, Square, RotateCcw, Save, Server, Wifi, Loader2, AlertTriangle, RefreshCw, AlertCircle,
   LogIn, LogOut, Activity, Archive, Skull, Sword, ShieldAlert, Copy, Gamepad2, Globe, FolderOpen,
-  X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock, Monitor, ScrollText,
+  X, MoreHorizontal, Zap, Trash2, Download, Sparkles, CalendarClock, Monitor, ScrollText, CloudOff,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -71,6 +71,15 @@ interface PerformancePoint {
 
 const DashboardPerformanceCharts = lazy(() => import('@/components/DashboardPerformanceCharts'))
 const DASHBOARD_ONBOARDING_DISMISSED_KEY = 'pz-dashboard-onboarding-dismissed-v1'
+// Stores the exact lastError STRING that was dismissed, not a boolean --
+// so dismissing "cannot reach GitHub" (the common air-gapped-install case)
+// does not also silence a completely different failure that shows up later
+// (e.g. after the machine gets network access and a real bug surfaces). If
+// panelUpdate.lastError ever changes to different text, the stored value
+// no longer matches and the indicator reappears. localStorage (not the
+// sessionStorage the update-available banner above uses) because "never
+// see this again" needs to survive closing the browser, not just a reload.
+const PANEL_UPDATE_ERROR_DISMISSED_KEY = 'pz-panel-update-error-dismissed'
 
 /* -------------------------------------------------------------------------- */
 /*  Small helpers                                                             */
@@ -238,6 +247,9 @@ export default function Dashboard() {
   const [panelUpdate, setPanelUpdate] = useState<PanelUpdateStatus | null>(null)
   const [panelUpdateDismissedVersion, setPanelUpdateDismissedVersion] = useState<string | null>(() => {
     try { return sessionStorage.getItem('panel-update-banner-dismissed') } catch { return null }
+  })
+  const [panelUpdateErrorDismissed, setPanelUpdateErrorDismissed] = useState<string | null>(() => {
+    try { return localStorage.getItem(PANEL_UPDATE_ERROR_DISMISSED_KEY) } catch { return null }
   })
   const [maintenance, setMaintenance] = useState<{
     lastBackup: { name: string; size: number; created: string } | null
@@ -1326,6 +1338,40 @@ export default function Dashboard() {
                 </Button>
               </Link>
             </div>
+          </div>
+        )
+      })()}
+
+      {/* ─── Update check failing (quiet) ───────────────────────────────────
+          Deliberately NOT the accented-banner treatment used above and below:
+          the panel is working fine, it just cannot tell whether a newer
+          version exists. That is information, not an alarm, so no border,
+          no fill, no accent bar -- just muted icon + text + a dismiss X. */}
+      {(() => {
+        if (!panelUpdate || panelUpdate.updateAvailable) return null
+        if (!panelUpdate.lastError) return null
+        if (panelUpdateErrorDismissed === panelUpdate.lastError) return null
+        const dismiss = () => {
+          const err = panelUpdate.lastError
+          if (!err) return
+          try { localStorage.setItem(PANEL_UPDATE_ERROR_DISMISSED_KEY, err) } catch { /* ignore storage failures */ }
+          setPanelUpdateErrorDismissed(err)
+        }
+        return (
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted-foreground">
+            <CloudOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+            <Link to="/settings?tab=updates" className="min-w-0 truncate underline-offset-2 hover:text-foreground hover:underline" title={panelUpdate.lastError}>
+              {t('updateCheckError.label')}
+            </Link>
+            <button
+              type="button"
+              onClick={dismiss}
+              aria-label={t('updateCheckError.dismissAria')}
+              title={t('updateCheckError.dismissTooltip')}
+              className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            >
+              <X className="h-3 w-3" />
+            </button>
           </div>
         )
       })()}

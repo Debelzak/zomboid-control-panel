@@ -171,6 +171,11 @@
     "applyUpdate": "Apply update",
     "viewUpdate": "View update"
   },
+  "updateCheckError": {
+    "label": "Can't check for panel updates",
+    "dismissAria": "Dismiss update check notice",
+    "dismissTooltip": "Dismiss until this changes"
+  },
   "connectionError": {
     "label": "Connection error",
     "suffix": ". Some features may be unavailable.",

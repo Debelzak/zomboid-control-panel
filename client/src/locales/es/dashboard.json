@@ -171,6 +171,11 @@
     "applyUpdate": "Aplicar actualización",
     "viewUpdate": "Ver actualización"
   },
+  "updateCheckError": {
+    "label": "No se pueden comprobar actualizaciones del panel",
+    "dismissAria": "Descartar aviso de comprobación de actualizaciones",
+    "dismissTooltip": "Descartar hasta que esto cambie"
+  },
   "connectionError": {
     "label": "Error de conexión",
     "suffix": ". Algunas funciones podrían no estar disponibles.",

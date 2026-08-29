@@ -171,6 +171,11 @@
     "applyUpdate": "Aplike mizajou",
     "viewUpdate": "Gade mizajou"
   },
+  "updateCheckError": {
+    "label": "Pa kapab tcheke mizajou panèl",
+    "dismissAria": "Kite tonbe avi tcheke mizajou a",
+    "dismissTooltip": "Kite tonbe jiskaske sa chanje"
+  },
   "connectionError": {
     "label": "Erè koneksyon",
     "suffix": ". Gen fonksyon ki ka pa disponib.",
