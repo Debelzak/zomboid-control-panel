@@ -548,6 +548,20 @@ export function reconcileMaskedIniLines(incomingContent, liveContent) {
 export function toIni(obj, originalContent = "") {
   // Preserve comments and order from original
   if (originalContent) {
+    // Unconditionally joining with "\n" below used to silently convert an
+    // entire CRLF-written file to LF on every structured save, even one
+    // that changes a single field -- confirmed empirically (2026-08-29,
+    // config-editing hunt). mods.js's own INI writers never have this
+    // problem: they patch one line in place via regex-replace on the raw
+    // string, so every OTHER line's original terminator survives by
+    // construction. This file's split-then-rejoin approach needs to
+    // preserve that terminator explicitly instead. PZ's own line reader is
+    // very likely tolerant of either style, so this was probably cosmetic
+    // for the engine itself -- but it's still a needless, avoidable
+    // difference from the file's own prior state on every save, and the
+    // asymmetry with mods.js's sibling writer on the SAME file is exactly
+    // the shape worth closing rather than leaving to chance.
+    const lineEnding = originalContent.includes("\r\n") ? "\r\n" : "\n";
     const lines = originalContent.split(/\r?\n/);
     const result = [];
     const written = new Set();
@@ -590,7 +604,7 @@ export function toIni(obj, originalContent = "") {
       }
     }
 
-    return result.join("\n");
+    return result.join(lineEnding);
   }
 
   // Generate from scratch
