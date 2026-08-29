@@ -20,24 +20,6 @@ const mockDataPaths = vi.hoisted(() => {
 });
 vi.mock("../utils/paths.js", () => ({ getDataPaths: () => mockDataPaths }));
 
-// ENOTEMPTY class (hunt-wave12, 2026-08-29/30): logsDir here is a FIXED
-// path, separate from every per-test mkdtempSync root this file actually
-// deletes -- afterEach only ever rmSyncs mockDataPaths.dataDir, never the
-// "/logs" sibling logger.js writes into, so this file was never at risk
-// from modThumbnailResolution.test.js's ENOTEMPTY race (5d5a9088). Mock
-// added anyway: cheap, matches the convention already established
-// elsewhere in this suite, and removes the real winston logger's file
-// writes from this test run entirely rather than relying on the two
-// directories staying separate forever.
-vi.mock("../utils/logger.js", () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 // ssh2-sftp-client mocked entirely -- these tests are about the LOCAL mirror
 // file's own permissions, not the SFTP transport, same reasoning as
 // remoteConfigFilesPush.test.js.

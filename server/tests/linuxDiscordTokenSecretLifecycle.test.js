@@ -40,20 +40,6 @@ describe.skipIf(isWindows)(
       vi.doMock("../utils/paths.js", () => ({
         getDataPaths: () => ({ dataDir: tmpDir }),
       }));
-      // ENOTEMPTY class (hunt-wave12, 2026-08-29/30): resetModules() +
-      // dynamic import per test is the shape that reproduces the race
-      // elsewhere (modThumbnailResolution.test.js, 5d5a9088). This file's
-      // target (uiSecretFile.js) never imports logger.js transitively, so
-      // it was never actually at risk here -- mock added anyway, cheap and
-      // matches the convention, closes the door regardless.
-      vi.doMock("../utils/logger.js", () => ({
-        createLogger: () => ({
-          info: vi.fn(),
-          warn: vi.fn(),
-          error: vi.fn(),
-          debug: vi.fn(),
-        }),
-      }));
     });
 
     afterEach(() => {
@@ -62,7 +48,6 @@ describe.skipIf(isWindows)(
         originalUmask = undefined;
       }
       vi.doUnmock("../utils/paths.js");
-      vi.doUnmock("../utils/logger.js");
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
