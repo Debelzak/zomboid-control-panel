@@ -5180,7 +5180,14 @@ router.post("/presets/:id/apply", async (req, res) => {
         content += `\n${workshopLine}`;
       }
 
-      const modsLine = `Mods=${sanitizeModIdList(preset.mods || [])}`;
+      // preset.mods is an authoritative, previously-validated ID list (saved
+      // from a real Mods= state), not free-typed text -- sanitizeModIdList's
+      // numeric-ID filter is for stripping mis-pasted workshop IDs out of
+      // that kind of input, and would silently drop a mod whose mod.info
+      // `id=` legitimately IS a 5-15 digit number (e.g. "Tear All Clothes"
+      // 3519629457, see this file's enable-disk-mod handler). Character-only
+      // sanitization here, same bypass already used for disk-verified IDs.
+      const modsLine = `Mods=${sanitizeIniList(preset.mods || [])}`;
       if (content.match(/^Mods=.*/m)) {
         content = content.replace(/^Mods=.*/m, modsLine);
       } else {
@@ -5255,7 +5262,14 @@ router.post("/save-order", async (req, res) => {
     await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      const modsLine = `Mods=${sanitizeModIdList(modIds)}`;
+      // modIds is the client's reorder of the CURRENT live Mods= entries
+      // (Mods.tsx seeds its drag list from the server's own last read of
+      // Mods=), not free-typed text -- sanitizeModIdList's numeric-ID filter
+      // would silently drop a mod whose mod.info `id=` legitimately IS a
+      // 5-15 digit number (e.g. "Tear All Clothes" 3519629457, see this
+      // file's enable-disk-mod handler) on every reorder. Character-only
+      // sanitization here, same bypass already used for disk-verified IDs.
+      const modsLine = `Mods=${sanitizeIniList(modIds)}`;
       // Same fix as this file's first ini-write site: check the anchored
       // regex, not a plain .includes().
       if (content.match(/^Mods=.*/m)) {
