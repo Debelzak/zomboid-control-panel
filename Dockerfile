@@ -33,6 +33,14 @@ RUN cd client && npm install --no-audit --prefer-offline --include=optional
 # The root package.json is needed because vite.config.ts reads the panel version from it.
 COPY package.json ./
 COPY client/ ./client/
+
+# The FRONTEND needs the sha too. client/vite.config.ts already prefers
+# process.env.PANEL_BUILD_SHA over shelling out to git, and the builder stage has no .git
+# either -- so without this the bundle bakes in "unknown" while the backend reports the real
+# sha, and the build-compatibility gate compares "unknown" against it and blocks the UI.
+# Both halves must be given the same value or the check compares two different things.
+ARG PANEL_BUILD_SHA=""
+ENV PANEL_BUILD_SHA=${PANEL_BUILD_SHA}
 RUN cd client && npm run build
 
 # --- Runtime stage ---
