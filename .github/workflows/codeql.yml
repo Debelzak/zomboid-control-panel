@@ -23,11 +23,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # codeql-alert-suppression-never-engages-in-this-repo-pipeline: proven
+      # from raw SARIF that suppressions[] never gets populated here, for
+      # anyone, ever -- so the ~105 in-code `// codeql[...]` justifications
+      # already written have had no effect. UNVERIFIED HYPOTHESIS, stated as
+      # such: AlertSuppression.ql is a special @kind alert-suppression query,
+      # not a normal @kind problem/path-problem query -- named query suites
+      # like "default" and "security-extended" appear to select only the
+      # latter kind, so neither suite includes it regardless of which one is
+      # named here. The documented, first-party way to force it in is to
+      # reference the query directly out of GitHub's own published
+      # codeql/javascript-queries pack (not the third-party
+      # advanced-security/alert-suppression-queries repo, which has an
+      # archived sibling project and no confirmed published registry
+      # version -- avoided as a supply-chain risk for an unverified fix).
+      # THIS NEEDS A REAL PUSH TO CONFIRM: check the next run's raw SARIF for
+      # a non-empty suppressions[] on a known-annotated result before
+      # trusting this closes the card.
       - name: Initialize CodeQL
         uses: github/codeql-action/init@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
         with:
           languages: javascript-typescript
-          queries: security-extended
+          queries: security-extended,codeql/javascript-queries:AlertSuppression.ql
 
       - name: Analyze
         uses: github/codeql-action/analyze@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
