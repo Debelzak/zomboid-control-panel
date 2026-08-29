@@ -25,19 +25,45 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
+// Split into two phases (staging at download time, activation only after
+// the binary/client update is fully committed -- see
+// activateStagedLinuxLauncherFiles()'s own comment in panelUpdateChecker.js
+// for why the old single-call replaceManagedLinuxFiles() could land these
+// files ahead of a binary/client swap that later rolls back). These tests
+// exercise both phases together, the same way the real update flow does.
 describe("Linux managed updater files", () => {
-  it("activates the launcher and service templates together", () => {
+  it("stages then activates the launcher and service templates together", () => {
     const { incoming, live } = fixture();
-    new PanelUpdateChecker().replaceManagedLinuxFiles(incoming, live);
+    const checker = new PanelUpdateChecker();
+    checker.stageLinuxLauncherFiles(incoming, live);
+    const activated = checker.activateStagedLinuxLauncherFiles(live);
 
+    expect(activated).toBe(true);
     expect(fs.readFileSync(path.join(live, "start.sh"), "utf8")).toBe("new-start.sh");
     expect(fs.readFileSync(path.join(live, "zomboid-panel.service"), "utf8"))
       .toBe("new-zomboid-panel.service");
     expect(fs.existsSync(path.join(live, "start.sh.previous"))).toBe(false);
+    expect(fs.existsSync(PanelUpdateChecker.getLinuxLauncherStageDir(live))).toBe(false);
   });
 
-  it("rolls back every previously swapped file when a later swap fails", () => {
+  it("does nothing and returns false when nothing was staged", () => {
+    const { live } = fixture();
+    expect(new PanelUpdateChecker().activateStagedLinuxLauncherFiles(live)).toBe(false);
+    expect(fs.readFileSync(path.join(live, "start.sh"), "utf8")).toBe("old-start.sh");
+  });
+
+  it("stageLinuxLauncherFiles refuses when the release archive is missing a managed file", () => {
     const { incoming, live } = fixture();
+    fs.rmSync(path.join(incoming, "install-linux-service.sh"));
+    expect(() => new PanelUpdateChecker().stageLinuxLauncherFiles(incoming, live))
+      .toThrow("install-linux-service.sh");
+  });
+
+  it("rolls back every previously activated file when a later swap fails", () => {
+    const { incoming, live } = fixture();
+    const checker = new PanelUpdateChecker();
+    checker.stageLinuxLauncherFiles(incoming, live);
+
     const renameSync = fs.renameSync.bind(fs);
     vi.spyOn(fs, "renameSync").mockImplementation((source, target) => {
       if (String(source).endsWith("zomboid-panel.service.new") && target === path.join(live, "zomboid-panel.service")) {
@@ -48,7 +74,7 @@ describe("Linux managed updater files", () => {
       return renameSync(source, target);
     });
 
-    expect(() => new PanelUpdateChecker().replaceManagedLinuxFiles(incoming, live))
+    expect(() => checker.activateStagedLinuxLauncherFiles(live))
       .toThrow("simulated swap failure");
     expect(fs.readFileSync(path.join(live, "start.sh"), "utf8")).toBe("old-start.sh");
     expect(fs.readFileSync(path.join(live, "zomboid-panel.service"), "utf8"))
