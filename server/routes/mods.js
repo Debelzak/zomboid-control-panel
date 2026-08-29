@@ -2313,11 +2313,17 @@ router.post("/toggle-mod-id", async (req, res) => {
 
     const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (see hunt-wave13,
+      // 3d1921ad): modsMatch doubles as BOTH the current-value parse and
+      // the exists-check the replace below relies on, so a hand-edited
+      // "Mods = foo" line previously parsed as zero current mods AND took
+      // the append branch, creating a duplicate "Mods=" key.
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
       const currentWorkshopIds =
-        content.match(/^WorkshopItems=(.*)$/m)?.[1]?.split(";").filter(Boolean) ||
-        [];
+        content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m)?.[1]
+          ?.split(";")
+          .filter(Boolean) || [];
 
       // Reject attempts to ENABLE a workshop-ID-shaped value as a mod ID,
       // UNLESS a real mod.info on disk confirms it's a legitimate mod ID
@@ -2358,7 +2364,7 @@ router.post("/toggle-mod-id", async (req, res) => {
       // no-ops. See the 2026-08-27 comment on this file's first ini-write
       // site for the full explanation.
       if (modsMatch) {
-        content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
       }
@@ -2470,11 +2476,15 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
 
     const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 3d1921ad) --
+      // see /toggle-mod-id above for why the guard AND the read must both
+      // change together.
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       let currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
       const currentWorkshopIds =
-        content.match(/^WorkshopItems=(.*)$/m)?.[1]?.split(";").filter(Boolean) ||
-        [];
+        content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m)?.[1]
+          ?.split(";")
+          .filter(Boolean) || [];
 
       // Reject changes that try to ENABLE a workshop-ID-shaped value,
       // UNLESS a real mod.info on disk confirms it's a legitimate mod ID
@@ -2512,7 +2522,7 @@ router.post("/batch-toggle-mod-ids", async (req, res) => {
       // Reuse modsMatch (see this file's first ini-write site for why a
       // separate .includes("Mods=") is wrong here).
       if (modsMatch) {
-        content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
       }
@@ -2644,10 +2654,14 @@ router.post("/add-to-ini", async (req, res) => {
     const result = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 3d1921ad) --
+      // see /toggle-mod-id for why the guard AND the read must both change
+      // together (each match variable doubles as the current-value parse
+      // and the exists-check the replace below relies on).
+      const workshopMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       const currentWorkshopIds =
         workshopMatch?.[1]?.split(";").filter(Boolean) || [];
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       const currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
 
       // Check if mod is already in the list
@@ -2670,7 +2684,7 @@ router.post("/add-to-ini", async (req, res) => {
       // ini-write site for why).
       if (workshopMatch) {
         content = content.replace(
-          /^WorkshopItems=.*/m,
+          /^[ \t]*WorkshopItems[ \t]*=.*/m,
           `WorkshopItems=${newWorkshopList}`,
         );
       } else {
@@ -2680,7 +2694,7 @@ router.post("/add-to-ini", async (req, res) => {
       // Update Mods= if we have a modId -- reuse modsMatch.
       if (detectedModId) {
         if (modsMatch) {
-          content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
+          content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${newModList}`);
         } else {
           content += `\nMods=${newModList}`;
         }
@@ -2688,7 +2702,7 @@ router.post("/add-to-ini", async (req, res) => {
 
       // Add map folders if detected
       if (modMapFolders.length > 0) {
-        const mapMatch = content.match(/^Map=(.*)$/m);
+        const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
         let currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [
           "Muldraugh, KY",
         ];
@@ -2703,7 +2717,7 @@ router.post("/add-to-ini", async (req, res) => {
 
         const newMapList = currentMaps.join(";");
         if (mapMatch) {
-          content = content.replace(/^Map=.*/m, `Map=${newMapList}`);
+          content = content.replace(/^[ \t]*Map[ \t]*=.*/m, `Map=${newMapList}`);
         } else {
           content += `\nMap=${newMapList}`;
         }
@@ -3417,12 +3431,17 @@ router.post("/remove-from-ini", async (req, res) => {
     const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      // Get current workshop items
-      const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // Get current workshop items. Widened to tolerate whitespace around
+      // "=" (hunt-wave13, 3d1921ad) -- this match doubles as the
+      // exists-check for the replace below (no whitespace tolerance here
+      // previously meant a "WorkshopItems = ..." line was read as EMPTY,
+      // and the replace two guards down silently no-opped instead of
+      // actually removing the workshop ID).
+      const workshopMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       let workshopIds = workshopMatch?.[1]?.split(";").filter(Boolean) || [];
 
       // Get current mod IDs
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       let modIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
 
       // Remove from workshop items
@@ -3504,7 +3523,7 @@ router.post("/remove-from-ini", async (req, res) => {
           serverPath,
         );
         if (modMapFolders.length > 0) {
-          const mapMatch = content.match(/^Map=(.*)$/m);
+          const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
           let currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [];
 
           for (const folder of modMapFolders) {
@@ -3523,7 +3542,7 @@ router.post("/remove-from-ini", async (req, res) => {
 
           const newMapList = currentMaps.join(";");
           if (mapMatch) {
-            content = content.replace(/^Map=.*/m, `Map=${newMapList}`);
+            content = content.replace(/^[ \t]*Map[ \t]*=.*/m, `Map=${newMapList}`);
           } else {
             content += `\nMap=${newMapList}`;
           }
@@ -3535,7 +3554,7 @@ router.post("/remove-from-ini", async (req, res) => {
       // first ini-write site.
       if (workshopMatch) {
         content = content.replace(
-          /^WorkshopItems=.*/m,
+          /^[ \t]*WorkshopItems[ \t]*=.*/m,
           `WorkshopItems=${sanitizeIniList(workshopIds)}`,
         );
       }
@@ -3543,7 +3562,7 @@ router.post("/remove-from-ini", async (req, res) => {
       // Update Mods=
       if (modsMatch) {
         content = content.replace(
-          /^Mods=.*/m,
+          /^[ \t]*Mods[ \t]*=.*/m,
           `Mods=${sanitizeModIdList(modIds)}`,
         );
       }
