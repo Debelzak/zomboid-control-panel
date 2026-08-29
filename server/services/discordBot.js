@@ -23,6 +23,10 @@ import { sanitizeError } from "../utils/sanitize.js";
 import { describeStartFailure } from "./discordStartFailure.js";
 import { readIniValues } from "../utils/templateFiles.js";
 import { runManagedLifecycle } from "./managedContainer.js";
+import {
+  collectKnownSecretValues,
+  redactKnownSecrets,
+} from "../utils/discordMessageRedaction.js";
 
 // Workaround for undici 8.x + Node.js 22+/24+: undici adds Symbol(sensitiveHeaders)
 // to response header objects, but the WebIDL ByteString converter in undici's
@@ -47,10 +51,33 @@ async function _resolveDiscordBody(body) {
   throw new TypeError("Unable to resolve body.");
 }
 
+// hunt-wave6-2026-08-29 follow-up 1: this is THE boundary every outbound
+// Discord API call passes through -- channel.send(), interaction.reply()/
+// editReply(), slash-command registration, everything -- because it's wired
+// as the REST transport for the Client itself (see the `rest.makeRequest`
+// option in start()) and for every other manually-created REST instance in
+// this file. Redacting known secret VALUES here, rather than inside
+// handleRcon() or any other individual sender, means the guard covers the
+// success branch, the failure branch, and any future sender nobody has
+// written yet -- see utils/discordMessageRedaction.js's header for the full
+// reasoning (exact-value match, not a shape heuristic).
 async function _safeDiscordMakeRequest(url, init) {
+  let body = await _resolveDiscordBody(init.body);
+  if (typeof body === "string" && body) {
+    try {
+      const secrets = await collectKnownSecretValues();
+      body = redactKnownSecrets(body, secrets);
+    } catch (err) {
+      // Never let a secrets lookup failure block a send outright, but never
+      // send the ORIGINAL unredacted body either if redaction couldn't run --
+      // that would silently reopen exactly the leak this exists to close.
+      log.error(`Discord outbound redaction check failed, blocking this send: ${err.message}`);
+      throw err;
+    }
+  }
   const res = await undiciRequest(url, {
     ...init,
-    body: await _resolveDiscordBody(init.body),
+    body,
   });
   return {
     body: res.body,

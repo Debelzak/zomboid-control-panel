@@ -38,6 +38,7 @@ if (!isWindows) {
 
 vi.mock("../database/init.js", () => ({
   getActiveServer: async () => null,
+  getServers: async () => [],
   getSetting: async () => null,
   setSetting: async () => {},
 }));
@@ -66,6 +67,7 @@ describe.skipIf(isWindows || !opensslAvailable)(
         heartbeatBlackhole: false,
         resumeReceivedAt: null,
         heartbeatAcksSentAfterResume: 0,
+        lastReceivedMessageBody: null,
       };
     }
 
@@ -109,6 +111,11 @@ describe.skipIf(isWindows || !opensslAvailable)(
         }
         if (/^\/api\/v10\/channels\/.+\/messages$/.test(url) && req.method === "POST") {
           mock.sendAttempts++;
+          // The RAW bytes this mock actually received on the wire -- the
+          // whole point of the follow-up-1 redaction test is proving a
+          // secret never reaches even this far, not just that some
+          // in-process object looks clean.
+          mock.lastReceivedMessageBody = bodyText;
           if (mock.sendBehavior === "ok") {
             return json(200, { id: String(Date.now()), content: JSON.parse(bodyText).content || "" });
           }
@@ -377,6 +384,35 @@ describe.skipIf(isWindows || !opensslAvailable)(
         // flagged until an operator (or a fresh start()) intervenes.
         await new Promise((r) => setTimeout(r, 500));
         expect(bot._gatewayDegradedSince).toBe(setAt);
+      },
+      20000,
+    );
+
+    it(
+      "follow-up 1 -- a known secret value never reaches the wire, even when it's embedded in an otherwise-ordinary message, redacted at the REAL discord.js REST boundary",
+      async () => {
+        const { writeUiSecretFile } = await import("../utils/uiSecretFile.js");
+        const FAKE_SFTP_SECRET = "fake-sftp-secret-hunter3-for-redaction-test";
+        writeUiSecretFile("panelBridgeSftpPassword", FAKE_SFTP_SECRET);
+
+        const bot = await startBot();
+        const result = await bot._sendToChannel(
+          "1111",
+          `Command output included: ${FAKE_SFTP_SECRET} -- unexpected but real scenario`,
+        );
+
+        expect(result).toBe(true);
+        // The assertion that actually matters: what the MOCK SERVER received
+        // on the wire, not any in-process string -- proves the redaction ran
+        // at the real _safeDiscordMakeRequest boundary discord.js's REST
+        // manager actually calls, not merely that some helper function
+        // returns the right thing in isolation.
+        expect(mock.lastReceivedMessageBody).not.toBeNull();
+        expect(mock.lastReceivedMessageBody).not.toContain(FAKE_SFTP_SECRET);
+        expect(mock.lastReceivedMessageBody).toContain("[REDACTED]");
+        expect(mock.lastReceivedMessageBody).toContain("unexpected but real scenario");
+
+        writeUiSecretFile("panelBridgeSftpPassword", "");
       },
       20000,
     );
