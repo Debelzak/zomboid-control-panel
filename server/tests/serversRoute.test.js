@@ -489,6 +489,140 @@ describe("PUT /api/servers/:id", () => {
       expect.not.objectContaining({ rconPassword: expect.anything() }),
     );
   });
+
+  // 2026-08-29 backlog card savepath-needs-existence-validation-at-set-time:
+  // this was the SECOND, unguarded setter for zomboidDataPath -- POST
+  // /save-path (chunks.js) already required existence + directory +
+  // inspectZomboidPath() for the exact same DB column via
+  // resolveCustomOrDefaultDataPath(), but this route wrote it straight
+  // through with zero checks. A wrong-but-structurally-valid value saved
+  // here while the server is stopped could later misdirect POST /wipe
+  // (server.js), which only checks fs.existsSync on
+  // path.join(savePath, "Saves", "Multiplayer", serverName) -- silently
+  // passing if the wrong path happens to have a matching subtree.
+  describe("zomboidDataPath existence validation", () => {
+    let realDataDir;
+    let installLikeDir;
+    let emptyDir;
+
+    beforeEach(() => {
+      getServer.mockReset();
+      getServer.mockResolvedValue({ id: 1, isRemote: false });
+
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-savepath-"));
+      realDataDir = path.join(root, "RealZomboidData");
+      fs.mkdirSync(path.join(realDataDir, "Saves", "Multiplayer"), { recursive: true });
+
+      installLikeDir = path.join(root, "ServerInstall");
+      fs.mkdirSync(installLikeDir, { recursive: true });
+      fs.writeFileSync(path.join(installLikeDir, "ProjectZomboid64.exe"), "");
+
+      emptyDir = path.join(root, "JustSomeEmptyFolder");
+      fs.mkdirSync(emptyDir, { recursive: true });
+    });
+
+    it("rejects a nonexistent zomboidDataPath instead of persisting it", async () => {
+      const response = createResponse();
+      const missing = path.join(os.tmpdir(), "zcp-savepath-does-not-exist-12345");
+
+      await getUpdateHandler()(
+        { params: { id: "1" }, body: { zomboidDataPath: missing } },
+        response,
+      );
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(updateServer).not.toHaveBeenCalled();
+    });
+
+    it("rejects a real directory that does not look like a Zomboid data folder (the exact 'structurally valid but wrong' case the card describes)", async () => {
+      const response = createResponse();
+
+      await getUpdateHandler()(
+        { params: { id: "1" }, body: { zomboidDataPath: emptyDir } },
+        response,
+      );
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(updateServer).not.toHaveBeenCalled();
+    });
+
+    it("rejects a server install folder pointed at by mistake, with a specific error", async () => {
+      const response = createResponse();
+
+      await getUpdateHandler()(
+        { params: { id: "1" }, body: { zomboidDataPath: installLikeDir } },
+        response,
+      );
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(updateServer).not.toHaveBeenCalled();
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.stringMatching(/server install/i) }),
+      );
+    });
+
+    it("accepts a real Zomboid data folder (has Saves/Multiplayer)", async () => {
+      const response = createResponse();
+
+      await getUpdateHandler()(
+        { params: { id: "1" }, body: { zomboidDataPath: realDataDir } },
+        response,
+      );
+
+      expect(updateServer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ zomboidDataPath: path.resolve(realDataDir) }),
+      );
+    });
+
+    it("skips validation entirely for a remote server (isRemote:true in the SAME request) -- a local fs check would always incorrectly fail for a path that lives on a different host", async () => {
+      const response = createResponse();
+      const remotePath = "/mnt/remote/does/not/exist/locally";
+
+      await getUpdateHandler()(
+        {
+          params: { id: "1" },
+          body: { isRemote: true, zomboidDataPath: remotePath },
+        },
+        response,
+      );
+
+      expect(updateServer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ zomboidDataPath: remotePath, isRemote: true }),
+      );
+    });
+
+    it("skips validation for an already-remote server even when isRemote isn't in THIS request", async () => {
+      getServer.mockResolvedValue({ id: 1, isRemote: true });
+      const response = createResponse();
+      const remotePath = "/mnt/remote/does/not/exist/locally";
+
+      await getUpdateHandler()(
+        { params: { id: "1" }, body: { zomboidDataPath: remotePath } },
+        response,
+      );
+
+      expect(updateServer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ zomboidDataPath: remotePath }),
+      );
+    });
+
+    it("still allows clearing zomboidDataPath to an empty string without validation", async () => {
+      const response = createResponse();
+
+      await getUpdateHandler()(
+        { params: { id: "1" }, body: { zomboidDataPath: "" } },
+        response,
+      );
+
+      expect(updateServer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ zomboidDataPath: "" }),
+      );
+    });
+  });
 });
 
 describe("Steam operation watchdog", () => {

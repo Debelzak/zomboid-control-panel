@@ -22,6 +22,7 @@ import {
   setSetting,
 } from "../database/init.js";
 import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
+import { normalizeUserPath, inspectZomboidPath } from "../utils/zomboidPaths.js";
 import { requirePermission } from "../services/permissions.js";
 import {
   canAutoInstall,
@@ -1277,6 +1278,60 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
         if (!check.valid) {
           return res.status(400).json({ error: check.error });
         }
+      }
+    }
+
+    // HARDEN (2026-08-29, savepath-needs-existence-validation-at-set-time):
+    // this route wrote zomboidDataPath straight through with zero validation
+    // -- a wrong-but-structurally-valid path (nonexistent, or a real
+    // directory that just isn't a Zomboid data folder) saved here while the
+    // server is stopped passes silently. POST /wipe (server.js) later joins
+    // this stored path with "Saves/Multiplayer/<serverName>" and only checks
+    // fs.existsSync on THAT joined result -- if the wrong path happens to
+    // have a matching subtree underneath (another real Zomboid install on
+    // the same host, a leftover from a same-named server), a destructive
+    // wipe silently targets the wrong data. chunks.js's own POST /save-path
+    // already enforces existence + directory + inspectZomboidPath() for this
+    // EXACT same field (same updateServer() call, same DB column) -- this
+    // brings the second, unguarded setter up to the same bar rather than
+    // leaving it as a second path to the same risk. Remote servers are
+    // exempt: their data path lives on a different host, so a local fs
+    // check would always incorrectly fail -- same exemption installPath
+    // already gets at server-creation time (see !isRemote above in POST /).
+    if (updates.zomboidDataPath !== undefined && updates.zomboidDataPath !== "") {
+      const effectiveIsRemote =
+        updates.isRemote !== undefined
+          ? updates.isRemote
+          : Boolean((await getServer(serverId))?.isRemote);
+      if (!effectiveIsRemote) {
+        const normalized = normalizeUserPath(updates.zomboidDataPath);
+        const resolved = normalized ? path.resolve(normalized) : null;
+        if (!resolved || !fs.existsSync(resolved)) {
+          return res.status(400).json({
+            error: `Zomboid data path does not exist: ${resolved || updates.zomboidDataPath}. Check for typos and verify the panel has read access to this folder.`,
+          });
+        }
+        let isDir = false;
+        try {
+          isDir = fs.statSync(resolved).isDirectory();
+        } catch {
+          isDir = false;
+        }
+        if (!isDir) {
+          return res.status(400).json({
+            error: `Zomboid data path is not a directory: ${resolved}`,
+          });
+        }
+        const verdict = inspectZomboidPath(resolved);
+        if (!verdict.ok) {
+          return res.status(400).json({
+            error:
+              verdict.reason === "install-folder"
+                ? "This folder looks like a Project Zomboid server install, not a user data folder. Point at the Zomboid user data folder instead."
+                : "This doesn't look like a Project Zomboid data folder (no Saves/Multiplayer directory or save files found there).",
+          });
+        }
+        updates.zomboidDataPath = resolved;
       }
     }
 
