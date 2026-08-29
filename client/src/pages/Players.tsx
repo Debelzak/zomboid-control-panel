@@ -117,18 +117,24 @@ interface WhitelistAccount {
   displayName: string | null
 }
 
-const ACCESS_LEVELS = ['admin', 'moderator', 'overseer', 'gm', 'observer', 'user', 'none']
+// Access levels accepted by PZ's setaccesslevel command -- mirrors
+// server/utils/commands.js's ACCESS_LEVELS (see that file's comment for the
+// full jar-evidence citation and buildid; kept in sync here by hand, not
+// imported, since this is client bundle code).
+//
+// hunt-wave13-2026-08-30: previously cited "the official PZ Admin Commands
+// wiki (Build 42.17.0)" -- replaced with jar evidence (setupRole() id
+// literals in Roles.class, buildid 24909800; could not be mapped to a
+// human-readable 42.x.y string, so whether this build IS 42.17.0 is
+// unknown). 'overseer' removed: no backing role exists on a default server,
+// so it could only ever produce "Access Level 'overseer' unknown...".
+// 'priority' added: a real role (getDefaultForPriorityUser(), display name
+// "PriorityUser") that was previously impossible to set from this panel at
+// all. 'none' is a special case handled directly inside
+// SetAccessLevelCommand's own bytecode, never validated against the live
+// Roles table the other 6 go through.
+const ACCESS_LEVELS = ['admin', 'moderator', 'gm', 'observer', 'priority', 'user', 'none']
 
-// Labels for the access-level dropdown.
-//
-// Per the official PZ Admin Commands wiki (Build 42.17.0), the documented
-// values are: Admin, Moderator, Overseer, GM, Observer, none. "none" is the
-// canonical way to demote a player back to a regular user.
-//
-// However, PZ's player list displays "user" as the role for regular players,
-// and many server builds also accept `setaccesslevel "<user>" "user"` directly.
-// Some operators report that "none" silently does nothing on their build while
-// "user" works. We expose both so admins can pick whichever their build accepts.
 // Mirrors server/routes/players.js's own SteamID64 check (/^\d{17}$/ on both
 // /banid and /unbanid) so a manually-typed SteamID can't reach a submit
 // button in a shape the server will reject.
@@ -168,9 +174,16 @@ function getAccessLevelLabels(t: TFunction): Record<string, string> {
   return {
     admin: t('accessLevels.admin'),
     moderator: t('accessLevels.moderator'),
-    overseer: t('accessLevels.overseer'),
     gm: t('accessLevels.gm'),
     observer: t('accessLevels.observer'),
+    // 'priority' has no translated entry, deliberately -- it falls through
+    // to the raw-token capitalize fallback below ("Priority"). A wire token
+    // and its display label have already diverged unpredictably once on
+    // this floor (bug-hunt-2026-08-27, 16 of 35 PZ perk ids differed from
+    // their label by no rule); the real in-game name is "PriorityUser", not
+    // "Priority", so this is a deliberate "close enough and honest" choice,
+    // not an oversight -- adding a real translated label would mean
+    // touching every locale file, out of this fix's scope.
     user: t('accessLevels.user'),
     none: t('accessLevels.none'),
   }
