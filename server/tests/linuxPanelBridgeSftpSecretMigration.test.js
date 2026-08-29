@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 describe("panelBridgeSftpPassword — migrates out of db.json on the very first write, like rconPassword", () => {
-  it("a legacy plaintext value is redacted from db.json and lands in its own 0600 file on the next flush", async () => {
+  it("a legacy plaintext value is redacted from db.json and lands in its own file on the next flush", async () => {
     await getDb();
     await setSetting("panelBridgeSftpPassword", FAKE_PASSWORD);
     await commitNow();
@@ -54,12 +54,25 @@ describe("panelBridgeSftpPassword — migrates out of db.json on the very first 
     const onDisk = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
     expect(onDisk.settings.panelBridgeSftpPassword).toBeUndefined();
     expect(readUiSecretFile("panelBridgeSftpPassword")).toBe(FAKE_PASSWORD);
+  });
 
-    if (!isWindows) {
+  // Split out from the test above (was an in-body `if (!isWindows)` around
+  // this assertion) -- that made the mode check silently never run on
+  // Windows while the test still reported PASSED, not SKIPPED, matching
+  // this codebase's it.skipIf(isWindows) convention (see
+  // linuxSecretsFileModes.test.js) so the skip is visible in the reporter
+  // instead of invisible inside a passing test.
+  it.skipIf(isWindows)(
+    "the secret file the legacy value lands in is 0600",
+    async () => {
+      await getDb();
+      await setSetting("panelBridgeSftpPassword", FAKE_PASSWORD);
+      await commitNow();
+
       const mode = fs.statSync(secretFilePath("panelBridgeSftpPassword")).mode & 0o777;
       expect(mode).toBe(0o600);
-    }
-  });
+    },
+  );
 
   it("survives a restart -- the in-memory value is re-attached from the secret file, not lost", async () => {
     await getDb();

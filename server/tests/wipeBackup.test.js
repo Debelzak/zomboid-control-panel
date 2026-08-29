@@ -94,11 +94,12 @@ describe("POST /api/server/wipe backs up before deleting (default createBackup: 
   });
 
   // 2026-08-26 bug hunt: createBackup can return success:true while having
-  // silently skipped files that vanished mid-archive -- it surfaces that via
-  // skippedFiles rather than deciding policy itself. This pre-wipe backup is
-  // about to become the ONLY copy of whatever wipe is about to delete, so a
-  // skip is treated exactly like an outright backup failure -- same
-  // fail-closed posture as the "backup fails" test above.
+  // silently skipped files (a file that vanished mid-archive, or -- since
+  // 445c15a5, 2026-08-29 -- a symbolic link deliberately not followed) -- it
+  // surfaces that via skippedFiles rather than deciding policy itself. This
+  // pre-wipe backup is about to become the ONLY copy of whatever wipe is
+  // about to delete, so a skip is treated exactly like an outright backup
+  // failure -- same fail-closed posture as the "backup fails" test above.
   it("aborts the wipe and deletes nothing when the pre-wipe backup completed but silently skipped a file", async () => {
     const serverManager = buildServerManager();
     const backupService = {
