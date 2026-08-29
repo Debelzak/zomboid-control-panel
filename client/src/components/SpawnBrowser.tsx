@@ -814,17 +814,17 @@ function ResultRow({
           )}>
             {name}
           </span>
-          {isItem && row.it.weight > 0 && (
+          {isItem && typeof row.it.weight === 'number' && row.it.weight > 0 && (
             <span className="text-[10px] text-muted-foreground/60 tabular-nums shrink-0 px-1.5 py-0.5 rounded bg-muted/40">
               {fmtWeight(row.it.weight)}
             </span>
           )}
-          {!isItem && row.v.seats > 0 && (
+          {!isItem && typeof row.v.seats === 'number' && row.v.seats > 0 && (
             <span className="text-[10px] text-muted-foreground/60 tabular-nums shrink-0 px-1.5 py-0.5 rounded bg-muted/40">
               {t('seatsTitle', { count: row.v.seats })}
             </span>
           )}
-          {!isItem && row.v.mass > 0 && (
+          {!isItem && typeof row.v.mass === 'number' && row.v.mass > 0 && (
             <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">
               {(row.v.mass / 1000).toFixed(1)}t
             </span>

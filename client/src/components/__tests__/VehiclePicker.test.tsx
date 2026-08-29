@@ -80,6 +80,31 @@ describe('VehiclePicker', () => {
     expect(onChange).toHaveBeenCalledWith('')
   })
 
+  // 2026-08-29 backlog card
+  // api-ts-declares-catalog-weight-mass-seats-non-optional-but-lua-guards-them:
+  // PanelBridge.lua only sets mass/seats on a successful pcall --
+  // getSeatNumber() is a known B42 Kahlua thrower -- so a real catalog
+  // entry can genuinely omit both. Proves the now-optional fields render
+  // without crashing and without a bogus badge.
+  it('renders a vehicle with no mass/seats (the real Lua-omission shape) without crashing or showing mass/seat badges', async () => {
+    const NO_MECHANICS: CatalogVehicle = { id: 'Base.NoMechanicsVan', name: 'No Mechanics Van' }
+    getCatalogVehicles.mockResolvedValue({
+      vehicles: [...VEHICLES, NO_MECHANICS],
+      count: VEHICLES.length + 1,
+      scannedAt: null,
+    })
+    render(<VehiclePicker value="Base.NoMechanicsVan" onChange={vi.fn()} />)
+    await waitFor(() => expect(getCatalogVehicles).toHaveBeenCalled())
+
+    expect(screen.getByText('No Mechanics Van')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Select vehicle' }))
+    expect(await screen.findByText('Police Cruiser')).toBeInTheDocument()
+    // The mechanics-bearing vehicles still show their mass badge; only the
+    // missing-data one doesn't -- proves the guard is per-vehicle.
+    expect(screen.getByText('1.2t')).toBeInTheDocument()
+  })
+
   describe('getVehicleType classification -- misclassifying a vehicle sends the operator to the wrong category', () => {
     it('classifies an explicit police vehicle as Emergency & Military, not Sedans', () => {
       expect(getVehicleType({ id: 'Base.PoliceCruiser', name: 'Police Cruiser', mass: 1600, seats: 4 })).toBe('Emergency & Military')
@@ -89,6 +114,9 @@ describe('VehiclePicker', () => {
     })
     it('falls back to Sedans for an unrecognized ordinary car', () => {
       expect(getVehicleType({ id: 'Base.CarNormal', name: 'Générique Berline', mass: 1200, seats: 4 })).toBe('Sedans')
+    })
+    it('does not crash and falls back to Sedans when mass/seats are both genuinely absent (real Lua-omission shape)', () => {
+      expect(getVehicleType({ id: 'Base.UnknownRig', name: 'Unknown Rig' })).toBe('Sedans')
     })
   })
 })

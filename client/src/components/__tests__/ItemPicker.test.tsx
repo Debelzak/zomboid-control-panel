@@ -23,6 +23,19 @@ const ITEMS: CatalogItem[] = [
   { id: 'Base.Bandage', name: 'Bandage', category: 'Bandage', weight: 0.1 },
 ]
 
+// Mirrors the real runtime shape when PanelBridge.lua's getActualWeight()
+// pcall fails: `weight` is genuinely OMITTED from the object, not present
+// as `weight: undefined` -- backlog card
+// api-ts-declares-catalog-weight-mass-seats-non-optional-but-lua-guards-them
+// (2026-08-29). Cast through unknown since a real API response for this
+// item would have exactly this shape, which `CatalogItem`'s own (now
+// optional) field type already declares -- no `as any` needed.
+const ITEM_WITHOUT_WEIGHT: CatalogItem = {
+  id: 'Base.NoWeightItem',
+  name: 'No Weight Item',
+  category: 'Other',
+}
+
 beforeEach(() => {
   getCatalogItems.mockReset()
 })
@@ -86,5 +99,31 @@ describe('ItemPicker', () => {
     const { onChange } = await renderPicker({ value: 'Base.Axe' })
     fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
     expect(onChange).toHaveBeenCalledWith('')
+  })
+
+  // 2026-08-29 backlog card
+  // api-ts-declares-catalog-weight-mass-seats-non-optional-but-lua-guards-them:
+  // PanelBridge.lua only sets `weight` on a successful getActualWeight()
+  // pcall -- a real catalog entry can genuinely omit it. Proves the
+  // now-optional field renders without crashing and without a bogus weight
+  // badge, both on the trigger (selected item) and in the dropdown list.
+  it('renders an item with no weight (the real Lua-omission shape) without crashing or showing a weight badge', async () => {
+    getCatalogItems.mockResolvedValue({
+      items: [...ITEMS, ITEM_WITHOUT_WEIGHT],
+      count: ITEMS.length + 1,
+      scannedAt: null,
+    })
+    render(<ItemPicker value="Base.NoWeightItem" onChange={vi.fn()} />)
+    await waitFor(() => expect(getCatalogItems).toHaveBeenCalled())
+
+    expect(screen.getByText('No Weight Item')).toBeInTheDocument()
+    expect(screen.queryByText(/kg/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Select item' }))
+    expect(await screen.findByText('Axe')).toBeInTheDocument()
+    // The weight-bearing items still show their badges; only the
+    // weight-less one is missing its badge -- proves the guard is
+    // per-item, not accidentally suppressing every badge.
+    expect(screen.getByText('3kg')).toBeInTheDocument()
   })
 })
