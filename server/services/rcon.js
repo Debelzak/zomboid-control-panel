@@ -242,6 +242,101 @@ export const KNOWN_RCON_REJECTIONS = [
     pattern: /^User ".*" is not in the whitelist nor the server, use \/adduser first\s*$/i,
     describe: (text) => `${text}.`,
   },
+  // 2026-08-29, hunt-wave11 (Kevin's Pass 4, docs/qa/kevin-b42-jar-audits.md):
+  // banuser / unbanuser / adduser / removeuserfromwhitelist each delegate
+  // their entire result string to zombie/network/BanSystem or
+  // zombie/network/ServerWorldDatabase -- their own command classes carry no
+  // rejection text at all, which is why these four still reported a genuine
+  // failure as a success even after the anchoring fix above. Same anchoring
+  // discipline as every entry above: full-string where the PZ text has no
+  // interpolation, bounded by fixed text immediately before/after the
+  // interpolated portion where it does. Confidence tiers below are Kevin's
+  // own (constant-pool string presence, not bytecode-traced return values --
+  // a literal being in the class is not proof of which exact call site
+  // returns it) -- the tier reflects certainty about WHICH COMMAND triggers
+  // a string, not whether the string itself is real or the anchoring below
+  // is safe: every pattern here is anchored the same strict way regardless
+  // of tier.
+  {
+    // HIGH -- BanSystem.class (BanUser): target holds the CantBeBannedByUser
+    // capability. Bare, non-interpolated literal, same shape as
+    // KickUserCommand's "This user can't be kicked." above. Applies to
+    // banuser.
+    pattern: /^\s*This user can't be banned\.\s*$/i,
+    describe: () => "This user can't be banned (protected account).",
+  },
+  {
+    // HIGH -- BanSystem.class (BanUserByIP, the -ip flag path): the target
+    // IP is a Steam Relay shared address, so there's no real IP to ban.
+    // Interpolated value is an IP the RCON-connected ADMIN typed as an
+    // argument, not the target player's chosen name -- not
+    // attacker-controlled the way a display name is, but anchored the same
+    // strict way regardless. Applies to banuser -ip.
+    pattern: /^Cannot ban IP .+ \(Steam Relay shared address\)\. Use bansteamid or banuser instead\.\s*$/i,
+    describe: (text) => `${text}`,
+  },
+  {
+    // HIGH -- BanSystem.class (BanUserByIP): same Steam-Relay case, but the
+    // player's real IP genuinely isn't available at all. Bounded by the
+    // literal quotes around the interpolated player name, same shape as
+    // "Invalid username" above -- a success response's own fixed text can
+    // never reproduce both boundaries. Applies to banuser -ip.
+    pattern: /^Cannot ban IP for player '.+' \(Steam Relay, real IP unavailable\)\. Use bansteamid or banuser without -ip\.\s*$/i,
+    describe: (text) => `${text}`,
+  },
+  {
+    // HIGH -- ServerWorldDatabase.class (addUser): target username is
+    // already whitelisted. Bare, non-interpolated literal. Applies to
+    // adduser.
+    pattern: /^\s*A user with this name already exists\.?\s*$/i,
+    describe: () => "A user with this name already exists.",
+  },
+  {
+    // MEDIUM -- ServerWorldDatabase.class: target isn't whitelisted at all.
+    // DELIBERATELY KEPT SEPARATE from the setaccesslevel pattern above
+    // ("...is not in the whitelist NOR THE SERVER, use /adduser first",
+    // confirmed still verbatim in GameServer.class) -- this is a shorter,
+    // differently-worded literal from a different class. Do not broaden
+    // one pattern to cover both; that is the exact direction that
+    // reintroduces the false positives the anchoring fix above eliminated.
+    // Bounded by the literal quotes around the interpolated name, same
+    // shape as "Invalid username" above. Most plausibly applies to
+    // unbanuser / removeuserfromwhitelist against a name that was never
+    // whitelisted (attribution inferred from context, not bytecode-traced
+    // -- the string and its anchoring are still fully verified).
+    pattern: /^User ".*" is not in the whitelist, use \/adduser first\s*$/i,
+    describe: (text) => `${text}.`,
+  },
+  {
+    // MEDIUM -- ServerWorldDatabase.class: target username not found.
+    // Distinct from both "User <name> doesn't exist." (KickUserCommand,
+    // requires the trailing period + different wording) and "No such user"
+    // (GameServer.getPlayerByUserNameForCommand, a different literal
+    // entirely) -- a genuinely separate rejection shape. Bounded by the
+    // fixed "User " prefix and " not found" suffix. Attribution to a
+    // specific command inferred, not bytecode-traced.
+    pattern: /^User .+ not found\s*$/i,
+    describe: () => "User not found.",
+  },
+  {
+    // MEDIUM -- BanSystem.class (BanUser): a second, redundant capability
+    // check inside BanUser itself, on top of whatever the RCON
+    // @RequiredCapability annotation already gates -- Kevin's own framing:
+    // "worth having as a backstop pattern even if it's not expected to
+    // normally fire." Bare, non-interpolated literal -- no anchoring risk
+    // regardless of the backstop framing. Applies to banuser/unbanuser.
+    pattern: /^\s*You don't have capability to ban\/unban users\.\s*$/i,
+    describe: () => "You don't have capability to ban/unban users.",
+  },
+  // NOT added, named as the residual rather than left implicit: BanSystem.class
+  // also carries "Connection not found" and "Player not found" -- Kevin's
+  // Pass 4 rated these LOW confidence ("plausible RCON-reply shape but could
+  // equally be internal-console-only text", not bytecode-traced to a
+  // ban/unban call site at all). Two rejection shapes for
+  // banuser/unbanuser/adduser/removeuserfromwhitelist remain genuinely
+  // unrecognized after this fix -- inventing an attribution for either would
+  // be worse than leaving them out (same standard Pam's original commit
+  // held to for these same four commands).
 ];
 
 export class RconService extends EventEmitter {
