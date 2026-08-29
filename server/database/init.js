@@ -397,6 +397,20 @@ export async function flushWrites() {
     }
   }
 
+  // Declared outside the try block (rather than `const` inside it, its
+  // original scope) purely so the catch block below can reference the tmp
+  // path a failed rename leaves behind -- same value, same assignment
+  // point, not a behavior change to the write itself. tmpWriteSucceeded
+  // narrows the catch block's cleanup to specifically a failed RENAME (the
+  // diagnosed live leak: a complete, valid tmp file with nowhere to go) --
+  // NOT a failed writeFileSync, which linuxDbFileModes.test.js's own crash
+  // fault-injection deliberately leaves in place as forensic proof its
+  // interception actually engaged (a half-written, invalid-JSON casualty
+  // file). Cleaning up an INTENTIONALLY-preserved half-write would silence
+  // that test's own positive control -- this fix targets the complete-tmp
+  // leak that was actually observed live, not every possible failure.
+  let tmpPath;
+  let tmpWriteSucceeded = false;
   _writePromise = (async () => {
     try {
       // Atomic write: write to temp file first, then rename
@@ -411,7 +425,7 @@ export async function flushWrites() {
       // systemd restart racing the previous process's shutdown), a shared
       // `.tmp` suffix causes the second rename to fail with ENOENT after the
       // first instance consumed it. PID + random suffix isolates them.
-      const tmpPath = `${dbPath}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+      tmpPath = `${dbPath}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
       // rconPassword (per server, plus the legacy settings mirror) is
       // persisted to its own file and stripped from what actually lands on
       // disk here — see utils/serverRconSecrets.js. db.data itself is
@@ -422,6 +436,7 @@ export async function flushWrites() {
         2,
       );
       fs.writeFileSync(tmpPath, data, { encoding: "utf-8", mode: 0o600 });
+      tmpWriteSucceeded = true;
       try {
         fs.chmodSync(tmpPath, 0o600);
       } catch (_) {
@@ -433,6 +448,25 @@ export async function flushWrites() {
       _circuitFailCount = 0;
       log.debug(`DB flushed (${Math.round(data.length / 1024)}KB)`);
     } catch (err) {
+      // Best-effort cleanup of THIS attempt's own tmp file (same pattern as
+      // writeFileAtomic/cleanupOrphanBackupTemps) -- a failed rename left it
+      // behind, and nothing else will ever clean it up while this process
+      // stays alive: sweepOrphanedTmpFiles() is deliberately dead-pid-only,
+      // so a live process's own retry loop leaking one tmp per failure was
+      // previously unbounded for as long as renames kept failing. Isolated
+      // in its own try/catch that swallows everything, INCLUDING an error
+      // from the unlink itself (e.g. the same contention that just failed
+      // the rename) -- this must never be able to skip or alter anything
+      // below it. A tidied-up temp file is not worth the retry counter, the
+      // backoff, or the circuit breaker that feeds the operator-facing
+      // storage-health banner.
+      if (tmpWriteSucceeded) {
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch {
+          /* best-effort -- may not exist, may be locked by the same contention that failed the rename */
+        }
+      }
       _writeRetries++;
       _lastWriteError = err.message;
       if (_writeRetries >= MAX_WRITE_RETRIES) {
