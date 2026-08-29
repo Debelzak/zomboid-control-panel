@@ -135,24 +135,112 @@ export async function testRconConnection({ host, port, password, timeoutMs = RCO
 // commands' real success text enumerated with confidence, which static
 // bytecode reading can't give, and would fail closed on every command
 // whose success text isn't in it.
+//
+// 2026-08-29, players.js moderation/GM-tools hunt: every pattern here MUST
+// be anchored to a position a player's own (attacker-controlled) in-game
+// name cannot reach. classifyRconResponse() below runs an UNANCHORED
+// .test() against the whole response, and PZ's SUCCESS messages for these
+// same commands interpolate the target player's name -- kickuser's success
+// is `User <name> kicked.`, setaccesslevel's is `<name> granted <level>
+// access level on <server>`. A player who names themselves text containing
+// a rejection fragment (e.g. "Not enough rights") would have their own
+// SUCCESSFUL kick misclassified as a failure the instant that fragment
+// appeared anywhere in the response -- including inside their own name.
+// The three pre-existing non-anchored patterns below had this exact defect
+// in shipped code; confirmed each one's PZ source is a bare, non-
+// interpolated literal (no player name can ever appear inside "Wrong
+// arguments!" or "Not enough rights" themselves), so anchoring them to the
+// full trimmed string is a strict tightening, not a behavior change for
+// any genuine rejection. Every new pattern added below is anchored the
+// same way: full-string where the PZ text has no interpolation at all, or
+// bounded by fixed text immediately before/after the interpolated portion
+// where it does (e.g. `Invalid username "<name>"` is bounded by the
+// literal quote+prefix before the name and the literal closing quote
+// after it -- a success response's own fixed text can never coincidentally
+// reproduce both boundaries regardless of what the name in between is).
+//
+// Sourced from server/__fixtures__/pzRconRejectionStrings.json (a
+// decompiled catalog of the actual PZ B42 server jar's command classes,
+// confirmed verbatim -- not guessed) except where noted otherwise.
 export const KNOWN_RCON_REJECTIONS = [
   {
     pattern: /^\s*Unknown command\b/i,
     describe: (text) => `${text}. This command is not available on this server build.`,
   },
   {
-    pattern: /Wrong arguments!?/i,
+    // GodModePlayerCommand.class / InvisiblePlayerCommand.class: bare,
+    // non-interpolated literal.
+    pattern: /^\s*Wrong arguments!?\s*$/i,
     describe: () =>
       "Wrong arguments. This command's syntax may have changed on this server build.",
   },
   {
-    pattern: /Not enough rights/i,
+    // NoClipCommand.class: bare, non-interpolated literal.
+    pattern: /^\s*Not enough rights\.?\s*$/i,
     describe: () =>
       "Not enough rights. The RCON account's role does not have permission to run this command.",
   },
   {
-    pattern: /can be executed only from the game/i,
+    // ReleaseSafehouseCommand.class, per this array's original citation --
+    // not reachable from any command players.js currently exposes. Exact
+    // full text/interpolation not present in the checked-in fixture (only
+    // the class name citation above is available); end-anchored as the
+    // best available tightening without a confirmed complete template.
+    pattern: /can be executed only from the game\.?\s*$/i,
     describe: (text) => `${text}. This command can only be run from in-game, not over RCON.`,
+  },
+  {
+    // KickUserCommand.class: target not currently connected. Success for
+    // this same command is "User <name> kicked." -- the fixed suffix here
+    // (" doesn't exist.") can never be produced by a genuine success
+    // response regardless of what the interpolated name contains.
+    pattern: /^User .+ doesn't exist\.\s*$/i,
+    describe: () =>
+      "User doesn't exist. They may have disconnected, or the name may be misspelled.",
+  },
+  {
+    // KickUserCommand.class: target holds the CantBeKickedByUser
+    // capability (e.g. another admin). Bare, non-interpolated literal.
+    pattern: /^\s*This user can't be kicked\.\s*$/i,
+    describe: () => "This user can't be kicked (protected account).",
+  },
+  {
+    // Shared across AddItemCommand, AddXPCommand, TeleportCommand,
+    // TeleportPlayerCommand, AddVehicleCommand, VoiceBanCommand -- all
+    // resolve their target via GameServer.getPlayerByUserNameForCommand,
+    // which prints this exact, non-interpolated literal when the name
+    // doesn't match a currently connected player.
+    pattern: /^\s*No such user\s*$/i,
+    describe: () => "No such user. They must be currently connected for this command.",
+  },
+  {
+    // setaccesslevel (GameServer.changeRole): bad username argument.
+    // Bounded by the fixed `Invalid username "` prefix and the closing
+    // `"` immediately after the name, both literal PZ text -- setaccesslevel's
+    // own success message ("<name> granted...") never produces this shape.
+    pattern: /^Invalid username ".*"\s*$/i,
+    describe: (text) => `${text}. That username was not recognized.`,
+  },
+  {
+    // setaccesslevel: bad access-level argument. The interpolated value
+    // here is the admin-typed level string, already validated client-side
+    // against ACCESS_LEVELS before reaching RCON -- not player-controlled.
+    pattern: /^Access Level '.+' unknown, list of access level:/i,
+    describe: (text) => `${text}. That access level is not recognized on this server build.`,
+  },
+  {
+    // setaccesslevel: RCON-connected admin's OWN role lacks the rights to
+    // grant this level (a role-hierarchy check, distinct from the
+    // RCON-account-level "Not enough rights" above). Bare, non-interpolated
+    // literal.
+    pattern: /^You do not have sufficient rights to set this access level\.\s*$/i,
+    describe: () => "You do not have sufficient rights to set this access level.",
+  },
+  {
+    // setaccesslevel: target has no whitelist/server account at all.
+    // Bounded the same way as "Invalid username" above.
+    pattern: /^User ".*" is not in the whitelist nor the server, use \/adduser first\s*$/i,
+    describe: (text) => `${text}.`,
   },
 ];
 
