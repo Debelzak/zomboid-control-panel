@@ -69,6 +69,16 @@ const MASTER_SERVERS = [
 const QUERY_TIMEOUT = 10000;
 const SERVER_QUERY_TIMEOUT = 3000;
 
+// Caps how many master-listed servers GET /'s fallback path will actually
+// probe. Each probe is bounded (SERVER_QUERY_TIMEOUT above), but the batch
+// loop that walks them has no overall ceiling of its own -- an unusually
+// large listed count (hunt-wave10, 2026-08-29) could otherwise make a
+// single GET / take minutes. The cap is surfaced in the response
+// (masterDiscovery.truncated) rather than applied silently -- a short
+// server list and "there really are only this many" must stay
+// distinguishable from "we stopped counting".
+const MAX_MASTER_SERVERS_TO_QUERY = 200;
+
 /**
  * Query a single game server for detailed info using A2S_INFO protocol
  */
@@ -258,8 +268,18 @@ function parseA2SInfoResponse(buffer) {
 /**
  * Query Steam Master Server for game servers
  */
-async function queryMasterServer(masterHost, masterPort, region = 0xFF, filters = '') {
+export async function queryMasterServer(masterHost, masterPort, region = 0xFF, filters = '') {
   return new Promise((resolve, reject) => {
+    // socket.connect() makes this a CONNECTED UDP socket: the kernel then
+    // only delivers datagrams whose source address:port matches the
+    // resolved master, and send() below no longer names a destination.
+    // Fixes a response-spoofing gap (hunt-wave10, 2026-08-29): the socket
+    // used to be unconnected and would process a reply from ANY sender on
+    // its local port as if it were the master's -- including a
+    // caller-chosen private/loopback address, which then got probed
+    // directly by GET /'s master-server fallback with no isPrivateIp
+    // filter of its own. Proof of both the gap and the fix living in the
+    // same file: server/tests/jimServerFinderMasterSpoof.test.js.
     const socket = dgram.createSocket('udp4');
     const servers = [];
     let lastIp = '0.0.0.0';
@@ -329,10 +349,17 @@ async function queryMasterServer(masterHost, masterPort, region = 0xFF, filters 
       // Filter
       Buffer.from(filterStr).copy(packet, offset);
 
-      socket.send(packet, masterPort, masterHost);
+      // No destination args -- this socket is connect()-ed, see above.
+      socket.send(packet);
     };
 
-    sendQuery();
+    // sendQuery() only runs once the connect() actually resolves (the
+    // 'connect' event / this callback) -- a DNS failure or refused
+    // connect fires the 'error' handler above instead, which already
+    // rejects and cleans up.
+    socket.connect(masterPort, masterHost, () => {
+      sendQuery();
+    });
   });
 }
 
@@ -463,6 +490,49 @@ export function deriveEmptyReason({ source, serversFound, mastersReachable, mast
   return mastersListedCount > 0 ? 'no-servers-responded' : 'no-servers-listed';
 }
 
+// Surfaces two decisions GET /'s master-server fallback makes about which
+// listed servers it actually probes, so neither reads as a plain (and
+// therefore indistinguishable-from-"that's everything") short list:
+//   - privateFiltered: entries refused because isPrivateIp() flagged them
+//     (SSRF guard, hunt-wave10 2026-08-29 -- matches GET /query and
+//     GET /ping's own validateQueryIp() check, now applied here too).
+//   - truncated: the queryable count exceeded MAX_MASTER_SERVERS_TO_QUERY,
+//     so `queried` is a prefix, not the full list.
+// Only meaningful for the master_server path -- undefined otherwise,
+// dropped from the JSON response by JSON.stringify, matching
+// deriveEmptyReason's own convention above.
+export function deriveMasterDiscoveryStats({
+  source,
+  mastersListedCount,
+  mastersPrivateFilteredCount,
+  mastersQueriedCount,
+  mastersTruncated,
+}) {
+  if (source !== 'master_server') return undefined;
+  return {
+    listed: mastersListedCount,
+    privateFiltered: mastersPrivateFilteredCount,
+    queried: mastersQueriedCount,
+    truncated: mastersTruncated,
+  };
+}
+
+// Applies both decisions GET /'s master-server fallback makes about a raw
+// master-listed candidate list before probing any of it: the SSRF filter
+// (isPrivateIp) and the query cap (MAX_MASTER_SERVERS_TO_QUERY). Extracted
+// as its own pure function so the cap can be asserted directly against a
+// large candidate list without a slow live UDP fan-out for every entry --
+// per god's explicit instruction (hunt-wave10, 2026-08-29): "assert the
+// CAP... a fast, exact assertion about the thing you actually changed."
+export function selectMasterServersToQuery(masterServers) {
+  const queryable = masterServers.filter((s) => !isPrivateIp(s.ip));
+  return {
+    toQuery: queryable.slice(0, MAX_MASTER_SERVERS_TO_QUERY),
+    privateFilteredCount: masterServers.length - queryable.length,
+    truncated: queryable.length > MAX_MASTER_SERVERS_TO_QUERY,
+  };
+}
+
 /**
  * Get server list - tries Steam API first, falls back to master server query
  */
@@ -502,6 +572,9 @@ router.get('/', async (req, res) => {
     // came up empty -- the common non-empty case is untouched.
     let mastersReachable = false;
     let mastersListedCount = 0;
+    let mastersPrivateFilteredCount = 0;
+    let mastersQueriedCount = 0;
+    let mastersTruncated = false;
     if (servers.length === 0) {
       source = 'master_server';
       try {
@@ -514,10 +587,22 @@ router.get('/', async (req, res) => {
             mastersReachable = true;
             mastersListedCount += masterServers.length;
 
+            // SSRF guard + visible cap: GET /query and GET /ping both refuse
+            // private/reserved addresses via validateQueryIp() before
+            // probing -- this fallback used to skip that check entirely for
+            // master-listed addresses (hunt-wave10, 2026-08-29). Neither
+            // decision is silent: both counts feed deriveMasterDiscoveryStats
+            // below, into the response.
+            const { toQuery: serversToQuery, privateFilteredCount, truncated } =
+              selectMasterServersToQuery(masterServers);
+            mastersPrivateFilteredCount += privateFilteredCount;
+            if (truncated) mastersTruncated = true;
+            mastersQueriedCount += serversToQuery.length;
+
             // Query each server for details (limit concurrent queries)
             const batchSize = 50;
-            for (let i = 0; i < masterServers.length; i += batchSize) {
-              const batch = masterServers.slice(i, i + batchSize);
+            for (let i = 0; i < serversToQuery.length; i += batchSize) {
+              const batch = serversToQuery.slice(i, i + batchSize);
               const results = await Promise.all(
                 batch.map(s => queryServerInfo(s.ip, s.port))
               );
@@ -542,6 +627,13 @@ router.get('/', async (req, res) => {
       mastersReachable,
       mastersListedCount,
     });
+    const masterDiscovery = deriveMasterDiscoveryStats({
+      source,
+      mastersListedCount,
+      mastersPrivateFilteredCount,
+      mastersQueriedCount,
+      mastersTruncated,
+    });
 
     // Sort by player count (descending)
     servers.sort((a, b) => (b.players || 0) - (a.players || 0));
@@ -562,6 +654,7 @@ router.get('/', async (req, res) => {
       servers, // Return ALL servers, frontend handles pagination
       apiKeyConfigured,
       emptyReason, // undefined (dropped by JSON.stringify) outside the empty master_server case
+      masterDiscovery, // undefined outside the master_server path -- see deriveMasterDiscoveryStats
     });
   } catch (error) {
     log.error('Failed to get server list:', error);
