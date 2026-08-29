@@ -432,6 +432,8 @@
   "SCHEDULER_TASK_NOT_FOUND": "Tach la pa jwenn",
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "Pa t kapab repwograme tach la: {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Pa ka fè yon sèvè adistans redemare. Panel sa a pa jere pwosesis la",
+  "SCHEDULER_TIMEZONE_REQUIRED": "Yo mande yon fizo orè",
+  "SCHEDULER_INVALID_TIMEZONE": "\"{{tz}}\" pa yon non fizo orè ki valab (pa egzanp, \"America/New_York\", \"UTC\")",
   "CONFIG_APP_SETTINGS_REQUIRED": "Paramèt yo obligatwa",
   "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "Pa ka chanje {{detail}} si ou pa gen kapasite sa a ou menm.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",

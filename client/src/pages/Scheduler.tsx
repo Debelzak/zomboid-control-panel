@@ -132,14 +132,20 @@ export default function Scheduler() {
     activeTasks: number
     autoRestartEnabled: boolean
     modUpdateRestartPending: boolean
-    // Linux bug hunt (2026-08-29, hunt-wave5, suspect 1): every schedule
-    // below is interpreted in THIS timezone (node-cron resolves it from the
-    // panel process's own environment, not the browser's) -- a Docker
-    // deployment silently defaults to UTC unless the operator sets TZ.
-    // Surfaced here so "Hour 3" doesn't silently mean something different
-    // than the operator assumes.
+    // Timezone-picker card (2026-08-29, hunt-wave5 follow-up): `timezone`
+    // is the EFFECTIVE zone every schedule below actually runs in right
+    // now. `configuredTimezone` is the operator's saved choice (normally
+    // identical). `timezoneFallback` is non-null only when the saved zone
+    // stopped being valid (tzdata dropped a deprecated name, or db.json
+    // was restored from a different machine) -- the panel falls back to
+    // the process default rather than refusing to schedule, and this is
+    // how the UI shows that mismatch instead of staying quiet about it.
     timezone?: string
+    configuredTimezone?: string | null
+    timezoneFallback?: { configured: string; effective: string } | null
   } | null>(null)
+  const [timezoneInput, setTimezoneInput] = useState('')
+  const [timezoneSaving, setTimezoneSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null)
@@ -223,6 +229,38 @@ export default function Scheduler() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Seeds the timezone picker's input from the operator's saved choice --
+  // only while untouched, so an explicit refetch after an unrelated action
+  // (creating a task, etc.) can't clobber an edit still in progress.
+  useEffect(() => {
+    if (timezoneInput === '' && status?.configuredTimezone) {
+      setTimezoneInput(status.configuredTimezone)
+    }
+  }, [status?.configuredTimezone, timezoneInput])
+
+  const handleSaveTimezone = async () => {
+    const trimmed = timezoneInput.trim()
+    if (!trimmed) return
+    setTimezoneSaving(true)
+    try {
+      const result = await schedulerApi.setTimezone(trimmed)
+      setStatus((prev) => (prev ? { ...prev, ...result } : prev))
+      toast({
+        title: t('toasts.successTitle'),
+        description: t('timezone.savedDesc', { tz: result.timezone }),
+        variant: 'success' as const,
+      })
+    } catch (error) {
+      toast({
+        title: t('toasts.errorTitle'),
+        description: getUserErrorMessage(error, t('timezone.saveFailedFallback')),
+        variant: 'destructive',
+      })
+    } finally {
+      setTimezoneSaving(false)
+    }
+  }
 
   // Preview the custom cron field as the operator types, so an invalid
   // expression is caught here instead of only on Save. Advanced-only: the
@@ -900,6 +938,56 @@ export default function Scheduler() {
             </DialogFooter>
           </DialogContent>
       </Dialog>
+
+      {/* Timezone-picker card (2026-08-29, hunt-wave5 follow-up): the
+          install-wide zone EVERY schedule below (user tasks, the backup
+          job, AUTO_RESTART_CRON) runs in. Migrated automatically on
+          upgrade to whatever was already effective, so this section shows
+          a real, already-correct value even for an operator who never
+          opens it -- it only needs to be touched to CHANGE the zone. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('timezone.title')}</CardTitle>
+          <CardDescription>{t('timezone.description')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {status?.timezoneFallback && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>{t('timezone.fallbackTitle')}</AlertTitle>
+              <AlertDescription>
+                {t('timezone.fallbackDesc', {
+                  configured: status.timezoneFallback.configured,
+                  effective: status.timezoneFallback.effective,
+                })}
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="scheduler-timezone-input">{t('timezone.inputLabel')}</Label>
+              <Input
+                id="scheduler-timezone-input"
+                value={timezoneInput}
+                onChange={(e) => setTimezoneInput(e.target.value)}
+                placeholder="America/New_York"
+                className="font-mono"
+                maxLength={100}
+              />
+            </div>
+            <Button
+              onClick={handleSaveTimezone}
+              disabled={timezoneSaving || !timezoneInput.trim() || timezoneInput.trim() === status?.configuredTimezone}
+            >
+              {timezoneSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {t('timezone.saveButton')}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('timezone.currentlyEffective', { tz: status?.timezone || '...' })}
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Status Cards — only when tasks exist */}
       {tasks.length > 0 && (() => {

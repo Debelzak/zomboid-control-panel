@@ -1728,6 +1728,17 @@ export const ErrorCode = Object.freeze({
   /** server/routes/scheduler.js -- POST /restart-now, the active server is
    * remote (this panel doesn't manage its process). */
   SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED: "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED",
+  /** server/routes/scheduler.js -- PUT /timezone, `timezone` missing, not a
+   * string, or empty after trimming. */
+  SCHEDULER_TIMEZONE_REQUIRED: "SCHEDULER_TIMEZONE_REQUIRED",
+  /** server/routes/scheduler.js -- PUT /timezone, the given value isn't a
+   * name Intl.DateTimeFormat (and therefore node-cron itself) accepts as a
+   * real IANA zone. Rejected at save time deliberately -- an invalid zone
+   * accepted here would only surface as a node-cron throw the night a
+   * schedule actually tries to fire, per the 2026-08-29 timezone-picker
+   * card's explicit requirement. Carries the rejected value as the `tz`
+   * param so the message can name it. */
+  SCHEDULER_INVALID_TIMEZONE: "SCHEDULER_INVALID_TIMEZONE",
 
   /** server/routes/config.js -- PUT /app-settings, `settings` missing or not
    * an object. */

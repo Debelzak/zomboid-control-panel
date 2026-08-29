@@ -432,6 +432,8 @@
   "SCHEDULER_TASK_NOT_FOUND": "Aufgabe nicht gefunden",
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "Aufgabe konnte nicht neu geplant werden: {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Ein Remote-Server kann nicht neu gestartet werden. Der Prozess wird nicht von diesem Panel verwaltet",
+  "SCHEDULER_TIMEZONE_REQUIRED": "Eine Zeitzone ist erforderlich",
+  "SCHEDULER_INVALID_TIMEZONE": "„{{tz}}“ ist kein gültiger Zeitzonenname (z. B. „America/New_York“, „UTC“)",
   "CONFIG_APP_SETTINGS_REQUIRED": "Einstellungen sind erforderlich",
   "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "Kann {{detail}} nicht ändern, ohne diese Berechtigung selbst zu besitzen.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",

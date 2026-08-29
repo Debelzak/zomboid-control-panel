@@ -182,6 +182,17 @@
     "every2HoursExample": "<1>0 */2 * * *</1> = 每 2 小时",
     "daily6amExample": "<1>0 6 * * *</1> = 每天 6 点"
   },
+  "timezone": {
+    "title": "计划任务时区",
+    "description": "以下所有计划——你的任务、自动备份和自动重启——都按此时区运行。",
+    "inputLabel": "IANA 时区名称",
+    "saveButton": "保存",
+    "currentlyEffective": "当前生效：{{tz}}",
+    "savedDesc": "计划现在按 {{tz}} 运行。",
+    "saveFailedFallback": "保存时区失败",
+    "fallbackTitle": "已保存的时区不再有效",
+    "fallbackDesc": "无法使用“{{configured}}”（可能已从时区数据库中移除，或此面板是从另一台机器恢复的）。在此问题解决之前，计划按 {{effective}} 运行。"
+  },
   "toasts": {
     "errorTitle": "错误",
     "successTitle": "成功",

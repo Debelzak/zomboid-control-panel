@@ -182,6 +182,17 @@
     "every2HoursExample": "<1>0 */2 * * *</1> = cada 2 horas",
     "daily6amExample": "<1>0 6 * * *</1> = diariamente a las 6 a. m."
   },
+  "timezone": {
+    "title": "Zona horaria del planificador",
+    "description": "Todos los horarios de abajo -- tus tareas, la copia de seguridad automática y el reinicio automático -- se ejecutan en esta zona horaria.",
+    "inputLabel": "Nombre de zona horaria IANA",
+    "saveButton": "Guardar",
+    "currentlyEffective": "Actualmente en vigor: {{tz}}",
+    "savedDesc": "Los horarios ahora se ejecutan en {{tz}}.",
+    "saveFailedFallback": "No se pudo guardar la zona horaria",
+    "fallbackTitle": "La zona horaria guardada ya no es válida",
+    "fallbackDesc": "No se pudo usar «{{configured}}» (puede que se haya eliminado de la base de datos de zonas horarias, o que este panel se haya restaurado desde otra máquina). Los horarios se ejecutan en {{effective}} hasta que esto se corrija."
+  },
   "toasts": {
     "errorTitle": "Error",
     "successTitle": "Éxito",

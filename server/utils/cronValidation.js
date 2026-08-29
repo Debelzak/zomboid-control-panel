@@ -1,5 +1,28 @@
 import cron from "node-cron";
 
+// 2026-08-29, timezone-picker card: whether Intl (and therefore node-cron,
+// which resolves its own timezone option through the same Intl machinery --
+// see node_modules/node-cron/dist/_shared.js's getPartsFormatter) will
+// actually accept `tz` as a real IANA zone name. Construction throwing a
+// RangeError is the canonical way to ask this -- it is the exact check that
+// determines whether cron.schedule(expr, cb, { timezone: tz }) will work at
+// schedule time, so there is no meaningful gap between "this function says
+// valid" and "node-cron accepts it." Deliberately NOT built on
+// Intl.supportedValuesOf('timeZone') (Node 18+): that list is narrower than
+// what the constructor accepts (it omits some valid legacy/alias names
+// Intl still resolves correctly), so using it here would reject values a
+// real install could have been using safely for years.
+export function isValidIanaTimezone(tz) {
+  if (typeof tz !== "string" || !tz.trim()) return false;
+  try {
+    // eslint-disable-next-line no-new
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function hasUnsupportedCronFieldCount(expression) {
   return (
     typeof expression !== "string" ||

@@ -897,6 +897,13 @@ export const schedulerApi = {
     }>;
   },
   clearHistory: () => apiDelete("/scheduler/history"),
+  setTimezone: (timezone: string) =>
+    apiPut("/scheduler/timezone", { timezone }) as Promise<{
+      success: boolean;
+      timezone: string;
+      configuredTimezone: string | null;
+      timezoneFallback: { configured: string; effective: string } | null;
+    }>,
 };
 
 // Mods API

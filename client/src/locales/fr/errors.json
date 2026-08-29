@@ -432,6 +432,8 @@
   "SCHEDULER_TASK_NOT_FOUND": "Tâche introuvable",
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "Impossible de replanifier la tâche : {{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "Impossible de redémarrer un serveur distant. Le processus n'est pas géré par ce panneau",
+  "SCHEDULER_TIMEZONE_REQUIRED": "Un fuseau horaire est requis",
+  "SCHEDULER_INVALID_TIMEZONE": "« {{tz}} » n'est pas un nom de fuseau horaire valide (p. ex. « America/New_York », « UTC »)",
   "CONFIG_APP_SETTINGS_REQUIRED": "Les paramètres sont requis",
   "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "Impossible de modifier {{detail}} sans détenir vous-même cette capacité.",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",

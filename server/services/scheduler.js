@@ -19,11 +19,24 @@ import {
   logScheduleExecution,
   getActiveServer,
   getServer,
+  getSetting,
+  setSetting,
 } from "../database/init.js";
 import {
   isCronTooFrequent,
   isSupportedFiveFieldCron,
+  isValidIanaTimezone,
 } from "../utils/cronValidation.js";
+
+// Settings-store key for the install-wide scheduler timezone (2026-08-29,
+// timezone-picker card). ONE zone for the whole install, not per-schedule --
+// per-schedule is strictly more powerful but multiplies the migration
+// question (this file's whole hard problem) by every task an operator has
+// ever created, for a granularity nobody asked for; every cron.schedule()
+// call in this file (user tasks, the backup job, AUTO_RESTART_CRON) reads
+// the SAME resolved value, so the operator has exactly one place to look
+// and one place to change.
+const SCHEDULER_TIMEZONE_SETTING_KEY = "schedulerTimezone";
 // Built-in PanelBridge actions exposed to the scheduler via the
 // `bridge:<action>` command syntax. Optional JSON args follow the action,
 // e.g. `bridge:triggerBlizzard {"duration":2}`. Only the actions listed
@@ -144,6 +157,15 @@ export class Scheduler {
     this.modUpdateRestartPending = false;
     this.restartInProgress = false;
     this.runningTasks = new Set(); // Track tasks currently executing to prevent duplicates
+    // The install-wide timezone every cron.schedule() call in this class
+    // uses, resolved (and migrated, if needed) once by resolveTimezone()
+    // before any scheduling happens -- see that method's own comment.
+    // Cached here, not re-read from settings on every scheduleTask() call,
+    // because it only ever changes on an explicit operator action
+    // (setTimezone()), which re-resolves and reschedules everything itself.
+    this.effectiveTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.configuredTimezone = null; // the raw settings value, once resolved
+    this.timezoneFallback = null; // {configured, effective} when the configured zone is invalid
   }
 
   setBackupService(backupService) {
@@ -154,7 +176,102 @@ export class Scheduler {
     this.discordBot = discordBot;
   }
 
+  // Resolves the install-wide scheduler timezone, migrating a not-yet-
+  // configured install and failing loudly-but-running on an invalid stored
+  // value. Called once at boot (before anything is scheduled) and again
+  // from setTimezone() when the operator changes it -- never per-task,
+  // since the resolved value only changes on one of those two events.
+  //
+  // MIGRATION (requirement 1 of the card): an install upgrading from before
+  // this setting existed must see NO CHANGE in real-world fire times until
+  // the operator deliberately picks a different zone. The setting's
+  // ABSENCE (never configured) is therefore initialized to the CURRENTLY
+  // EFFECTIVE zone -- not a hardcoded default like UTC, which would
+  // silently move every existing non-UTC install's schedules the moment
+  // this feature shipped -- and PERSISTED immediately, so a later change to
+  // the process's own environment (a redeployed container with a different
+  // host TZ, say) can never retroactively alter what an already-migrated
+  // install resolves to. This mirrors the exact pattern
+  // getScheduledTasks()'s own server_id migration already uses in
+  // database/init.js: detect "never set," compute the value that preserves
+  // current behaviour, persist it once, done.
+  //
+  // FAILING ZONE (requirement 4): a stored zone can stop being valid after
+  // migration (tzdata removes a deprecated name, or db.json was restored
+  // onto a different machine). Refusing to start is wrong -- every schedule
+  // on the install would silently stop firing, the exact failure mode this
+  // whole hunt is about. Silently substituting UTC is worse -- a wrong
+  // answer presented as a right one. So: log a clear, loud error, record
+  // the mismatch on `timezoneFallback` (surfaced by getStatus() so the UI
+  // can show it even to nobody currently reading logs), fall back to the
+  // process's own resolved zone, and keep scheduling normally.
+  async resolveTimezone() {
+    const processDefault = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let stored = await getSetting(SCHEDULER_TIMEZONE_SETTING_KEY);
+
+    if (stored == null) {
+      stored = processDefault;
+      try {
+        await setSetting(SCHEDULER_TIMEZONE_SETTING_KEY, stored);
+        log.info(
+          `Scheduler timezone was not previously configured -- initialized to the currently-effective zone (${stored}) so upgrading does not move any existing schedule's real fire time`,
+        );
+      } catch (error) {
+        // Don't let a failed persist block scheduling from starting --
+        // worst case this migration re-runs (harmlessly, same result) on
+        // the next boot before the write eventually succeeds.
+        log.warn(`Could not persist the migrated scheduler timezone: ${error.message}`);
+      }
+    }
+
+    this.configuredTimezone = stored;
+
+    if (!isValidIanaTimezone(stored)) {
+      log.error(
+        `Configured scheduler timezone "${stored}" is not a valid IANA zone (tzdata may have removed a deprecated name, or this database was restored from a different machine) -- falling back to ${processDefault} so schedules keep firing. Fix this in Scheduler settings.`,
+      );
+      this.timezoneFallback = { configured: stored, effective: processDefault };
+      this.effectiveTimezone = processDefault;
+      return this.effectiveTimezone;
+    }
+
+    this.timezoneFallback = null;
+    this.effectiveTimezone = stored;
+    return this.effectiveTimezone;
+  }
+
+  // Operator-facing setter (routes/scheduler.js's PUT /timezone). Validates,
+  // persists, re-resolves, and immediately reschedules EVERY cron.schedule()
+  // call this class owns under the new zone -- user tasks, the backup job,
+  // AUTO_RESTART_CRON alike, per the card's explicit requirement that a
+  // timezone setting covering only some of the three would be worse than
+  // none (the UI would then be confidently wrong about the other two).
+  async setTimezone(newZone) {
+    if (!isValidIanaTimezone(newZone)) {
+      const error = new Error(`"${newZone}" is not a valid IANA timezone`);
+      error.code = "SCHEDULER_INVALID_TIMEZONE";
+      throw error;
+    }
+
+    await setSetting(SCHEDULER_TIMEZONE_SETTING_KEY, newZone);
+    await this.resolveTimezone();
+
+    const tasks = await getScheduledTasks();
+    for (const task of tasks) {
+      if (task.enabled) this.scheduleTask(task);
+    }
+    this.setupAutoRestart();
+    await this.setupBackupSchedule();
+
+    log.info(`Scheduler timezone changed to ${this.effectiveTimezone} -- rescheduled ${tasks.filter((t) => t.enabled).length} task(s), auto-restart, and the backup job`);
+    return this.getStatus();
+  }
+
   async init() {
+    // Resolve (and migrate, if needed) the timezone BEFORE anything is
+    // scheduled -- every scheduling step below reads this.effectiveTimezone.
+    await this.resolveTimezone();
+
     // Load saved scheduled tasks
     await this.loadScheduledTasks();
 
@@ -164,7 +281,7 @@ export class Scheduler {
     // Setup backup schedule if enabled
     await this.setupBackupSchedule();
 
-    log.info("Scheduler initialized");
+    log.info(`Scheduler initialized (timezone: ${this.effectiveTimezone})`);
   }
 
   async loadScheduledTasks() {
@@ -209,7 +326,9 @@ export class Scheduler {
       this.jobs.get(task.id).stop();
     }
 
-    const job = cron.schedule(task.cron_expression, () => this.runTaskNow(task));
+    const job = cron.schedule(task.cron_expression, () => this.runTaskNow(task), {
+      timezone: this.effectiveTimezone,
+    });
 
     this.jobs.set(task.id, job);
     this.jobLabels.set(task.id, task.name || task.command || "task");
@@ -763,9 +882,9 @@ export class Scheduler {
           );
           log.error(`Scheduled backup error: ${error.message}`);
         }
-      });
+      }, { timezone: this.effectiveTimezone });
 
-      log.info(`Backup schedule configured: ${settings.schedule}`);
+      log.info(`Backup schedule configured: ${settings.schedule} (timezone: ${this.effectiveTimezone})`);
     } catch (error) {
       log.error(`Failed to setup backup schedule: ${error.message}`);
     }
@@ -819,9 +938,9 @@ export class Scheduler {
         // trusting this comment.
         log.error(`Auto-restart cron tick failed: ${err.message}`);
       }
-    });
+    }, { timezone: this.effectiveTimezone });
 
-    log.info(`Auto-restart scheduled: ${cronExpression}`);
+    log.info(`Auto-restart scheduled: ${cronExpression} (timezone: ${this.effectiveTimezone})`);
   }
 
   /**
@@ -1574,26 +1693,24 @@ export class Scheduler {
       backupScheduleEnabled: !!this.backupJob,
       modUpdateRestartPending: this.modUpdateRestartPending,
       nextRun: this.getNextRun(),
-      // Linux bug hunt (2026-08-29, hunt-wave5, suspect 1): every
-      // cron.schedule() call in this file passes no `timezone` option, so
-      // node-cron interprets every cron expression -- task schedules, the
-      // backup schedule, AUTO_RESTART_CRON -- in the PROCESS's own resolved
-      // default timezone (confirmed empirically: TZ=UTC makes a "30 2 * * *"
-      // job fire at a flat 02:30 UTC every day; TZ=America/New_York makes
-      // the identical expression fire at 02:30 America/New_York AND
-      // correctly skip the nonexistent 02:30 on the spring-forward day --
-      // node-cron's own DST handling is correct, it just applies to
-      // whichever timezone this resolves to). Neither the Dockerfile nor
-      // docker-compose.yml sets TZ, so a containerized install defaults to
-      // UTC regardless of the operator's own timezone, and the Scheduler
-      // UI's "Hour (0-23)" field gives zero indication of this. Surfacing
-      // the ACTUAL resolved value here is the minimal, safe fix: it doesn't
-      // change any existing schedule's behavior, it just stops the panel
-      // from staying silent about what governs every schedule the operator
-      // sets. Letting the operator override it is a bigger, separate
-      // decision (a new setting, UI, and validation) intentionally left to
-      // that decision rather than built unilaterally here.
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      // Timezone-picker card (2026-08-29, hunt-wave5 follow-up): `timezone`
+      // is the EFFECTIVE zone every cron.schedule() call in this file
+      // actually uses right now -- resolveTimezone() sets it once at boot
+      // (migrating a not-yet-configured install to the then-current process
+      // default so upgrading changes nothing) and again on setTimezone().
+      // `configuredTimezone` is the raw settings value the operator chose
+      // (normally identical to `timezone`). `timezoneFallback` is non-null
+      // ONLY when the configured zone stopped being a valid IANA name
+      // (tzdata removed a deprecated alias, or db.json was restored from a
+      // different machine) -- resolveTimezone() falls back to the process
+      // default rather than refusing to schedule, but does so LOUDLY: this
+      // field is how the UI shows that mismatch even to an operator who
+      // never reads the server log. Falls back to the live process default
+      // if resolveTimezone() somehow hasn't run yet (defensive only --
+      // init() always calls it before anything is scheduled).
+      timezone: this.effectiveTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      configuredTimezone: this.configuredTimezone,
+      timezoneFallback: this.timezoneFallback,
     };
   }
 

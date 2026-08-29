@@ -432,6 +432,8 @@
   "SCHEDULER_TASK_NOT_FOUND": "未找到任务",
   "SCHEDULER_TASK_RESCHEDULE_FAILED": "无法重新安排任务：{{reason}}",
   "SCHEDULER_RESTART_REMOTE_NOT_SUPPORTED": "无法重启远程服务器。该进程不由此面板管理",
+  "SCHEDULER_TIMEZONE_REQUIRED": "需要提供时区",
+  "SCHEDULER_INVALID_TIMEZONE": "“{{tz}}”不是有效的时区名称（例如“America/New_York”、“UTC”）",
   "CONFIG_APP_SETTINGS_REQUIRED": "需要设置",
   "CONFIG_APP_SETTINGS_CAPABILITY_REQUIRED": "无法更改 {{detail}}，因为你自己没有该权限。",
   "CONFIG_INVALID_CORS_ORIGINS": "{{reason}}",
