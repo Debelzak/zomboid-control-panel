@@ -45,6 +45,58 @@ function sleepSync(ms) {
   Atomics.wait(buffer, 0, 0, ms);
 }
 
+// Orphan temp sweep (2026-08-29, config hunt follow-up). writeFileAtomic
+// below only ever cleans up its own tmp file on the SAME call that created
+// it -- a crash between the writeFileSync a few lines down and the
+// rename/unlink that normally follows (power loss, a kill, an uncaught
+// fatal error) leaves a .{filename}.{pid}.{random}.tmp sibling behind
+// forever. Cosmetic, not a safety issue (Pam, same hunt, correctly
+// de-escalated it) -- nothing reads these files, they just accumulate.
+// Mirrors backupService.js's cleanupOrphanBackupTemps in shape (sweep the
+// directory on the next write into it, not a proactive background scan)
+// but needs one thing that function does not: writeFileAtomic has ~15 call
+// sites shared across processes that can briefly overlap (this codebase's
+// own supervised-restart window runs an outgoing and incoming process
+// together), so a temp can't be assumed dead just because it exists. The
+// pid is embedded in the name for exactly this reason -- checked here with
+// process.kill(pid, 0), the standard way to probe for a running process
+// without signaling it (confirmed on this platform and on Linux: throws
+// ESRCH for a pid that is not running, does not throw for one that is).
+// Any outcome other than a confirmed ESRCH is treated as "still alive" --
+// a pid this process cannot signal (EPERM) is left alone rather than
+// risked, matching the boundary that this must never delete a live write's
+// temp even at the cost of occasionally leaving a truly-dead one behind a
+// little longer.
+const ORPHAN_TEMP_PATTERN = /^\.(.+)\.(\d+)\.[0-9a-z]{6}\.tmp$/;
+
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+
+function sweepOrphanWriteTemps(dir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const match = ORPHAN_TEMP_PATTERN.exec(name);
+    if (!match) continue;
+    if (isPidAlive(Number(match[2]))) continue;
+    try {
+      fs.unlinkSync(path.join(dir, name));
+    } catch {
+      /* best effort -- another sweep or the original writer may have already cleared it */
+    }
+  }
+}
+
 /**
  * Serialize an async critical section per file path. Concurrent callers for
  * the SAME path run one after another, in call order; different paths run
@@ -105,6 +157,7 @@ export function withFileLock(filePath, fn) {
  */
 export function writeFileAtomic(filePath, data, options = "utf-8") {
   const dir = path.dirname(filePath);
+  sweepOrphanWriteTemps(dir);
   const tmpPath = path.join(
     dir,
     `.${path.basename(filePath)}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`,
