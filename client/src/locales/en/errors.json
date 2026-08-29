@@ -283,6 +283,7 @@
   "MODS_SERVER_INSTALL_PATH_NOT_SET": "Server install path not set — configure it in Settings",
   "MODS_SERVER_PATH_NOT_CONFIGURED": "Server path not configured.",
   "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD": "Server path not configured",
+  "MODS_START_ACF_PATH_NOT_SET": "Mod checker could not start. Configure a valid Workshop ACF path first.",
   "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED": "Steam session cookies not configured",
   "MODS_TOGGLE_ENABLED_REQUIRED": "enabled (boolean) is required",
   "MODS_TOGGLE_MOD_ID_REQUIRED": "modId is required",

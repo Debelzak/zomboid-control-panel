@@ -283,6 +283,7 @@
   "MODS_SERVER_INSTALL_PATH_NOT_SET": "La ruta de instalación del servidor no está establecida — configúrala en Ajustes",
   "MODS_SERVER_PATH_NOT_CONFIGURED": "La ruta del servidor no está configurada.",
   "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD": "La ruta del servidor no está configurada",
+  "MODS_START_ACF_PATH_NOT_SET": "No se pudo iniciar el comprobador de mods. Configura primero una ruta ACF de Workshop válida.",
   "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED": "Las cookies de sesión de Steam no están configuradas",
   "MODS_TOGGLE_ENABLED_REQUIRED": "Se requiere enabled (booleano)",
   "MODS_TOGGLE_MOD_ID_REQUIRED": "Se requiere modId",

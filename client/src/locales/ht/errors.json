@@ -283,6 +283,7 @@
   "MODS_SERVER_INSTALL_PATH_NOT_SET": "Chemen enstalasyon sèvè pa defini — konfigire l nan Paramèt",
   "MODS_SERVER_PATH_NOT_CONFIGURED": "Chemen sèvè pa konfigire.",
   "MODS_SERVER_PATH_NOT_CONFIGURED_NOPERIOD": "Chemen sèvè pa konfigire",
+  "MODS_START_ACF_PATH_NOT_SET": "Verifikatè mod pa t kapab demare. Tanpri konfigire yon chemen Workshop ACF ki valab dabò.",
   "MODS_STEAM_SESSION_COOKIES_NOT_CONFIGURED": "Cookie sesyon Steam pa konfigire",
   "MODS_TOGGLE_ENABLED_REQUIRED": "enabled (boolean) obligatwa",
   "MODS_TOGGLE_MOD_ID_REQUIRED": "modId obligatwa",
