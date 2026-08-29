@@ -29,6 +29,24 @@ const mockDataPaths = vi.hoisted(() => {
 });
 vi.mock('../utils/paths.js', () => ({ getDataPaths: (...args) => mockDataPaths.current(...args) }));
 
+// ENOTEMPTY class (hunt-wave12, 2026-08-29/30): logsDir here is a FIXED
+// path, separate from every per-test mkdtempSync root this file actually
+// deletes (see `temporaryDirectories` below) -- afterEach never rmSyncs
+// this file's own "/logs" directory, so this file was never at risk from
+// modThumbnailResolution.test.js's ENOTEMPTY race (5d5a9088). Mock added
+// anyway: cheap, matches the convention already established elsewhere in
+// this suite, and removes the real winston logger's file writes from this
+// test run entirely rather than relying on the two directories staying
+// separate forever.
+vi.mock('../utils/logger.js', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 const { getSftpErrorGuidance, classifySftpErrorCode, PanelBridgeSftpTransport, validateSftpBridgeConfig, getSftpCachePath } =
   await import('../services/panelBridgeSftp.js');
 const { ErrorCode } = await import('../utils/errorCodes.js');

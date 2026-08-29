@@ -37,6 +37,25 @@ vi.mock("../utils/paths.js", () => ({
   getDataPaths: () => ({ dataDir: tmpDir, logsDir: tmpDir }),
 }));
 
+// ENOTEMPTY class (hunt-wave12, 2026-08-29/30): services/workshopCollectionSync.js
+// imports utils/logger.js, so without this the real winston logger resolved
+// its logsDir from tmpDir's value AT THE MOMENT OF THE STATIC IMPORT BELOW --
+// the "-init-" directory above, not any of the per-test dirs beforeEach
+// swaps in. Same shape as jwtSecretMigration.test.js: never actually
+// vulnerable to modThumbnailResolution.test.js's exact ENOTEMPTY race (the
+// directory logger.js writes into is never the one afterEach deletes), but
+// the "-init-" directory leaks a real winston logger's files forever
+// otherwise. Mock closes that and matches the convention already
+// established elsewhere in this suite.
+vi.mock("../utils/logger.js", () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 const {
   getCollectionContents,
   addItemToCollection,

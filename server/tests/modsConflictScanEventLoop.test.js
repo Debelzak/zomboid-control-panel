@@ -46,6 +46,23 @@ vi.mock("../utils/paths.js", () => ({
   })),
 }));
 
+// ENOTEMPTY class (hunt-wave12, 2026-08-29/30): getDataPaths here is
+// mocked to a FIXED, hardcoded path -- completely separate from
+// `serverPath` (the per-test mkdtempSync fixture root this file actually
+// deletes in afterEach). logger.js never writes into the directory this
+// file tears down, so this file was never at risk from
+// modThumbnailResolution.test.js's ENOTEMPTY race (5d5a9088). Mock added
+// anyway: cheap, matches the convention already established elsewhere in
+// this suite.
+vi.mock("../utils/logger.js", () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 const { buildFileIndex } = await import("../routes/mods.js");
 
 const WORKSHOP_ID = "123456789";

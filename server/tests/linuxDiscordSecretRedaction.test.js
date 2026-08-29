@@ -82,10 +82,29 @@ describe("collectKnownSecretValues() -- gathers every secret the panel currently
     vi.doMock("../utils/paths.js", () => ({
       getDataPaths: () => ({ dataDir: tmpDir }),
     }));
+    // ENOTEMPTY class (hunt-wave12, 2026-08-29/30): this describe block's
+    // resetModules()+dynamic-import shape is the one that actually
+    // reproduces the race elsewhere (modThumbnailResolution.test.js,
+    // 5d5a9088) -- a real logger.js resolving logsDir into the CURRENT
+    // test's tmpDir, which afterEach then deletes. This file's actual
+    // target (discordMessageRedaction.js) never imports logger.js
+    // transitively (and database/init.js, which does, is itself mocked
+    // out below), so it was never at risk from this specific mechanism --
+    // but the shape is close enough, and the mock cheap enough, to close
+    // the door regardless of that transitive detail changing later.
+    vi.doMock("../utils/logger.js", () => ({
+      createLogger: () => ({
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      }),
+    }));
   });
 
   afterEach(() => {
     vi.doUnmock("../utils/paths.js");
+    vi.doUnmock("../utils/logger.js");
     vi.doUnmock("../database/init.js");
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });

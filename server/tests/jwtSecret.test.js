@@ -13,6 +13,25 @@ vi.mock("../utils/paths.js", () => ({
   getDataPaths: () => ({ dataDir: tmpDir }),
 }));
 
+// ENOTEMPTY class (hunt-wave12, 2026-08-29/30): this file mocks
+// getDataPaths() to its own mkdtempSync temp dir and tears it down with a
+// synchronous, unconditional fs.rmSync in afterEach -- the exact shape
+// modThumbnailResolution.test.js's ENOTEMPTY race needed (5d5a9088). This
+// file's own target (utils/jwtSecret.js) doesn't import utils/logger.js at
+// all, so it was never actually at risk from THIS mechanism -- but the mock
+// is cheap, matches the convention already established elsewhere in this
+// suite (see e.g. linuxLaunchExtensionlessCustomCommand.test.js), and
+// closes the door if that import chain ever changes. See the card for the
+// full file list and reasoning.
+vi.mock("../utils/logger.js", () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 const { loadOrCreateJwtSecret, getJwtSecretPath, regenerateJwtSecretFile } =
   await import("../utils/jwtSecret.js");
 
