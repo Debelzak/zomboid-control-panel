@@ -49,7 +49,15 @@ describe("Linux managed-service lifecycle", () => {
     ).toMatchObject({ supported: false, providers: ["direct"] });
   });
 
-  it("renders a systemd unit with an ownership marker and safely quoted paths", () => {
+  // linuxServiceLifecycle.js builds these with the host's `path` module
+  // (path.join), not path.posix -- on win32 that mangles the Linux-only
+  // paths these two tests assert against (systemd/OpenRC units always run
+  // on Linux, regardless of which OS generated them), so only these two
+  // fail here. Every other linux*.test.js file in this suite already
+  // platform-guards this exact way; this file was the one that hadn't.
+  it.skipIf(process.platform === "win32")(
+    "renders a systemd unit with an ownership marker and safely quoted paths",
+    () => {
     const template = buildLifecycleTemplate(server, "systemd", {
       serviceUser: "pzuser",
       homeDirectory: "/home/pzuser",
@@ -80,7 +88,9 @@ describe("Linux managed-service lifecycle", () => {
     );
   });
 
-  it("renders an OpenRC service that is supervised outside the panel", () => {
+  it.skipIf(process.platform === "win32")(
+    "renders an OpenRC service that is supervised outside the panel",
+    () => {
     const template = buildLifecycleTemplate(server, "openrc", {
       serviceUser: "pzuser",
       homeDirectory: "/home/pzuser",
