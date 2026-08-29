@@ -859,9 +859,25 @@ router.get("/chunks/:saveName", async (req, res) => {
       io.emit("chunkScan:progress", { scanId, scanned, total, chunks: found });
     };
 
-    // Sanitize saveName to prevent path traversal
+    // Sanitize saveName to prevent path traversal. path.basename() alone
+    // catches every payload that contains a separator ("../x", "a/../b") --
+    // the sanitized value stops matching the original and the request is
+    // rejected below. It does NOT catch the two special dot-segments on
+    // their own: path.basename("..") === ".." and path.basename(".") === "."
+    // (both are already "just a basename" by Node's own definition), so
+    // without the explicit check here a saveName of ".." or "." sails
+    // through unchanged and resolves savePath to the PARENT of the saves
+    // directory (or the saves directory itself) instead of a real save --
+    // proven end-to-end (a decoy file placed outside any save gets deleted,
+    // and /stats leaks aggregate sibling-save size) in
+    // linuxChunksSaveNameTraversal.test.js.
     const sanitizedSaveName = path.basename(saveName);
-    if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
+    if (
+      !sanitizedSaveName ||
+      sanitizedSaveName !== saveName ||
+      sanitizedSaveName === "." ||
+      sanitizedSaveName === ".."
+    ) {
       return res.status(400).json({
         error: "Invalid save name",
         code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
@@ -1269,9 +1285,25 @@ router.post("/delete-chunks", requirePermission("chunks.manage"), async (req, re
       });
     }
 
-    // Sanitize saveName to prevent path traversal
+    // Sanitize saveName to prevent path traversal. path.basename() alone
+    // catches every payload that contains a separator ("../x", "a/../b") --
+    // the sanitized value stops matching the original and the request is
+    // rejected below. It does NOT catch the two special dot-segments on
+    // their own: path.basename("..") === ".." and path.basename(".") === "."
+    // (both are already "just a basename" by Node's own definition), so
+    // without the explicit check here a saveName of ".." or "." sails
+    // through unchanged and resolves savePath to the PARENT of the saves
+    // directory (or the saves directory itself) instead of a real save --
+    // proven end-to-end (a decoy file placed outside any save gets deleted,
+    // and /stats leaks aggregate sibling-save size) in
+    // linuxChunksSaveNameTraversal.test.js.
     const sanitizedSaveName = path.basename(saveName);
-    if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
+    if (
+      !sanitizedSaveName ||
+      sanitizedSaveName !== saveName ||
+      sanitizedSaveName === "." ||
+      sanitizedSaveName === ".."
+    ) {
       return res.status(400).json({
         error: "Invalid save name",
         code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
@@ -1670,9 +1702,25 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
       });
     }
 
-    // Sanitize saveName to prevent path traversal
+    // Sanitize saveName to prevent path traversal. path.basename() alone
+    // catches every payload that contains a separator ("../x", "a/../b") --
+    // the sanitized value stops matching the original and the request is
+    // rejected below. It does NOT catch the two special dot-segments on
+    // their own: path.basename("..") === ".." and path.basename(".") === "."
+    // (both are already "just a basename" by Node's own definition), so
+    // without the explicit check here a saveName of ".." or "." sails
+    // through unchanged and resolves savePath to the PARENT of the saves
+    // directory (or the saves directory itself) instead of a real save --
+    // proven end-to-end (a decoy file placed outside any save gets deleted,
+    // and /stats leaks aggregate sibling-save size) in
+    // linuxChunksSaveNameTraversal.test.js.
     const sanitizedSaveName = path.basename(saveName);
-    if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
+    if (
+      !sanitizedSaveName ||
+      sanitizedSaveName !== saveName ||
+      sanitizedSaveName === "." ||
+      sanitizedSaveName === ".."
+    ) {
       return res.status(400).json({
         error: "Invalid save name",
         code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
@@ -2105,9 +2153,25 @@ router.get("/stats/:saveName", async (req, res) => {
       ? String(req.query.customPath)
       : null;
 
-    // Sanitize saveName to prevent path traversal
+    // Sanitize saveName to prevent path traversal. path.basename() alone
+    // catches every payload that contains a separator ("../x", "a/../b") --
+    // the sanitized value stops matching the original and the request is
+    // rejected below. It does NOT catch the two special dot-segments on
+    // their own: path.basename("..") === ".." and path.basename(".") === "."
+    // (both are already "just a basename" by Node's own definition), so
+    // without the explicit check here a saveName of ".." or "." sails
+    // through unchanged and resolves savePath to the PARENT of the saves
+    // directory (or the saves directory itself) instead of a real save --
+    // proven end-to-end (a decoy file placed outside any save gets deleted,
+    // and /stats leaks aggregate sibling-save size) in
+    // linuxChunksSaveNameTraversal.test.js.
     const sanitizedSaveName = path.basename(saveName);
-    if (!sanitizedSaveName || sanitizedSaveName !== saveName) {
+    if (
+      !sanitizedSaveName ||
+      sanitizedSaveName !== saveName ||
+      sanitizedSaveName === "." ||
+      sanitizedSaveName === ".."
+    ) {
       return res.status(400).json({
         error: "Invalid save name",
         code: ErrorCode.CHUNKS_INVALID_SAVE_NAME,
