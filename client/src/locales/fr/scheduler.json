@@ -45,6 +45,7 @@
     "scheduleTypeLabel": "Type de planification",
     "tabSimple": "Assistant simple",
     "tabAdvanced": "Avancé (Cron)",
+    "timezoneNotice": "Les horaires ci-dessous s'appliquent dans le fuseau horaire du panneau : {{tz}}",
     "frequencyLabel": "Fréquence",
     "freqHourly": "Toutes les heures (à la minute 0)",
     "freqInterval": "Toutes les X heures",

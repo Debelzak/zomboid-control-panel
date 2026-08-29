@@ -132,6 +132,13 @@ export default function Scheduler() {
     activeTasks: number
     autoRestartEnabled: boolean
     modUpdateRestartPending: boolean
+    // Linux bug hunt (2026-08-29, hunt-wave5, suspect 1): every schedule
+    // below is interpreted in THIS timezone (node-cron resolves it from the
+    // panel process's own environment, not the browser's) -- a Docker
+    // deployment silently defaults to UTC unless the operator sets TZ.
+    // Surfaced here so "Hour 3" doesn't silently mean something different
+    // than the operator assumes.
+    timezone?: string
   } | null>(null)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
@@ -704,6 +711,12 @@ export default function Scheduler() {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {status?.timezone && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('dialog.timezoneNotice', { tz: status.timezone })}
+                      </p>
+                    )}
 
                     {simpleIntervalType === 'weekly' && (
                       <div className="space-y-2">

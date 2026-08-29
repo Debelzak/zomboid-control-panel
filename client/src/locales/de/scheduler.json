@@ -45,6 +45,7 @@
     "scheduleTypeLabel": "Zeitplantyp",
     "tabSimple": "Einfacher Modus",
     "tabAdvanced": "Erweitert (Cron)",
+    "timezoneNotice": "Die Zeiten unten gelten in der Zeitzone des Panels: {{tz}}",
     "frequencyLabel": "Häufigkeit",
     "freqHourly": "Stündlich (zur Minute 0)",
     "freqInterval": "Alle X Stunden",

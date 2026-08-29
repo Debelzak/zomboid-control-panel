@@ -45,6 +45,7 @@
     "scheduleTypeLabel": "计划类型",
     "tabSimple": "简易构建器",
     "tabAdvanced": "高级（Cron）",
+    "timezoneNotice": "以下时间按面板所在时区运行：{{tz}}",
     "frequencyLabel": "频率",
     "freqHourly": "每小时（第 0 分钟）",
     "freqInterval": "每 X 小时",

@@ -684,6 +684,36 @@ export class Scheduler {
       }
 
       this.backupJob = cron.schedule(settings.schedule, async () => {
+        // Linux bug hunt (2026-08-29, hunt-wave5, suspect 4 -- overlap):
+        // createBackup() zips whatever is currently on disk under savesPath
+        // with no awareness of restartInProgress, and performRestart()'s
+        // world-save (RCON `save`) + the server actively writing during
+        // shutdown both mutate files under that exact path. A scheduled
+        // backup firing during that window can archive a save mid-write --
+        // a corrupt or inconsistent snapshot that looks like a normal
+        // backup until someone tries to restore it. This is one-directional
+        // on purpose: deferring an AUTOMATIC backup by a few minutes is
+        // harmless (the next 12-hourly tick, or a manual "Create Backup
+        // Now", covers it), but making a RESTART wait on a backup would
+        // delay something an operator (or a mod-update trigger) may need
+        // to happen promptly -- see createBackup()'s own
+        // this.backupInProgress mutex for the backup<->restore direction
+        // this already guards; this closes the missing restart<->backup
+        // direction without touching that one.
+        if (this.restartInProgress) {
+          log.warn(
+            "Scheduled backup skipped: a restart is currently in progress (would risk archiving a save mid-write)",
+          );
+          await logScheduleExecution(
+            null,
+            "Scheduled Backup",
+            "backup",
+            false,
+            "Skipped: a restart was in progress",
+            0,
+          );
+          return;
+        }
         log.info("Executing scheduled backup");
         const startTime = Date.now();
         try {
@@ -1544,6 +1574,26 @@ export class Scheduler {
       backupScheduleEnabled: !!this.backupJob,
       modUpdateRestartPending: this.modUpdateRestartPending,
       nextRun: this.getNextRun(),
+      // Linux bug hunt (2026-08-29, hunt-wave5, suspect 1): every
+      // cron.schedule() call in this file passes no `timezone` option, so
+      // node-cron interprets every cron expression -- task schedules, the
+      // backup schedule, AUTO_RESTART_CRON -- in the PROCESS's own resolved
+      // default timezone (confirmed empirically: TZ=UTC makes a "30 2 * * *"
+      // job fire at a flat 02:30 UTC every day; TZ=America/New_York makes
+      // the identical expression fire at 02:30 America/New_York AND
+      // correctly skip the nonexistent 02:30 on the spring-forward day --
+      // node-cron's own DST handling is correct, it just applies to
+      // whichever timezone this resolves to). Neither the Dockerfile nor
+      // docker-compose.yml sets TZ, so a containerized install defaults to
+      // UTC regardless of the operator's own timezone, and the Scheduler
+      // UI's "Hour (0-23)" field gives zero indication of this. Surfacing
+      // the ACTUAL resolved value here is the minimal, safe fix: it doesn't
+      // change any existing schedule's behavior, it just stops the panel
+      // from staying silent about what governs every schedule the operator
+      // sets. Letting the operator override it is a bigger, separate
+      // decision (a new setting, UI, and validation) intentionally left to
+      // that decision rather than built unilaterally here.
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
   }
 

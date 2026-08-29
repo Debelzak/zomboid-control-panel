@@ -45,6 +45,7 @@
     "scheduleTypeLabel": "Schedule Type",
     "tabSimple": "Simple Builder",
     "tabAdvanced": "Advanced (Cron)",
+    "timezoneNotice": "Times below run in the panel's timezone: {{tz}}",
     "frequencyLabel": "Frequency",
     "freqHourly": "Every Hour (at minute 0)",
     "freqInterval": "Every X Hours",

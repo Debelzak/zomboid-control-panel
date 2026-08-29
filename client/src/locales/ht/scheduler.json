@@ -45,6 +45,7 @@
     "scheduleTypeLabel": "Tip Orè",
     "tabSimple": "Konstriktè Senp",
     "tabAdvanced": "Avanse (Cron)",
+    "timezoneNotice": "Orè ki anba yo fonksyone nan fizo orè panèl la: {{tz}}",
     "frequencyLabel": "Frekans",
     "freqHourly": "Chak Èdtan (nan minit 0)",
     "freqInterval": "Chak X Èdtan",

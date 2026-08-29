@@ -45,6 +45,7 @@
     "scheduleTypeLabel": "Tipo de horario",
     "tabSimple": "Sencillo",
     "tabAdvanced": "Avanzado (Cron)",
+    "timezoneNotice": "Los horarios de abajo se ejecutan en la zona horaria del panel: {{tz}}",
     "frequencyLabel": "Frecuencia",
     "freqHourly": "Cada hora (al minuto 0)",
     "freqInterval": "Cada X horas",
