@@ -47,8 +47,33 @@ jobs:
       - name: Lint
         run: npm run lint:server
 
+      # vitest-worker-teardown-flake-exits-1: vitest 4.1.11 has a known,
+      # currently-open upstream race in its birpc worker-teardown path
+      # (vitest-dev/vitest#8649 fixed the "fetch"-pending variant in the
+      # v4 pool rewrite; this is the same class of bug for a different
+      # pending RPC call -- "onUserConsoleLog" -- and there is no newer
+      # 4.x release that fixes it; 4.1.11 is current stable). Symptom:
+      # `EnvironmentTeardownError: [vitest-worker]: Closing rpc while
+      # "onUserConsoleLog" was pending`, vitest counts it under Errors
+      # and exits 1 even when every test passed -- a red CI run with no
+      # FAIL line anywhere in the report, roughly 1 in 4 locally.
+      # Retry exactly once, and only when the failure has this exact
+      # shape (no "Failed Tests" heading, i.e. zero real test failures,
+      # AND the known error signature present) -- a real test failure
+      # still fails the job immediately with no retry, since "Failed
+      # Tests" would be present and this condition is false.
       - name: Tests
-        run: npm run test:server
+        run: |
+          if npm run test:server 2>&1 | tee /tmp/server-test-output.log; then
+            exit 0
+          fi
+          if grep -q 'EnvironmentTeardownError' /tmp/server-test-output.log && \
+             ! grep -q 'Failed Tests' /tmp/server-test-output.log; then
+            echo "::warning::vitest-worker-teardown-flake-exits-1 (known upstream race, 0 real test failures) -- retrying once"
+            npm run test:server
+          else
+            exit 1
+          fi
 
   client:
     name: Client (lint + types + tests)
