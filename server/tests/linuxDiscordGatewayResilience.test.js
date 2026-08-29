@@ -274,13 +274,38 @@ describe.skipIf(isWindows || !opensslAvailable)(
     );
 
     it(
-      "suspect 4 + suspect 6 -- a dead-overnight gateway connection self-heals via RESUME, and the operator sees NOTHING while it happens",
+      "suspect 4 + suspect 6 -- a dead-overnight gateway connection self-heals via RESUME, and getStatus() now sees it without false-alarming on the recovery itself",
       async () => {
         const bot = await startBot();
 
         // Confirm getStatus() looks healthy before the outage, as a baseline.
         const before = bot.getStatus();
         expect(before.running).toBe(true);
+        expect(before.gatewayIssue).toBe(false);
+        expect(before.gatewayDegradedSince).toBeNull();
+
+        // Wiring proof, and it must actually discriminate discordBot.js's
+        // OWN handler running -- not just "discord.js emits this event",
+        // which was never in question. EventEmitter invokes listeners in
+        // REGISTRATION ORDER; discordBot.js's own shardReconnecting/
+        // shardResume listeners are attached inside start() (already called
+        // by startBot() above), strictly before the listeners this test
+        // attaches next -- so by the time THESE callbacks run,
+        // bot._gatewayDegradedSince already reflects whatever discordBot.js's
+        // own handler did, synchronously, no race. (Polling the field
+        // AFTER the fact was tried first and is genuinely racy against a
+        // local loopback mock: RESUME->RESUMED can round-trip inside a
+        // single 200ms poll tick, so a set-then-clear can happen entirely
+        // between two checks -- caught this via break-verify below, not
+        // assumed.)
+        let sinceAtReconnecting = "not-yet-fired";
+        let sinceAtResume = "not-yet-fired";
+        bot.client.once("shardReconnecting", () => {
+          sinceAtReconnecting = bot._gatewayDegradedSince;
+        });
+        bot.client.once("shardResume", () => {
+          sinceAtResume = bot._gatewayDegradedSince;
+        });
 
         mock.heartbeatBlackhole = true; // no HEARTBEAT_ACK, no close frame -- a genuine zombie connection
         const outageStart = Date.now();
@@ -292,6 +317,10 @@ describe.skipIf(isWindows || !opensslAvailable)(
           await new Promise((r) => setTimeout(r, 200));
         }
         expect(mock.resumeReceivedAt).not.toBeNull(); // it DID notice and DID try to recover, unprompted
+        // discordBot.js's shardReconnecting handler had already set the raw
+        // field by the time our own listener ran, in the same tick.
+        expect(sinceAtReconnecting).not.toBeNull();
+        expect(sinceAtReconnecting).not.toBe("not-yet-fired");
 
         // Confirm it's not just noticing -- the resumed session actually
         // carries live heartbeats again once we stop blackholing.
@@ -301,19 +330,55 @@ describe.skipIf(isWindows || !opensslAvailable)(
           await new Promise((r) => setTimeout(r, 200));
         }
         expect(mock.heartbeatAcksSentAfterResume).toBeGreaterThan(0); // genuinely recovered, not just resumed-then-stuck
+        // discordBot.js's shardResume handler had already cleared the raw
+        // field back to null by the time our own listener ran.
+        expect(sinceAtResume).toBeNull();
 
-        // Suspect 6, using the SAME real outage instead of a second,
-        // separately-argued claim: during the entire zombie window --
-        // which by construction included at least one full missed
-        // heartbeat cycle before RESUME fired -- did the bot's own
-        // operator-facing status ever say anything was wrong?
-        const during = bot.getStatus();
-        expect(during.running).toBe(true); // still reports healthy -- this IS the gap, not an oversight in this test
-        expect(during.lastStartError).toBeNull();
-        expect(Object.keys(during)).not.toContain("breakerOpen");
-        expect(Object.keys(during)).not.toContain("gatewayHealthy");
+        expect(bot._gatewayDegradedSince).toBeNull();
+
+        // The whole round trip (outage -> RESUME -> live heartbeats again)
+        // measured a few seconds above, comfortably under the 30s threshold
+        // -- so the PUBLIC, debounced signal must never have flipped, exactly
+        // the "don't fire on every routine blip" property follow-up 2 asked
+        // for. This is the fixed counterpart to the ORIGINAL suspect 6
+        // finding (getStatus() used to have no field for this at ALL, so
+        // `running` stayed true throughout with no way to tell a healthy
+        // connection from one that had just silently survived an outage).
+        const after = bot.getStatus();
+        expect(after.running).toBe(true);
+        expect(after.lastStartError).toBeNull();
+        expect(after.gatewayIssue).toBe(false);
+        expect(after.gatewayDegradedSince).toBeNull();
       },
       25000,
+    );
+
+    it(
+      "a genuinely unrecoverable gateway close (e.g. the token was revoked mid-session) sets the raw degraded signal too, via shardDisconnect not shardReconnecting",
+      async () => {
+        const bot = await startBot();
+        expect(bot._gatewayDegradedSince).toBeNull();
+
+        // 4004 = Authentication failed, one of @discordjs/ws's own
+        // UNRECOVERABLE_CLOSE_CODES -- the shard gives up instead of
+        // retrying, so this must reach shardDisconnect, not shardReconnecting.
+        // discord.js's own WebSocketManager emits this ON THE CLIENT itself
+        // (this.client.emit(Events.ShardDisconnect, event, shardId)), not on
+        // an intermediate .ws object -- matching that exactly here so this
+        // test exercises the real event name/shape our listener is wired to.
+        bot.client.emit("shardDisconnect", { code: 4004 }, 0);
+
+        const setAt = bot._gatewayDegradedSince;
+        expect(setAt).not.toBeNull();
+
+        // Nothing clears an unrecoverable disconnect on its own -- unlike
+        // the self-healing case above (shardResume/shardReady), there is no
+        // library event coming that would reset this, so it's meant to stay
+        // flagged until an operator (or a fresh start()) intervenes.
+        await new Promise((r) => setTimeout(r, 500));
+        expect(bot._gatewayDegradedSince).toBe(setAt);
+      },
+      20000,
     );
   },
 );

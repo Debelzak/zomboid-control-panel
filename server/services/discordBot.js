@@ -130,6 +130,12 @@ const DEFAULT_COMMAND_PERMISSIONS = {
 
 const LIFECYCLE_DEDUPE_WINDOW_MS = 60_000;
 const PLAYER_PRESENCE_INTERVAL_MS = 60_000;
+// How long a gateway reconnect must persist before getStatus() reports it —
+// well above the ~2-3s a real RESUME took in
+// server/tests/linuxDiscordGatewayResilience.test.js, so a routine blip
+// self-heals silently and only a genuinely stuck reconnect (or a permanent
+// shardDisconnect, which never clears on its own) reaches the operator.
+const GATEWAY_DEGRADED_THRESHOLD_MS = 30_000;
 
 export class DiscordBot {
   constructor(rconService, serverManager, scheduler, logTailer = null) {
@@ -163,6 +169,22 @@ export class DiscordBot {
     // Tracked per channel: a chat relay pointed at a deleted channel must not
     // silence server notifications going to a perfectly healthy one.
     this._channelBreakers = new Map(); // channelId -> {failures, openUntil, suppressed}
+
+    // hunt-wave6-2026-08-29 suspect 6: getStatus() used to have no field at
+    // all for gateway health, so a real (self-healing) heartbeat black hole
+    // or a permanent (unrecoverable) shard disconnect both left `running`
+    // reporting true throughout — an operator watching the page saw a
+    // healthy bot while alerting was actually down, the same gap already
+    // fixed for panel update checks. Set on 'shardReconnecting' (any
+    // recoverable close, including a zombie connection @discordjs/ws just
+    // detected) and 'shardDisconnect' (unrecoverable — never coming back on
+    // its own); cleared on 'shardResume' (session preserved) or 'shardReady'
+    // (a fresh IDENTIFY succeeded). getStatus() debounces this against
+    // GATEWAY_DEGRADED_THRESHOLD_MS before surfacing it — a routine RESUME
+    // measured at ~2-3s in server/tests/linuxDiscordGatewayResilience.test.js
+    // must not flip this on every blip, or the signal trains the operator to
+    // ignore it, which is worse than no signal at all.
+    this._gatewayDegradedSince = null;
 
     // Lifecycle dedupe — serverStart/serverStop webhooks can be triggered
     // from several paths (HTTP /start /stop /force-stop, Discord slash
@@ -1643,6 +1665,25 @@ export class DiscordBot {
       log.error(`client error: ${error.stack || error.message}`);
     });
 
+    // See the _gatewayDegradedSince comment in the constructor for why these
+    // four specifically (not shardError, which fires for transport errors
+    // that don't necessarily change connection state on their own).
+    this.client.on("shardReconnecting", () => {
+      if (!this._gatewayDegradedSince) this._gatewayDegradedSince = Date.now();
+    });
+    this.client.on("shardDisconnect", (event) => {
+      if (!this._gatewayDegradedSince) this._gatewayDegradedSince = Date.now();
+      log.error(
+        `Discord gateway shard disconnected and will not reconnect on its own (code ${event?.code}).`,
+      );
+    });
+    this.client.on("shardResume", () => {
+      this._gatewayDegradedSince = null;
+    });
+    this.client.on("shardReady", () => {
+      this._gatewayDegradedSince = null;
+    });
+
     try {
       // Await the 'clientReady' event so that isRunning === true before start() returns.
       // client.login() resolves when the WebSocket authenticates; 'clientReady' fires after.
@@ -1725,6 +1766,7 @@ export class DiscordBot {
       this._lastLifecycleAt = 0;
       // Reset breaker state too — stale failure counts shouldn't carry over.
       this._channelBreakers.clear();
+      this._gatewayDegradedSince = null;
       this._chatRelayChain = Promise.resolve();
       this._chatRelayPending = 0;
       this._chatRelayDropped = 0;
@@ -1736,6 +1778,15 @@ export class DiscordBot {
   }
 
   getStatus() {
+    // Debounced, not raw: a shardReconnecting-to-shardResume/shardReady
+    // round trip well under this threshold is exactly what a healthy
+    // connection recovering from a normal blip looks like (see suspect 4's
+    // proof) — surfacing that to the operator every time would train them
+    // to ignore the signal, which is worse than not having it.
+    const gatewayIssue = Boolean(
+      this._gatewayDegradedSince &&
+        Date.now() - this._gatewayDegradedSince >= GATEWAY_DEGRADED_THRESHOLD_MS,
+    );
     return {
       running: this.isRunning,
       configured: !!this.token,
@@ -1749,6 +1800,13 @@ export class DiscordBot {
       // succeeds (see the clientReady handler in start()).
       lastStartError: this.lastStartError
         ? { kind: this.lastStartError.kind, message: describeStartFailure(this.lastStartError) }
+        : null,
+      // gatewayDegradedSince is the raw episode-start timestamp (ISO string,
+      // or null when healthy) -- the client uses it as the dismissal key so
+      // dismissing THIS episode doesn't silence a later, different one.
+      gatewayIssue,
+      gatewayDegradedSince: gatewayIssue
+        ? new Date(this._gatewayDegradedSince).toISOString()
         : null,
     };
   }
