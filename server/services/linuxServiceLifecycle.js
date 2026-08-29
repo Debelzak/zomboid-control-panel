@@ -85,26 +85,45 @@ function plainSystemdValue(value) {
   return String(value).replace(/%/g, "%%");
 }
 
-// OpenRC's own openrc-run.sh re-evaluates directory=/command_args= a second
-// time after sourcing the init script (confirmed live, on real OpenRC via
-// Alpine: a value containing "$(touch /tmp/x)" inside a value that was
-// otherwise correctly single-quoted for the FIRST, ordinary shell-sourcing
-// pass still executed the command substitution and created the file -- real
-// code execution, not just corruption). Standard POSIX single-quoting alone,
-// which is all this used to do, only protects against the first pass; it is
-// not enough here. Backslash-escaping "\", "$", and "`" before the
-// single-quote wrap survives the second pass too (verified live: a value
-// with an escaped "\$" round-trips to the literal, correct path with the
-// dollar sign intact instead of being cut off, and the injection payload
-// above no longer executes). Order matters: escape literal backslashes
-// first so a value that already contains one isn't double-unescaped by the
-// dollar/backtick passes.
-function quoteShell(value) {
-  const escaped = String(value)
-    .replace(/\\/g, "\\\\")
-    .replace(/\$/g, "\\$")
-    .replace(/`/g, "\\`");
-  return `'${escaped.replace(/'/g, `'\\''`)}'`;
+// OpenRC's own openrc-run.sh re-evaluates the declarative directory=/
+// command_args= variables a SECOND time after sourcing the init script, to
+// build the auto-generated supervise-daemon invocation (confirmed live, on
+// real OpenRC via Alpine: a value containing "$(touch /tmp/x)", already
+// correctly single-quoted for the FIRST, ordinary shell-sourcing pass, still
+// executed the command substitution on the second pass -- real code
+// execution). That second pass also word-splits on unescaped whitespace,
+// which no amount of value-level escaping can defend against -- a literal
+// space in installPath broke the supervised command entirely
+// ("supervise-daemon: server does not exist"), confirmed unrelated to this
+// file's escaping (byte-identical generated content before/after a prior,
+// escaping-only fix attempt).
+//
+// Fix: stop feeding any value through directory=/command_args= at all. This
+// file no longer sets supervisor=/command=/command_args=/directory=; instead
+// it defines its own start()/stop() and calls supervise-daemon directly from
+// inside them with --chdir/--env/-- as real argv entries. That is ordinary,
+// single-pass bash -- openrc-run.sh sources the script once and then calls
+// the function; there is no second re-evaluation of a function body the way
+// there is for the declarative variables (verified live: a path containing
+// a space now starts, is supervised, and stops cleanly; the same "$(touch
+// /tmp/x)"/backtick payloads that broke the old design executed as
+// argv, not shell, so the injection is closed here too -- reverified against
+// this exact code path, not assumed carried over from the old fix).
+//
+// quoteShellLiteral() is therefore plain, ordinary POSIX single-quoting: only
+// the single-quote character itself needs escaping, because inside a real
+// single-quoted bash string "\", "$", and "`" are already fully literal.
+// Do NOT reuse the old double-escaping helper here -- it was verified correct
+// only for the ONE thing it was defending against (the second-pass
+// re-evaluation this design no longer triggers). Feeding it a value with a
+// literal "$" in a genuinely single-pass context (also true of name=/
+// description=, which were never part of the auto-generated command line and
+// so were never subject to the second pass either) produced a real,
+// reproduced bug: a spurious literal backslash surfaced in the displayed
+// service name, the exact same class of bug the systemd Description=/"\$"
+// fix above closes.
+function quoteShellLiteral(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 function resolveLaunchTarget(server, fileExists = fs.existsSync) {
@@ -206,21 +225,37 @@ export function buildLifecycleTemplate(server, provider, options = {}) {
   const content = [
     "#!/sbin/openrc-run",
     `# X-Zomboid-Panel-Server-ID: ${serverId}`,
-    `name=${quoteShell(description)}`,
-    `description=${quoteShell(description)}`,
-    'command="/bin/bash"',
-    `command_args=${quoteShell(launch.launcherPath)}`,
-    `directory=${quoteShell(launch.workingDirectory)}`,
-    `export ZOMBOID_PANEL_SERVER_ID=${quoteShell(serverId)}`,
-    "supervisor=supervise-daemon",
-    "command_background=false",
+    `name=${quoteShellLiteral(description)}`,
+    `description=${quoteShellLiteral(description)}`,
     'pidfile="$' + '{XDG_RUNTIME_DIR}/$' + '{RC_SVCNAME}.pid"',
-    "respawn_delay=5",
-    "respawn_max=0",
     "",
     "depend() {",
     "  need net",
     "  after firewall",
+    "}",
+    "",
+    // No supervisor=/command=/command_args=/directory= here on purpose --
+    // see quoteShellLiteral()'s comment. start()/stop() call supervise-daemon
+    // directly so the launcher path and working directory are ordinary argv
+    // entries in a single-pass bash context, not values openrc-run.sh
+    // re-evaluates a second time.
+    "start() {",
+    '  ebegin "Starting $' + '{name}"',
+    '  supervise-daemon "$' + '{RC_SVCNAME}" \\',
+    "    --start \\",
+    '    --pidfile "$' + '{pidfile}" \\',
+    "    --respawn-delay 5 \\",
+    "    --respawn-max 0 \\",
+    `    --chdir ${quoteShellLiteral(launch.workingDirectory)} \\`,
+    `    --env ${quoteShellLiteral(`ZOMBOID_PANEL_SERVER_ID=${serverId}`)} \\`,
+    `    -- /bin/bash ${quoteShellLiteral(launch.launcherPath)}`,
+    "  eend $?",
+    "}",
+    "",
+    "stop() {",
+    '  ebegin "Stopping $' + '{name}"',
+    '  supervise-daemon "$' + '{RC_SVCNAME}" --stop --pidfile "$' + '{pidfile}"',
+    "  eend $?",
     "}",
     "",
   ].join("\n");

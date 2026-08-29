@@ -89,17 +89,51 @@ describe("Linux managed-service lifecycle", () => {
 
     expect(template.filename).toBe("zomboid-panel-server-alpha-1");
     expect(template.content).toContain("#!/sbin/openrc-run");
-    expect(template.content).toContain("supervisor=supervise-daemon");
+    // directory=/command_args= (openrc's own declarative supervisor=
+    // integration) re-evaluate their values a second time after sourcing --
+    // real OpenRC word-splits an unescaped space in that second pass no
+    // matter how the value was quoted for the first, which is why a space in
+    // installPath used to break the supervised command entirely. This
+    // template instead defines start()/stop() itself and invokes
+    // supervise-daemon directly with the launcher path and working directory
+    // as ordinary, single-pass-quoted argv entries -- see
+    // linuxServiceLifecycleRealOpenrc.test.js for the real rc-service proof.
+    expect(template.content).not.toContain("supervisor=supervise-daemon");
+    expect(template.content).not.toMatch(/^command_args=/m);
+    expect(template.content).not.toMatch(/^directory=/m);
     expect(template.content).toContain(
       'pidfile="${XDG_RUNTIME_DIR}/${RC_SVCNAME}.pid"',
     );
     expect(template.content).toContain(
       "X-Zomboid-Panel-Server-ID: alpha-1",
     );
-    expect(template.content).toContain("/opt/pz server/start-server.sh");
+    expect(template.content).toContain(
+      "--chdir '/opt/pz server' \\",
+    );
+    expect(template.content).toContain(
+      "-- /bin/bash '/opt/pz server/start-server.sh'",
+    );
     expect(template.installPath).toBe(
       "/home/pzuser/.config/rc/init.d/zomboid-panel-server-alpha-1",
     );
+  });
+
+  it("does not corrupt an OpenRC description containing a literal '$'", () => {
+    // name=/description= were never part of openrc-run.sh's declarative
+    // command line, so they were never subject to its second-pass
+    // re-evaluation -- but the old quoteShell() escaped "$" anyway (needed
+    // only for directory=/command_args=), which introduced a spurious
+    // literal backslash into the displayed service name. Verified live on
+    // real OpenRC: "rc-service ... start" echoed "Starting ... \$CoolServer"
+    // instead of "$CoolServer".
+    const dollarServer = { ...server, name: "Alpha $CoolServer" };
+    const template = buildLifecycleTemplate(dollarServer, "openrc", {
+      fileExists: () => false,
+    });
+    expect(template.content).toContain(
+      "name='Project Zomboid server Alpha $CoolServer'",
+    );
+    expect(template.content).not.toContain("\\$CoolServer");
   });
 
   it("routes systemd actions through execFile without a shell", async () => {
