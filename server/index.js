@@ -681,18 +681,41 @@ const cspClientDistPath =
 // (blocked inline script, no theme flash prevention) rather than the
 // protection silently loosening on exactly the deployments where
 // something is already unusual.
-const inlineScriptCspSource = computeInlineScriptCspHash(
+//
+// `let`, not `const`: the packaged Linux update-apply path swaps
+// client/dist onto disk IN-PROCESS (updateBundle.js's applyUpdateBundle(),
+// called from POST /api/panel/restart below) and then keeps this same
+// process serving requests for a bit before it actually exits — unlike
+// Windows, where an external supervisor does the swap only after this
+// process has already exited. refreshInlineScriptCspHash() re-reads and
+// re-hashes right after that in-process swap so this variable — and the
+// header below, which reads it fresh per request — stops describing the
+// pre-swap script the moment the swap completes, instead of staying stale
+// until the process eventually restarts.
+let inlineScriptCspSource = computeInlineScriptCspHash(
   cspClientDistPath,
   log,
 );
+function refreshInlineScriptCspHash() {
+  inlineScriptCspSource = computeInlineScriptCspHash(cspClientDistPath, log);
+  return inlineScriptCspSource;
+}
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: inlineScriptCspSource
-          ? ["'self'", inlineScriptCspSource]
-          : ["'self'"],
+        // A function element is re-evaluated by helmet on every single
+        // request (see node_modules/helmet's getHeaderValue) rather than
+        // captured once when app.use() ran — required so
+        // refreshInlineScriptCspHash() above actually changes what the next
+        // request receives, instead of only taking effect on next restart.
+        // An empty string contributes nothing to the header (helmet joins
+        // directive entries with a space and browsers ignore the resulting
+        // extra whitespace), which is what "no hash could be computed"
+        // needs — script-src 'self' alone, same as the ternary this
+        // replaced.
+        scriptSrc: ["'self'", () => inlineScriptCspSource || ""],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         // blob: is required by the World Map tile loader: it fetches each
         // tile, converts the response to a Blob and decodes it through
@@ -1508,6 +1531,12 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
         await flushWrites();
       }
       const appliedBundle = applyUpdateBundle(staged.journalPath);
+      // client/dist was just renamed onto disk by the line above, in this
+      // same still-running process (see the comment on
+      // refreshInlineScriptCspHash's declaration) -- re-hash now so the very
+      // next request, including the res.json() a few lines down, is already
+      // describing the new script instead of the pre-swap one.
+      refreshInlineScriptCspHash();
       const targetPath = appliedBundle.paths.binary;
       try {
         await fs.promises.chmod(targetPath, 0o755);
@@ -1521,6 +1550,12 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
           staged.journalPath,
           "binary_not_executable",
         );
+        // The line above rolled client/dist back to the pre-apply backup --
+        // this request returns 500 below and the process keeps running
+        // (no restart follows on this branch), so the hash must go back to
+        // matching that restored content now, not stay pinned to the new
+        // build's hash this same handler just set a few lines up.
+        refreshInlineScriptCspHash();
         checker.isApplying = false;
         log.error(
           `New binary at ${targetPath} is not executable: ${accessErr.message}`,
@@ -1536,6 +1571,13 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
         `Linux update bundle applied to ${targetPath}; awaiting startup acknowledgement after restart`,
       );
     } catch (err) {
+      // updateBundle.js's applyUpdateBundle() rolls its own client/dist
+      // rename back internally before rethrowing on any failure (see its
+      // own try/catch around the phased rename sequence) -- so a swap may
+      // already have happened and been undone by the time control reaches
+      // here. Re-hash unconditionally rather than reasoning about which
+      // specific phase failed; this process is not restarting on this path.
+      refreshInlineScriptCspHash();
       // Release the apply guard so the user can retry after fixing whatever
       // failed (e.g. permission, disk full).
       checker.isApplying = false;
@@ -3048,6 +3090,13 @@ async function start() {
             `Update startup handshake failed [${error.code || "startup_handshake_failed"}]: ${error.message}`,
           );
           if (error.code === "version_mismatch") {
+            // client/dist was just rolled back to the previous version by
+            // acknowledgeUpdateBundle() (see below) -- this process still
+            // exits a few lines down, but not until after the awaited
+            // restore calls that follow, so re-hash now rather than let a
+            // request that lands in that gap see a header for the version
+            // that just got rolled away.
+            refreshInlineScriptCspHash();
             // This process already completed its own full startup --
             // including any database migration -- before reaching this
             // handshake. acknowledgeUpdateBundle() has already rolled the
