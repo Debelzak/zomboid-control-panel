@@ -1618,6 +1618,9 @@ export function normalizeServerMemory(server) {
     installPath,
     zomboidDataPath,
     isRemote: pathsConfigured ? !pathsExistLocally : server.isRemote || false,
+    lifecycleProvider: ["systemd", "openrc"].includes(server.lifecycleProvider)
+      ? server.lifecycleProvider
+      : "direct",
     minMemory: normalizeMemoryGb(server.minMemory, 4),
     maxMemory: normalizeMemoryGb(server.maxMemory, 8),
   };
@@ -1685,6 +1688,7 @@ export async function createServer(serverConfig) {
     // for an existing server.
     useUpnp: serverConfig.useUpnp !== false,
     isRemote: serverConfig.isRemote || false,
+    lifecycleProvider: "direct",
     startCommand: serverConfig.startCommand || "",
     // 2026-08-26, two real users: this field-by-field literal never named
     // adminPassword, so servers.js's POST / forwarding it correctly made no
