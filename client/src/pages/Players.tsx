@@ -838,7 +838,7 @@ export default function Players() {
     } catch (error) {
       toast({
         title: t('toasts.importFailedTitle'),
-        description: error instanceof Error ? error.message : t('toasts.importFailedFallback'),
+        description: getUserErrorMessage(error, t('toasts.importFailedFallback')),
         variant: 'destructive',
       })
     } finally {
@@ -3016,7 +3016,7 @@ export default function Players() {
                   } catch (error) {
                     toast({
                       title: t('toasts.exportFailedTitle'),
-                      description: error instanceof Error ? error.message : t('toasts.exportFailedFallback'),
+                      description: getUserErrorMessage(error, t('toasts.exportFailedFallback')),
                       variant: 'destructive',
                     })
                   } finally {

@@ -777,10 +777,7 @@ export default function ServerSetup() {
       setDownloadingSteamCmd(false);
       toast({
         title: t("toasts.downloadFailedTitle"),
-        description:
-          error instanceof Error
-            ? error.message
-            : t("toasts.downloadFailedFallback"),
+        description: getUserErrorMessage(error, t("toasts.downloadFailedFallback")),
         variant: "destructive",
       });
     }
@@ -1025,10 +1022,7 @@ export default function ServerSetup() {
         });
       }
     } catch (error) {
-      const msg =
-        error instanceof Error
-          ? error.message
-          : t("toasts.unexpectedSetupError");
+      const msg = getUserErrorMessage(error, t("toasts.unexpectedSetupError"));
       addLog("error", msg);
       toast({
         title: t("toasts.setupFailedTitle"),
@@ -1075,8 +1069,7 @@ export default function ServerSetup() {
     } catch (error) {
       toast({
         title: t("toasts.startFailedTitle"),
-        description:
-          error instanceof Error ? error.message : t("common.unknownError"),
+        description: getUserErrorMessage(error, t("common.unknownError")),
         variant: "destructive",
       });
     } finally {

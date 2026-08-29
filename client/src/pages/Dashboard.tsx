@@ -456,7 +456,7 @@ export default function Dashboard() {
       })
     } catch (error) {
       setAutoStartServer(!checked)
-      toast({ title: t('toasts.errorTitle'), description: error instanceof Error ? error.message : t('toasts.autoStartSaveFailed'), variant: 'destructive' })
+      toast({ title: t('toasts.errorTitle'), description: getUserErrorMessage(error, t('toasts.autoStartSaveFailed')), variant: 'destructive' })
     }
   }
 
@@ -1777,7 +1777,7 @@ export default function Dashboard() {
                     const res = await serverApi.wipePreview(targets)
                     setWipePreview(res)
                   } catch (e: unknown) {
-                    toast({ title: t('wipeDialog.previewFailedTitle'), description: e instanceof Error ? e.message : t('wipeDialog.previewFailedFallback'), variant: 'destructive' })
+                    toast({ title: t('wipeDialog.previewFailedTitle'), description: getUserErrorMessage(e, t('wipeDialog.previewFailedFallback')), variant: 'destructive' })
                   } finally { setWipeLoading(false) }
                 }}
               >
@@ -1803,7 +1803,7 @@ export default function Dashboard() {
                     })
                     setWipeDialog(false); setWipePreview(null)
                   } catch (e: unknown) {
-                    toast({ title: t('wipeDialog.wipeFailedTitle'), description: e instanceof Error ? e.message : t('wipeDialog.wipeFailedFallback'), variant: 'destructive' })
+                    toast({ title: t('wipeDialog.wipeFailedTitle'), description: getUserErrorMessage(e, t('wipeDialog.wipeFailedFallback')), variant: 'destructive' })
                   } finally { setWipeLoading(false); setWipeBackupProgress(null) }
                 }}
               >
