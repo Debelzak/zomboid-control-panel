@@ -49,7 +49,18 @@ import { Scheduler } from "./services/scheduler.js";
 import { DiscordBot } from "./services/discordBot.js";
 import { BackupService } from "./services/backupService.js";
 import { UpdateChecker } from "./services/updateChecker.js";
-import { PanelUpdateChecker } from "./services/panelUpdateChecker.js";
+import {
+  PanelUpdateChecker,
+  createUpdateDataBackup,
+  restorePreUpdateDataBackup,
+} from "./services/panelUpdateChecker.js";
+import {
+  acknowledgeUpdateBundle,
+  applyUpdateBundle,
+  inspectPendingUpdateBundle,
+  PANEL_API_CONTRACT_VERSION as DEFAULT_API_CONTRACT_VERSION,
+  recoverInterruptedUpdateBundle,
+} from "./services/updateBundle.js";
 import { LogTailer } from "./services/logTailer.js";
 import { DiskMonitor } from "./services/diskMonitor.js";
 import authService from "./services/auth.js";
@@ -1311,6 +1322,7 @@ app.use("/api/permissions", permissionsRoutes);
 // In exe builds, PANEL_VERSION is injected by esbuild at compile time.
 // In dev mode, fall back to reading package.json.
 let _pkgVersion;
+let _buildSha;
 try {
   _pkgVersion =
     typeof PANEL_VERSION !== "undefined"
@@ -1318,13 +1330,44 @@ try {
       : JSON.parse(
           fs.readFileSync(path.join(__dirname, "../package.json"), "utf-8"),
         ).version;
+  _buildSha =
+    typeof PANEL_BUILD_SHA !== "undefined"
+      ? PANEL_BUILD_SHA
+      : process.env.PANEL_BUILD_SHA ||
+        execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
 } catch {
   _pkgVersion = "0.0.0";
+  _buildSha = "unknown";
+}
+const _apiContractVersion =
+  typeof PANEL_API_CONTRACT_VERSION !== "undefined"
+    ? Number(PANEL_API_CONTRACT_VERSION)
+    : DEFAULT_API_CONTRACT_VERSION;
+const _buildMetadata = {
+  panelVersion: _pkgVersion,
+  buildSha: _buildSha,
+  apiContractVersion: _apiContractVersion,
+};
+
+function updateBundleJournalPath() {
+  return path.join(path.dirname(panelUpdateChecker.getExeBasePath()), "update-bundle.json");
+}
+
+let _pendingUpdateInspection = { pending: false, awaitingStartupAck: false };
+
+function inspectPendingPanelUpdate() {
+  const journalPath = updateBundleJournalPath();
+  return inspectPendingUpdateBundle({
+    journalPath,
+    applyingMarkerPath: path.join(path.dirname(journalPath), ".update-applying"),
+    runningMetadata: _buildMetadata,
+  });
 }
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     version: _pkgVersion,
+    ..._buildMetadata,
     timestamp: new Date().toISOString(),
   });
 });
@@ -1354,6 +1397,37 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     checker && typeof checker.getStagedUpdate === "function"
       ? checker.getStagedUpdate()
       : null;
+
+  // Pre-update database snapshot, taken exactly once per restart-and-apply
+  // request, right here -- before EITHER platform's destructive step
+  // (Windows: writing the supervisor marker and exiting so Start.bat can
+  // swap files; Linux: applyUpdateBundle() itself). This used to be taken
+  // at download/stage time (see panelUpdateChecker.js's own comment on why
+  // that became stale once download and apply became two separate,
+  // arbitrarily-far-apart user actions). The path is persisted as a
+  // setting, not just held in the journal or in memory, so it survives
+  // independently of the bundle journal's own lifecycle (deleted on both
+  // successful apply and successful rollback) -- see the acknowledge
+  // handler below, which is the one path that can need it back.
+  if (isPackaged && staged) {
+    try {
+      const dataBackupPath = createUpdateDataBackup(
+        getDataPaths(),
+        staged.version,
+      );
+      if (dataBackupPath) {
+        log.info(`Backed up panel database before update: ${dataBackupPath}`);
+        await setSetting("preUpdateDataBackupPath", dataBackupPath);
+        await flushWrites();
+      }
+    } catch (backupErr) {
+      // A failed pre-update snapshot must not block the update itself --
+      // same posture as every other best-effort backup in this codebase --
+      // but it DOES mean there is no safety net for this specific update,
+      // so this is worth a warning, not a debug line.
+      log.warn(`Could not back up panel database before update: ${backupErr.message}`);
+    }
+  }
 
   // Windows + packaged + staged update → supervisor (Start.bat v2) handoff
   // when available, otherwise legacy spawned-helper.
@@ -1401,44 +1475,14 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
       }
     }
 
-    // Legacy path: spawn a detached cmd helper. Kept for installs that
-    // haven't yet picked up Start.bat v2 (first run after upgrading from
-    // pre-supervisor releases).
-    try {
-      // Commit the apply: write the pending marker FIRST and flush to disk
-      // before we exit. reconcilePendingUpdate() on next boot uses this to
-      // detect success/failure. If the flush is skipped we silently lose the
-      // ability to warn the user that apply failed.
-      if (staged.version) {
-        await setSetting("pendingPanelUpdate", staged.version);
-        await flushWrites();
-      }
-      const { helperPath, logPath } = await checker.spawnWindowsApplyHelper();
-      log.info(
-        `Staged update will be applied by helper: ${helperPath} (log: ${logPath})`,
-      );
-      res.json({
-        success: true,
-        message: "Applying staged update...",
-        applyingUpdate: true,
-      });
-      setTimeout(() => process.exit(0), 500);
-      return;
-    } catch (err) {
-      // 409 Conflict for the specific "already in progress" race so the UI
-      // can show a tailored message instead of a generic 500.
-      if (err.code === "apply_in_progress") {
-        log.warn(
-          "Restart-and-apply request rejected: another apply is in progress",
-        );
-        return res.status(409).json({
-          error: "An update apply is already in progress.",
-          code: "apply_in_progress",
-        });
-      }
-      log.error(`Could not spawn update apply helper: ${err.message}`);
-      return res.status(500).json({ error: sanitizeError(err.message) });
-    }
+    // A detached legacy helper can launch a binary, but cannot safely keep a
+    // matching frontend transaction alive until startup acknowledgement.
+    // Refuse that unsafe path instead of recreating the mixed-version bug.
+    checker.isApplying = false;
+    return res.status(409).json({
+      error:
+        "This update requires the packaged Start.bat supervisor. Stop the panel and launch Start.bat, then apply again.",
+    });
   }
 
   // Linux + packaged + staged update → overwrite in place (safe on Linux), then restart.
@@ -1459,57 +1503,24 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     }
     checker.isApplying = true;
     try {
-      // NOTE: use the statically-imported `fs` here. A runtime `await
-      // import('fs')` is emitted by esbuild as a native dynamic import that
-      // fails inside the pkg binary with "A dynamic import callback was not
-      // specified", which previously broke Restart-and-Apply on Linux.
-      const fsp = fs.promises;
       if (staged.version) {
         await setSetting("pendingPanelUpdate", staged.version);
         await flushWrites();
       }
-      // Target the canonical binary path (strip any .new/.new2 suffix — if
-      // we were launched from a staged file the running execPath may carry
-      // that suffix). On Linux overwriting the running binary is safe: the
-      // kernel keeps the old inode mapped until this process exits, and the
-      // next spawn picks up the new file.
-      const targetPath =
-        typeof checker.getExeBasePath === "function"
-          ? checker.getExeBasePath()
-          : staged.exePath;
-      // Try atomic rename first. If staged and target are on different
-      // filesystems (e.g. /opt vs /home with a tmpfs in between), rename
-      // throws EXDEV. Fall back to copy+unlink in that case.
+      const appliedBundle = applyUpdateBundle(staged.journalPath);
+      const targetPath = appliedBundle.paths.binary;
       try {
-        await fsp.rename(staged.stagedPath, targetPath);
-      } catch (renameErr) {
-        if (renameErr.code === "EXDEV") {
-          log.warn(
-            `Cross-device rename (EXDEV); falling back to copy+unlink for ${staged.stagedPath} → ${targetPath}`,
-          );
-          await fsp.copyFile(staged.stagedPath, targetPath);
-          try {
-            await fsp.unlink(staged.stagedPath);
-          } catch (unlinkErr) {
-            log.warn(
-              `Could not remove staged source after copy: ${unlinkErr.message}`,
-            );
-          }
-        } else {
-          throw renameErr;
-        }
-      }
-      // chmod is best-effort, but if it fails we MUST verify the file is
-      // still executable — otherwise the respawn below will silently die
-      // with EACCES and leave the user with no panel.
-      try {
-        await fsp.chmod(targetPath, 0o755);
+        await fs.promises.chmod(targetPath, 0o755);
       } catch (chmodErr) {
         log.warn(`Could not chmod new binary: ${chmodErr.message}`);
       }
       try {
-        await fsp.access(targetPath, fs.constants.X_OK);
+        await fs.promises.access(targetPath, fs.constants.X_OK);
       } catch (accessErr) {
+        recoverInterruptedUpdateBundle(
+          staged.journalPath,
+          "binary_not_executable",
+        );
         checker.isApplying = false;
         log.error(
           `New binary at ${targetPath} is not executable: ${accessErr.message}`,
@@ -1520,19 +1531,10 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
           ),
         });
       }
-      // Best-effort cleanup of the OTHER staging slot if it exists (e.g.,
-      // a previous .new2 left behind by a long-ago apply). Stale staging
-      // files would otherwise confuse getStagedUpdate() on next boot.
-      try {
-        const otherSlot = `${targetPath}.new2`;
-        if (fs.existsSync(otherSlot) && otherSlot !== staged.stagedPath) {
-          await fsp.unlink(otherSlot);
-        }
-      } catch (cleanErr) {
-        log.debug(`Could not clean other staging slot: ${cleanErr.message}`);
-      }
       linuxRespawnPath = targetPath;
-      log.info(`Linux staged update applied to ${targetPath}; restarting`);
+      log.info(
+        `Linux update bundle applied to ${targetPath}; awaiting startup acknowledgement after restart`,
+      );
     } catch (err) {
       // Release the apply guard so the user can retry after fixing whatever
       // failed (e.g. permission, disk full).
@@ -2562,6 +2564,18 @@ async function start() {
     }
     logBanner(panelVersion);
 
+    if (typeof process.pkg !== "undefined") {
+      try {
+        _pendingUpdateInspection = inspectPendingPanelUpdate();
+      } catch (error) {
+        log.error(
+          `Update startup validation failed [${error.code || "invalid_bundle"}]: ${error.message}`,
+        );
+        process.exit(76);
+        return;
+      }
+    }
+
     // ── Single-instance lock ──
     // Prevents two panels racing on the same data folder, which causes
     // EADDRINUSE restart loops (systemd respawn vs. live process) and
@@ -3010,6 +3024,61 @@ async function start() {
           });
         }
         logReady(urls);
+        try {
+          const journalPath = updateBundleJournalPath();
+          if (
+            _pendingUpdateInspection.awaitingStartupAck &&
+            acknowledgeUpdateBundle(journalPath, _buildMetadata, {
+              transactionId: _pendingUpdateInspection.transactionId,
+              expectedMetadata: _pendingUpdateInspection.metadata,
+              applyingMarkerPath: _pendingUpdateInspection.applyingMarkerPath,
+            })
+          ) {
+            log.info("Update bundle startup acknowledged; previous artifacts removed");
+            // Transaction complete -- the pre-update snapshot stays on disk
+            // (it's the operator's, not ours to delete), but the pointer to
+            // it as a "pending restore candidate" is cleared so a LATER,
+            // unrelated incident can never find and restore a stale
+            // snapshot from an update that already succeeded.
+            await setSetting("preUpdateDataBackupPath", null);
+            await flushWrites();
+          }
+        } catch (error) {
+          log.error(
+            `Update startup handshake failed [${error.code || "startup_handshake_failed"}]: ${error.message}`,
+          );
+          if (error.code === "version_mismatch") {
+            // This process already completed its own full startup --
+            // including any database migration -- before reaching this
+            // handshake. acknowledgeUpdateBundle() has already rolled the
+            // BINARY and CLIENT back to the previous version by the time
+            // this catch runs, but it has no concept of a database at all
+            // (updateBundle.js is deliberately decoupled from it) -- a
+            // binary-only rollback here would leave the OLD binary running
+            // against a database this NEW version may have already
+            // migrated. Restore db.json from the pre-update snapshot taken
+            // in POST /api/panel/restart to close that half-rollback gap.
+            try {
+              const backupPath = await getSetting("preUpdateDataBackupPath");
+              if (restorePreUpdateDataBackup(getDataPaths(), backupPath)) {
+                log.warn(
+                  `Restored the pre-update database snapshot after a version-mismatch rollback: ${backupPath}`,
+                );
+              } else {
+                log.error(
+                  "Version-mismatch rollback occurred but no pre-update database snapshot was recorded to restore.",
+                );
+              }
+            } catch (restoreErr) {
+              log.error(
+                `Could not restore the pre-update database snapshot: ${restoreErr.message}`,
+              );
+            }
+          }
+          process.exitCode = 76;
+          setImmediate(() => process.exit(76));
+          return;
+        }
         await logExposureWarningIfNeeded({ needsSetup, boundPort, localIp });
         await logSetupTokenIfNeeded(needsSetup);
 
