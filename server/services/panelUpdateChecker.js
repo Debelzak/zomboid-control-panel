@@ -17,6 +17,7 @@ import { createLogger } from "../utils/logger.js";
 import { getSetting, setSetting } from "../database/init.js";
 import { getDataPaths } from "../utils/paths.js";
 import { DockerUpdateProxy } from "./dockerUpdateProxy.js";
+import { isContainerized } from "../utils/dockerDetect.js";
 
 const log = createLogger("PanelUpdater");
 
@@ -27,6 +28,32 @@ const GITHUB_API_TIMEOUT_MS = 15000;
 const DOWNLOAD_TIMEOUT_MS = 60000;
 const MAX_GITHUB_RETRIES = 3;
 const MAX_DOWNLOAD_REDIRECTS = 5;
+
+// "In dev mode, pull the latest code with git" is only true for a real git
+// checkout run with plain `node server/index.js`. Someone running the
+// published Docker image has no checkout to pull — the correct next step is
+// to pull and recreate the image via Compose.
+export function getDevModeUpgradeInstruction(containerized = isContainerized()) {
+  return containerized
+    ? "Pull the newer image and recreate the container: docker compose pull && docker compose up -d."
+    : "In dev mode, pull the latest code with git.";
+}
+
+export function createUpdateDataBackup(dataPaths, version, fsModule = fs) {
+  const dbPath = dataPaths?.dbPath;
+  if (!dbPath || !fsModule.existsSync(dbPath)) return null;
+  const safeVersion = String(version || "unknown").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const backupPath = `${dbPath}.pre-update-${safeVersion}-${Date.now()}`;
+  const tempPath = `${backupPath}.tmp`;
+  fsModule.copyFileSync(dbPath, tempPath);
+  try {
+    fsModule.renameSync(tempPath, backupPath);
+  } catch (error) {
+    try { fsModule.unlinkSync(tempPath); } catch { /* best effort */ }
+    throw error;
+  }
+  return backupPath;
+}
 
 export function validateReleaseManifest(
   manifest,
@@ -409,8 +436,7 @@ export class PanelUpdateChecker {
     if (!isPackaged) {
       return {
         success: false,
-        error:
-          "Self-update is only available for standalone exe/binary builds. In dev mode, pull the latest code with git.",
+        error: `Self-update is only available for standalone exe/binary builds. ${getDevModeUpgradeInstruction()}`,
       };
     }
 
@@ -478,6 +504,13 @@ export class PanelUpdateChecker {
     );
 
     try {
+      const dataBackupPath = createUpdateDataBackup(
+        getDataPaths(),
+        this.latestRelease.version,
+      );
+      if (dataBackupPath) {
+        log.info(`Backed up panel database before update: ${dataBackupPath}`);
+      }
       log.info(
         `Downloading update: ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)} MB)`,
       );
@@ -1338,7 +1371,7 @@ export class PanelUpdateChecker {
 
     if (!isPackaged) {
       blockers.push(
-        "Self-update is only available in packaged builds. In dev mode, pull the latest code with git.",
+        `Self-update is only available in packaged builds. ${getDevModeUpgradeInstruction()}`,
       );
       return { ok: false, blockers, warnings, info };
     }
@@ -1358,6 +1391,26 @@ export class PanelUpdateChecker {
     const exeDir = path.dirname(exePath);
     info.exePath = exePath;
     info.exeDir = exeDir;
+
+    // Keep the update tied to the data directory the running panel actually
+    // uses. A resumed Windows update must not silently become a fresh install.
+    const dataPaths = getDataPaths();
+    info.dataDir = dataPaths.dataDir;
+    info.dbPath = dataPaths.dbPath;
+    if (fs.existsSync(dataPaths.dbPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(dataPaths.dbPath, "utf8"));
+        info.databaseUsers = Array.isArray(parsed.users) ? parsed.users.length : 0;
+        info.databaseServers = Array.isArray(parsed.servers) ? parsed.servers.length : 0;
+        info.databaseReadable = true;
+      } catch (err) {
+        info.databaseReadable = false;
+        blockers.push(`Panel database cannot be read before update: ${err.message}.`);
+      }
+    } else {
+      info.databaseReadable = false;
+      warnings.push("No data/db.json was found beside the running panel. This looks like a fresh install; verify the data folder before applying the update.");
+    }
 
     // Resolve the asset so we can size-check.
     const assetName = isWindows
@@ -1740,6 +1793,21 @@ export class PanelUpdateChecker {
     const helperLog = this.readMostRecentApplyLog();
     const staged = this.getStagedUpdate();
     const stagedStillPresent = Boolean(staged);
+
+    // A manual installation can move the panel past an older pending marker
+    // while also removing the old staged binary. There is then nothing left
+    // to retry, and keeping the marker turns a successful recovery into a
+    // permanent false failure banner on every startup.
+    if (!stagedStillPresent && this.isNewer(this.currentVersion, pending)) {
+      await setSetting("pendingPanelUpdate", null);
+      await setSetting("stagedPanelUpdateVersion", null);
+      this._stagedVersionCache = null;
+      this.lastApplyResult = null;
+      log.info(
+        `Cleared superseded pending panel update: running v${this.currentVersion}, pending v${pending}`,
+      );
+      return;
+    }
 
     // Heuristic: the helper ran, reported "Update applied", and then the exe
     // vanished or the relaunch failed "cannot find the file specified". That

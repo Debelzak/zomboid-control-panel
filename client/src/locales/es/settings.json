@@ -247,7 +247,7 @@
     "footerDownloadThenRestart": "Descarga la actualización y después reinicia para aplicarla.",
     "footerNoUpdate": "No hay ninguna actualización lista para instalar.",
     "footerDockerHandled": "Las actualizaciones de Docker las gestiona el controlador de host configurado.",
-    "footerAutoUpdateDevMode": "La actualización automática solo funciona en compilaciones empaquetadas. En modo de desarrollo, actualiza desde git."
+    "footerAutoUpdateDevMode": "La actualización automática solo funciona en compilaciones empaquetadas. En modo de desarrollo, actualiza desde git. ¿Se ejecuta en Docker sin el controlador de actualización configurado? Actualiza con docker compose pull && docker compose up -d."
   },
   "https": {
     "cardTitle": "HTTPS",
@@ -642,6 +642,7 @@
     "testConnection": "Probar conexión",
     "testConnectionTitleNeedsCookies": "Añade primero las cookies de sesión de Steam",
     "testConnectionTitleReady": "Verifica que la colección se puede leer con estas cookies",
+    "readOnlyTestNote": "Solo lectura; el acceso de escritura se verifica al cambiar un elemento.",
     "checkDrift": "Comprobar desviación",
     "enterCollectionId": "Introduce un ID de colección para empezar.",
     "readingCollection": "Leyendo colección…",
