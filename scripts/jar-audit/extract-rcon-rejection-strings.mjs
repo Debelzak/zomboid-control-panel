@@ -46,10 +46,29 @@ const d = await unzipper.Open.file(jarPath);
 
 // Scope: every serverCommands class (where a per-command rejection message
 // would live) plus GameServer.class (the command dispatcher -- "Unknown
-// command" lives here, not in any one command class).
+// command" lives here, not in any one command class), plus BanSystem.class
+// and ServerWorldDatabase.class (+ its LogonResult inner class).
+//
+// hunt-wave11-2026-08-29: banuser/unbanuser/adduser/removeuserfromwhitelist
+// were confirmed to carry NO rejection-text literals of their own -- each
+// command class (BanUserCommand, UnbanUserCommand, AddUserCommand,
+// RemoveUserFromWhiteList) just returns whatever String BanSystem's or
+// ServerWorldDatabase's own methods hand back (BanSystem.BanUser/
+// BanUserByIP/BanUserBySteamID/BanIP; ServerWorldDatabase.banUser/
+// addUser/removeUser). The rejection text -- if the target isn't found, is
+// already banned, can't be banned, etc. -- lives in THOSE two classes, not
+// in any per-command class this scope already covered. Added here rather
+// than in a separate script/fixture, per the standing rule this file's own
+// header states: don't invent a second extraction technique for the same
+// jar. See docs/qa/kevin-b42-jar-audits.md's "Pass 4" for what this scope
+// widening found.
 const targets = d.files.filter(
   (f) =>
-    (f.path.startsWith("zombie/commands/serverCommands/") || f.path === "zombie/network/GameServer.class") &&
+    (f.path.startsWith("zombie/commands/serverCommands/") ||
+      f.path === "zombie/network/GameServer.class" ||
+      f.path === "zombie/network/BanSystem.class" ||
+      f.path === "zombie/network/ServerWorldDatabase.class" ||
+      f.path === "zombie/network/ServerWorldDatabase$LogonResult.class") &&
     f.path.endsWith(".class"),
 );
 
@@ -87,10 +106,13 @@ const fixture = {
     note:
       "Every UTF8 constant-pool string from every zombie/commands/serverCommands/*.class plus " +
       "zombie/network/GameServer.class (the command dispatcher, where 'Unknown command' lives -- not in " +
-      "any per-command class). server/tests/rconRejectionGroundTruth.test.js asserts every pattern in " +
-      "rcon.js's KNOWN_RCON_REJECTIONS matches at least one string somewhere in this corpus. A pattern " +
-      "matching nothing here is not a fixture bug -- it means the live jar no longer contains that text, " +
-      "which is exactly the drift this fixture exists to catch.",
+      "any per-command class), zombie/network/BanSystem.class and zombie/network/ServerWorldDatabase.class " +
+      "(+ its LogonResult inner class) -- added hunt-wave11-2026-08-29 because banuser/unbanuser/adduser/" +
+      "removeuserfromwhitelist's own command classes carry no rejection text of their own; they return " +
+      "whatever these two classes' methods hand back. server/tests/rconRejectionGroundTruth.test.js asserts " +
+      "every pattern in rcon.js's KNOWN_RCON_REJECTIONS matches at least one string somewhere in this " +
+      "corpus. A pattern matching nothing here is not a fixture bug -- it means the live jar no longer " +
+      "contains that text, which is exactly the drift this fixture exists to catch.",
   },
   classes: perClassStrings,
 };
