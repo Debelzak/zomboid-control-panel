@@ -22,6 +22,7 @@
       "STOP_TIMEOUT": "服务器未在 5 分钟内停止。",
       "STEAMCMD_NOT_FOUND": "在 {{path}} 未找到 SteamCMD。",
       "STEAMCMD_EXIT_CODE": "SteamCMD 以代码 {{code}} 退出。",
+      "STEAM_OPERATION_IN_PROGRESS": "{{path}} 已经在进行 Steam 安装或更新，因此已放弃本次自动更新以避免冲突。",
       "UNKNOWN": "自动更新过程中发生了意外错误。"
     }
   },

@@ -22,6 +22,7 @@
       "STOP_TIMEOUT": "Der Server hat innerhalb von 5 Minuten nicht gestoppt.",
       "STEAMCMD_NOT_FOUND": "SteamCMD wurde unter {{path}} nicht gefunden.",
       "STEAMCMD_EXIT_CODE": "SteamCMD wurde mit Code {{code}} beendet.",
+      "STEAM_OPERATION_IN_PROGRESS": "Für {{path}} lief bereits eine Steam-Installation oder ein Update, daher wurde das automatische Update abgebrochen, um eine Kollision zu vermeiden.",
       "UNKNOWN": "Beim automatischen Update ist ein unerwarteter Fehler aufgetreten."
     }
   },

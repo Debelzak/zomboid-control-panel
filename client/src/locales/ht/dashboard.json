@@ -22,6 +22,7 @@
       "STOP_TIMEOUT": "Sèvè a pa t sispann nan 5 minit.",
       "STEAMCMD_NOT_FOUND": "Pa jwenn SteamCMD nan {{path}}.",
       "STEAMCMD_EXIT_CODE": "SteamCMD fini ak kòd {{code}}.",
+      "STEAM_OPERATION_IN_PROGRESS": "Te gen yon enstalasyon oswa mizajou Steam ki t ap fèt deja pou {{path}}, kidonk mizajou otomatik la te abandone pou evite fè konfli.",
       "UNKNOWN": "Yon erè initil rive pandan mizajou otomatik la."
     }
   },
