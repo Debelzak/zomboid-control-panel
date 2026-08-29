@@ -215,4 +215,111 @@ describe("GET /ini -> PUT /ini round trip: line endings and encoding (suspect 3)
     const after = fs.readFileSync(iniPath, "utf-8");
     expect(after).toBe(unicodeFixture);
   });
+
+  it("a value containing the '=' separator character round-trips unchanged (already correct, pinned as a regression check)", async () => {
+    const eqFixture = FIXTURE.replace(
+      "PublicName=My Test Server",
+      "PublicName=My=Test=Server",
+    );
+    fs.writeFileSync(iniPath, eqFixture, "utf-8");
+
+    const getRes = await runRoute("/ini", "get", { user: { role: "admin" } });
+    const { settings } = getRes.getBody();
+    expect(settings.PublicName).toBe("My=Test=Server");
+    await runRoute("/ini", "put", { user: { role: "admin" }, body: { settings } });
+
+    const after = fs.readFileSync(iniPath, "utf-8");
+    expect(after).toBe(eqFixture);
+  });
+
+  it("a missing trailing newline at EOF is not silently added", async () => {
+    const noTrailingNewline = FIXTURE.replace(/\n$/, "");
+    fs.writeFileSync(iniPath, noTrailingNewline, "utf-8");
+
+    const getRes = await runRoute("/ini", "get", { user: { role: "admin" } });
+    const { settings } = getRes.getBody();
+    await runRoute("/ini", "put", { user: { role: "admin" }, body: { settings } });
+
+    const after = fs.readFileSync(iniPath, "utf-8");
+    expect(after).toBe(noTrailingNewline);
+  });
+});
+
+describe("GET /ini -> PUT /ini round trip: per-line formatting the panel never asked to change (suspect 7)", () => {
+  // 2026-08-29 hunt-wave13 (god): same shape as the CRLF bug (573f63fd), one
+  // level down -- toIni() rebuilds every line whose key is present in the
+  // submitted settings as a hardcoded "key=value" with NO surrounding
+  // whitespace, even when only OTHER fields actually changed (or nothing did
+  // at all). The client always resends every key GET returned, so this fires
+  // on every structured save. A file hand-edited with spacing around "="
+  // (extremely common -- copy-pasted from a wiki example, or just a human's
+  // habit) gets that spacing silently stripped the first time anyone saves
+  // any field from the structured editor.
+  const spacedFixture = [
+    "# ZomboidINI",
+    "version=1",
+    "",
+    "PVP = true",
+    "  MaxPlayers=32",
+    "DefaultPort =16261",
+    "",
+  ].join("\n");
+
+  it("preserves spacing around '=' and leading indentation on an unrelated field change", async () => {
+    fs.writeFileSync(iniPath, spacedFixture, "utf-8");
+
+    const getRes = await runRoute("/ini", "get", { user: { role: "admin" } });
+    const { settings } = getRes.getBody();
+
+    await runRoute("/ini", "put", {
+      user: { role: "admin" },
+      body: { settings: { ...settings, PublicName: "Renamed Server" } },
+    });
+
+    const after = fs.readFileSync(iniPath, "utf-8");
+    expect(after).toContain("PVP = true");
+    expect(after).toContain("  MaxPlayers=32");
+    expect(after).toContain("DefaultPort =16261");
+  });
+
+  it("preserves spacing around '=' on an unchanged save", async () => {
+    fs.writeFileSync(iniPath, spacedFixture, "utf-8");
+
+    const getRes = await runRoute("/ini", "get", { user: { role: "admin" } });
+    const { settings } = getRes.getBody();
+    await runRoute("/ini", "put", { user: { role: "admin" }, body: { settings } });
+
+    const after = fs.readFileSync(iniPath, "utf-8");
+    expect(after).toBe(spacedFixture);
+  });
+});
+
+describe("GET /ini -> PUT /ini round trip: byte-order mark (suspect 8)", () => {
+  // 2026-08-29 hunt-wave13 (god): Windows Notepad's default "UTF-8" save
+  // option prepends a BOM (U+FEFF). fs.readFileSync(path, "utf-8") does NOT
+  // strip it -- it stays as a literal leading character in the decoded
+  // string. String.prototype.trim() does not strip U+FEFF either (it is not
+  // in ECMAScript's WhiteSpace/LineTerminator set), so if a BOM prefixes the
+  // file's first key=value line, parseIni()'s `.trim()`'d key comes out as
+  // "﻿PVP" instead of "PVP" -- a key the panel's schema, and every other
+  // reader of this settings object, will never recognize as PVP.
+  const BOM = "﻿";
+
+  it("does not mangle the first key's name with a leading BOM", async () => {
+    // No leading "# ZomboidINI" comment here deliberately -- that comment
+    // line has no "=" at all, so a BOM stuck to IT would be a no-op either
+    // way (both parseIni and toIni ignore any line without "=" regardless of
+    // whether the comment-prefix check matches). The real exposure is a BOM
+    // landing directly on the file's first key=value line, which real
+    // ZomboidINI files (no header comment on some PZ versions/exports) can
+    // have.
+    const bomFixture = BOM + "version=1\nPVP=true\n";
+    fs.writeFileSync(iniPath, bomFixture, "utf-8");
+
+    const getRes = await runRoute("/ini", "get", { user: { role: "admin" } });
+    const { settings } = getRes.getBody();
+
+    expect(settings.version).toBe("1");
+    expect(Object.keys(settings).some((k) => k.includes("﻿"))).toBe(false);
+  });
 });

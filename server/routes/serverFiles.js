@@ -579,7 +579,22 @@ export function toIni(obj, originalContent = "") {
         if (key in obj) {
           // Strip newlines from values to prevent INI injection
           const safeValue = String(obj[key]).replace(/[\r\n]/g, "");
-          result.push(`${key}=${safeValue}`);
+          // Rewrite only the value token, keeping the line's own leading
+          // indentation, key spelling, and whitespace around "=" exactly as
+          // written -- the submitted settings object always contains every
+          // key GET returned (the client resends the whole thing on every
+          // save), so this branch runs for every unchanged line too. A
+          // hardcoded "key=value" rebuild here silently strips any spacing
+          // an operator's hand-edited file had (e.g. "PVP = true") the first
+          // time ANY field is saved from the structured editor -- same shape
+          // as the CRLF bug (573f63fd), one level down.
+          const lineEqIndex = line.indexOf("=");
+          const afterEq = line.slice(lineEqIndex + 1);
+          const valueMatch = afterEq.match(/^(\s*)([\s\S]*?)(\s*)$/);
+          const [, leadingWs, , trailingWs] = valueMatch;
+          result.push(
+            `${line.slice(0, lineEqIndex + 1)}${leadingWs}${safeValue}${trailingWs}`,
+          );
           written.add(key);
         } else {
           result.push(line);
