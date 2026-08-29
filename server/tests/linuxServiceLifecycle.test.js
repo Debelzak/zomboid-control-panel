@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import path from "path";
 
 import {
   LinuxServiceLifecycle,
@@ -49,15 +50,18 @@ describe("Linux managed-service lifecycle", () => {
     ).toMatchObject({ supported: false, providers: ["direct"] });
   });
 
-  // linuxServiceLifecycle.js builds these with the host's `path` module
-  // (path.join), not path.posix -- on win32 that mangles the Linux-only
-  // paths these two tests assert against (systemd/OpenRC units always run
-  // on Linux, regardless of which OS generated them), so only these two
-  // fail here. Every other linux*.test.js file in this suite already
-  // platform-guards this exact way; this file was the one that hadn't.
-  it.skipIf(process.platform === "win32")(
-    "renders a systemd unit with an ownership marker and safely quoted paths",
-    () => {
+  // linuxServiceLifecycle.js used to build these with the host's `path`
+  // module (path.join), not path.posix -- on win32 that mangled the
+  // Linux-only paths these two tests assert against (systemd/OpenRC units
+  // always run on Linux, regardless of which OS generated them), so these
+  // two used to fail there while the rest of the file passed everywhere.
+  // Fixed by switching every path.join/path.dirname call in
+  // linuxServiceLifecycle.js to path.posix.join/path.posix.dirname, which
+  // never consults process.platform or the host's own separator -- these
+  // no longer need (or have) a platform guard. See the dedicated
+  // byte-identical-across-platforms test below for a proof that doesn't
+  // depend on this file happening to run on both OSes.
+  it("renders a systemd unit with an ownership marker and safely quoted paths", () => {
     const template = buildLifecycleTemplate(server, "systemd", {
       serviceUser: "pzuser",
       homeDirectory: "/home/pzuser",
@@ -88,9 +92,7 @@ describe("Linux managed-service lifecycle", () => {
     );
   });
 
-  it.skipIf(process.platform === "win32")(
-    "renders an OpenRC service that is supervised outside the panel",
-    () => {
+  it("renders an OpenRC service that is supervised outside the panel", () => {
     const template = buildLifecycleTemplate(server, "openrc", {
       serviceUser: "pzuser",
       homeDirectory: "/home/pzuser",
@@ -126,6 +128,89 @@ describe("Linux managed-service lifecycle", () => {
     expect(template.installPath).toBe(
       "/home/pzuser/.config/rc/init.d/zomboid-panel-server-alpha-1",
     );
+  });
+
+  // god's addendum to hunt-wave5-2026-08-29: assert against path.posix
+  // computed here, not a hand-typed expected string, and prove the check
+  // actually discriminates (path.win32 genuinely produces something
+  // different for these same segments) rather than being vacuously true --
+  // that's what makes this a proof that the generator is platform-
+  // independent BY CONSTRUCTION, not just "these two literal strings
+  // happen to match on whichever OS ran the test today". A literal-string
+  // assertion could pass by coincidence on a run that never has a genuine
+  // separator or space-word-splitting case; deriving the expectation from
+  // path.posix directly cannot.
+  it("systemd/OpenRC installPath and every embedded working-directory/launcher path are exactly what path.posix would produce, and provably NOT what path.win32 would produce for the same inputs", () => {
+    const homeDirectory = "/home/pzuser";
+    const installDir = server.installPath; // "/opt/pz server" -- the space is the point
+    const launcherName = `start-server_${server.serverName}.sh`;
+
+    // Sanity check: prove this scenario is a real discriminator BEFORE
+    // trusting any assertion built on it. If these two ever produced the
+    // SAME string for these inputs, the test below would pass regardless
+    // of whether the fix actually did anything.
+    const posixJoin = path.posix.join(installDir, launcherName);
+    const win32Join = path.win32.join(installDir, launcherName);
+    expect(win32Join).not.toBe(posixJoin);
+    expect(win32Join).toContain("\\");
+    expect(posixJoin).not.toContain("\\");
+
+    const systemdTemplate = buildLifecycleTemplate(server, "systemd", {
+      serviceUser: "pzuser",
+      homeDirectory,
+      fileExists: (candidate) => candidate.endsWith(launcherName),
+    });
+    const expectedLauncherPath = path.posix.join(installDir, launcherName);
+    const expectedSystemdInstallPath = path.posix.join(
+      homeDirectory,
+      ".config",
+      "systemd",
+      "user",
+      `${getLifecycleServiceName(server)}.service`,
+    );
+    expect(systemdTemplate.installPath).toBe(expectedSystemdInstallPath);
+    expect(systemdTemplate.content).toContain(
+      `WorkingDirectory=${installDir}`,
+    );
+    expect(systemdTemplate.content).toContain(
+      `ExecStart=/bin/bash "${expectedLauncherPath}"`,
+    );
+    // Never the win32-joined shape, anywhere in the generated unit.
+    expect(systemdTemplate.installPath).not.toContain("\\");
+    expect(systemdTemplate.content).not.toMatch(/WorkingDirectory=.*\\/);
+    expect(systemdTemplate.content).not.toMatch(/ExecStart=.*\\opt/);
+
+    const openrcTemplate = buildLifecycleTemplate(server, "openrc", {
+      serviceUser: "pzuser",
+      homeDirectory,
+      fileExists: () => false,
+    });
+    const expectedFallbackLauncherPath = path.posix.join(
+      installDir,
+      "start-server.sh",
+    );
+    const expectedOpenrcInstallPath = path.posix.join(
+      homeDirectory,
+      ".config",
+      "rc",
+      "init.d",
+      getLifecycleServiceName(server),
+    );
+    expect(openrcTemplate.installPath).toBe(expectedOpenrcInstallPath);
+    expect(openrcTemplate.content).toContain(
+      `--chdir '${installDir}' \\`,
+    );
+    expect(openrcTemplate.content).toContain(
+      `-- /bin/bash '${expectedFallbackLauncherPath}'`,
+    );
+    expect(openrcTemplate.installPath).not.toContain("\\");
+    // No blanket "content has no backslash" check here, unlike the systemd
+    // block above -- OpenRC's start()/stop() legitimately end several
+    // lines with a real backslash (shell line-continuation, e.g.
+    // "--chdir '...' \\"). The toContain() assertions above already pin
+    // the exact correct --chdir/-- /bin/bash lines; a regex broad enough to
+    // also catch a stray win32-joined path would match those legitimate
+    // continuations too.
   });
 
   it("does not corrupt an OpenRC description containing a literal '$'", () => {

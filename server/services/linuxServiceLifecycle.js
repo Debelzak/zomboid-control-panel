@@ -126,6 +126,19 @@ function quoteShellLiteral(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+// configuredPath/serverName describe the TARGET Linux machine's filesystem
+// (where the generated unit/init script will run), never the machine
+// generating the template -- buildLifecycleTemplate() has no platform gate
+// of its own (its one production caller, GET /:id/lifecycle-template, does
+// gate on getLinuxLifecycleCapabilities().supported, but the function itself
+// is exported and callable directly, in tests and otherwise). path.posix
+// is used throughout this file instead of the bare `path` import for
+// exactly that reason: the host's `path` module joins with the HOST's
+// separator regardless of the (already forward-slash) segments fed into
+// it, so a Windows host previously produced backslash-mangled unit content
+// -- the same "correct on the machine that generated it, refused by the
+// machine that has to run it" defect already fixed once in this file for
+// WorkingDirectory= (see plainSystemdValue's comment).
 function resolveLaunchTarget(server, fileExists = fs.existsSync) {
   if (server?.startCommand) {
     throw new Error(
@@ -139,7 +152,7 @@ function resolveLaunchTarget(server, fileExists = fs.existsSync) {
   );
   if (/\.sh$/i.test(configuredPath)) {
     return {
-      workingDirectory: path.dirname(configuredPath),
+      workingDirectory: path.posix.dirname(configuredPath),
       launcherPath: configuredPath,
     };
   }
@@ -148,7 +161,7 @@ function resolveLaunchTarget(server, fileExists = fs.existsSync) {
   }
 
   const serverName = assertPlainValue(server?.serverName, "Server name");
-  const generated = path.join(
+  const generated = path.posix.join(
     configuredPath,
     `start-server_${serverName}.sh`,
   );
@@ -156,7 +169,7 @@ function resolveLaunchTarget(server, fileExists = fs.existsSync) {
     workingDirectory: configuredPath,
     launcherPath: fileExists(generated)
       ? generated
-      : path.join(configuredPath, "start-server.sh"),
+      : path.posix.join(configuredPath, "start-server.sh"),
   };
 }
 
@@ -204,7 +217,18 @@ export function buildLifecycleTemplate(server, provider, options = {}) {
       provider,
       serviceName,
       filename: `${serviceName}.service`,
-      installPath: path.join(
+      // os.homedir() is the deliberate, unchanged fallback here: it is the
+      // TARGET machine's home directory whenever this actually runs on the
+      // target (the only currently-supported case -- see
+      // getLinuxLifecycleCapabilities()'s comment above), and no caller
+      // supplies an explicit options.homeDirectory today. Switching the
+      // JOIN to path.posix fixes the separator bug (byte-identical output
+      // once homeDirectory is supplied explicitly, as every test here
+      // does); it does not and should not paper over os.homedir() itself
+      // returning a Windows-shaped value when host and target genuinely
+      // differ -- that is a caller-supplied-value problem, not a
+      // path-formatting one, and out of scope for this fix.
+      installPath: path.posix.join(
         options.homeDirectory || os.homedir(),
         ".config",
         "systemd",
@@ -263,7 +287,8 @@ export function buildLifecycleTemplate(server, provider, options = {}) {
     provider,
     serviceName,
     filename: serviceName,
-    installPath: path.join(
+    // See the systemd branch's identical comment above -- same reasoning.
+    installPath: path.posix.join(
       options.homeDirectory || os.homedir(),
       ".config",
       "rc",
@@ -365,8 +390,18 @@ export class LinuxServiceLifecycle {
       };
     }
 
-    const initPath = path.join(
-      process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
+    // Unlike buildLifecycleTemplate() above, this method is genuinely safe
+    // as a host-path operation even before this fix: assertSupported() (top
+    // of inspect(), called just above via this.inspect() -> assertSupported())
+    // already throws unless this.platform === "linux", so this line can only
+    // ever execute on the SAME machine the init script would be installed
+    // on -- host and target are always the same machine here. Converted to
+    // path.posix anyway for consistency with the rest of this file (a
+    // Linux-real path.join and path.posix.join are always identical, so
+    // this changes nothing observable), not because it was independently
+    // reachable from a non-Linux host.
+    const initPath = path.posix.join(
+      process.env.XDG_CONFIG_HOME || path.posix.join(os.homedir(), ".config"),
       "rc",
       "init.d",
       this.serviceName,
