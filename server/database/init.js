@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
 import { getDataPaths } from "../utils/paths.js";
+import { checkAndExitIfOwnershipBlocked } from "../utils/firstRunOwnershipCheck.js";
 import { createLogger } from "../utils/logger.js";
 import { normalizeMemoryGb } from "../utils/memory.js";
 import { parseClampedInteger } from "../utils/queryNumbers.js";
@@ -108,7 +109,29 @@ const backupDir = path.join(dataDir, "backups");
 // itself — see utils/jwtSecret.js, utils/uiSecretFile.js,
 // utils/serverRconSecrets.js.
 for (const dir of [dataDir, backupDir]) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    } catch (err) {
+      // Defense-in-depth for the root-first-run trap (2026-08-29): the
+      // preflight in server/utils/firstRunOwnershipCheck.js (imported
+      // first in server/index.js, ahead of this module) is the primary
+      // guard and normally catches this before dataDir/backupDir are even
+      // reached. This second check exists for the narrower case it can't
+      // see coming -- dataDir itself is fine, but a stray root run only
+      // touched backupDir (e.g. an operator who deletes just the backups
+      // folder, then happens to restart once via sudo before switching
+      // back). Same consolidated diagnostic either way, never a raw
+      // uncaught EACCES stack trace with no path/account context.
+      if (
+        (err.code === "EACCES" || err.code === "EPERM") &&
+        checkAndExitIfOwnershipBlocked([dataDir, backupDir])
+      ) {
+        throw err; // unreachable: checkAndExitIfOwnershipBlocked() exits the process
+      }
+      throw err; // not an ownership problem (e.g. disk full) -- preserve prior behavior
+    }
+  }
   try {
     fs.chmodSync(dir, 0o700);
   } catch (_) {
@@ -822,6 +845,25 @@ export async function getDb() {
       loadedCleanly = true;
     } catch (err) {
       log.error(`Failed to read database: ${err.message}`);
+
+      // A permission failure is NOT corruption -- it means db.json is still
+      // sitting there, intact, just unreadable by this account (root-
+      // first-run trap, 2026-08-29: dataDir/logsDir themselves can be
+      // fine, pzuser-owned, while db.json specifically was recreated
+      // root-owned by one stray sudo restart -- e.g. renameSync() below
+      // silently self-heals ownership on its NEXT successful write, so a
+      // dataDir-level check alone can look clean while db.json itself is
+      // still blocked). Falling through to "no backup found, starting
+      // fresh" here would silently discard a real, recoverable database
+      // and replace it with empty defaults on the very next flush --
+      // strictly worse than refusing to start. Refuse loudly instead.
+      if (err.code === "EACCES" || err.code === "EPERM") {
+        checkAndExitIfOwnershipBlocked([dataDir, dbPath, backupDir]);
+        // Falls through only if checkAndExitIfOwnershipBlocked() found
+        // nothing to blame on ownership (e.g. a read-only filesystem) --
+        // in which case the existing corruption-recovery path below is
+        // still the right fallback.
+      }
 
       // Attempt recovery from backup. Do NOT snapshot the corrupt file first —
       // that would poison the backup ring (pruneBackups keeps newest 5 and

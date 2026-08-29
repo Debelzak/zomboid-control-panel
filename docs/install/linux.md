@@ -110,6 +110,17 @@ matters once you install the service.
 **You know it worked when:** `id pzuser` prints a UID/GID instead of `no such
 user`.
 
+**Don't run the panel as root "just once to look at it," even before doing
+this phase.** The very first run creates its data directory — the database,
+its startup backup, the JWT signing key, the log files — owned by whichever
+account started it. If that first run was root and every run after is
+`pzuser` (Phase 5's service), that account can no longer read or write any of
+it, and the panel refuses to start rather than run in a half-broken state.
+The fix is a `chown -R` back to the account you actually run it as — the
+panel's own error message prints the exact command, naming every affected
+path, when this happens — but it's simpler to just create `pzuser` (above)
+**before** the very first run, so there's no root-owned first run to undo.
+
 **If you skip this:** the panel keeps running fine as root, but every file it
 touches (its database, logs, and anything a PZ server writes under its
 management) ends up root-owned, and a bug or a compromised dependency in the

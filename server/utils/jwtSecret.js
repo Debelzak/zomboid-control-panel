@@ -23,6 +23,7 @@ import path from "path";
 import crypto from "crypto";
 import { getDataPaths } from "./paths.js";
 import { readSecret } from "./secrets.js";
+import { checkAndExitIfOwnershipBlocked } from "./firstRunOwnershipCheck.js";
 
 export function getJwtSecretPath() {
   return path.join(getDataPaths().dataDir, "jwt.secret");
@@ -33,7 +34,25 @@ export function getJwtSecretPath() {
 // limitation already called out for dataDir/backupDir in database/init.js,
 // not a new gap introduced here.
 function writeSecretFile(secretPath, value) {
-  fs.writeFileSync(secretPath, value, { encoding: "utf8", mode: 0o600 });
+  try {
+    fs.writeFileSync(secretPath, value, { encoding: "utf8", mode: 0o600 });
+  } catch (err) {
+    // Defense-in-depth for the root-first-run trap (2026-08-29): normally
+    // caught much earlier by the preflight in
+    // server/utils/firstRunOwnershipCheck.js (imported first in
+    // server/index.js) or by database/init.js's own guard. This exists for
+    // the narrower case neither of those sees -- dataDir itself and
+    // db.json are fine, but jwt.secret specifically was deleted and then
+    // recreated by a stray root run (e.g. a one-off `sudo systemctl
+    // restart panel` before switching back to the dedicated account).
+    if (
+      (err.code === "EACCES" || err.code === "EPERM") &&
+      checkAndExitIfOwnershipBlocked([getDataPaths().dataDir, secretPath])
+    ) {
+      throw err; // unreachable: checkAndExitIfOwnershipBlocked() exits the process
+    }
+    throw err; // not an ownership problem -- preserve prior behavior
+  }
   try {
     fs.chmodSync(secretPath, 0o600);
   } catch {

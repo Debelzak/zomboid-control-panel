@@ -1,3 +1,12 @@
+// Must be the FIRST import in this file: it refuses to start (with one
+// clear diagnostic) if the root-first-run trap has left dataDir/logsDir
+// unreachable to this account. server/utils/setupToken.js below already
+// transitively imports database/init.js, which has its own unguarded
+// fs.mkdirSync in top-level module code -- ESM evaluates that side effect
+// during import resolution, before any of this file's own statements run,
+// so this check has to be evaluated even earlier than that import. See
+// server/utils/firstRunOwnershipCheck.js's header for the full reasoning.
+import "./utils/firstRunOwnershipCheck.js";
 import express from "express";
 import compression from "compression";
 import cors from "cors";
