@@ -159,7 +159,7 @@
     "detect": "Erkennen",
     "dataPathHint": "Der Ordner mit den Unterordnern Server/, Saves/, Logs/",
     "installPathLabel": "Installationspfad des Servers (optional)",
-    "installPathPlaceholder": "Pfad zum PZ-Serverordner (enthält StartServer64.bat oder start-server.sh)",
+    "installPathPlaceholder": "Path to the Project Zomboid server folder",
     "customLauncherNoticeTitle": "Modus für eigenes Startskript",
     "customLauncherNoticeBody": "Dieser Pfad zeigt auf ein Skript, keinen Ordner — das Panel startet es unverändert und wird es nie neu generieren oder bearbeiten. Einstellungen, die normalerweise automatisch in ein Startskript geschrieben werden (Arbeitsspeicher, Admin-Passwort, der Datenpfad, der Servername), erreichen den Server nicht, es sei denn, Sie tragen sie selbst in dieses Skript ein.",
     "noConfigsFoundTitle": "Keine Serverkonfigurationen gefunden",
@@ -181,7 +181,9 @@
     "minMemoryLabel": "Min. Arbeitsspeicher (GB)",
     "maxMemoryLabel": "Max. Arbeitsspeicher (GB)",
     "selectScannedConfigAria": "Erkannten Server verwenden: {{name}}",
-    "discoverNoPermission": "Das Erkennen oder Scannen nach Servern erfordert die Berechtigung servers.discover, über die diese Rolle nicht verfügt."
+    "discoverNoPermission": "Das Erkennen oder Scannen nach Servern erfordert die Berechtigung servers.discover, über die diese Rolle nicht verfügt.",
+    "installPathPlaceholderWindows": "Path to the PZ server folder containing StartServer64.bat",
+    "installPathPlaceholderPosix": "Path to the PZ server folder containing start-server.sh"
   },
   "editDialog": {
     "title": "Server bearbeiten",
@@ -200,7 +202,7 @@
     "dataPathPlaceholder": "Leer lassen für Standard",
     "customStartCommandLabel": "Eigener Startbefehl",
     "customStartCommandTooltip": "Überschreibt das Standard-Startskript mit einem eigenen Befehl. Unterstützt Argumente. Leer lassen, und der Panel erzeugt bei jedem Serverstart das Standard-bat/sh-Startskript aus diesen Einstellungen neu — dabei wird diese Datei ÜBERSCHRIEBEN, auch manuelle Änderungen, wobei eine geänderte Datei zuvor gesichert wird.",
-    "customStartCommandPlaceholder": "z. B. ./start-server.sh -servername MyServer",
+    "customStartCommandPlaceholder": "Command used to start this server",
     "customStartCommandDisallowed": "Befehl enthält nicht erlaubte Shell-Zeichen",
     "noSteamLabel": "Ohne Steam starten",
     "noSteamHint": "Verwendet beim nächsten Start den dedizierten Servermodus ohne Steam.",
@@ -224,7 +226,9 @@
     "cancel": "Abbrechen",
     "saving": "Wird gespeichert...",
     "saveChanges": "Änderungen speichern",
-    "noPermission": "Das Speichern der Servereinstellungen erfordert die Berechtigung servers.manage, über die diese Rolle nicht verfügt."
+    "noPermission": "Das Speichern der Servereinstellungen erfordert die Berechtigung servers.manage, über die diese Rolle nicht verfügt.",
+    "customStartCommandPlaceholderWindows": "e.g. StartServer64.bat -servername MyServer",
+    "customStartCommandPlaceholderPosix": "e.g. ./start-server.sh -servername MyServer"
   },
   "deleteDialog": {
     "title": "Server aus dem Panel entfernen?",

@@ -159,7 +159,7 @@
     "detect": "Détecter",
     "dataPathHint": "Le dossier contenant les sous-dossiers Server/, Saves/, Logs/",
     "installPathLabel": "Chemin d'installation du serveur (optionnel)",
-    "installPathPlaceholder": "Chemin vers le dossier serveur PZ (contient StartServer64.bat ou start-server.sh)",
+    "installPathPlaceholder": "Path to the Project Zomboid server folder",
     "customLauncherNoticeTitle": "Mode lanceur personnalisé",
     "customLauncherNoticeBody": "Ce chemin pointe vers un script, pas un dossier — le panneau le lancera tel quel et ne le régénérera ni ne le modifiera jamais. Les réglages normalement écrits pour vous dans un script de démarrage (mémoire, mot de passe administrateur, chemin des données, nom du serveur) n'atteindront pas le serveur à moins que vous ne les inscriviez vous-même dans ce script.",
     "noConfigsFoundTitle": "Aucune configuration de serveur trouvée",
@@ -181,7 +181,9 @@
     "minMemoryLabel": "Mémoire min. (Go)",
     "maxMemoryLabel": "Mémoire max. (Go)",
     "selectScannedConfigAria": "Utiliser le serveur détecté {{name}}",
-    "discoverNoPermission": "Détecter ou rechercher des serveurs nécessite la permission servers.discover, que ce rôle ne possède pas."
+    "discoverNoPermission": "Détecter ou rechercher des serveurs nécessite la permission servers.discover, que ce rôle ne possède pas.",
+    "installPathPlaceholderWindows": "Path to the PZ server folder containing StartServer64.bat",
+    "installPathPlaceholderPosix": "Path to the PZ server folder containing start-server.sh"
   },
   "editDialog": {
     "title": "Modifier le serveur",
@@ -200,7 +202,7 @@
     "dataPathPlaceholder": "Laisser vide pour la valeur par défaut",
     "customStartCommandLabel": "Commande de démarrage personnalisée",
     "customStartCommandTooltip": "Remplacer le script de démarrage par défaut par une commande personnalisée. Les arguments sont pris en charge. Laisser vide et le panneau régénérera le script de démarrage bat/sh par défaut à partir de ces paramètres à chaque démarrage du serveur — cela ÉCRASE ce fichier, y compris toute modification manuelle, bien qu'un fichier modifié soit d'abord sauvegardé.",
-    "customStartCommandPlaceholder": "ex. ./start-server.sh -servername MonServeur",
+    "customStartCommandPlaceholder": "Command used to start this server",
     "customStartCommandDisallowed": "La commande contient des caractères shell non autorisés",
     "noSteamLabel": "Lancer sans Steam",
     "noSteamHint": "Utiliser le mode serveur dédié sans Steam au prochain démarrage.",
@@ -224,7 +226,9 @@
     "cancel": "Annuler",
     "saving": "Enregistrement...",
     "saveChanges": "Enregistrer les modifications",
-    "noPermission": "Enregistrer les paramètres du serveur nécessite la permission servers.manage, que ce rôle ne possède pas."
+    "noPermission": "Enregistrer les paramètres du serveur nécessite la permission servers.manage, que ce rôle ne possède pas.",
+    "customStartCommandPlaceholderWindows": "e.g. StartServer64.bat -servername MyServer",
+    "customStartCommandPlaceholderPosix": "e.g. ./start-server.sh -servername MyServer"
   },
   "deleteDialog": {
     "title": "Retirer le serveur du panneau ?",

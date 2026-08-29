@@ -159,7 +159,7 @@
     "detect": "Detectar",
     "dataPathHint": "La carpeta que contiene las subcarpetas Server/, Saves/, Logs/",
     "installPathLabel": "Ruta de instalación del servidor (opcional)",
-    "installPathPlaceholder": "Ruta a la carpeta del servidor de PZ (contiene StartServer64.bat o start-server.sh)",
+    "installPathPlaceholder": "Path to the Project Zomboid server folder",
     "customLauncherNoticeTitle": "Modo de lanzador personalizado",
     "customLauncherNoticeBody": "Esta ruta apunta a un script, no a una carpeta — el panel lo ejecutará tal cual y nunca lo regenerará ni lo editará. Los ajustes que normalmente se escriben en un script de inicio por ti (memoria, contraseña de administrador, la ruta de datos, el nombre del servidor) no llegarán al servidor a menos que los pongas tú mismo en este script.",
     "noConfigsFoundTitle": "No se encontraron configuraciones de servidor",
@@ -181,7 +181,9 @@
     "minMemoryLabel": "Memoria mín. (GB)",
     "maxMemoryLabel": "Memoria máx. (GB)",
     "selectScannedConfigAria": "Usar el servidor detectado {{name}}",
-    "discoverNoPermission": "Detectar o buscar servidores requiere el permiso servers.discover, del cual este rol no dispone."
+    "discoverNoPermission": "Detectar o buscar servidores requiere el permiso servers.discover, del cual este rol no dispone.",
+    "installPathPlaceholderWindows": "Path to the PZ server folder containing StartServer64.bat",
+    "installPathPlaceholderPosix": "Path to the PZ server folder containing start-server.sh"
   },
   "editDialog": {
     "title": "Editar servidor",
@@ -200,7 +202,7 @@
     "dataPathPlaceholder": "Dejar vacío para usar el valor predeterminado",
     "customStartCommandLabel": "Comando de inicio personalizado",
     "customStartCommandTooltip": "Sustituye el script de inicio predeterminado por un comando personalizado. Admite argumentos. Déjalo vacío y el panel regenerará el script de inicio bat/sh predeterminado a partir de esta configuración cada vez que se inicie el servidor — esto SOBRESCRIBE ese archivo, incluidas las ediciones manuales, aunque primero se hace una copia de seguridad del archivo modificado.",
-    "customStartCommandPlaceholder": "p. ej. ./start-server.sh -servername MiServidor",
+    "customStartCommandPlaceholder": "Command used to start this server",
     "customStartCommandDisallowed": "El comando contiene caracteres de shell no permitidos",
     "noSteamLabel": "Iniciar sin Steam",
     "noSteamHint": "Usa el modo de servidor dedicado sin Steam en el próximo inicio.",
@@ -224,7 +226,9 @@
     "cancel": "Cancelar",
     "saving": "Guardando…",
     "saveChanges": "Guardar cambios",
-    "noPermission": "Guardar la configuración del servidor requiere el permiso servers.manage, del cual este rol no dispone."
+    "noPermission": "Guardar la configuración del servidor requiere el permiso servers.manage, del cual este rol no dispone.",
+    "customStartCommandPlaceholderWindows": "e.g. StartServer64.bat -servername MyServer",
+    "customStartCommandPlaceholderPosix": "e.g. ./start-server.sh -servername MyServer"
   },
   "deleteDialog": {
     "title": "¿Quitar servidor del panel?",

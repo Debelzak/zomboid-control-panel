@@ -28,6 +28,64 @@ const DOWNLOAD_TIMEOUT_MS = 60000;
 const MAX_GITHUB_RETRIES = 3;
 const MAX_DOWNLOAD_REDIRECTS = 5;
 
+export function getPanelFolderPermissionGuidance(platform, detail) {
+  const prefix = `Panel folder is not writable by this process: ${detail}.`;
+  if (platform === "win32") {
+    return `${prefix} Try running as Administrator, or move the panel out of a protected folder.`;
+  }
+  if (platform === "linux") {
+    return `${prefix} Check that the panel service user owns the installation directory and can write to it.`;
+  }
+  return `${prefix} Check the installation directory permissions for the account running the panel.`;
+}
+
+export function getRestartAssessment({
+  platform = process.platform,
+  packaged = typeof process.pkg !== "undefined",
+  environment = process.env,
+  launcherProtected =
+    environment.PANEL_SUPERVISOR_V === "2" &&
+    environment.PANEL_PRESERVE_GAME_SERVERS === "1",
+} = {}) {
+  const orchestrated = Boolean(
+    environment.INVOCATION_ID || environment.NOTIFY_SOCKET || environment.RC_SVCNAME,
+  );
+
+  if (!packaged) {
+    return {
+      gameServers: "unknown",
+      requiresConfirmation: true,
+      reason: "development-runtime",
+    };
+  }
+  if (platform === "win32") {
+    return {
+      gameServers: "preserved",
+      requiresConfirmation: false,
+      reason: "detached-windows-process",
+    };
+  }
+  if (platform === "linux" && orchestrated && launcherProtected) {
+    return {
+      gameServers: "preserved",
+      requiresConfirmation: false,
+      reason: "isolated-linux-supervisor",
+    };
+  }
+  if (platform === "linux" && orchestrated) {
+    return {
+      gameServers: "at-risk",
+      requiresConfirmation: true,
+      reason: "service-cgroup-may-stop-children",
+    };
+  }
+  return {
+    gameServers: platform === "linux" ? "preserved" : "unknown",
+    requiresConfirmation: platform !== "linux",
+    reason: platform === "linux" ? "detached-linux-process" : "unknown-runtime",
+  };
+}
+
 export function createUpdateDataBackup(dataPaths, version, fsModule = fs) {
   const dbPath = dataPaths?.dbPath;
   if (!dbPath || !fsModule.existsSync(dbPath)) return null;
@@ -112,9 +170,9 @@ export class PanelUpdateChecker {
       log.warn(`Could not reconcile pending panel update: ${err.message}`);
     }
 
-    // Every apply writes a .ps1 helper and a .log to %TEMP%. Keep the last few
-    // for post-mortem debugging and remove older ones so they don't accumulate
-    // forever on long-running installs.
+    // Legacy Windows applies may leave helper scripts in the runtime temp
+    // directory. Keep the last few logs for post-mortem debugging and remove
+    // older ones so they do not accumulate forever on long-running installs.
     try {
       this.cleanupOldHelperArtifacts();
     } catch (err) {
@@ -1121,12 +1179,64 @@ export class PanelUpdateChecker {
       }
       fs.rmSync(backupDist, { recursive: true, force: true });
       log.info("Updated client/dist from verified release archive");
+      if (!isWindows) {
+        this.replaceManagedLinuxFiles(extractDir, exeDir);
+      }
     } finally {
       if (windowsArchiveCopy) {
         fs.rmSync(windowsArchiveCopy, { force: true });
       }
       fs.rmSync(extractDir, { recursive: true, force: true });
     }
+  }
+
+  replaceManagedLinuxFiles(extractDir, exeDir) {
+    const managed = [
+      { name: "start.sh", mode: 0o755 },
+      { name: "zomboid-panel.service", mode: 0o644 },
+      { name: "install-linux-service.sh", mode: 0o755 },
+    ];
+    for (const file of managed) {
+      if (!fs.existsSync(path.join(extractDir, file.name))) {
+        throw new Error(`Release archive does not contain ${file.name}`);
+      }
+    }
+
+    const swapped = [];
+    try {
+      for (const file of managed) {
+        const source = path.join(extractDir, file.name);
+        const target = path.join(exeDir, file.name);
+        const staged = `${target}.new`;
+        const backup = `${target}.previous`;
+        fs.rmSync(staged, { force: true });
+        fs.rmSync(backup, { force: true });
+        fs.copyFileSync(source, staged);
+        fs.chmodSync(staged, file.mode);
+        if (fs.existsSync(target)) fs.renameSync(target, backup);
+        try {
+          fs.renameSync(staged, target);
+        } catch (error) {
+          if (fs.existsSync(backup) && !fs.existsSync(target)) {
+            fs.renameSync(backup, target);
+          }
+          throw error;
+        }
+        swapped.push({ target, backup });
+      }
+    } catch (error) {
+      for (const { target, backup } of swapped.reverse()) {
+        try {
+          fs.rmSync(target, { force: true });
+          if (fs.existsSync(backup)) fs.renameSync(backup, target);
+        } catch (rollbackError) {
+          log.error(`Could not roll back ${target}: ${rollbackError.message}`);
+        }
+      }
+      throw error;
+    }
+    for (const { backup } of swapped) fs.rmSync(backup, { force: true });
+    log.info("Updated Linux launcher and service templates from verified release archive");
   }
 
   runUpdateCommand(command, args) {
@@ -1353,6 +1463,9 @@ export class PanelUpdateChecker {
     info.isPackaged = isPackaged;
     info.platform = process.platform;
     info.updateMode = this.dockerUpdateProxy.mode;
+    info.restartAssessment = getRestartAssessment();
+    info.temporaryDirectory = os.tmpdir();
+    info.applyLogPath = path.join(getDataPaths().logsDir, "panel-update-last.log");
 
     if (this.dockerUpdateProxy.enabled) {
       info.dockerUpdater = true;
@@ -1439,9 +1552,7 @@ export class PanelUpdateChecker {
       info.writable = true;
     } catch (err) {
       info.writable = false;
-      blockers.push(
-        `Panel folder is not writable by this process: ${err.code || err.message}. Try running as Administrator, or move the panel out of a protected folder.`,
-      );
+      blockers.push(getPanelFolderPermissionGuidance(process.platform, err.code || err.message));
     } finally {
       if (probeCreated) {
         try {

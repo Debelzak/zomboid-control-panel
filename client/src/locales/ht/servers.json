@@ -160,7 +160,7 @@
     "detect": "Detekte",
     "dataPathHint": "Dosye ki gen sou-dosye Server/, Saves/, Logs/",
     "installPathLabel": "Chemen Enstalasyon Sèvè (Opsyonèl)",
-    "installPathPlaceholder": "Chemen pou dosye sèvè PZ la (gen StartServer64.bat oswa start-server.sh)",
+    "installPathPlaceholder": "Path to the Project Zomboid server folder",
     "customLauncherNoticeTitle": "Mòd lansè pèsonalize",
     "customLauncherNoticeBody": "Chemen sa a pwente sou yon script, pa yon dosye — panel la ap lanse li jan li ye a e li p ap janm regenere oswa modifye li. Paramèt ki nòmalman ekri otomatikman nan yon script demaraj pou ou (memwa, modpas admin, chemen done a, non sèvè a) p ap rive nan sèvè a sof si ou mete yo ou menm nan script sa a.",
     "noConfigsFoundTitle": "Pa jwenn konfig sèvè",
@@ -181,7 +181,9 @@
     "passwordWillImport": "Enpòte otomatikman soti nan {{iniName}}.ini — kite l vid pou itilize l, oswa tape yon nouvo pou ranplase l.",
     "minMemoryLabel": "Memwa Min (GB)",
     "maxMemoryLabel": "Memwa Maks (GB)",
-    "discoverNoPermission": "Pou ou detekte oswa eskane sèvè, ou bezwen pèmisyon servers.discover, e wòl sa a pa genyen li."
+    "discoverNoPermission": "Pou ou detekte oswa eskane sèvè, ou bezwen pèmisyon servers.discover, e wòl sa a pa genyen li.",
+    "installPathPlaceholderWindows": "Path to the PZ server folder containing StartServer64.bat",
+    "installPathPlaceholderPosix": "Path to the PZ server folder containing start-server.sh"
   },
   "editDialog": {
     "title": "Modifye Sèvè",
@@ -200,7 +202,7 @@
     "dataPathPlaceholder": "Kite vid pou default",
     "customStartCommandLabel": "Kòmand Demaraj Pèsonalize",
     "customStartCommandTooltip": "Ranplase script demaraj default la ak yon kòmand pèsonalize. Sipòte agiman. Kite vid, e panèl la ap rejenere script demaraj bat/sh default la apati paramèt sa yo chak fwa sèvè a demare — sa a REMPLASE fichye sa a, ansanm ak nenpòt chanjman ou fè manyèlman, menmsi yon fichye ki chanje sovgade anvan.",
-    "customStartCommandPlaceholder": "pa egzanp ./start-server.sh -servername MyServer",
+    "customStartCommandPlaceholder": "Command used to start this server",
     "customStartCommandDisallowed": "Kòmand lan gen karaktè shell ki pa otorize",
     "noSteamLabel": "Lanse san Steam",
     "noSteamHint": "Itilize mòd sèvè dedye san-Steam la nan pwochen demaraj la.",
@@ -224,7 +226,9 @@
     "cancel": "Anile",
     "saving": "N ap sove...",
     "saveChanges": "Sove Chanjman",
-    "noPermission": "Pou ou sove paramèt sèvè yo, ou bezwen pèmisyon servers.manage, e wòl sa a pa genyen li."
+    "noPermission": "Pou ou sove paramèt sèvè yo, ou bezwen pèmisyon servers.manage, e wòl sa a pa genyen li.",
+    "customStartCommandPlaceholderWindows": "e.g. StartServer64.bat -servername MyServer",
+    "customStartCommandPlaceholderPosix": "e.g. ./start-server.sh -servername MyServer"
   },
   "deleteDialog": {
     "title": "Retire Sèvè nan Panèl la?",

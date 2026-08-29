@@ -1593,7 +1593,11 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     // non-zero so `on-failure`/`always` units respawn us; Docker
     // `restart: unless-stopped`/`always` restart regardless of code, so this is
     // safe there too. Standalone (already self-respawned) exits 0 as normal.
-    process.exit(orchestrated ? 1 : 0);
+    const linuxSupervisor =
+      process.platform === "linux" &&
+      process.env.PANEL_SUPERVISOR_V === "2" &&
+      process.env.PANEL_PRESERVE_GAME_SERVERS === "1";
+    process.exit(linuxSupervisor ? 75 : orchestrated ? 1 : 0);
   }, 1000);
 });
 
@@ -1645,7 +1649,10 @@ app.get("/api/panel/update-apply-log", (req, res) => {
         .status(500)
         .json({ error: "Panel update checker not available" });
     const log = checker.readMostRecentApplyLog();
-    res.json({ log });
+    res.json({
+      log,
+      logPath: path.join(getDataPaths().logsDir, "panel-update-last.log"),
+    });
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
   }

@@ -368,12 +368,12 @@
           "warn": {
             "linux": {
               "label": "JRE embarqué introuvable",
-              "message": "Impossible de localiser jre64/bin/{{javaBin}} dans le chemin d'installation. Le serveur risque de ne pas démarrer sauf si Java système est dans le PATH.",
+              "message": "Impossible de localiser jre64/bin/{{javaBin}} dans le chemin d'installation. Vérifiez Java avec command -v java ; un service systemd peut utiliser un $PATH différent de votre shell de connexion.",
               "hint": "La plupart des installations embarquent un JRE sous jre64/. Relancez SteamCMD s'il est manquant."
             },
             "windows": {
               "label": "JRE embarqué introuvable",
-              "message": "Impossible de localiser jre64/bin/{{javaBin}} dans le chemin d'installation. Le serveur risque de ne pas démarrer sauf si Java système est dans le PATH.",
+              "message": "Impossible de localiser jre64/bin/{{javaBin}} dans le chemin d'installation. Exécutez where java pour vérifier si Java est disponible via %PATH%.",
               "hint": "Relancez SteamCMD pour restaurer le JRE embarqué"
             }
           }

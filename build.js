@@ -154,6 +154,7 @@ needs internet).
 - Start.bat                - Windows launch script
 - start.sh                 - Linux launch script
 - zomboid-panel.service    - systemd unit file (Linux) — see docs/install/linux.md, in this folder
+- install-linux-service.sh - explicit systemd installer; run with --enable to start the service
 - docker-compose.install.yml - Docker Compose installer (published panel image)
 - docs/install/            - Install guides for every platform (see Where To Go Next, above)
 - client/dist/             - Web interface (required, must stay alongside binary)
@@ -432,15 +433,42 @@ goto :eof
 
 export function generateStartSh() {
   return `#!/bin/bash
-# Zomboid Control Panel — Linux launcher
+# Zomboid Control Panel — Linux supervisor
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+export PANEL_SUPERVISOR_V=2
+export PANEL_PRESERVE_GAME_SERVERS=1
+
+PANEL_PID=""
+STOPPING=0
+CRASH_COUNT=0
+MAX_RAPID_CRASHES="\${PANEL_SUPERVISOR_MAX_CRASHES:-5}"
+BACKOFF_SECONDS="\${PANEL_SUPERVISOR_BACKOFF_SECONDS:-2}"
+
+stop_panel() {
+  STOPPING=1
+  if [ -n "$PANEL_PID" ] && kill -0 "$PANEL_PID" 2>/dev/null; then
+    # The panel has its own session. Its detached Project Zomboid process has
+    # another process group, so this signal cannot stop the game server.
+    kill -TERM -- "-$PANEL_PID" 2>/dev/null || kill -TERM "$PANEL_PID" 2>/dev/null || true
+  fi
+}
+
+trap 'stop_panel TERM' TERM
+trap 'stop_panel INT' INT
 
 echo "Starting Zomboid Control Panel..."
 echo ""
 
 if [ ! -f "./ZomboidControlPanel" ]; then
   echo "ERROR: ./ZomboidControlPanel was not found in this folder."
+  exit 1
+fi
+
+if ! command -v setsid >/dev/null 2>&1; then
+  echo "ERROR: setsid is required to isolate panel restarts from Project Zomboid."
+  echo "Install the util-linux package and try again."
   exit 1
 fi
 
@@ -462,7 +490,49 @@ if [ "$(id -u)" = "0" ]; then
   echo "WARNING: Running as root is not recommended. Consider creating a dedicated user."
 fi
 
-./ZomboidControlPanel
+while true; do
+  if [ "$STOPPING" = "1" ]; then
+    exit 0
+  fi
+
+  PANEL_STARTED_AT=$(date +%s)
+  setsid ./ZomboidControlPanel &
+  PANEL_PID=$!
+  wait "$PANEL_PID"
+  EXIT_CODE=$?
+  PANEL_PID=""
+  PANEL_RUNTIME=$(($(date +%s) - PANEL_STARTED_AT))
+
+  if [ "$STOPPING" = "1" ]; then
+    exit 0
+  fi
+
+  # A clean exit is an operator-requested stop. Exit code 75 is the explicit
+  # updater hand-off; non-zero exits are restarted with a bounded backoff.
+  if [ "$EXIT_CODE" = "0" ]; then
+    exit 0
+  fi
+
+  if [ "$EXIT_CODE" = "75" ]; then
+    CRASH_COUNT=0
+    echo "Panel requested a supervised restart."
+    continue
+  fi
+
+  if [ "$PANEL_RUNTIME" -ge 30 ]; then
+    CRASH_COUNT=0
+  fi
+  CRASH_COUNT=$((CRASH_COUNT + 1))
+  if [ "$CRASH_COUNT" -gt "$MAX_RAPID_CRASHES" ]; then
+    echo "ERROR: Panel exited $CRASH_COUNT times; giving up (last exit $EXIT_CODE)."
+    exit "$EXIT_CODE"
+  fi
+
+  echo "Panel exited with code $EXIT_CODE; restarting in $BACKOFF_SECONDS second(s)..."
+  sleep "$BACKOFF_SECONDS" &
+  SLEEP_PID=$!
+  wait "$SLEEP_PID" || true
+done
 `;
 }
 
@@ -761,6 +831,13 @@ Recommended safe-upgrade commands:
       "./release/zomboid-panel.service",
     );
   }
+  if (fs.existsSync("./install-linux-service.sh")) {
+    fs.copyFileSync(
+      "./install-linux-service.sh",
+      "./release/install-linux-service.sh",
+    );
+    fs.chmodSync("./release/install-linux-service.sh", 0o755);
+  }
 
   if (fs.existsSync("./docker-compose.install.yml")) {
     fs.copyFileSync(
@@ -826,6 +903,9 @@ Recommended safe-upgrade commands:
   }
   if (fs.existsSync("./release/zomboid-panel.service")) {
     console.log("  - zomboid-panel.service");
+  }
+  if (fs.existsSync("./release/install-linux-service.sh")) {
+    console.log("  - install-linux-service.sh");
   }
   if (fs.existsSync("./release/docker-compose.install.yml")) {
     console.log("  - docker-compose.install.yml");

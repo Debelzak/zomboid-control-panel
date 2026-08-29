@@ -134,9 +134,8 @@ to `start.sh`.
    ```
 3. Install the unit file and start the service:
    ```bash
-   sudo cp /opt/zomboid-panel/zomboid-panel.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now zomboid-panel
+   cd /opt/zomboid-panel
+   sudo ./install-linux-service.sh --enable
    ```
 4. Check it's actually running:
    ```bash
@@ -146,13 +145,38 @@ to `start.sh`.
 **You know it worked when:** `systemctl status` shows `active (running)`, and
 `http://your-server-ip:3001` still loads.
 
+The installer is deliberately explicit: the panel never invokes `sudo` and
+normal in-app updates never edit `/etc`. If a unit is already installed and
+differs from the bundled template, the installer creates a timestamped backup
+before replacing it. Without `--enable`, it installs the unit and runs
+`daemon-reload` but does not enable, start, or restart the service.
+
+The bundled unit starts `start.sh` with `KillMode=process`. The launcher places
+the panel in its own process group and forwards service stop signals only to
+that group. Project Zomboid is detached into a different process group, so a
+panel-only restart or update does not stop the game server. Do not remove these
+settings unless the game server is managed by a separate service.
+
+### Paths and environment variables shown in the UI
+
+Linux and other POSIX shells expand variables as `$NAME` or `${NAME}`; Windows
+Command Prompt uses `%NAME%`. In particular, `%TEMP%`, `%USERPROFILE%`, and
+`%PATH%` are Windows syntax and should not be copied into a Linux shell. The
+panel obtains its real temporary directory from the running Node process and
+shows a concrete log path instead of assuming that `$TEMP` or `$TMPDIR` exists.
+
+For Java checks, use `command -v java` on Linux and `where java` on Windows.
+Remember that a systemd service can have a different `$PATH` from an interactive
+login shell; check `systemctl show zomboid-panel --property=Environment` and the
+service journal when a command works in your terminal but not in the panel.
+
 ### The `ReadWritePaths` trap
 
 The bundled unit file locks the panel down with systemd sandboxing
 (`ProtectSystem=full`, etc.) and only grants write access to two folders:
 
 ```
-ReadWritePaths=/opt/zomboid-panel/data /opt/zomboid-panel/logs
+ReadWritePaths=/opt/zomboid-panel
 ```
 
 This is fine as long as everything the panel needs to write — including any
@@ -171,7 +195,7 @@ it:
 ```bash
 sudo nano /etc/systemd/system/zomboid-panel.service
 # change the ReadWritePaths line to:
-# ReadWritePaths=/opt/zomboid-panel/data /opt/zomboid-panel/logs /opt/pzserver /opt/pzserver_Data
+# ReadWritePaths=/opt/zomboid-panel /opt/pzserver /opt/pzserver_Data
 sudo systemctl daemon-reload
 sudo systemctl restart zomboid-panel
 ```

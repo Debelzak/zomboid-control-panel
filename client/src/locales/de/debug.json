@@ -368,12 +368,12 @@
           "warn": {
             "linux": {
               "label": "Gebündelte JRE nicht gefunden",
-              "message": "jre64/bin/{{javaBin}} konnte im Installationspfad nicht gefunden werden. Der Server startet möglicherweise nicht, sofern kein System-Java im PATH vorhanden ist.",
+              "message": "jre64/bin/{{javaBin}} wurde im Installationspfad nicht gefunden. Prüfe System-Java mit command -v java; ein systemd-Dienst kann einen anderen $PATH als deine Anmeldeshell verwenden.",
               "hint": "Die meisten Installationen enthalten eine JRE unter jre64/. Bei Fehlen SteamCMD erneut ausführen."
             },
             "windows": {
               "label": "Gebündelte JRE nicht gefunden",
-              "message": "jre64/bin/{{javaBin}} konnte im Installationspfad nicht gefunden werden. Der Server startet möglicherweise nicht, sofern kein System-Java im PATH vorhanden ist.",
+              "message": "jre64/bin/{{javaBin}} wurde im Installationspfad nicht gefunden. Führe where java aus, um zu prüfen, ob System-Java über %PATH% verfügbar ist.",
               "hint": "SteamCMD erneut ausführen, um die gebündelte JRE wiederherzustellen."
             }
           }
