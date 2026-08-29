@@ -252,7 +252,7 @@
     "footerDownloadThenRestart": "Téléchargez la mise à jour, puis redémarrez pour l'appliquer.",
     "footerNoUpdate": "Aucune mise à jour n'est prête à être installée.",
     "footerDockerHandled": "Les mises à jour Docker sont gérées par le contrôleur hôte configuré.",
-    "footerAutoUpdateDevMode": "La mise à jour automatique fonctionne uniquement pour les versions packagées. En mode développement, mettez à jour depuis git.",
+    "footerAutoUpdateDevMode": "La mise à jour automatique fonctionne uniquement pour les versions packagées. En mode développement, mettez à jour depuis git. Exécution dans Docker sans contrôleur de mise à jour configuré ? Mettez à jour avec docker compose pull && docker compose up -d.",
     "permissionDeniedWindows": "access denied writing to the panel folder. Relaunch the panel as Administrator or move it out of Program Files.",
     "permissionDeniedPosix": "access denied writing to the panel folder. Check ownership and write permissions for the panel service user.",
     "helperLogHintWindows": "If the new version does not come back online within a minute, check <code>{{path}}</code>. Legacy helpers may also have logs below <code>%TEMP%</code>.",

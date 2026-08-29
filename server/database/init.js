@@ -13,7 +13,62 @@ import {
   deleteServerSecret,
 } from "../utils/serverRconSecrets.js";
 import { redactRconCommandSecrets } from "../utils/rconCommandRedaction.js";
+import { readUiSecretFile, writeUiSecretFile } from "../utils/uiSecretFile.js";
 const log = createLogger("DB");
+
+// ============================================
+// PanelBridge SFTP password — same shape as rconPassword above, not the
+// discordBotToken/steamSessionId shape. rconPassword's rehydrate/redact
+// pair lives in serverRconSecrets.js because it also owns per-server RCON
+// secrets; panelBridgeSftpPassword has no per-server counterpart and no
+// single owning service (it's read directly off getAllSettings() by
+// routes/panelBridge.js, routes/serverFiles.js and index.js alike), so its
+// pair lives here instead of growing an RCON-scoped file to cover an
+// unrelated credential.
+//
+// 2026-08-29: panelBridgeSftpPassword was the one settings-field credential
+// that never got moved out to its own file the way discordBotToken,
+// steamSessionId/steamLoginSecure and rconPassword all were -- db.json's
+// own two backup paths (this file's createBackup() below, and the #122
+// pre-update snapshot in panelUpdateChecker.js) both copy db.json as a raw
+// file, so it was riding along in every one of those in plaintext.
+// ============================================
+
+/**
+ * Run on every load, same as rehydrateRconSecrets() -- not schema-version-
+ * gated, because db.json never carries this value again once a single
+ * write has happened (see redactPanelBridgeSftpPasswordForWrite below), so
+ * it has to be re-attached in memory on every restart, not just once at an
+ * upgrade. Guarded on the value already being absent: if an operator
+ * restores an OLDER db.json that still has the plaintext, this leaves that
+ * restored value alone rather than overwriting it with a stale (or
+ * missing) secret file -- the next flush redacts whatever is actually in
+ * memory, which is the just-restored value.
+ */
+export function rehydratePanelBridgeSftpPassword(data, log) {
+  if (!data.settings) data.settings = {};
+  if (!data.settings.panelBridgeSftpPassword) {
+    const fromFile = readUiSecretFile("panelBridgeSftpPassword", log);
+    if (fromFile) data.settings.panelBridgeSftpPassword = fromFile;
+  }
+  return data;
+}
+
+/**
+ * Called inside flushWrites() alongside redactRconSecretsForWrite() -- see
+ * that function's doc comment for why `data` itself is never mutated, only
+ * the object being serialized. Chained after redactRconSecretsForWrite()
+ * (order between the two doesn't matter, they touch different settings
+ * keys), so this receives an already-cloned object and returns another
+ * clone rather than mutating its input.
+ */
+export function redactPanelBridgeSftpPasswordForWrite(data) {
+  if (!data.settings?.panelBridgeSftpPassword) return data;
+  writeUiSecretFile("panelBridgeSftpPassword", data.settings.panelBridgeSftpPassword);
+  const { panelBridgeSftpPassword: _panelBridgeSftpPassword, ...restSettings } =
+    data.settings;
+  return { ...data, settings: restSettings };
+}
 
 // ============================================
 // Database Configuration
@@ -338,7 +393,11 @@ export async function flushWrites() {
       // persisted to its own file and stripped from what actually lands on
       // disk here — see utils/serverRconSecrets.js. db.data itself is
       // never mutated by this call, only the object being serialized.
-      const data = JSON.stringify(redactRconSecretsForWrite(db.data), null, 2);
+      const data = JSON.stringify(
+        redactPanelBridgeSftpPasswordForWrite(redactRconSecretsForWrite(db.data)),
+        null,
+        2,
+      );
       fs.writeFileSync(tmpPath, data, { encoding: "utf-8", mode: 0o600 });
       try {
         fs.chmodSync(tmpPath, 0o600);
@@ -811,6 +870,7 @@ export async function getDb() {
     // rconPassword again once a single write has happened, so it has to be
     // re-attached in memory on every restart, not just once at an upgrade.
     db.data = rehydrateRconSecrets(db.data, log);
+    db.data = rehydratePanelBridgeSftpPassword(db.data, log);
 
     // Use the atomic tmp+rename path instead of lowdb's non-atomic
     // adapter.write(). A crash during the startup write would otherwise
@@ -1558,6 +1618,9 @@ export function normalizeServerMemory(server) {
     installPath,
     zomboidDataPath,
     isRemote: pathsConfigured ? !pathsExistLocally : server.isRemote || false,
+    lifecycleProvider: ["systemd", "openrc"].includes(server.lifecycleProvider)
+      ? server.lifecycleProvider
+      : "direct",
     minMemory: normalizeMemoryGb(server.minMemory, 4),
     maxMemory: normalizeMemoryGb(server.maxMemory, 8),
   };
@@ -1625,6 +1688,7 @@ export async function createServer(serverConfig) {
     // for an existing server.
     useUpnp: serverConfig.useUpnp !== false,
     isRemote: serverConfig.isRemote || false,
+    lifecycleProvider: "direct",
     startCommand: serverConfig.startCommand || "",
     // 2026-08-26, two real users: this field-by-field literal never named
     // adminPassword, so servers.js's POST / forwarding it correctly made no

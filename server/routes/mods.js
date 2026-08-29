@@ -2855,6 +2855,22 @@ function getWorkshopPaths(workshopId, serverPath) {
         "108600",
         workshopId,
       ),
+      // Flatpak Steam sandboxes $HOME under ~/.var/app/<appid>, so its
+      // steamapps live at a completely different path from a native install.
+      path.join(
+        home,
+        ".var",
+        "app",
+        "com.valvesoftware.Steam",
+        ".local",
+        "share",
+        "Steam",
+        "steamapps",
+        "workshop",
+        "content",
+        "108600",
+        workshopId,
+      ),
     );
   }
   return paths;

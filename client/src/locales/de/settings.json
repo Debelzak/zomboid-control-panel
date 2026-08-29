@@ -252,7 +252,7 @@
     "footerDownloadThenRestart": "Lade das Update herunter und starte dann neu, um es anzuwenden.",
     "footerNoUpdate": "Es ist kein Update zur Installation bereit.",
     "footerDockerHandled": "Docker-Updates werden vom konfigurierten Host-Controller verwaltet.",
-    "footerAutoUpdateDevMode": "Automatische Updates funktionieren nur in gepackten Builds. Im Dev-Modus aktualisiere über Git.",
+    "footerAutoUpdateDevMode": "Automatische Updates funktionieren nur in gepackten Builds. Im Dev-Modus aktualisiere über Git. Läuft der Panel in Docker ohne konfigurierten Update-Controller? Aktualisiere mit docker compose pull && docker compose up -d.",
     "permissionDeniedWindows": "access denied writing to the panel folder. Relaunch the panel as Administrator or move it out of Program Files.",
     "permissionDeniedPosix": "access denied writing to the panel folder. Check ownership and write permissions for the panel service user.",
     "helperLogHintWindows": "If the new version does not come back online within a minute, check <code>{{path}}</code>. Legacy helpers may also have logs below <code>%TEMP%</code>.",

@@ -197,7 +197,7 @@
     "footerDownloadThenRestart": "Telechaje mizajou a, epi redemare pou aplike l.",
     "footerNoUpdate": "Pa gen mizajou ki pare pou enstale.",
     "footerDockerHandled": "Kontwolè lame ki konfigire a jere mizajou Docker yo.",
-    "footerAutoUpdateDevMode": "Mizajou otomatik fonksyone sèlman nan vèsyon anpakte. Nan mòd devlopman, mete ajou soti nan git.",
+    "footerAutoUpdateDevMode": "Mizajou otomatik fonksyone sèlman nan vèsyon anpakte. Nan mòd devlopman, mete ajou soti nan git. W ap fonksyone nan Docker san kontwolè mizajou konfigire? Mete ajou ak docker compose pull && docker compose up -d.",
     "permissionDeniedWindows": "access denied writing to the panel folder. Relaunch the panel as Administrator or move it out of Program Files.",
     "permissionDeniedPosix": "access denied writing to the panel folder. Check ownership and write permissions for the panel service user.",
     "helperLogHintWindows": "If the new version does not come back online within a minute, check <code>{{path}}</code>. Legacy helpers may also have logs below <code>%TEMP%</code>.",

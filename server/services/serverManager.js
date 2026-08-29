@@ -17,6 +17,10 @@ import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { escapeRegExp } from "../utils/regex.js";
 import { getDataPaths } from "../utils/paths.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
+import {
+  createLinuxServiceLifecycle,
+  isManagedLifecycleProvider,
+} from "./linuxServiceLifecycle.js";
 
 const isWindows = process.platform === "win32";
 // How long a live-looked-up public IP is trusted before re-checking.
@@ -197,6 +201,73 @@ function isLinuxDedicatedServerCommandLine(commandLine) {
   return false;
 }
 
+// Deliberately BROADER than isLinuxDedicatedServerCommandLine above, and used
+// for a different purpose: not to decide ownership, but to decide whether a
+// zero-match scan is entitled to claim "definitely not running" at all.
+//
+// isLinuxDedicatedServerCommandLine requires a specific launch shape
+// (zombie.network.GameServer, or ProjectZomboid64/32 combined with a
+// -server-ish flag). A REAL dedicated server invoked a different way -- a
+// -jar launcher (plausible for Build 42's shaded jar, see
+// buildClasspathEntries()'s own comment), a wrapper script, a renamed
+// binary -- produces a command line this function would confidently (and
+// wrongly) call "not a dedicated server", and the scan around it returns
+// `{running:false, scanFailed:false}`: a CONFIDENT wrong answer that skips
+// every downstream fallback written to trigger on doubt (2026-08-29 Linux
+// bug hunt, live Discord report -- verified false negative:
+// isLinuxDedicatedServerCommandLine("... -jar projectzomboid.jar") is false
+// even though the process is genuinely a running PZ server).
+//
+// This can never be made "complete" by adding more shapes to the narrow
+// matcher -- there will always be one more shape nobody thought of, failing
+// exactly as silently. Instead, the scan casts THIS wider, looser net
+// (just "zomboid" or "zombie.network" appearing anywhere) purely to detect
+// its own uncertainty: a candidate this catches that the narrow matcher
+// rejects is EVIDENCE WORTH DOUBTING, not automatic proof -- see
+// looksLikeUndeterminedJvmCandidate below for the second filter that turns
+// "mentions zomboid somewhere" into "plausibly IS the thing we're unsure
+// about".
+function looksZomboidAdjacent(commandLine) {
+  const lower = String(commandLine || "").toLowerCase();
+  return lower.includes("zomboid") || lower.includes("zombie.network");
+}
+
+// CI regression (2026-08-29, same day as the fix above): a v1 version of
+// this classified ANY looksZomboidAdjacent() match that failed the narrow
+// test as ambiguous -- which is wrong, and the wrongness is exactly what
+// god's dispatch warned about: "the exclusion has to be about what a
+// candidate IS, not which pid it is". On a GitHub Actions runner the repo
+// is checked out to /home/runner/work/zomboid-control-panel/zomboid-
+// control-panel -- so EVERY sibling process on that host (other vitest
+// workers, the runner's own supervisor, an unrelated shell) has "zomboid"
+// somewhere in its own cwd-derived argv or script path, none of them a PZ
+// server. The original fix only excluded THIS process's own pid
+// (process.pid), which does nothing for a DIFFERENT process on the same
+// host with a different pid -- so a genuinely idle CI runner reported
+// "unknown" on every single check, permanently. Confirmed by reproducing
+// the runner's exact checkout shape locally (a checkout literally named
+// .../zomboid-control-panel/zomboid-control-panel with other node
+// processes alive) -- byte-identical failure, not a hypothesis.
+//
+// The real fix has to ask a different question than "does this path
+// mention zomboid" -- a path can ALWAYS mention zomboid for reasons that
+// have nothing to do with a game server (this very repo's own directory
+// name, a terminal cd'd into it, a backup job, an unrelated tool). What
+// actually distinguishes a plausible-but-unrecognized PZ server from that
+// noise is that a PZ dedicated server, however it's invoked -- the panel's
+// own script, a -jar launcher, a native ProjectZomboid64/32 stub that execs
+// into one -- is ALWAYS, by the time it's running, a JVM. A vitest worker,
+// a shell, a backup script, an editor sitting in a zomboid-named directory
+// are never going to have "java" as a substring of their own command line.
+// Requiring BOTH signals (mentions zomboid/zombie.network AND looks like a
+// JVM) is what makes "worth doubting" actually mean something, instead of
+// "shares a directory name with the panel".
+function looksLikeUndeterminedJvmCandidate(commandLine) {
+  const lower = String(commandLine || "").toLowerCase();
+  if (!looksZomboidAdjacent(lower)) return false;
+  return /\bjava\b|\bjavaw\b|\/java$/.test(lower);
+}
+
 // Pull the value of a PZ launch argument (`-servername X`, `-cachedir="Y"`)
 // out of a raw command line.
 function extractLaunchArgValue(commandLine, flag) {
@@ -289,7 +360,7 @@ export function scoreServerProcessOwnership(commandLine, descriptor = {}) {
 }
 
 export class ServerManager {
-  constructor() {
+  constructor({ lifecycleFactory = createLinuxServiceLifecycle } = {}) {
     this.serverProcess = null;
     this.serverPath = process.env.PZ_SERVER_PATH || "";
     this.serverBat = process.env.PZ_SERVER_BAT || getDefaultStartupScript();
@@ -304,6 +375,9 @@ export class ServerManager {
     // "managed" (the panel owns and regenerates the launch script) or
     // "custom" (the operator's own .bat/.sh/.exe -- see resolveLaunchMode()).
     this.launchMode = "managed";
+    this.lifecycleProvider = "direct";
+    this._serverRecord = null;
+    this._lifecycleFactory = lifecycleFactory;
     // Which server this instance's currently-loaded config belongs to (null
     // = "the active server", the shared-singleton default). Recorded so
     // internal reload points (e.g. startServer()'s "settings may have
@@ -330,6 +404,8 @@ export class ServerManager {
     this.rconHost = null;
     this.rconPort = null;
     this.launchMode = "managed";
+    this.lifecycleProvider = "direct";
+    this._serverRecord = null;
     this.configLoaded = false;
     await this.loadConfig(serverId);
   }
@@ -350,6 +426,8 @@ export class ServerManager {
         ? await getServer(serverId)
         : await getActiveServer();
       if (activeServer) {
+        this._serverRecord = activeServer;
+        this.lifecycleProvider = activeServer.lifecycleProvider || "direct";
         // Use serverPath if available, otherwise extract from installPath
         let serverDir = activeServer.serverPath || activeServer.installPath;
 
@@ -500,6 +578,35 @@ export class ServerManager {
    */
   async getServerProcessDetails() {
     await this.loadConfig(this._serverId);
+
+    if (this.usesManagedServiceLifecycle()) {
+      try {
+        const lifecycle = this._getManagedLifecycle();
+        const status = await lifecycle.status();
+        if (!status.scanFailed) this.isRunning = status.running;
+        return {
+          running: status.running,
+          matched: [],
+          owned: [],
+          scanFailed: Boolean(status.scanFailed),
+          provider: this.lifecycleProvider,
+          serviceName: lifecycle.serviceName,
+          ...(status.error ? { error: status.error } : {}),
+        };
+      } catch (error) {
+        log.warn(
+          `Managed lifecycle status failed for "${this.serverName}": ${error.message}`,
+        );
+        return {
+          running: false,
+          matched: [],
+          owned: [],
+          scanFailed: true,
+          provider: this.lifecycleProvider,
+          error: error.message,
+        };
+      }
+    }
 
     // Fast path: if we recorded the PID we spawned and it's still alive
     // with a command line that still looks like (and is attributable to)
@@ -664,9 +771,38 @@ export class ServerManager {
         // *game* (ProjectZomboid64) on the same box doesn't false-positive
         // as a running dedicated server. Direct `zombie.network.GameServer`
         // java invocations always qualify.
+        //
+        // The search itself is deliberately BROADER than
+        // isLinuxDedicatedServerCommandLine -- see looksZomboidAdjacent's
+        // own comment. Every candidate this turns up is classified into one
+        // of three buckets: CONFIRMED (matches the narrow launch-shape
+        // pattern -- pushed into `matched`, unchanged behavior), AMBIGUOUS
+        // (fails the narrow pattern but ALSO looks like an unidentified JVM
+        // -- see looksLikeUndeterminedJvmCandidate's own comment for why
+        // this second filter, not just "mentions zomboid", is required), or
+        // discarded as noise (mentions zomboid/zombie.network for a reason
+        // that has nothing to do with a game server -- a checkout path, a
+        // sibling test-runner process, a shell sitting in this repo). Zero
+        // confirmed AND zero ambiguous is a genuinely idle host: confidently
+        // not running, exactly as before. Zero confirmed but at least one
+        // ambiguous candidate is the case this fix exists for: real
+        // JVM-shaped evidence we can't rule out, so the scan reports
+        // scanFailed:true (renders as "unknown" downstream) instead of a
+        // confident, possibly wrong, "not running".
         log.debug("getServerProcessDetails: trying pgrep -af first...");
+        const ambiguous = [];
+        const pushAmbiguous = (cmd) => {
+          ambiguous.push(String(cmd || "").slice(0, 240));
+        };
+        // Bracket-obfuscated (matches the narrow pattern's own existing
+        // convention below, NOT a plain -i flag): exec() runs this through
+        // `sh -c "<command>"`, and that wrapper's OWN argv, read back by
+        // this very scan, literally contains the pattern text -- a plain
+        // "zomboid|zombie.network" search string self-matches its own
+        // invocation. "[Zz]omboid" in the wrapper's own argv does not
+        // contain the bare substring "zomboid", so it doesn't self-trigger.
         exec(
-          'pgrep -af "zombie.network.[Gg]ame[Ss]erver|[Pp]roject[Zz]omboid64|[Pp]roject[Zz]omboid32"',
+          'pgrep -af "[Zz]omboid|[Zz]ombie\\.network"',
           { timeout: 8000 },
           (pgrepErr, pgrepOut) => {
             if (!pgrepErr && pgrepOut && pgrepOut.trim()) {
@@ -677,18 +813,43 @@ export class ServerManager {
                 const m = trimmed.match(/^(\d+)\s+(.*)$/);
                 const pid = m ? m[1] : undefined;
                 const cmd = m ? m[2] : trimmed;
-                if (!isLinuxDedicatedServerCommandLine(cmd)) {
+                // Belt-and-braces: exclude the panel's own process. Not the
+                // load-bearing fix (a `node` process never matches
+                // looksLikeUndeterminedJvmCandidate's java requirement
+                // anyway), but cheap and makes the intent explicit even in
+                // some future edge case where a panel process's own args
+                // happen to contain "java" as a substring.
+                if (pid && Number(pid) === process.pid) continue;
+                if (isLinuxDedicatedServerCommandLine(cmd)) {
+                  pushMatch(cmd, pid);
+                } else if (looksLikeUndeterminedJvmCandidate(cmd)) {
                   log.debug(
-                    `getServerProcessDetails: pgrep candidate ignored (not a dedicated server): ${cmd.substring(0, 200)}`,
+                    `getServerProcessDetails: pgrep candidate ignored (not a recognized dedicated-server shape, but JVM-shaped and zomboid-adjacent -- treating as ambiguous): ${cmd.substring(0, 200)}`,
                   );
-                  continue;
+                  pushAmbiguous(cmd);
+                } else {
+                  log.debug(
+                    `getServerProcessDetails: pgrep candidate discarded (zomboid-adjacent but not JVM-shaped -- not evidence): ${cmd.substring(0, 200)}`,
+                  );
                 }
-                pushMatch(cmd, pid);
               }
               log.debug(
-                `getServerProcessDetails: pgrep matched ${matched.length} process(es)`,
+                `getServerProcessDetails: pgrep matched ${matched.length} confirmed / ${ambiguous.length} ambiguous process(es)`,
               );
               clearTimeout(timeout);
+              if (matched.length === 0 && ambiguous.length > 0) {
+                // Leave this.isRunning at its previous value -- exactly the
+                // same "a scan that couldn't tell must not overwrite the
+                // last known-good state" rule getServerProcessDetails()
+                // already applies via scanFailed for every OTHER uncertain
+                // case (see its own comment). Only a scan that ran clean
+                // and found nothing at all is entitled to claim false.
+                log.warn(
+                  `getServerProcessDetails: found ${ambiguous.length} JVM-shaped process(es) mentioning zomboid/zombie.network that don't match a known dedicated-server launch shape -- cannot confirm the server is stopped (first: ${ambiguous[0]})`,
+                );
+                resolve({ running: false, matched: [], scanFailed: true });
+                return;
+              }
               this.isRunning = matched.length > 0;
               resolve({ running: matched.length > 0, matched });
               return;
@@ -708,16 +869,10 @@ export class ServerManager {
               }
               for (const line of stdout.split(/\r?\n/)) {
                 const lower = line.toLowerCase();
-                if (
-                  !lower.includes("zombie.network.gameserver") &&
-                  !lower.includes("projectzomboid64") &&
-                  !lower.includes("projectzomboid32")
-                ) {
-                  continue;
-                }
+                if (!looksZomboidAdjacent(lower)) continue;
                 // Skip our own grep / pgrep / ps invocations
                 if (
-                  /\b(ps|pgrep|grep)\b.*\b(zombie|projectzomboid)/.test(
+                  /\b(ps|pgrep|grep)\b.*\b(zombie|zomboid|projectzomboid)/.test(
                     lower,
                   ) &&
                   !lower.includes("java") &&
@@ -733,8 +888,19 @@ export class ServerManager {
                   );
                 const pid = m ? m[1] : undefined;
                 const cmd = m ? m[2] : line.trim();
-                if (!isLinuxDedicatedServerCommandLine(cmd)) continue;
-                pushMatch(cmd, pid);
+                if (pid && Number(pid) === process.pid) continue;
+                if (isLinuxDedicatedServerCommandLine(cmd)) {
+                  pushMatch(cmd, pid);
+                } else if (looksLikeUndeterminedJvmCandidate(cmd)) {
+                  pushAmbiguous(cmd);
+                }
+              }
+              if (matched.length === 0 && ambiguous.length > 0) {
+                log.warn(
+                  `getServerProcessDetails: found ${ambiguous.length} JVM-shaped process(es) mentioning zomboid/zombie.network that don't match a known dedicated-server launch shape -- cannot confirm the server is stopped (first: ${ambiguous[0]})`,
+                );
+                resolve({ running: false, matched: [], scanFailed: true });
+                return;
               }
               this.isRunning = matched.length > 0;
               resolve({ running: matched.length > 0, matched });
@@ -912,6 +1078,20 @@ export class ServerManager {
       this.configLoaded = false;
       await this.loadConfig(this._serverId);
 
+      if (this.usesManagedServiceLifecycle()) {
+        const result = await this._getManagedLifecycle().run("start");
+        if (!result.success) throw new Error(result.error || result.message);
+        this.serverProcess = null;
+        this.isRunning = true;
+        this.startTime = this.startTime || new Date();
+        this._deletePidFile();
+        await logServerEvent(
+          "server_start",
+          `Server started through ${this.lifecycleProvider}`,
+        ).catch((error) => log.warn(`Failed to log event: ${error.message}`));
+        return result;
+      }
+
       if (!this.startCommand && !this.serverPath) {
         throw new Error("Server path not configured");
       }
@@ -1039,6 +1219,22 @@ export class ServerManager {
             env: { ...process.env, LD_LIBRARY_PATH: ldPath },
           });
         } else {
+          // Reached on Linux only for a no-extension custom command (the
+          // other allowed non-Windows extension besides .sh -- a compiled
+          // launcher binary or extensionless wrapper script, both common on
+          // Linux). Unlike the ".sh" branch above, this spawns resolvedCmd
+          // DIRECTLY rather than via `bash`, so the OS itself enforces the
+          // execute bit -- a freshly downloaded/copied/SteamCMD-installed
+          // file commonly lacks it, and without this chmod the spawn fails
+          // with EACCES every time, exactly the class of "worked on my
+          // Windows box, dead on Linux" bug this hunt exists to catch.
+          if (!isWindows) {
+            try {
+              fs.chmodSync(resolvedCmd, 0o750);
+            } catch (e) {
+              log.debug(`chmod on custom command failed: ${e.message}`);
+            }
+          }
           const spawnEnv = isWindows
             ? process.env
             : (() => {
@@ -1249,6 +1445,19 @@ export class ServerManager {
     // Block overlapping starts while kill/state-clear is pending.
     this._stopping = true;
     try {
+      await this.loadConfig(this._serverId);
+      if (this.usesManagedServiceLifecycle()) {
+        const result = await this._getManagedLifecycle().run("stop");
+        if (result.success && result.confirmed !== false) this._clearRunState();
+        if (result.success) {
+          await logServerEvent(
+            "server_stop",
+            `Server stopped through ${this.lifecycleProvider}`,
+          ).catch((error) => log.warn(`Failed to log event: ${error.message}`));
+        }
+        return result;
+      }
+
       // Only PIDs this server owns: a host can run several dedicated servers
       // and killing every PZ process would take the others down with it.
       const details = await this.getServerProcessDetails();
@@ -1533,6 +1742,29 @@ export class ServerManager {
       }
       await this.sleep(3000);
 
+      await this.loadConfig(this._serverId);
+      if (this.usesManagedServiceLifecycle()) {
+        const restarted = await this._getManagedLifecycle().run("restart");
+        if (!restarted.success || restarted.confirmed === false) {
+          throw new Error(
+            restarted.error ||
+              `${this.lifecycleProvider} did not confirm the restart`,
+          );
+        }
+        this.serverProcess = null;
+        this.isRunning = true;
+        this.startTime = new Date();
+        this._deletePidFile();
+        await logServerEvent(
+          "server_restart",
+          `Server restarted through ${this.lifecycleProvider}`,
+        );
+        return {
+          success: true,
+          message: `Server restarted successfully through ${this.lifecycleProvider}`,
+        };
+      }
+
       // Quit the server (with timeout)
       try {
         let quitTimeoutId;
@@ -1676,6 +1908,23 @@ export class ServerManager {
       localIp: await this.getLocalIp(),
       port: this.gamePort,
     };
+  }
+
+  usesManagedServiceLifecycle() {
+    return (
+      isManagedLifecycleProvider(this.lifecycleProvider) &&
+      Boolean(this._serverRecord)
+    );
+  }
+
+  _getManagedLifecycle() {
+    if (!this.usesManagedServiceLifecycle()) {
+      throw new Error("No managed service lifecycle is configured");
+    }
+    return this._lifecycleFactory(
+      this._serverRecord,
+      this.lifecycleProvider,
+    );
   }
 
   // All non-internal IPv4 addresses currently present on the host, e.g. one

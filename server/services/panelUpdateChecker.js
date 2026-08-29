@@ -17,6 +17,8 @@ import { createLogger } from "../utils/logger.js";
 import { getSetting, setSetting } from "../database/init.js";
 import { getDataPaths } from "../utils/paths.js";
 import { DockerUpdateProxy } from "./dockerUpdateProxy.js";
+import { isContainerized } from "../utils/dockerDetect.js";
+import { stageUpdateBundle } from "./updateBundle.js";
 
 const log = createLogger("PanelUpdater");
 
@@ -39,10 +41,18 @@ export function getPanelFolderPermissionGuidance(platform, detail) {
   return `${prefix} Check the installation directory permissions for the account running the panel.`;
 }
 
+// A Linux install whose loaded systemd unit predates KillMode=process (or
+// whose launcher predates start.sh's own process-group isolation) reads as
+// "at risk": a panel restart signals the whole cgroup, which can also kill
+// every running game server. PANEL_SUPERVISOR_V/PANEL_PRESERVE_GAME_SERVERS
+// are set by the NEW start.sh only, so their absence under an orchestrator
+// means the OLD unit/launcher shape is still the one actually loaded —
+// see remediationCommand below for what an operator does about it.
 export function getRestartAssessment({
   platform = process.platform,
   packaged = typeof process.pkg !== "undefined",
   environment = process.env,
+  exeDir = path.dirname(process.execPath),
   launcherProtected =
     environment.PANEL_SUPERVISOR_V === "2" &&
     environment.PANEL_PRESERVE_GAME_SERVERS === "1",
@@ -77,6 +87,10 @@ export function getRestartAssessment({
       gameServers: "at-risk",
       requiresConfirmation: true,
       reason: "service-cgroup-may-stop-children",
+      // install-linux-service.sh is idempotent (no-ops if the unit already
+      // matches) and never invokes sudo itself, so this is safe to hand to
+      // an operator verbatim regardless of how far out of date they are.
+      remediationCommand: `sudo ${path.join(exeDir, "install-linux-service.sh")} --enable`,
     };
   }
   return {
@@ -84,6 +98,16 @@ export function getRestartAssessment({
     requiresConfirmation: platform !== "linux",
     reason: platform === "linux" ? "detached-linux-process" : "unknown-runtime",
   };
+}
+
+// "In dev mode, pull the latest code with git" is only true for a real git
+// checkout run with plain `node server/index.js`. Someone running the
+// published Docker image has no checkout to pull — the correct next step is
+// to pull and recreate the image via Compose.
+export function getDevModeUpgradeInstruction(containerized = isContainerized()) {
+  return containerized
+    ? "Pull the newer image and recreate the container: docker compose pull && docker compose up -d."
+    : "In dev mode, pull the latest code with git.";
 }
 
 export function createUpdateDataBackup(dataPaths, version, fsModule = fs) {
@@ -100,6 +124,30 @@ export function createUpdateDataBackup(dataPaths, version, fsModule = fs) {
     throw error;
   }
   return backupPath;
+}
+
+/**
+ * Restore db.json from a pre-update snapshot (see createUpdateDataBackup()
+ * above) after a rollback that can only be needed on ONE path: the update
+ * bundle journal's version-mismatch rollback (updateBundle.js's
+ * acknowledgeUpdateBundle()), which fires AFTER the new binary has already
+ * completed its own startup -- including any database migration -- and
+ * only rolls the BINARY and CLIENT back. Without this, that rollback is a
+ * half-rollback: the previous binary running against a database the NEW
+ * version already migrated. The bundle-transaction's OWN mid-apply rollback
+ * (applyUpdateBundle() failing before the new binary ever ran) never needs
+ * this -- nothing could have touched the database yet at that point.
+ *
+ * Returns false (never throws for a missing/absent backup -- that's the
+ * caller's own thing to log, not this function's) when there is nothing to
+ * restore. Propagates a real copy failure so the caller can tell the two
+ * apart.
+ */
+export function restorePreUpdateDataBackup(dataPaths, backupPath, fsModule = fs) {
+  const dbPath = dataPaths?.dbPath;
+  if (!dbPath || !backupPath || !fsModule.existsSync(backupPath)) return false;
+  fsModule.copyFileSync(backupPath, dbPath);
+  return true;
 }
 
 export function validateReleaseManifest(
@@ -483,8 +531,7 @@ export class PanelUpdateChecker {
     if (!isPackaged) {
       return {
         success: false,
-        error:
-          "Self-update is only available for standalone exe/binary builds. In dev mode, pull the latest code with git.",
+        error: `Self-update is only available for standalone exe/binary builds. ${getDevModeUpgradeInstruction()}`,
       };
     }
 
@@ -550,15 +597,21 @@ export class PanelUpdateChecker {
       exeDir,
       `.client-dist-${this.latestRelease.version}.partial.${process.pid}${clientArchiveExtension}`,
     );
+    let incomingClientPath = null;
 
     try {
-      const dataBackupPath = createUpdateDataBackup(
-        getDataPaths(),
-        this.latestRelease.version,
-      );
-      if (dataBackupPath) {
-        log.info(`Backed up panel database before update: ${dataBackupPath}`);
-      }
+      // 2026-08-29: the pre-update database snapshot used to be taken HERE,
+      // at download/stage time. That was correct back when download and
+      // apply were one atomic user action -- taking it right before that
+      // one action began WAS taking it right before the destructive step.
+      // The bundle-journal rewrite decoupled the two: an operator can
+      // download/stage now and click "Restart and Apply" hours or days
+      // later, making a download-time snapshot stale by the time it would
+      // actually matter (it would be missing every operator-state change
+      // made in between). The snapshot is now taken in server/index.js's
+      // POST /api/panel/restart, immediately before either platform's
+      // actual destructive apply step -- see createUpdateDataBackup()'s own
+      // call site there for why.
       log.info(
         `Downloading update: ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)} MB)`,
       );
@@ -631,12 +684,13 @@ export class PanelUpdateChecker {
           `Could not verify ${clientArchive.name}; refusing to replace the web interface`,
         );
       }
-      await this.replaceClientDist(
+      const stagedClient = await this.stageClientDist(
         tmpClientArchivePath,
         isWindows,
         tmpDownloadPath,
         asset.name,
       );
+      incomingClientPath = stagedClient.incomingClientPath;
       fs.unlinkSync(tmpClientArchivePath);
 
       // Promote .partial → .new atomically. If a stale .new exists, drop it first.
@@ -654,6 +708,19 @@ export class PanelUpdateChecker {
           log.warn(`Could not chmod staged binary: ${chmodErr.message}`);
         }
       }
+
+      const exeBasePath = this.getExeBasePath();
+      const journalPath = stageUpdateBundle({
+        installDir: exeDir,
+        version: this.latestRelease.version,
+        binaryPath: exeBasePath,
+        stagedBinaryPath: stagedPath,
+        liveClientPath: path.join(exeDir, "client", "dist"),
+        incomingClientPath,
+        metadata: stagedClient.metadata,
+      });
+      fs.rmSync(incomingClientPath, { recursive: true, force: true });
+      incomingClientPath = null;
 
       // NOTE: We intentionally do NOT set `pendingPanelUpdate` here. That
       // setting is the "we actually committed to apply this" marker used by
@@ -688,6 +755,7 @@ export class PanelUpdateChecker {
       return {
         success: true,
         message: `Update to v${this.latestRelease.version} downloaded. Restart the panel to apply.`,
+        journal: path.basename(journalPath),
       };
     } catch (error) {
       this.lastError = error.message;
@@ -703,7 +771,16 @@ export class PanelUpdateChecker {
       } catch (delErr) {
         log.debug(`Failed to clean client archive after error: ${delErr.message}`);
       }
-      return { success: false, error: error.message };
+      if (incomingClientPath) {
+        fs.rmSync(incomingClientPath, { recursive: true, force: true });
+      }
+      if (
+        fs.existsSync(stagedPath) &&
+        !fs.existsSync(path.join(exeDir, "update-bundle.json"))
+      ) {
+        fs.rmSync(stagedPath, { force: true });
+      }
+      return { success: false, error: error.message, code: error.code };
     } finally {
       this.isDownloading = false;
     }
@@ -741,6 +818,9 @@ export class PanelUpdateChecker {
     const payload = {
       version: staged?.version || null,
       stagedFile: staged?.stagedPath ? path.basename(staged.stagedPath) : null,
+      journalFile: staged?.journalPath
+        ? path.basename(staged.journalPath)
+        : "update-bundle.json",
       stagedAt: new Date().toISOString(),
       requestedBy: `panel-pid-${process.pid}`,
     };
@@ -809,8 +889,24 @@ export class PanelUpdateChecker {
   getStagedUpdate() {
     if (typeof process.pkg === "undefined") return null;
     const exePath = process.execPath;
-    const stagedPath = this.findStagedFileOnDisk();
-    if (!stagedPath) return null;
+    const journalPath = path.join(
+      path.dirname(this.getExeBasePath()),
+      "update-bundle.json",
+    );
+    if (!fs.existsSync(journalPath)) return null;
+    let journal;
+    try {
+      journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+    } catch (error) {
+      log.warn(`Ignoring invalid update bundle journal: ${error.message}`);
+      return null;
+    }
+    if (journal.phase !== "staged") return null;
+    const stagedPath = journal.paths?.stagedBinary;
+    if (!stagedPath || !fs.existsSync(journal.paths?.stagedClient || "")) {
+      log.warn("Ignoring incomplete staged update bundle");
+      return null;
+    }
     let size;
     try {
       const stats = fs.statSync(stagedPath);
@@ -830,9 +926,9 @@ export class PanelUpdateChecker {
     // latestRelease if we somehow never persisted it (older builds, manual
     // file drops). Reading the setting synchronously from the in-memory DB
     // is fine — this method is called often and must stay non-async.
-    let version = this._stagedVersionCache ?? null;
+    let version = journal.version || this._stagedVersionCache || null;
     if (!version) version = this.latestRelease?.version || null;
-    return { stagedPath, exePath, version, size };
+    return { stagedPath, exePath, version, size, journalPath, journal };
   }
 
   /**
@@ -1113,7 +1209,7 @@ export class PanelUpdateChecker {
   /**
    * Download a file with progress tracking
    */
-  async replaceClientDist(archivePath, isWindows, binaryPath, artifactName) {
+  async stageClientDist(archivePath, isWindows, binaryPath, artifactName) {
     const exeDir = path.dirname(process.execPath);
     const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), "zpanel-update-"));
     const escapePowerShellLiteral = (value) => String(value).replace(/'/g, "''");
@@ -1159,29 +1255,54 @@ export class PanelUpdateChecker {
       if (!fs.existsSync(path.join(incoming, "index.html"))) {
         throw new Error("Release archive does not contain client/dist/index.html");
       }
+      const metadata = {
+        panelVersion: manifest.version,
+        buildSha: manifest.buildSha,
+        apiContractVersion: manifest.apiContractVersion,
+      };
+      if (
+        !metadata.buildSha ||
+        Number(metadata.apiContractVersion) !== 1
+      ) {
+        throw new Error("Release archive is missing compatible build metadata");
+      }
+      const clientMetadata = JSON.parse(
+        fs.readFileSync(path.join(incoming, "build-info.json"), "utf8"),
+      );
+      if (
+        clientMetadata.panelVersion !== metadata.panelVersion ||
+        clientMetadata.buildSha !== metadata.buildSha ||
+        Number(clientMetadata.apiContractVersion) !== metadata.apiContractVersion
+      ) {
+        throw new Error("Release frontend metadata does not match its backend artifact");
+      }
+      const incomingClientPath = path.join(
+        exeDir,
+        `.update-client-incoming-${process.pid}`,
+      );
+      fs.rmSync(incomingClientPath, { recursive: true, force: true });
+      fs.cpSync(incoming, incomingClientPath, { recursive: true });
+      log.info("Staged verified client bundle without changing live client/dist");
 
-      const clientDir = path.join(exeDir, "client");
-      const liveDist = path.join(clientDir, "dist");
-      const nextDist = path.join(clientDir, "dist.new");
-      const backupDist = path.join(clientDir, "dist.previous");
-      fs.mkdirSync(clientDir, { recursive: true });
-      fs.rmSync(nextDist, { recursive: true, force: true });
-      fs.cpSync(incoming, nextDist, { recursive: true });
-      fs.rmSync(backupDist, { recursive: true, force: true });
-      if (fs.existsSync(liveDist)) fs.renameSync(liveDist, backupDist);
-      try {
-        fs.renameSync(nextDist, liveDist);
-      } catch (error) {
-        if (fs.existsSync(backupDist) && !fs.existsSync(liveDist)) {
-          fs.renameSync(backupDist, liveDist);
-        }
-        throw error;
-      }
-      fs.rmSync(backupDist, { recursive: true, force: true });
-      log.info("Updated client/dist from verified release archive");
+      // Stage the managed launcher/service files too, but do NOT swap them
+      // live here. This method only STAGES — the binary and client dist it
+      // just prepared above don't become live until applyUpdateBundle()
+      // runs (and can still be rolled back after that, until the NEW
+      // process acknowledges startup). Swapping start.sh/the unit file
+      // eagerly at stage time, as the pre-merge version of this method did,
+      // would put them ahead of a binary that might never actually apply,
+      // or leave them upgraded after a version-mismatch rollback puts the
+      // binary and client back — a half-rollback of exactly the kind
+      // restorePreUpdateDataBackup() exists to prevent for the database.
+      // Copied into a fixed, deterministic location (not extractDir, which
+      // this method's own `finally` below deletes before apply can ever
+      // run) so activateStagedLinuxLauncherFiles() can find it later,
+      // however long "later" turns out to be.
       if (!isWindows) {
-        this.replaceManagedLinuxFiles(extractDir, exeDir);
+        this.stageLinuxLauncherFiles(extractDir, exeDir);
       }
+
+      return { incomingClientPath, metadata };
     } finally {
       if (windowsArchiveCopy) {
         fs.rmSync(windowsArchiveCopy, { force: true });
@@ -1190,22 +1311,53 @@ export class PanelUpdateChecker {
     }
   }
 
-  replaceManagedLinuxFiles(extractDir, exeDir) {
-    const managed = [
-      { name: "start.sh", mode: 0o755 },
-      { name: "zomboid-panel.service", mode: 0o644 },
-      { name: "install-linux-service.sh", mode: 0o755 },
-    ];
-    for (const file of managed) {
+  static LINUX_LAUNCHER_FILES = [
+    { name: "start.sh", mode: 0o755 },
+    { name: "zomboid-panel.service", mode: 0o644 },
+    { name: "install-linux-service.sh", mode: 0o755 },
+  ];
+
+  // Fixed, deterministic location — not a per-pid or per-transaction name —
+  // so activateStagedLinuxLauncherFiles() can find it on a later boot
+  // without needing anything threaded through updateBundle.js's journal.
+  static getLinuxLauncherStageDir(exeDir) {
+    return path.join(exeDir, ".update-linux-files-staged");
+  }
+
+  // Called from stageClientDist() at STAGE time, once per download. Copies
+  // only — never touches the live start.sh/unit file. See the comment at
+  // this method's one call site for why activation is deferred.
+  stageLinuxLauncherFiles(extractDir, exeDir) {
+    const stageDir = PanelUpdateChecker.getLinuxLauncherStageDir(exeDir);
+    for (const file of PanelUpdateChecker.LINUX_LAUNCHER_FILES) {
       if (!fs.existsSync(path.join(extractDir, file.name))) {
         throw new Error(`Release archive does not contain ${file.name}`);
       }
     }
+    fs.rmSync(stageDir, { recursive: true, force: true });
+    fs.mkdirSync(stageDir, { recursive: true });
+    for (const file of PanelUpdateChecker.LINUX_LAUNCHER_FILES) {
+      fs.copyFileSync(path.join(extractDir, file.name), path.join(stageDir, file.name));
+    }
+  }
+
+  // Called from server/index.js ONLY after acknowledgeUpdateBundle() has
+  // confirmed the new binary/client are good and deleted their own journal
+  // — the one point in the whole update lifecycle where a rollback of the
+  // binary/client can no longer happen, so swapping these files here can
+  // never land ahead of a binary that gets rolled back later. Best-effort:
+  // a failure here does not undo the (already-committed) binary/client
+  // update, it just leaves the old launcher/unit in place for this cycle —
+  // logged clearly, with the same remediation command getRestartAssessment()
+  // already gives an operator for exactly this state.
+  activateStagedLinuxLauncherFiles(exeDir) {
+    const stageDir = PanelUpdateChecker.getLinuxLauncherStageDir(exeDir);
+    if (!fs.existsSync(stageDir)) return false;
 
     const swapped = [];
     try {
-      for (const file of managed) {
-        const source = path.join(extractDir, file.name);
+      for (const file of PanelUpdateChecker.LINUX_LAUNCHER_FILES) {
+        const source = path.join(stageDir, file.name);
         const target = path.join(exeDir, file.name);
         const staged = `${target}.new`;
         const backup = `${target}.previous`;
@@ -1236,7 +1388,9 @@ export class PanelUpdateChecker {
       throw error;
     }
     for (const { backup } of swapped) fs.rmSync(backup, { force: true });
+    fs.rmSync(stageDir, { recursive: true, force: true });
     log.info("Updated Linux launcher and service templates from verified release archive");
+    return true;
   }
 
   runUpdateCommand(command, args) {
@@ -1474,7 +1628,7 @@ export class PanelUpdateChecker {
 
     if (!isPackaged) {
       blockers.push(
-        "Self-update is only available in packaged builds. In dev mode, pull the latest code with git.",
+        `Self-update is only available in packaged builds. ${getDevModeUpgradeInstruction()}`,
       );
       return { ok: false, blockers, warnings, info };
     }
