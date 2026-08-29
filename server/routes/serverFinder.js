@@ -138,7 +138,8 @@ export async function queryServerInfo(ip, port, onFailureReason) {
           onFailureReason?.('timeout');
           resolve(null);
         }, SERVER_QUERY_TIMEOUT);
-        socket.send(buildA2SInfoQuery(challenge), port, ip);
+        // No destination args -- this socket is connect()-ed, see below.
+        socket.send(buildA2SInfoQuery(challenge));
         return;
       }
       try {
@@ -158,7 +159,24 @@ export async function queryServerInfo(ip, port, onFailureReason) {
     // A2S_INFO query packet. A server may answer with a challenge; the
     // message handler retries once with the challenge appended as required by
     // the protocol.
-    socket.send(buildA2SInfoQuery(), port, ip);
+    //
+    // socket.connect() ties this socket to exactly the queried ip:port for
+    // its whole lifetime -- the kernel then only ever delivers a reply from
+    // that address, the same hardening applied to queryMasterServer()
+    // (hunt-wave10, 2026-08-29). LOWER SEVERITY than that gap was, and
+    // recorded here rather than left implicit: by the time this function
+    // runs, `ip` has already passed either validateQueryIp (GET /query,
+    // GET /ping -- caller-supplied) or the isPrivateIp filter inside
+    // selectMasterServersToQuery (GET /'s master-server fallback), so a
+    // spoofer here must answer FOR a specific address the panel was
+    // already willing to probe, not redirect it to an arbitrary internal
+    // one. Still worth closing: without this, any host that can land a
+    // datagram on this socket's local port can fabricate the entire A2S
+    // reply for a server the operator is actually checking on, not merely
+    // add noise to a list.
+    socket.connect(port, ip, () => {
+      socket.send(buildA2SInfoQuery());
+    });
   });
 }
 
@@ -533,6 +551,21 @@ export function selectMasterServersToQuery(masterServers) {
   };
 }
 
+// Surfaces the Steam-API error that triggered the master-server fallback,
+// but ONLY when that fallback ALSO came up empty -- if the fallback found
+// servers, the caller got a working list and the earlier API hiccup isn't
+// worth reporting as if it were still a live problem. Previously this was
+// only log.warn'd, never returned to the caller (hunt-wave11 follow-up,
+// 2026-08-29): "an admin can read the server logs" is the exact reasoning
+// that left three other bugs tonight invisible for months -- a signal that
+// exists only in a log file is a signal nobody sees at the moment they
+// need it. Same convention as deriveEmptyReason/deriveMasterDiscoveryStats
+// above: undefined outside the relevant case, dropped by JSON.stringify.
+export function deriveSteamApiFailureReason({ steamApiError, serversFound }) {
+  if (!steamApiError || serversFound > 0) return undefined;
+  return sanitizeError(steamApiError);
+}
+
 /**
  * Get server list - tries Steam API first, falls back to master server query
  */
@@ -545,6 +578,7 @@ router.get('/', async (req, res) => {
     let apiKeyConfigured = !!steamApiKey;
     const forceRefresh = req.query.refresh === 'true';
     let cached = false;
+    let steamApiError = null;
 
     // Try Steam Web API first (more reliable)
     if (steamApiKey) {
@@ -559,6 +593,7 @@ router.get('/', async (req, res) => {
         log.info(`Found ${servers.length} PZ servers via Steam API`);
       } catch (apiError) {
         log.warn('Steam API failed, trying master server query:', apiError.message);
+        steamApiError = apiError.message;
         source = 'master_server';
       }
     }
@@ -634,6 +669,10 @@ router.get('/', async (req, res) => {
       mastersQueriedCount,
       mastersTruncated,
     });
+    const steamApiFailure = deriveSteamApiFailureReason({
+      steamApiError,
+      serversFound: servers.length,
+    });
 
     // Sort by player count (descending)
     servers.sort((a, b) => (b.players || 0) - (a.players || 0));
@@ -655,6 +694,7 @@ router.get('/', async (req, res) => {
       apiKeyConfigured,
       emptyReason, // undefined (dropped by JSON.stringify) outside the empty master_server case
       masterDiscovery, // undefined outside the master_server path -- see deriveMasterDiscoveryStats
+      steamApiFailure, // undefined unless the Steam API threw AND the fallback also came up empty
     });
   } catch (error) {
     log.error('Failed to get server list:', error);
