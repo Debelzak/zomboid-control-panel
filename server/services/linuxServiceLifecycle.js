@@ -47,16 +47,64 @@ function assertPlainValue(value, label) {
   return text;
 }
 
-function quoteSystemd(value) {
+// For Exec*= and Environment= only -- these are the directives systemd
+// parses with its own C-style/shell-like argv tokenizer (systemd.syntax(7)
+// "QUOTING"), so wrapping in double quotes and C-escaping backslash/quote is
+// correct there. Verified against real systemd (systemd-analyze verify +
+// systemctl show) that "$" needs NO escaping for either directive: Environment=
+// documents "the '$' character has no special meaning", and an unescaped "$"
+// in a quoted ExecStart= argument round-trips completely literally (no $VAR
+// or $(...) expansion happens there at all). "\$" is not a recognized escape
+// per systemd.syntax(7)'s escape table -- feeding it in produced a real,
+// reproduced-on-real-systemd bug: systemd logs "Ignoring unknown escape
+// sequences" and the literal backslash survives into the argument, so a
+// server name/path containing "$" silently got a spurious "\" inserted next
+// to it. Do not add a "$" escape back here.
+function quoteSystemdArg(value) {
   return `"${String(value)
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
-    .replace(/\$/g, "\\$")
     .replace(/%/g, "%%")}"`;
 }
 
+// For plain Key=Value assignment directives (WorkingDirectory=, Description=,
+// and similar) -- these are NOT parsed with the Exec*=/Environment= tokenizer
+// at all. Verified against real systemd: the entire rest of the line becomes
+// the literal value with no word-splitting and no quote handling whatsoever
+// -- a space, a literal '$', and a literal '"' all round-tripped byte-for-byte
+// with zero escaping. Wrapping the value in quotes here (the original bug)
+// makes those two literal quote characters PART OF the value instead of
+// delimiting it, which is why every generated unit failed to load ("path is
+// not absolute") for every server, not just ones with unusual names. The one
+// thing that IS special on every unit-file line, quoted directive or not, is
+// specifier expansion (e.g. "%h" -> the unit's home directory) -- confirmed
+// live: a server named "... %h ..." got "%h" silently expanded into the
+// literal home-directory path inside Description=. Escape a literal "%" to
+// "%%" and return the value UNQUOTED; do not wrap it.
+function plainSystemdValue(value) {
+  return String(value).replace(/%/g, "%%");
+}
+
+// OpenRC's own openrc-run.sh re-evaluates directory=/command_args= a second
+// time after sourcing the init script (confirmed live, on real OpenRC via
+// Alpine: a value containing "$(touch /tmp/x)" inside a value that was
+// otherwise correctly single-quoted for the FIRST, ordinary shell-sourcing
+// pass still executed the command substitution and created the file -- real
+// code execution, not just corruption). Standard POSIX single-quoting alone,
+// which is all this used to do, only protects against the first pass; it is
+// not enough here. Backslash-escaping "\", "$", and "`" before the
+// single-quote wrap survives the second pass too (verified live: a value
+// with an escaped "\$" round-trips to the literal, correct path with the
+// dollar sign intact instead of being cut off, and the injection payload
+// above no longer executes). Order matters: escape literal backslashes
+// first so a value that already contains one isn't double-unescaped by the
+// dollar/backtick passes.
 function quoteShell(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+  const escaped = String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\$/g, "\\$")
+    .replace(/`/g, "\\`");
+  return `'${escaped.replace(/'/g, `'\\''`)}'`;
 }
 
 function resolveLaunchTarget(server, fileExists = fs.existsSync) {
@@ -115,15 +163,15 @@ export function buildLifecycleTemplate(server, provider, options = {}) {
     const content = [
       `# X-Zomboid-Panel-Server-ID: ${serverId}`,
       "[Unit]",
-      `Description=${description}`,
+      `Description=${plainSystemdValue(description)}`,
       "After=network-online.target",
       "Wants=network-online.target",
       "",
       "[Service]",
       "Type=simple",
-      `WorkingDirectory=${quoteSystemd(launch.workingDirectory)}`,
-      `Environment=${quoteSystemd(`ZOMBOID_PANEL_SERVER_ID=${serverId}`)}`,
-      `ExecStart=/bin/bash ${quoteSystemd(launch.launcherPath)}`,
+      `WorkingDirectory=${plainSystemdValue(launch.workingDirectory)}`,
+      `Environment=${quoteSystemdArg(`ZOMBOID_PANEL_SERVER_ID=${serverId}`)}`,
+      `ExecStart=/bin/bash ${quoteSystemdArg(launch.launcherPath)}`,
       "Restart=on-failure",
       "RestartSec=5",
       "TimeoutStopSec=180",

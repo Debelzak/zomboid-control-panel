@@ -61,7 +61,15 @@ describe("Linux managed-service lifecycle", () => {
       "X-Zomboid-Panel-Server-ID: alpha-1",
     );
     expect(template.content).not.toContain('User=pzuser');
-    expect(template.content).toContain('WorkingDirectory="/opt/pz server"');
+    // WorkingDirectory= is a plain Key=Value assignment directive, not one
+    // of the Exec*= family -- systemd takes the rest of the line literally,
+    // with no word-splitting and no quote handling at all (verified against
+    // real systemd-analyze/systemctl show; see
+    // linuxServiceLifecycleRealSystemd.test.js). Wrapping it in quotes, as
+    // the value used to be, makes those quote characters part of the path
+    // and every generated unit fails to load. Unquoted is correct.
+    expect(template.content).toContain('WorkingDirectory=/opt/pz server');
+    expect(template.content).not.toMatch(/^WorkingDirectory="/m);
     expect(template.content).toContain(
       'ExecStart=/bin/bash "/opt/pz server/start-server_servertest.sh"',
     );
