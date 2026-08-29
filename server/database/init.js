@@ -860,9 +860,13 @@ export async function getDb() {
       if (err.code === "EACCES" || err.code === "EPERM") {
         checkAndExitIfOwnershipBlocked([dataDir, dbPath, backupDir]);
         // Falls through only if checkAndExitIfOwnershipBlocked() found
-        // nothing to blame on ownership (e.g. a read-only filesystem) --
-        // in which case the existing corruption-recovery path below is
-        // still the right fallback.
+        // every one of those paths genuinely readable/writable by THIS
+        // process (fs.accessSync agrees) -- so db.read()'s EACCES/EPERM
+        // came from something access() itself can't see (a permissions
+        // change mid-flight between the check and the read, an exotic
+        // mandatory-access-control layer, an immutable file attribute).
+        // The existing corruption-recovery path below is still the right
+        // fallback for that case.
       }
 
       // Attempt recovery from backup. Do NOT snapshot the corrupt file first —

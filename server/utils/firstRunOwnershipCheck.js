@@ -26,6 +26,19 @@
  * source order, in index.js -- so the check has to run as an import-time
  * side effect too. It mirrors the pattern paths.js/logger.js/database/
  * init.js already use for their own directory setup.
+ *
+ * THIS IS WHY THIS MODULE'S IMPORT MUST STAY THE VERY FIRST LINE OF
+ * server/index.js, ahead of even `import express from "express"`.
+ * server/utils/setupToken.js -- imported well before logger.js in
+ * index.js's existing order -- already transitively imports
+ * database/init.js. If a future cleanup reorders index.js's imports
+ * (e.g. alphabetically, or grouping third-party before relative imports)
+ * and this import stops being first, the check does not merely run
+ * later -- it silently STOPS PROTECTING ANYTHING, because
+ * database/init.js's crash will already have fired during import
+ * resolution before this module's own top-level checkDataPathOwnership()
+ * call is ever reached. There is no test that can catch a reordered
+ * import line; this comment is the only guard. Do not move it.
  */
 import fs from "fs";
 import { execSync } from "child_process";
@@ -115,8 +128,20 @@ export function checkAndExitIfOwnershipBlocked(candidatePaths) {
     } catch {
       continue; // doesn't exist yet -- nothing to be blocked by
     }
+    // X_OK means "traverse" for a directory, which is the real requirement
+    // there (reading/creating anything inside it needs it). For a REGULAR
+    // FILE, X_OK checks the execute bit, which a 0600 secret/database file
+    // correctly never has -- checking it there made a genuinely correctly-
+    // owned db.json/jwt.secret fail this probe 100% of the time, even for
+    // root against a root-owned file. Confirmed live on Linux (god,
+    // 2026-08-29) before this was caught: RWX on a 0600 file throws EACCES
+    // even as uid 0 against a uid-0 file. R|W is the correct, and correctly
+    // passable, mask for a file.
+    const mask = stat.isDirectory()
+      ? fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK
+      : fs.constants.R_OK | fs.constants.W_OK;
     try {
-      fs.accessSync(p, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
+      fs.accessSync(p, mask);
     } catch {
       offending.push(p);
       ownerUidByPath[p] = stat.uid;
