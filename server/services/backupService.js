@@ -3,6 +3,7 @@ import fs from "fs";
 import { createWriteStream } from "fs";
 import archiver from "archiver";
 import { createReadStream } from "fs";
+import { crc32 } from "zlib";
 import { createLogger } from "../utils/logger.js";
 const log = createLogger("Backup");
 import {
@@ -1260,8 +1261,36 @@ export class BackupService {
           .on("error", settle);
       });
 
-      // Extraction succeeded, so the archive is proven readable. Only now is
-      // it safe to touch the live save.
+      // Extraction succeeding only proves the archive was PARSEABLE -- the
+      // unzipper streaming Parse() this whole block uses reads and discards
+      // each entry's recorded CRC32 as bookkeeping and never actually
+      // recomputes it against the bytes it just wrote (confirmed empirically:
+      // a single flipped data byte inside an otherwise well-formed stored
+      // entry extracts silently with the wrong content and raises no error
+      // anywhere in the pipeline). Bit rot on backup storage, a bad copy, or
+      // a partial download would all look exactly like a healthy backup right
+      // up until this restore replaced a working world with corrupted bytes.
+      // Verify every entry's actual CRC32 against what the archive's own
+      // central directory recorded BEFORE the swap below -- staging is still
+      // disposable at this point, so a failure here costs nothing.
+      emitProgress("verifying", 80, "Verifying restored file integrity...");
+      const integrity = await this._verifyExtractedIntegrity(
+        backupPath,
+        stagingPath,
+      );
+      if (!integrity.ok) {
+        const preview = integrity.corruptFiles.slice(0, 5).join(", ");
+        const more =
+          integrity.corruptFiles.length > 5
+            ? ` (+${integrity.corruptFiles.length - 5} more)`
+            : "";
+        throw new Error(
+          `Backup archive failed integrity verification: ${integrity.corruptFiles.length} file(s) did not match their recorded checksum -- ${preview}${more}. Live save left untouched.`,
+        );
+      }
+
+      // Extraction succeeded and every file verified against the archive's
+      // own checksums. Only now is it safe to touch the live save.
       const stagedWorldPath = this._findExtractedWorld(
         stagingPath,
         expectedFolderName,
@@ -1369,6 +1398,61 @@ export class BackupService {
       }
       this.restoreInProgress = false;
     }
+  }
+
+  // Recomputes each extracted file's CRC32 and compares it against the value
+  // the archive's own central directory recorded for that entry -- the check
+  // the streaming extraction above never performs (see the caller's
+  // comment). unzip.Open.file() reads the central directory directly (the
+  // same API getBackupSnapshot() already uses), independent of the
+  // streaming Parse() used to extract, so a corruption that fooled one
+  // reading path is still caught by the other actually checking the number
+  // it recorded. Mirrors the exact same `path.join(stagingPath, entry.path)`
+  // mapping the extraction loop's zip-slip guard uses, so this checks
+  // precisely the files that were actually written to staging, not a
+  // parallel guess at where they'd be.
+  async _verifyExtractedIntegrity(backupPath, stagingPath) {
+    const corruptFiles = [];
+    let archive;
+    try {
+      const unzip = await getUnzipper();
+      archive = await unzip.Open.file(backupPath);
+    } catch (error) {
+      // Could not even read the central directory to verify against --
+      // fail closed rather than skip verification silently.
+      return { ok: false, corruptFiles: [`(could not read archive directory: ${error.message})`] };
+    }
+
+    for (const entry of archive.files) {
+      if (entry.type !== "File") continue;
+      const entryPath = path.join(stagingPath, entry.path);
+
+      let actualCrc32;
+      try {
+        actualCrc32 = await new Promise((resolve, reject) => {
+          let checksum = 0;
+          const stream = createReadStream(entryPath);
+          stream.on("data", (chunk) => {
+            checksum = crc32(chunk, checksum);
+          });
+          stream.on("end", () => resolve(checksum));
+          stream.on("error", reject);
+        });
+      } catch (error) {
+        // Missing on disk despite being listed in the central directory --
+        // the streaming extraction silently dropped it (an even stranger
+        // failure than a checksum mismatch, but the operator needs to know
+        // either way, not have it discovered only inside the swapped-in world).
+        corruptFiles.push(`${entry.path} (missing after extraction: ${error.message})`);
+        continue;
+      }
+
+      if (actualCrc32 !== entry.crc32) {
+        corruptFiles.push(entry.path);
+      }
+    }
+
+    return { ok: corruptFiles.length === 0, corruptFiles };
   }
 
   // A backup normally wraps the world in its server-name folder, but older or
