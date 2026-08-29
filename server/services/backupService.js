@@ -53,7 +53,15 @@ async function* walkDirectory(rootDir) {
         const fullPath = path.join(current.dirPath, entry.name);
 
         if (entry.isSymbolicLink()) {
-          log.warn(`Skipping symbolic link during backup: ${fullPath}`);
+          // Deliberately not followed (zip-slip in reverse -- a symlink
+          // inside the save tree pointing outside it must never leak
+          // arbitrary filesystem content into the archive), but that
+          // decision has to be VISIBLE the same way a vanished file already
+          // is via waitForArchiveEntry's ENOENT handling below -- silently
+          // dropping it here meant a pre-restore/pre-wipe backup could be
+          // incomplete with skippedFiles staying empty, defeating the
+          // "any skip is a failure" policy those call sites rely on.
+          yield { entry, fullPath, archivePath, isSymlink: true };
           continue;
         }
 
@@ -149,13 +157,21 @@ export function waitForArchiveEntry(archive, append) {
   });
 }
 
-// Returns the archive-relative paths of any entries that were skipped
-// (vanished between the scan and the archive pass) rather than swallowing
-// that information the way the caller used to have no way to find out.
+// Returns the archive-relative paths of any entries that were skipped --
+// either vanished between the scan and the archive pass, or a symbolic
+// link deliberately not followed -- rather than swallowing that
+// information the way the caller used to have no way to find out.
 export async function appendDirectoryToArchive(archive, sourceRoot, destinationRoot) {
   const skipped = [];
-  for await (const { entry, fullPath, archivePath } of walkDirectory(sourceRoot)) {
+  for await (const { entry, fullPath, archivePath, isSymlink } of walkDirectory(
+    sourceRoot,
+  )) {
     const entryName = `${destinationRoot}/${archivePath}${entry.isDirectory() ? "/" : ""}`;
+    if (isSymlink) {
+      log.warn(`Skipping symbolic link during backup: ${fullPath}`);
+      skipped.push(entryName);
+      continue;
+    }
     const result = await waitForArchiveEntry(archive, () =>
       archive.file(fullPath, { name: entryName }),
     );
@@ -565,8 +581,13 @@ export class BackupService {
         const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
 
         if (skippedFiles.length > 0) {
+          // "vanished during archiving" until 2026-08-29 -- no longer
+          // accurate now that a deliberately-excluded symbolic link also
+          // lands in this same array (see walkDirectory's own comment);
+          // kept cause-agnostic since both reasons already get identical
+          // treatment by every consumer of skippedFiles.
           log.warn(
-            `Backup ${backupName} completed but skipped ${skippedFiles.length} file(s) that vanished during archiving: ${skippedFiles.join(", ")}`,
+            `Backup ${backupName} completed but ${skippedFiles.length} file(s) could not be included: ${skippedFiles.join(", ")}`,
           );
         } else {
           log.info(
@@ -761,7 +782,7 @@ export class BackupService {
           }
           return b.sortKey.suffix - a.sortKey.suffix; // higher collision suffix = created later
         })
-        .map(({ sortKey, ...backup }) => backup); // internal-only, don't leak the key
+        .map(({ sortKey: _sortKey, ...backup }) => backup); // internal-only, don't leak the key
     } catch (error) {
       log.error(`Failed to list backups: ${error.message}`);
       return [];
@@ -1166,7 +1187,7 @@ export class BackupService {
           preBackupResult.success && (preBackupResult.skippedFiles?.length ?? 0) > 0;
         if (!preBackupResult.success || preBackupIncomplete) {
           const reason = preBackupIncomplete
-            ? `it skipped ${preBackupResult.skippedFiles.length} file(s) that vanished during archiving (${preBackupResult.skippedFiles.join(", ")}) -- an incomplete pre-restore backup is not a safety net`
+            ? `it could not include ${preBackupResult.skippedFiles.length} file(s) (${preBackupResult.skippedFiles.join(", ")}) -- an incomplete pre-restore backup is not a safety net`
             : preBackupResult.message;
           log.error(`Pre-restore backup failed: ${reason}`);
           emitProgress(
