@@ -1753,6 +1753,17 @@ export class ModChecker extends EventEmitter {
       removedWorkshopIds: [...this.lastUnavailableWorkshopIds.entries()]
         .filter(([, info]) => info.reason === "removed")
         .map(([id]) => id),
+      // Workshop IDs Steam answered with a non-1, non-9 result -- neither
+      // confirmed working nor confirmed removed. Deliberately not folded
+      // into either of the other two categories: a surface that shows a
+      // healthy indicator plus a removed-mods list implies those are the
+      // only two outcomes, so an id stuck here would otherwise read as
+      // fine by omission rather than as unclassified. Keeps the raw
+      // resultCode rather than just the id -- "unknown" isn't answerable
+      // from a support ticket, "result code 15" is.
+      unknownWorkshopIds: [...this.lastUnavailableWorkshopIds.entries()]
+        .filter(([, info]) => info.reason === "unknown")
+        .map(([id, info]) => ({ id, resultCode: info.resultCode })),
       autoRestartEnabled: this.autoRestartEnabled,
       // Restart options
       restartWarningMinutes: this.restartWarningMinutes,

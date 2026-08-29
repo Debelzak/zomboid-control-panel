@@ -103,6 +103,31 @@ describe("fetchSteamTimestamps: distinguishing removed-upstream from a batch fai
     expect(status.removedWorkshopIds).toEqual(["2222222222"]);
   });
 
+  it("getStatus() surfaces unknown-result-code workshop IDs WITH their raw code, next to (not merged into) removedWorkshopIds", async () => {
+    // 2026-08-29 addendum (god): a surface that shows a healthy indicator
+    // plus a removed-mods list implies those are the only two outcomes --
+    // an id stuck on an unrecognized code would otherwise appear in
+    // NEITHER list and read as fine by omission. Angela is waiting on this
+    // to unblock the client-side status surface.
+    global.fetch = vi.fn(async () =>
+      steamResponse([
+        { publishedfileid: "2222222222", result: 9 },
+        { publishedfileid: "4444444444", result: 15 },
+      ]),
+    );
+
+    const checker = new ModChecker();
+    await checker.fetchSteamTimestamps(["2222222222", "4444444444"]);
+
+    const status = await checker.getStatus();
+    expect(status.removedWorkshopIds).toEqual(["2222222222"]);
+    // The raw code must survive to the surface -- "unknown" alone isn't
+    // answerable from a support ticket, "result code 15" is.
+    expect(status.unknownWorkshopIds).toEqual([
+      { id: "4444444444", resultCode: 15 },
+    ]);
+  });
+
   it("does not report a Steam API outage when Steam answers but every queried item is confirmed removed", async () => {
     // checkForUpdates() returns early (before ever calling
     // fetchSteamTimestamps) when the ACF has zero entries, which would make
