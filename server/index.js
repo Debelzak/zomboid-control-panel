@@ -46,6 +46,7 @@ import {
   getSetting,
   setSetting,
   flushWrites,
+  flushForShutdown,
   recordPerformanceSnapshot,
   logServerEvent,
 } from "./database/init.js";
@@ -226,6 +227,17 @@ async function gracefulShutdown(signal) {
         await rconService.disconnect();
       }
     }
+
+    // Flush any pending DB write before closing up. database/init.js's own
+    // SIGTERM/SIGINT listener (registerShutdownHandlers) does this too, but
+    // it's a second, unsynchronized listener on the same signal -- without
+    // this explicit, awaited call here, httpServer.close()'s callback below
+    // (which calls process.exit(0)) could win the race and kill the process
+    // before that other listener's flush -- or its retry after a failed
+    // first attempt -- ever gets to run. flushForShutdown() is bounded
+    // (a few hundred ms worst case), so this cannot turn into a shutdown
+    // that hangs waiting on a write that will never succeed.
+    await flushForShutdown();
 
     // Close HTTP server
     httpServer.close(() => {

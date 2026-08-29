@@ -680,21 +680,58 @@ function startBackupSchedule() {
 // Graceful Shutdown
 // ============================================
 
+// A running process's flushWrites() failure is fine to leave for later: it
+// re-marks _dirty and schedules its own setTimeout retry, and the process
+// will still be alive when that timer fires. A process that is EXITING is
+// not still going to be alive for that timer -- index.js's gracefulShutdown()
+// calls httpServer.close(() => process.exit(0)) on its own, independent
+// SIGTERM/SIGINT listener, unsynchronized with this module's shutdown()
+// below, and with no lingering connections (the normal case on a clean
+// stop) that close() callback can fire before even flushWrites()'s own 1s
+// minimum backoff elapses -- abandoning the scheduled retry and silently
+// dropping whatever config change was still pending. flushForShutdown()
+// exists so a caller that is about to exit can wait out a few real retries
+// instead of relying on a timer that will never get to fire, bounded so a
+// write that can never succeed (e.g. a full disk) turns into "shutdown
+// proceeds anyway after a short, fixed wait", never "shutdown never
+// happens" -- matching this file's own existing tradeoff for a failed
+// write (log and move on, don't hang the process) rather than inventing a
+// new one.
+const SHUTDOWN_FLUSH_MAX_ATTEMPTS = 3;
+const SHUTDOWN_FLUSH_RETRY_DELAY_MS = 200;
+
+export async function flushForShutdown() {
+  if (_writeTimer) {
+    clearTimeout(_writeTimer);
+    _writeTimer = null;
+  }
+  for (let attempt = 1; attempt <= SHUTDOWN_FLUSH_MAX_ATTEMPTS; attempt++) {
+    await flushWrites();
+    if (!_dirty) return true; // nothing pending, or this attempt landed it
+    if (attempt < SHUTDOWN_FLUSH_MAX_ATTEMPTS) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, SHUTDOWN_FLUSH_RETRY_DELAY_MS),
+      );
+    }
+  }
+  // Gave it real, waited-for retries and it's still failing -- give up and
+  // let shutdown proceed. Whatever's pending stays only in memory; the
+  // circuit-breaker/retry state flushWrites() already tracked is unchanged
+  // by any of this, so the storage-health banner still reflects it.
+  return !_dirty;
+}
+
 function registerShutdownHandlers() {
   if (_shutdownRegistered) return;
   _shutdownRegistered = true;
 
   const shutdown = async (signal) => {
     log.info(`${signal} received — flushing writes...`);
-    if (_writeTimer) {
-      clearTimeout(_writeTimer);
-      _writeTimer = null;
-    }
     if (_backupTimer) {
       clearInterval(_backupTimer);
       _backupTimer = null;
     }
-    await flushWrites();
+    await flushForShutdown();
     createBackup("shutdown");
   };
 
