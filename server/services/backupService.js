@@ -164,6 +164,34 @@ export async function appendDirectoryToArchive(archive, sourceRoot, destinationR
   return skipped;
 }
 
+// Sort key for listBackups(): panel-created backups encode their own
+// creation timestamp (down to the millisecond) plus a numeric collision
+// suffix directly in the filename -- see the timestamp/collision-suffix
+// construction in _doCreateBackup(). Parsing that out and sorting on it,
+// the same fix already applied to configBackup.js's listBackupsFor() (see
+// its own comment), avoids relying on fs.stat().birthtime: several backups
+// created in quick succession (a fast/near-empty world backs up in well
+// under a second) can land with an IDENTICAL birthtime on real
+// filesystems, at which point Array.prototype.sort's stability falls back
+// to readdir()'s order -- unrelated to creation order -- and the brand-new
+// backup can be mistaken for the oldest and pruned instead of a genuinely
+// older one. Falls back to birthtime only for names the panel didn't
+// create this way (uploaded-*.zip, hand-copied files) -- there is no
+// better signal for those, and they're already exempt from automatic
+// pruning regardless.
+const BACKUP_TIMESTAMP_RE =
+  /(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3})(?:-(\d+))?\.zip$/;
+function backupSortKey(fileName, stats) {
+  const match = fileName.match(BACKUP_TIMESTAMP_RE);
+  if (match) {
+    return { key: match[1], suffix: match[2] ? parseInt(match[2], 10) : 1 };
+  }
+  return {
+    key: stats.birthtime.toISOString().replace(/[:.]/g, "-").slice(0, 23),
+    suffix: 1,
+  };
+}
+
 export class BackupService {
   constructor() {
     this.backupInProgress = false;
@@ -717,6 +745,7 @@ export class BackupService {
                 path: filePath,
                 size: stats.size,
                 created: stats.birthtime.toISOString(),
+                sortKey: backupSortKey(f, stats),
               };
             } catch (e) {
               return null;
@@ -726,7 +755,13 @@ export class BackupService {
 
       return backups
         .filter((b) => b !== null)
-        .sort((a, b) => new Date(b.created) - new Date(a.created)); // Newest first
+        .sort((a, b) => {
+          if (a.sortKey.key !== b.sortKey.key) {
+            return a.sortKey.key < b.sortKey.key ? 1 : -1; // newest first
+          }
+          return b.sortKey.suffix - a.sortKey.suffix; // higher collision suffix = created later
+        })
+        .map(({ sortKey, ...backup }) => backup); // internal-only, don't leak the key
     } catch (error) {
       log.error(`Failed to list backups: ${error.message}`);
       return [];
