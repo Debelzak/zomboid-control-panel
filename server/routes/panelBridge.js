@@ -208,6 +208,14 @@ export const VALID_ACTIONS = new Set([
   "clearErrors",
   "getItemCatalog",
   "getVehicleCatalog",
+  // Was missing entirely (2026-08-29, pin-literal-sendcommand-strings-
+  // against-valid-actions): POST /catalog/debug-item-script has called
+  // bridge.sendCommand("debugItemScript", {}) directly since that route was
+  // added, and the Lua side (PanelBridge.lua's handlers.debugItemScript)
+  // genuinely implements it -- this was never a runtime bug, only a gap in
+  // this allowlist, unlike every other dedicated-route action, which all
+  // have a matching VALID_ACTIONS entry.
+  "debugItemScript",
 ]);
 
 // POST /command is gated bridge.command alone -- deliberately, as the
@@ -270,6 +278,18 @@ export const BRIDGE_ACTION_CAPABILITY = {
   setInvisible: "players.gm_tools",
   setNoclip: "players.gm_tools",
   healPlayer: "players.gm_tools",
+  // ADDITIONAL semantics (bridge.command AND bridge.diagnostics), not
+  // GM_TOOLS_ONLY_ACTIONS replacement semantics -- unlike the GM four,
+  // there's no described legitimate automation role that needs this
+  // specific debug/diagnostic probe without also holding bridge.command;
+  // its own dedicated route (POST /catalog/debug-item-script) already gates
+  // on bridge.diagnostics alone, but adding debugItemScript to VALID_ACTIONS
+  // (this same commit) makes it newly reachable through the generic
+  // passthrough too -- without this entry, ANY role holding only
+  // bridge.command (e.g. a GM/world-event automation role) would gain this
+  // debug action for free, the exact bypass class e728248 closed for the
+  // moderation four.
+  debugItemScript: "bridge.diagnostics",
 };
 
 // The subset of BRIDGE_ACTION_CAPABILITY that uses REPLACEMENT semantics

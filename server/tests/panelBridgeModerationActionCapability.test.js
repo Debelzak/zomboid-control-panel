@@ -33,6 +33,10 @@ const ROLES = {
   // role must now reach the GM-tools four through this passthrough despite
   // never holding bridge.command at all.
   gm_tools_only: { capabilities: ["players.gm_tools"] },
+  // Holds bridge.command and bridge.diagnostics -- the shape debugItemScript
+  // needs (ADDITIONAL semantics, same bucket as the moderation four, added
+  // 2026-08-29 pin-literal-sendcommand-strings-against-valid-actions).
+  bridge_diagnostics_admin: { capabilities: ["bridge.command", "bridge.diagnostics"] },
 };
 const getRoleByName = vi.fn(async (name) => ROLES[name] || null);
 
@@ -158,6 +162,48 @@ describe("POST /panel-bridge/command -- moderation actions require players.moder
     // this assertion is about the INLINE check inside the handler only:
     // a non-mapped action must never trigger a second role lookup at all.
     expect(getRoleByName).not.toHaveBeenCalled();
+  });
+});
+
+// debugItemScript, added to VALID_ACTIONS 2026-08-29 (backlog card
+// pin-literal-sendcommand-strings-against-valid-actions) alongside this
+// BRIDGE_ACTION_CAPABILITY entry, in the SAME commit -- without the
+// capability entry, adding it to VALID_ACTIONS alone would have reopened
+// the exact bypass this file exists to guard: any bridge_command_only
+// caller reaching a sensitive action through the generic passthrough that
+// its own dedicated route (POST /catalog/debug-item-script) gates more
+// tightly (bridge.diagnostics alone, there).
+describe("POST /panel-bridge/command -- debugItemScript requires bridge.diagnostics in addition to bridge.command", () => {
+  let sendCommand;
+
+  beforeEach(() => {
+    bridge.isRunning = true;
+    bridge.bridgePath = "/fake/bridge/path";
+    sendCommand = vi.spyOn(bridge, "sendCommand").mockResolvedValue({ success: true });
+    getRoleByName.mockClear();
+  });
+
+  afterEach(() => {
+    sendCommand.mockRestore();
+    bridge.isRunning = false;
+    bridge.bridgePath = null;
+  });
+
+  it("refuses debugItemScript for a caller who holds bridge.command but not bridge.diagnostics", async () => {
+    const res = await postCommand("debugItemScript", {}, "bridge_command_only");
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "PANELBRIDGE_ACTION_CAPABILITY_REQUIRED" }),
+    );
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("allows debugItemScript for a caller who holds both bridge.command and bridge.diagnostics", async () => {
+    const res = await postCommand("debugItemScript", {}, "bridge_diagnostics_admin");
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(sendCommand).toHaveBeenCalledWith("debugItemScript", {});
   });
 });
 
