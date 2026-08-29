@@ -425,10 +425,20 @@ describe("suspect 5 (DEAD): /resolve and /vehicles never leak local filesystem p
     expect(serialized).not.toMatch(/SomeOperator|Zomboid|servertest|Saves|Multiplayer/i);
     // Confirms the sensitive path DID reach the internal lookup call (so
     // this isn't a false-DEAD from the mock just not exercising it) --
-    // it's just never echoed back to the client.
-    expect(mockListPersistedVehicles).toHaveBeenCalledWith(
-      "C:\\Users\\SomeOperator\\Zomboid\\Saves\\Multiplayer\\servertest",
-    );
+    // it's just never echoed back to the client. Deliberately NOT built by
+    // path.join()-ing the same segments here: that would share a code path
+    // with the thing under test and could only ever confirm that path's own
+    // assumptions. Instead assert on substrings only -- the route's actual
+    // join separator is `path.join`, which is path.posix.join on Linux and
+    // path.win32.join on Windows; a Windows-shaped fixture prefix joined via
+    // path.posix.join produces a MIXED-separator string that a hardcoded
+    // backslash literal can never match on Linux (caught by god's gate on
+    // 00bfa2b7 -- this is the fix). Checking for the distinguishing
+    // substrings is separator-agnostic and still rules out the false-DEAD.
+    expect(mockListPersistedVehicles).toHaveBeenCalledTimes(1);
+    const calledWith = mockListPersistedVehicles.mock.calls[0][0];
+    expect(calledWith).toContain("SomeOperator");
+    expect(calledWith).toContain("servertest");
   });
 
   it("/vehicles on a lookup failure falls back to an empty list, never surfacing the underlying error message (which would embed the path)", async () => {
