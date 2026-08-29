@@ -158,3 +158,72 @@ describe("POST /remove-from-ini: whitespace-variant WorkshopItems= line (silent-
     expect(wsLines[0]).toBe("WorkshopItems=2222222222");
   });
 });
+
+// 2026-08-30 hunt-wave13, second pass: the remaining 26 sites reported to
+// god (line numbers + shape) after the first 8. These three cover the
+// still-untested shapes: /batch-remove (3-key silent-no-op), /add-missing-dep
+// (duplicate-key shape via a differently-structured route than /add), and
+// /enable-disk-mod (the ternary content = x ? replace : append form, not
+// if/else).
+
+describe("POST /batch-remove: whitespace-variant lines across all three keys (silent-no-op shape)", () => {
+  it("actually removes the workshop ID from a spaced WorkshopItems= line", async () => {
+    fs.writeFileSync(
+      iniPath,
+      "WorkshopItems = 1111111111;2222222222\nMods=\n",
+    );
+
+    const res = await runRoute("/batch-remove", "post", {
+      body: { workshopIds: ["1111111111"] },
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    const after = fs.readFileSync(iniPath, "utf-8");
+    const wsLines = after
+      .split(/\r?\n/)
+      .filter((l) => /^\s*WorkshopItems\s*=/.test(l));
+    expect(wsLines).toHaveLength(1);
+    expect(wsLines[0]).toBe("WorkshopItems=2222222222");
+  });
+});
+
+describe("POST /add-missing-dep: whitespace-variant Mods= line (duplicate-key shape)", () => {
+  it("replaces the existing line in place instead of appending a duplicate", async () => {
+    fs.writeFileSync(
+      iniPath,
+      "WorkshopItems=\nMods = ExistingMod\n",
+    );
+
+    const res = await runRoute("/add-missing-dep", "post", {
+      body: { workshopId: "3333333333", modId: "NewDepMod" },
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    const after = fs.readFileSync(iniPath, "utf-8");
+    const modsLines = after.split(/\r?\n/).filter((l) => /^\s*Mods\s*=/.test(l));
+    expect(modsLines).toHaveLength(1);
+    expect(modsLines[0]).toContain("ExistingMod");
+    expect(modsLines[0]).toContain("NewDepMod");
+    expect(findDuplicateIniKeys(after)).toEqual([]);
+  });
+});
+
+describe("POST /enable-disk-mod: whitespace-variant Mods= line, ternary replace-or-append form", () => {
+  it("replaces the existing line in place instead of appending a duplicate", async () => {
+    fs.writeFileSync(
+      iniPath,
+      "WorkshopItems=\nMods = ExistingMod\n",
+    );
+
+    const res = await runRoute("/enable-disk-mod", "post", {
+      body: { workshopId: "4444444444" },
+    });
+
+    expect(res.getStatusCode()).toBe(200);
+    const after = fs.readFileSync(iniPath, "utf-8");
+    const modsLines = after.split(/\r?\n/).filter((l) => /^\s*Mods\s*=/.test(l));
+    expect(modsLines).toHaveLength(1);
+    expect(modsLines[0]).toContain("ExistingMod");
+    expect(findDuplicateIniKeys(after)).toEqual([]);
+  });
+});

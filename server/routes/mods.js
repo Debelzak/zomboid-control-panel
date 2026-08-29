@@ -3680,15 +3680,19 @@ router.post("/batch-remove", async (req, res) => {
             let content = readTextFile(iniPath);
             const removeSet = new Set(validIds);
 
-            // Parse current lists
-            const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
+            // Parse current lists. Widened to tolerate whitespace around
+            // "=" (hunt-wave13, 783672aa) -- each match doubles as the
+            // exists-check for its replace below.
+            const workshopMatch = content.match(
+              /^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m,
+            );
             let iniWorkshopIds =
               workshopMatch?.[1]?.split(";").filter(Boolean) || [];
 
-            const modsMatch = content.match(/^Mods=(.*)$/m);
+            const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
             let iniModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
 
-            const mapMatch = content.match(/^Map=(.*)$/m);
+            const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
             let iniMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [];
 
             // Collect all mod IDs and map folders to remove
@@ -3719,19 +3723,19 @@ router.post("/batch-remove", async (req, res) => {
             // file's first ini-write site.
             if (workshopMatch) {
               content = content.replace(
-                /^WorkshopItems=.*/m,
+                /^[ \t]*WorkshopItems[ \t]*=.*/m,
                 `WorkshopItems=${sanitizeIniList(iniWorkshopIds)}`,
               );
             }
             if (modsMatch) {
               content = content.replace(
-                /^Mods=.*/m,
+                /^[ \t]*Mods[ \t]*=.*/m,
                 `Mods=${sanitizeModIdList(iniModIds)}`,
               );
             }
             if (mapMatch) {
               content = content.replace(
-                /^Map=.*/m,
+                /^[ \t]*Map[ \t]*=.*/m,
                 `Map=${sanitizeIniList(iniMaps)}`,
               );
             }
@@ -3852,7 +3856,9 @@ router.post("/repair-map-entries", async (req, res) => {
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
-      const mapMatch = content.match(/^Map=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 783672aa) --
+      // mapMatch is the guard for the replace below.
+      const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
       const currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [];
 
       const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
@@ -3907,7 +3913,7 @@ router.post("/repair-map-entries", async (req, res) => {
         // Reuse mapMatch (computed above), same fix as this file's first
         // ini-write site.
         if (mapMatch) {
-          content = content.replace(/^Map=.*/m, `Map=${newMapLine}`);
+          content = content.replace(/^[ \t]*Map[ \t]*=.*/m, `Map=${newMapLine}`);
         }
         backupWarning = backupWarningFor(
           await writeIniWithBackup(iniPath, content),
@@ -4112,8 +4118,9 @@ router.post("/add-missing-dep", async (req, res) => {
     const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      // Add to WorkshopItems if not present
-      const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // Add to WorkshopItems if not present. Widened to tolerate whitespace
+      // around "=" (hunt-wave13, 783672aa) -- wsMatch is the guard below.
+      const wsMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       const currentWs = wsMatch?.[1]?.split(";").filter(Boolean) || [];
       let wsAdded = false;
       if (!currentWs.includes(wsIdStr)) {
@@ -4130,7 +4137,7 @@ router.post("/add-missing-dep", async (req, res) => {
         // Reuse wsMatch (computed above), same fix as this file's first
         // ini-write site.
         if (wsMatch) {
-          content = content.replace(/^WorkshopItems=.*/m, wsLine);
+          content = content.replace(/^[ \t]*WorkshopItems[ \t]*=.*/m, wsLine);
         } else {
           content += `\n${wsLine}`;
         }
@@ -4140,7 +4147,7 @@ router.post("/add-missing-dep", async (req, res) => {
       // Add to Mods if we have a mod ID and it's not present
       let modIdAdded = false;
       if (resolvedModId) {
-        const modsMatch = content.match(/^Mods=(.*)$/m);
+        const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
         const currentMods = modsMatch?.[1]?.split(";").filter(Boolean) || [];
         if (!currentMods.includes(resolvedModId)) {
           currentMods.push(resolvedModId);
@@ -4148,7 +4155,7 @@ router.post("/add-missing-dep", async (req, res) => {
           // first ini-write site.
           if (modsMatch) {
             content = content.replace(
-              /^Mods=.*/m,
+              /^[ \t]*Mods[ \t]*=.*/m,
               `Mods=${sanitizeModIdList(currentMods)}`,
             );
           } else {
@@ -4160,7 +4167,7 @@ router.post("/add-missing-dep", async (req, res) => {
 
       // Auto-detect map folders
       if (mapFolders.length > 0) {
-        const mapMatch = content.match(/^Map=(.*)$/m);
+        const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
         const currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [];
         let mapsChanged = false;
         for (const f of mapFolders) {
@@ -4174,7 +4181,7 @@ router.post("/add-missing-dep", async (req, res) => {
           // ini-write site.
           if (mapMatch)
             content = content.replace(
-              /^Map=.*/m,
+              /^[ \t]*Map[ \t]*=.*/m,
               `Map=${currentMaps.join(";")}`,
             );
           else content += `\nMap=${currentMaps.join(";")}`;
@@ -4286,13 +4293,15 @@ router.post("/add-all-resolved-deps", async (req, res) => {
     // Atomically read-modify-write inside the lock
     const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
-      const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 783672aa) --
+      // each match doubles as the exists-check for its replace below.
+      const wsMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       const currentWs = new Set(wsMatch?.[1]?.split(";").filter(Boolean) || []);
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       const currentMods = new Set(
         modsMatch?.[1]?.split(";").filter(Boolean) || [],
       );
-      const mapMatch = content.match(/^Map=(.*)$/m);
+      const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
       const currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [];
 
       let wsAdded = 0,
@@ -4324,16 +4333,16 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       // separate .includes(), same fix as this file's first ini-write site.
       if (wsMatch)
         content = content.replace(
-          /^WorkshopItems=.*/m,
+          /^[ \t]*WorkshopItems[ \t]*=.*/m,
           `WorkshopItems=${wsLine}`,
         );
       else content += `\nWorkshopItems=${wsLine}`;
       if (modsMatch)
-        content = content.replace(/^Mods=.*/m, `Mods=${modsLine}`);
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${modsLine}`);
       else content += `\nMods=${modsLine}`;
       if (allMapFolders.length > 0) {
         if (mapMatch)
-          content = content.replace(/^Map=.*/m, `Map=${mapLine}`);
+          content = content.replace(/^[ \t]*Map[ \t]*=.*/m, `Map=${mapLine}`);
         else content += `\nMap=${mapLine}`;
       }
 
@@ -4847,7 +4856,9 @@ router.post("/sync-mod-ids", async (req, res) => {
     const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 783672aa) --
+      // modsMatch is the guard for the replace below.
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       const currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
       const finalModIds = [...currentModIds];
 
@@ -4915,7 +4926,7 @@ router.post("/sync-mod-ids", async (req, res) => {
       // Reuse modsMatch (computed above), same fix as this file's first
       // ini-write site.
       if (modsMatch) {
-        content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
       }
@@ -5309,8 +5320,8 @@ router.post("/presets/:id/apply", async (req, res) => {
       // replace it, not a plain .includes() -- see this file's first
       // ini-write site for why.
       const workshopLine = `WorkshopItems=${sanitizeIniList(preset.workshop_ids || [])}`;
-      if (content.match(/^WorkshopItems=.*/m)) {
-        content = content.replace(/^WorkshopItems=.*/m, workshopLine);
+      if (content.match(/^[ \t]*WorkshopItems[ \t]*=.*/m)) {
+        content = content.replace(/^[ \t]*WorkshopItems[ \t]*=.*/m, workshopLine);
       } else {
         content += `\n${workshopLine}`;
       }
@@ -5323,8 +5334,8 @@ router.post("/presets/:id/apply", async (req, res) => {
       // 3519629457, see this file's enable-disk-mod handler). Character-only
       // sanitization here, same bypass already used for disk-verified IDs.
       const modsLine = `Mods=${sanitizeIniList(preset.mods || [])}`;
-      if (content.match(/^Mods=.*/m)) {
-        content = content.replace(/^Mods=.*/m, modsLine);
+      if (content.match(/^[ \t]*Mods[ \t]*=.*/m)) {
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, modsLine);
       } else {
         content += `\n${modsLine}`;
       }
@@ -5407,8 +5418,8 @@ router.post("/save-order", async (req, res) => {
       const modsLine = `Mods=${sanitizeIniList(modIds)}`;
       // Same fix as this file's first ini-write site: check the anchored
       // regex, not a plain .includes().
-      if (content.match(/^Mods=.*/m)) {
-        content = content.replace(/^Mods=.*/m, modsLine);
+      if (content.match(/^[ \t]*Mods[ \t]*=.*/m)) {
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, modsLine);
       } else {
         content += `\n${modsLine}`;
       }
@@ -5679,10 +5690,12 @@ router.post("/add-mod-advanced", async (req, res) => {
     const lockResult = await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      const workshopMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 783672aa) --
+      // each match doubles as the exists-check for its replace below.
+      const workshopMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       const currentWorkshopIds =
         workshopMatch?.[1]?.split(";").filter(Boolean) || [];
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       const currentModIds = modsMatch?.[1]?.split(";").filter(Boolean) || [];
 
       const workshopAlreadyExists = currentWorkshopIds.includes(
@@ -5707,7 +5720,7 @@ router.post("/add-mod-advanced", async (req, res) => {
       // separate .includes(), same fix as this file's first ini-write site.
       if (workshopMatch) {
         content = content.replace(
-          /^WorkshopItems=.*/m,
+          /^[ \t]*WorkshopItems[ \t]*=.*/m,
           `WorkshopItems=${newWorkshopList}`,
         );
       } else {
@@ -5715,13 +5728,13 @@ router.post("/add-mod-advanced", async (req, res) => {
       }
 
       if (modsMatch) {
-        content = content.replace(/^Mods=.*/m, `Mods=${newModList}`);
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${newModList}`);
       } else {
         content += `\nMods=${newModList}`;
       }
 
       if (modMapFolders.length > 0) {
-        const mapMatch = content.match(/^Map=(.*)$/m);
+        const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
         let currentMaps = mapMatch?.[1]?.split(";").filter(Boolean) || [
           "Muldraugh, KY",
         ];
@@ -5735,7 +5748,7 @@ router.post("/add-mod-advanced", async (req, res) => {
 
         const newMapList = currentMaps.join(";");
         if (mapMatch) {
-          content = content.replace(/^Map=.*/m, `Map=${newMapList}`);
+          content = content.replace(/^[ \t]*Map[ \t]*=.*/m, `Map=${newMapList}`);
         } else {
           content += `\nMap=${newMapList}`;
         }
@@ -8149,17 +8162,19 @@ router.post("/enable-disk-mod", async (req, res) => {
     await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
 
-      // WorkshopItems
-      const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // WorkshopItems. Widened to tolerate whitespace around "="
+      // (hunt-wave13, 783672aa) -- wsMatch/modsMatch double as the
+      // exists-check for their replace below.
+      const wsMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       const wsList = wsMatch?.[1]?.split(";").filter(Boolean) || [];
       if (!wsList.includes(wsId)) wsList.push(wsId);
       const wsLine = `WorkshopItems=${sanitizeIniList(wsList)}`;
       content = wsMatch
-        ? content.replace(/^WorkshopItems=.*/m, wsLine)
+        ? content.replace(/^[ \t]*WorkshopItems[ \t]*=.*/m, wsLine)
         : content.trimEnd() + `\n${wsLine}\n`;
 
       // Mods
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       const existing = modsMatch?.[1]?.split(";").filter(Boolean) || [];
       // Sanitize existing entries (strips mis-pasted workshop IDs), then
       // union with mod.info-verified IDs — those are authoritative so they
@@ -8174,7 +8189,7 @@ router.post("/enable-disk-mod", async (req, res) => {
       }
       const modsLine = `Mods=${sanitizeIniList(modsList)}`;
       content = modsMatch
-        ? content.replace(/^Mods=.*/m, modsLine)
+        ? content.replace(/^[ \t]*Mods[ \t]*=.*/m, modsLine)
         : content.trimEnd() + `\n${modsLine}\n`;
 
       backupWarning = backupWarningFor(
@@ -8241,36 +8256,41 @@ async function deleteModFromDiskAndIni(wsId) {
   let backupWarning = null;
   await withIniLock(iniPath, async () => {
     let content = readTextFile(iniPath);
-    const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+    // Widened to tolerate whitespace around "=" (hunt-wave13, 783672aa) --
+    // each match doubles as the exists-check for its replace below.
+    const wsMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
     if (wsMatch) {
       const wsList = wsMatch[1]
         .split(";")
         .filter(Boolean)
         .filter((id) => id !== wsId);
       content = content.replace(
-        /^WorkshopItems=.*/m,
+        /^[ \t]*WorkshopItems[ \t]*=.*/m,
         `WorkshopItems=${sanitizeIniList(wsList)}`,
       );
     }
-    const modsMatch = content.match(/^Mods=(.*)$/m);
+    const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
     if (modsMatch && modIdsToStrip.length > 0) {
       const modsList = modsMatch[1]
         .split(";")
         .filter(Boolean)
         .filter((id) => !modIdsToStrip.includes(id));
       content = content.replace(
-        /^Mods=.*/m,
+        /^[ \t]*Mods[ \t]*=.*/m,
         `Mods=${sanitizeModIdList(modsList)}`,
       );
     }
-    const mapMatch = content.match(/^Map=(.*)$/m);
+    const mapMatch = content.match(/^[ \t]*Map[ \t]*=[ \t]*(.*)$/m);
     if (mapMatch && mapFoldersToStrip.length > 0) {
       let mapList = mapMatch[1]
         .split(";")
         .filter(Boolean)
         .filter((m) => !mapFoldersToStrip.includes(m));
       if (mapList.length === 0) mapList = ["Muldraugh, KY"];
-      content = content.replace(/^Map=.*/m, `Map=${sanitizeIniList(mapList)}`);
+      content = content.replace(
+        /^[ \t]*Map[ \t]*=.*/m,
+        `Map=${sanitizeIniList(mapList)}`,
+      );
     }
     backupWarning = backupWarningFor(
       await writeIniWithBackup(iniPath, content),
@@ -8519,25 +8539,27 @@ router.post("/batch-delete-disk-mods", async (req, res) => {
     let backupWarning = null;
     await withIniLock(iniPath, async () => {
       let content = readTextFile(iniPath);
-      const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+      // Widened to tolerate whitespace around "=" (hunt-wave13, 783672aa) --
+      // each match doubles as the exists-check for its replace below.
+      const wsMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
       if (wsMatch) {
         const wsList = wsMatch[1]
           .split(";")
           .filter(Boolean)
           .filter((id) => !cleaned.includes(id));
         content = content.replace(
-          /^WorkshopItems=.*/m,
+          /^[ \t]*WorkshopItems[ \t]*=.*/m,
           `WorkshopItems=${sanitizeIniList(wsList)}`,
         );
       }
-      const modsMatch = content.match(/^Mods=(.*)$/m);
+      const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
       if (modsMatch && allModIdsToStrip.size > 0) {
         const modsList = modsMatch[1]
           .split(";")
           .filter(Boolean)
           .filter((id) => !allModIdsToStrip.has(id));
         content = content.replace(
-          /^Mods=.*/m,
+          /^[ \t]*Mods[ \t]*=.*/m,
           `Mods=${sanitizeModIdList(modsList)}`,
         );
       }
@@ -8705,21 +8727,25 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
       let content = readTextFile(iniPath);
 
       if (wsToDrop.size > 0) {
-        const wsMatch = content.match(/^WorkshopItems=(.*)$/m);
+        // Widened to tolerate whitespace around "=" (hunt-wave13,
+        // 783672aa) -- wsMatch is the exists-check for the replace below.
+        const wsMatch = content.match(/^[ \t]*WorkshopItems[ \t]*=[ \t]*(.*)$/m);
         if (wsMatch) {
           const wsList = wsMatch[1]
             .split(";")
             .filter(Boolean)
             .filter((id) => !wsToDrop.has(id));
           content = content.replace(
-            /^WorkshopItems=.*/m,
+            /^[ \t]*WorkshopItems[ \t]*=.*/m,
             `WorkshopItems=${sanitizeIniList(wsList)}`,
           );
         }
       }
 
       if (modIdsToAdd.size > 0) {
-        const modsMatch = content.match(/^Mods=(.*)$/m);
+        // Widened to tolerate whitespace around "=" (hunt-wave13,
+        // 783672aa) -- modsMatch is the exists-check for the replace below.
+        const modsMatch = content.match(/^[ \t]*Mods[ \t]*=[ \t]*(.*)$/m);
         const existing = modsMatch?.[1]?.split(";").filter(Boolean) || [];
         // Sanitize the EXISTING list (strips mis-pasted workshop IDs that
         // were polluting Mods=), then union with the IDs we just resolved
@@ -8735,7 +8761,7 @@ router.post("/resolve-orphan-workshop", async (req, res) => {
         }
         const newLine = `Mods=${sanitizeIniList(finalList)}`;
         content = modsMatch
-          ? content.replace(/^Mods=.*/m, newLine)
+          ? content.replace(/^[ \t]*Mods[ \t]*=.*/m, newLine)
           : content.trimEnd() + `\n${newLine}\n`;
       }
 
