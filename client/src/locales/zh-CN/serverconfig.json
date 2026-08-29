@@ -318,8 +318,6 @@
   "toasts": {
     "error": "错误",
     "loadConfigFailed": "加载服务器配置失败。",
-    "stopServerTitle": "保存前先停止服务器",
-    "stopServerDesc": "Project Zomboid 在运行时可能会覆盖配置文件。",
     "invalidIniTitle": "服务器设置无效",
     "invalidSandboxTitle": "沙盒数值无效",
     "fixSettings": "修正：{{settings}}",

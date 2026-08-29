@@ -318,8 +318,6 @@
   "toasts": {
     "error": "Error",
     "loadConfigFailed": "No se pudo cargar la configuración del servidor.",
-    "stopServerTitle": "Detener el servidor antes de guardar",
-    "stopServerDesc": "Project Zomboid puede sobrescribir los archivos de configuración mientras se está ejecutando.",
     "invalidIniTitle": "Ajustes del servidor no válidos",
     "invalidSandboxTitle": "Valores de Sandbox no válidos",
     "fixSettings": "Corregir: {{settings}}",

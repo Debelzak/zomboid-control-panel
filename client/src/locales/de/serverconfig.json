@@ -318,8 +318,6 @@
   "toasts": {
     "error": "Fehler",
     "loadConfigFailed": "Laden der Serverkonfiguration fehlgeschlagen.",
-    "stopServerTitle": "Stoppe den Server vor dem Speichern",
-    "stopServerDesc": "Project Zomboid kann Konfigurationsdateien überschreiben, während der Server läuft.",
     "invalidIniTitle": "Ungültige Servereinstellungen",
     "invalidSandboxTitle": "Ungültige Sandbox-Werte",
     "fixSettings": "Beheben: {{settings}}",

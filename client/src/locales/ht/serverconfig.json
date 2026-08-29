@@ -323,8 +323,6 @@
   "toasts": {
     "error": "Erè",
     "loadConfigFailed": "Pa t kapab chaje konfigirasyon sèvè a.",
-    "stopServerTitle": "Sispann sèvè a anvan ou sove",
-    "stopServerDesc": "Project Zomboid ka ekri sou fichye konfigirasyon pandan li ap fonksyone.",
     "invalidIniTitle": "Paramèt sèvè envalid",
     "invalidSandboxTitle": "Valè Sandbox envalid",
     "fixSettings": "Korije: {{settings}}",
