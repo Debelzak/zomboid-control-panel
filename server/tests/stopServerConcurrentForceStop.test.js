@@ -7,24 +7,21 @@ import { ServerManager } from "../services/serverManager.js";
 // reading serverManager.js: startServer() checks BOTH `this._starting` and
 // `this._stopping` before proceeding (throws "Server stop in progress, try
 // again in a moment" / "Server start already in progress"), but stopServer()
-// itself only ever SETS `this._stopping = true` -- it never checks it at
+// used to only ever SET `this._stopping = true` -- it never checked it at
 // entry. So two overlapping stopServer(false) calls (two Force Stops, or a
 // Force Stop racing the Docker/service-managed branch of a plain Stop) both
-// proceed past every guard.
+// proceeded past every guard: both scanned, both found the same PID, both
+// called _killPids() with it -- redundant work, and on a real OS a second
+// `kill -9` on an already-reaped PID is usually a silent no-op UNLESS that
+// exact PID number has already been reused by an unrelated process in the
+// interim (unconfirmed by necessity -- see the hunt report for why that
+// couldn't be safely forced on this shared WSL kernel).
 //
-// This test asks the concrete question: with no entry guard, what actually
-// happens? Answer, proven below: both calls independently scan, both find
-// the same PID, both call _killPids() with it -- so the underlying kill
-// command genuinely fires twice for the same PID (redundant work, and on a
-// real OS a second `kill -9` on an already-reaped PID is usually a silent
-// no-op UNLESS that exact PID number has already been reused by an unrelated
-// process in the interim, which this test cannot force safely -- see the
-// hunt report). What IS provable here without any OS-level PID-reuse trick:
-// the two HTTP callers get INCONSISTENT responses for the same event, one
-// "killed PIDs: ..." and, if the second scan runs after the first call's
-// _clearRunState(), the other "Server was not running" -- a confusing but
-// not dangerous outcome. The genuinely dangerous PID-reuse case is discussed
-// as unconfirmed-by-necessity in the hunt report, not asserted here.
+// FIXED by adding the same entry check startServer() already performs, one
+// direction earlier: stopServer(false) now refuses immediately (before its
+// first await, mirroring startServer()'s own guard) when `this._stopping`
+// is already true, instead of racing a second scan+kill against whichever
+// stop got there first.
 
 function makeManager(overrides = {}) {
   const manager = new ServerManager();
@@ -36,17 +33,18 @@ function makeManager(overrides = {}) {
   return manager;
 }
 
-describe("stopServer(): two concurrent calls (two Force Stops) have no entry guard", () => {
-  it("both proceed past every guard and both issue a kill for the same PID -- unlike startServer(), which refuses a concurrent call outright", async () => {
+describe("stopServer(): a second concurrent call (a second Force Stop) is refused, matching startServer()'s existing guard", () => {
+  it("only the first call scans and kills; the second is refused immediately with a visible message, not raced", async () => {
     const manager = makeManager();
     let killCalls = [];
     let processKilled = false;
 
     // Real-ish timing: scanning takes a few ms (an OS process-list scan
-    // always does), killing takes a few ms too. Both calls' scans run
-    // BEFORE either call's kill has had a chance to take effect, which is
-    // exactly the shape god's brief describes ("one wins cleanly, or do we
-    // [attempt to] kill a PID that ...").
+    // always does), killing takes a few ms too. If the fix were absent,
+    // both calls' scans would run before either kill took effect -- exactly
+    // the shape god's brief described. With the fix, the entry check is
+    // synchronous and runs before either call ever reaches this mock, so
+    // the second call never gets far enough to matter.
     manager.getServerProcessDetails = async () => {
       await new Promise((r) => setTimeout(r, 10));
       return {
@@ -68,20 +66,24 @@ describe("stopServer(): two concurrent calls (two Force Stops) have no entry gua
       manager.stopServer(false),
     ]);
 
-    // The core finding: no entry guard means BOTH calls' scans ran before
-    // either kill took effect, so _killPids was invoked twice for the same
-    // PID -- proving the "two Force Stops both try to kill" premise isn't
-    // just theoretical, it's the code's actual, deterministic behavior.
-    expect(killCalls.length).toBe(2);
+    // The fix: only ONE call ever reaches _killPids(), because the entry
+    // guard (synchronous, before stopServer()'s first await) means whichever
+    // call's synchronous prefix runs first sets `_stopping` before the
+    // other's prefix gets a chance to check it -- deterministic, no race.
+    expect(killCalls.length).toBe(1);
     expect(killCalls[0]).toEqual(["9999"]);
-    expect(killCalls[1]).toEqual(["9999"]);
 
-    // Contrast with startServer(), which DOES have an entry guard and
-    // refuses outright rather than doing this.
-    expect([resultA.success, resultB.success]).toEqual([true, true]);
+    // Exactly one call proceeds and succeeds; the other is refused outright,
+    // with a visible reason -- not a silent no-op and not a redundant kill.
+    const results = [resultA, resultB];
+    const succeeded = results.filter((r) => r.success);
+    const refused = results.filter((r) => !r.success);
+    expect(succeeded.length).toBe(1);
+    expect(refused.length).toBe(1);
+    expect(refused[0].message).toMatch(/already in progress/i);
+    expect(refused[0].error).toBe("Stop already in progress");
 
-    // _stopping is released correctly either way (no permanent lockout) --
-    // this part is NOT broken.
+    // _stopping is released correctly (no permanent lockout).
     expect(manager._stopping).toBe(false);
   });
 

@@ -1442,6 +1442,28 @@ export class ServerManager {
       };
     }
 
+    // startServer() already refuses outright when this._stopping is true
+    // (see "Prevent start while a stop is still in flight" above) -- this
+    // function only ever SET the flag, it never checked it on its OWN
+    // entry, so two overlapping force-stop calls (two Force Stops, or a
+    // Force Stop racing the service-managed branch of a plain Stop) both
+    // ran past every guard: both scanned, both found the same PID, both
+    // issued a kill for it (server/tests/stopServerConcurrentForceStop.test.js
+    // proves this deterministically). Harmless on a stock Linux/Windows
+    // config (a second kill on an already-reaped PID is a no-op), but
+    // still redundant work with no user-visible signal that a stop was
+    // already underway -- refusing here instead mirrors startServer()'s
+    // own guard, one direction earlier.
+    if (this._stopping) {
+      return {
+        success: false,
+        confirmed: false,
+        error: "Stop already in progress",
+        message:
+          "A stop or force-stop is already in progress for this server. Wait for it to finish, then try again.",
+      };
+    }
+
     // Block overlapping starts while kill/state-clear is pending.
     this._stopping = true;
     try {
