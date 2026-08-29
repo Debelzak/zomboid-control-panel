@@ -40,7 +40,8 @@
     "off": "Désactivée",
     "runsSchedule": "S'exécute {{schedule}} · conserve {{count}}",
     "noScheduled": "Aucune sauvegarde planifiée",
-    "toggleAria": "Activer/désactiver les sauvegardes planifiées"
+    "toggleAria": "Activer/désactiver les sauvegardes planifiées",
+    "lastScheduledAttemptFailed": "Dernière tentative planifiée échouée ({{time}}) : {{message}}"
   },
   "schedule": {
     "every15Min": "toutes les 15 minutes",

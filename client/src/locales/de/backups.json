@@ -40,7 +40,8 @@
     "off": "Aus",
     "runsSchedule": "Läuft {{schedule}} · behält {{count}}",
     "noScheduled": "Keine geplanten Backups",
-    "toggleAria": "Geplante Backups umschalten"
+    "toggleAria": "Geplante Backups umschalten",
+    "lastScheduledAttemptFailed": "Letzter geplanter Versuch fehlgeschlagen ({{time}}): {{message}}"
   },
   "schedule": {
     "every15Min": "alle 15 Minuten",

@@ -2810,6 +2810,15 @@ export interface BackupStatus extends BackupSettings {
   savesPath: string | null;
   backupsPath: string | null;
   savesExists: boolean;
+  // Only populated while `enabled` is true -- the newest schedule_history
+  // entry for the backup job, independent of whether it actually produced a
+  // file. `lastBackup` above stays silent about a scheduler that has been
+  // failing every attempt; this is what lets the UI say so.
+  lastScheduledBackupAttempt: {
+    success: boolean;
+    message: string | null;
+    executedAt: string;
+  } | null;
 }
 
 // backup.js/backupService.js's own shape (full .zip server backups --

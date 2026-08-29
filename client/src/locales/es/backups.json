@@ -40,7 +40,8 @@
     "off": "Desactivado",
     "runsSchedule": "Se ejecuta {{schedule}} · conservar {{count}}",
     "noScheduled": "No hay copias de seguridad programadas",
-    "toggleAria": "Alternar copias de seguridad programadas"
+    "toggleAria": "Alternar copias de seguridad programadas",
+    "lastScheduledAttemptFailed": "El último intento programado falló ({{time}}): {{message}}"
   },
   "schedule": {
     "every15Min": "cada 15 minutos",

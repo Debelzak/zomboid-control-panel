@@ -40,7 +40,8 @@
     "off": "Off",
     "runsSchedule": "Runs {{schedule}} · keep {{count}}",
     "noScheduled": "No scheduled backups",
-    "toggleAria": "Toggle scheduled backups"
+    "toggleAria": "Toggle scheduled backups",
+    "lastScheduledAttemptFailed": "Last scheduled attempt failed ({{time}}): {{message}}"
   },
   "schedule": {
     "every15Min": "every 15 minutes",

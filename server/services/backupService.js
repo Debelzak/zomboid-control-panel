@@ -10,6 +10,7 @@ import {
   getSetting,
   setSetting,
   logServerEvent,
+  getLatestScheduleExecutionByCommand,
 } from "../database/init.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { captureBackupSnapshot } from "../utils/backupSnapshot.js";
@@ -898,6 +899,19 @@ export class BackupService {
     const savesPath = await this.getSavesPath();
     const backupsPath = await this.getBackupsPath();
 
+    // `lastBackup` above only ever reflects a SUCCESSFUL backup (manual or
+    // scheduled) that produced a file -- it says nothing about whether the
+    // scheduler itself has been failing. An operator can have "Auto Backup:
+    // ON" showing green for weeks while every scheduled attempt has been
+    // erroring out (bad schedule, unreachable backupsPath, disk full, ...)
+    // with the failure visible only in the panel's own log and in Schedule
+    // History, neither of which this status card surfaces. Only checked
+    // when scheduling is actually enabled -- a stale failure from before the
+    // operator turned it off isn't this card's business to report.
+    const lastScheduledAttempt = settings.enabled
+      ? await getLatestScheduleExecutionByCommand("backup")
+      : null;
+
     return {
       ...settings,
       backupInProgress: this.backupInProgress,
@@ -907,6 +921,13 @@ export class BackupService {
       savesPath,
       backupsPath,
       savesExists: savesPath ? fs.existsSync(savesPath) : false,
+      lastScheduledBackupAttempt: lastScheduledAttempt
+        ? {
+            success: !!lastScheduledAttempt.success,
+            message: lastScheduledAttempt.message,
+            executedAt: lastScheduledAttempt.executed_at,
+          }
+        : null,
     };
   }
 

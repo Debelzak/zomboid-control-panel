@@ -513,6 +513,15 @@ export default function Backups() {
     return date.toLocaleDateString(i18n.language) + ' ' + date.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })
   }
 
+  // "Auto-Backup: On" alone can't tell an operator the scheduler is actually
+  // succeeding -- lastBackup only updates on a SUCCESSFUL run, so a run of
+  // failures (bad cron, unreachable backupsPath, disk full) leaves this
+  // card looking identical to a healthy one. Surface the newest scheduled
+  // attempt specifically when it failed.
+  const lastScheduledAttemptFailed = Boolean(
+    backupStatus?.enabled && backupStatus?.lastScheduledBackupAttempt && !backupStatus.lastScheduledBackupAttempt.success
+  )
+
   // Translate the small set of cron presets we expose into a human label.
   // Falls back to the raw cron string for anything custom so the user
   // still gets meaningful information without us shipping a full parser.
@@ -694,24 +703,38 @@ export default function Backups() {
             <div
               className={cn(
                 'grid place-items-center w-10 h-10 rounded-md border shrink-0',
-                backupStatus?.enabled
+                lastScheduledAttemptFailed
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  : backupStatus?.enabled
                   ? 'border-primary/30 bg-primary/[0.06] text-primary'
                   : 'border-border/55 bg-muted/30 text-muted-foreground'
               )}
               aria-hidden="true"
             >
-              <Clock className="w-4 h-4" />
+              {lastScheduledAttemptFailed ? <AlertTriangle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('statusCards.autoBackup')}</p>
               <p className={cn('text-sm font-semibold leading-tight mt-0.5 truncate', backupStatus?.enabled ? 'text-foreground' : 'text-muted-foreground')}>
                 {backupStatus?.enabled ? t('statusCards.on') : t('statusCards.off')}
               </p>
-              <p className="text-[11px] text-muted-foreground/80 truncate" title={backupStatus?.schedule || ''}>
-                {backupStatus?.enabled
-                  ? t('statusCards.runsSchedule', { schedule: describeSchedule(backupStatus?.schedule), count: backupStatus?.maxBackups ?? '?' })
-                  : t('statusCards.noScheduled')}
-              </p>
+              {lastScheduledAttemptFailed ? (
+                <p
+                  className="text-[11px] text-amber-600 dark:text-amber-400 truncate"
+                  title={backupStatus?.lastScheduledBackupAttempt?.message || ''}
+                >
+                  {t('statusCards.lastScheduledAttemptFailed', {
+                    time: formatDate(backupStatus!.lastScheduledBackupAttempt!.executedAt),
+                    message: backupStatus?.lastScheduledBackupAttempt?.message || '',
+                  })}
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground/80 truncate" title={backupStatus?.schedule || ''}>
+                  {backupStatus?.enabled
+                    ? t('statusCards.runsSchedule', { schedule: describeSchedule(backupStatus?.schedule), count: backupStatus?.maxBackups ?? '?' })
+                    : t('statusCards.noScheduled')}
+                </p>
+              )}
             </div>
             <DisabledReason reason={!canManageBackups ? t('permissions.noManage') : null}>
               <Switch

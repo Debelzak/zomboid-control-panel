@@ -40,7 +40,8 @@
     "off": "关闭",
     "runsSchedule": "{{schedule}}运行 · 保留 {{count}} 份",
     "noScheduled": "没有计划备份",
-    "toggleAria": "切换计划备份"
+    "toggleAria": "切换计划备份",
+    "lastScheduledAttemptFailed": "上次计划任务失败（{{time}}）：{{message}}"
   },
   "schedule": {
     "every15Min": "每 15 分钟",

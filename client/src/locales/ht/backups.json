@@ -40,7 +40,8 @@
     "off": "Dezaktive",
     "runsSchedule": "Fonksyone {{schedule}} · kenbe {{count}}",
     "noScheduled": "Pa gen kopi sovgad pwograme",
-    "toggleAria": "Aktive/dezaktive kopi sovgad pwograme"
+    "toggleAria": "Aktive/dezaktive kopi sovgad pwograme",
+    "lastScheduledAttemptFailed": "Dènye tantativ pwograme echwe ({{time}}): {{message}}"
   },
   "schedule": {
     "every15Min": "chak 15 minit",

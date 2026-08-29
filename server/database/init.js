@@ -1234,6 +1234,22 @@ export async function clearScheduleHistory() {
   scheduleWrite();
 }
 
+/**
+ * Newest schedule_history entry for a given `command` value (the third
+ * argument to logScheduleExecution above) -- used by backupService.js to
+ * surface whether the LAST scheduled attempt of a given kind succeeded.
+ * getScheduleHistory()'s own taskId filter can't isolate this: the
+ * scheduled backup job and auto-restart both log with taskId=null, so
+ * filtering by taskId alone conflates them. schedule_history is
+ * newest-first (see appendCapped's doc comment above), so the first match
+ * is the most recent.
+ */
+export async function getLatestScheduleExecutionByCommand(command) {
+  const db = await getDb();
+  const history = db.data.schedule_history || [];
+  return history.find((h) => h.command === command) || null;
+}
+
 // ============================================
 // Player Logs
 // ============================================
