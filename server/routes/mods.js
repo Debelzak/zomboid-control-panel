@@ -2089,16 +2089,32 @@ router.post("/write-to-ini", async (req, res) => {
       // 2026-08-27 auditing this file's write surface for the "cannot
       // fail" class; the correct pattern already existed at 5 of the file's
       // 18 ini-write sites (this fix brings the other 13 in line with it).
-      if (content.match(/^Mods=.*/m)) {
-        content = content.replace(/^Mods=.*/m, `Mods=${modIdList}`);
+      // Anchored with the SAME whitespace tolerance parseIni()/toIni() (in
+      // serverFiles.js) and findDuplicateIniKeys() already give a real
+      // assignment line -- a bare /^Mods=.*/m does not match "Mods = foo"
+      // (spaces around "="), which a hand-edited file can easily carry.
+      // Before serverFiles.js's toIni() preserved untouched lines' original
+      // formatting (573f63fd), any structured-editor save silently
+      // normalized "Mods = foo" to "Mods=foo" the moment the operator saved
+      // ANY field, which accidentally kept this route's strict match
+      // working. Now that toIni() correctly leaves untouched lines alone,
+      // that accidental repair no longer happens, so a whitespace-variant
+      // line here would miss the match, get appended as a SECOND "Mods="
+      // line instead of replacing the first, and the resulting duplicate
+      // key would then 409-lock PUT /ini's structured save via
+      // findDuplicateIniKeys() until the raw editor manually fixes it. The
+      // three writers need to agree on what a key line looks like; this
+      // brings mods.js's match+replace in line with the other two.
+      if (content.match(/^[ \t]*Mods[ \t]*=.*/m)) {
+        content = content.replace(/^[ \t]*Mods[ \t]*=.*/m, `Mods=${modIdList}`);
       } else {
         content += `\nMods=${modIdList}`;
       }
 
       // Update or add WorkshopItems= (workshop IDs like 3508537032)
-      if (content.match(/^WorkshopItems=.*/m)) {
+      if (content.match(/^[ \t]*WorkshopItems[ \t]*=.*/m)) {
         content = content.replace(
-          /^WorkshopItems=.*/m,
+          /^[ \t]*WorkshopItems[ \t]*=.*/m,
           `WorkshopItems=${workshopIdList}`,
         );
       } else {
@@ -2107,8 +2123,8 @@ router.post("/write-to-ini", async (req, res) => {
 
       // Update or add Map= (only if we have custom maps)
       if (detectedMapFolders && detectedMapFolders.length > 0) {
-        if (content.match(/^Map=.*/m)) {
-          content = content.replace(/^Map=.*/m, `Map=${mapList}`);
+        if (content.match(/^[ \t]*Map[ \t]*=.*/m)) {
+          content = content.replace(/^[ \t]*Map[ \t]*=.*/m, `Map=${mapList}`);
         } else {
           content += `\nMap=${mapList}`;
         }
