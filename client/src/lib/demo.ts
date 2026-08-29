@@ -459,6 +459,20 @@ export function installDemoFetchShim(): void {
     if (path === '/api/system/storage-health') {
       return jsonResponse(demoStorageHealth())
     }
+    if (path === '/api/system/runtime') {
+      return jsonResponse({
+        platform: 'linux',
+        family: 'posix',
+        pathSeparator: '/',
+        temporaryDirectory: '/tmp',
+        serviceManager: 'none',
+        restartAssessment: {
+          gameServers: 'preserved',
+          requiresConfirmation: false,
+          reason: 'detached-linux-process',
+        },
+      })
+    }
     if (path === '/api/server/status') {
       return jsonResponse(demoServerStatus())
     }

@@ -1647,7 +1647,11 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     // non-zero so `on-failure`/`always` units respawn us; Docker
     // `restart: unless-stopped`/`always` restart regardless of code, so this is
     // safe there too. Standalone (already self-respawned) exits 0 as normal.
-    process.exit(orchestrated ? 1 : 0);
+    const linuxSupervisor =
+      process.platform === "linux" &&
+      process.env.PANEL_SUPERVISOR_V === "2" &&
+      process.env.PANEL_PRESERVE_GAME_SERVERS === "1";
+    process.exit(linuxSupervisor ? 75 : orchestrated ? 1 : 0);
   }, 1000);
 });
 
@@ -1699,7 +1703,10 @@ app.get("/api/panel/update-apply-log", (req, res) => {
         .status(500)
         .json({ error: "Panel update checker not available" });
     const log = checker.readMostRecentApplyLog();
-    res.json({ log });
+    res.json({
+      log,
+      logPath: path.join(getDataPaths().logsDir, "panel-update-last.log"),
+    });
   } catch (error) {
     res.status(500).json({ error: sanitizeError(error.message) });
   }
@@ -3094,6 +3101,34 @@ async function start() {
             // snapshot from an update that already succeeded.
             await setSetting("preUpdateDataBackupPath", null);
             await flushWrites();
+
+            // Only now -- after the binary/client can no longer be rolled
+            // back -- swap in the staged start.sh/unit/install-script, if
+            // this release staged any (see panelUpdateChecker.js's
+            // stageLinuxLauncherFiles()/activateStagedLinuxLauncherFiles()
+            // for why this can't happen any earlier). process.execPath is
+            // resolved fresh here rather than reusing the module-scoped
+            // `exeDir` at the top of this file -- that one is local to the
+            // Windows-only supervisor-reexec IIFE and is not in scope by
+            // this point. Best-effort: this does not undo the update that
+            // just succeeded either way.
+            if (process.platform !== "win32") {
+              const linuxExeDir = path.dirname(process.execPath);
+              try {
+                const activated =
+                  panelUpdateChecker.activateStagedLinuxLauncherFiles(linuxExeDir);
+                if (activated) {
+                  log.info(
+                    "Linux launcher and service templates updated; re-run install-linux-service.sh --enable to load the new unit.",
+                  );
+                }
+              } catch (activateErr) {
+                log.error(
+                  `Could not update Linux launcher/service templates: ${activateErr.message}. ` +
+                    `Run: sudo ${path.join(linuxExeDir, "install-linux-service.sh")} --enable`,
+                );
+              }
+            }
           }
         } catch (error) {
           log.error(

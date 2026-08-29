@@ -30,6 +30,76 @@ const DOWNLOAD_TIMEOUT_MS = 60000;
 const MAX_GITHUB_RETRIES = 3;
 const MAX_DOWNLOAD_REDIRECTS = 5;
 
+export function getPanelFolderPermissionGuidance(platform, detail) {
+  const prefix = `Panel folder is not writable by this process: ${detail}.`;
+  if (platform === "win32") {
+    return `${prefix} Try running as Administrator, or move the panel out of a protected folder.`;
+  }
+  if (platform === "linux") {
+    return `${prefix} Check that the panel service user owns the installation directory and can write to it.`;
+  }
+  return `${prefix} Check the installation directory permissions for the account running the panel.`;
+}
+
+// A Linux install whose loaded systemd unit predates KillMode=process (or
+// whose launcher predates start.sh's own process-group isolation) reads as
+// "at risk": a panel restart signals the whole cgroup, which can also kill
+// every running game server. PANEL_SUPERVISOR_V/PANEL_PRESERVE_GAME_SERVERS
+// are set by the NEW start.sh only, so their absence under an orchestrator
+// means the OLD unit/launcher shape is still the one actually loaded —
+// see remediationCommand below for what an operator does about it.
+export function getRestartAssessment({
+  platform = process.platform,
+  packaged = typeof process.pkg !== "undefined",
+  environment = process.env,
+  exeDir = path.dirname(process.execPath),
+  launcherProtected =
+    environment.PANEL_SUPERVISOR_V === "2" &&
+    environment.PANEL_PRESERVE_GAME_SERVERS === "1",
+} = {}) {
+  const orchestrated = Boolean(
+    environment.INVOCATION_ID || environment.NOTIFY_SOCKET || environment.RC_SVCNAME,
+  );
+
+  if (!packaged) {
+    return {
+      gameServers: "unknown",
+      requiresConfirmation: true,
+      reason: "development-runtime",
+    };
+  }
+  if (platform === "win32") {
+    return {
+      gameServers: "preserved",
+      requiresConfirmation: false,
+      reason: "detached-windows-process",
+    };
+  }
+  if (platform === "linux" && orchestrated && launcherProtected) {
+    return {
+      gameServers: "preserved",
+      requiresConfirmation: false,
+      reason: "isolated-linux-supervisor",
+    };
+  }
+  if (platform === "linux" && orchestrated) {
+    return {
+      gameServers: "at-risk",
+      requiresConfirmation: true,
+      reason: "service-cgroup-may-stop-children",
+      // install-linux-service.sh is idempotent (no-ops if the unit already
+      // matches) and never invokes sudo itself, so this is safe to hand to
+      // an operator verbatim regardless of how far out of date they are.
+      remediationCommand: `sudo ${path.join(exeDir, "install-linux-service.sh")} --enable`,
+    };
+  }
+  return {
+    gameServers: platform === "linux" ? "preserved" : "unknown",
+    requiresConfirmation: platform !== "linux",
+    reason: platform === "linux" ? "detached-linux-process" : "unknown-runtime",
+  };
+}
+
 // "In dev mode, pull the latest code with git" is only true for a real git
 // checkout run with plain `node server/index.js`. Someone running the
 // published Docker image has no checkout to pull — the correct next step is
@@ -148,9 +218,9 @@ export class PanelUpdateChecker {
       log.warn(`Could not reconcile pending panel update: ${err.message}`);
     }
 
-    // Every apply writes a .ps1 helper and a .log to %TEMP%. Keep the last few
-    // for post-mortem debugging and remove older ones so they don't accumulate
-    // forever on long-running installs.
+    // Legacy Windows applies may leave helper scripts in the runtime temp
+    // directory. Keep the last few logs for post-mortem debugging and remove
+    // older ones so they do not accumulate forever on long-running installs.
     try {
       this.cleanupOldHelperArtifacts();
     } catch (err) {
@@ -1213,6 +1283,25 @@ export class PanelUpdateChecker {
       fs.rmSync(incomingClientPath, { recursive: true, force: true });
       fs.cpSync(incoming, incomingClientPath, { recursive: true });
       log.info("Staged verified client bundle without changing live client/dist");
+
+      // Stage the managed launcher/service files too, but do NOT swap them
+      // live here. This method only STAGES — the binary and client dist it
+      // just prepared above don't become live until applyUpdateBundle()
+      // runs (and can still be rolled back after that, until the NEW
+      // process acknowledges startup). Swapping start.sh/the unit file
+      // eagerly at stage time, as the pre-merge version of this method did,
+      // would put them ahead of a binary that might never actually apply,
+      // or leave them upgraded after a version-mismatch rollback puts the
+      // binary and client back — a half-rollback of exactly the kind
+      // restorePreUpdateDataBackup() exists to prevent for the database.
+      // Copied into a fixed, deterministic location (not extractDir, which
+      // this method's own `finally` below deletes before apply can ever
+      // run) so activateStagedLinuxLauncherFiles() can find it later,
+      // however long "later" turns out to be.
+      if (!isWindows) {
+        this.stageLinuxLauncherFiles(extractDir, exeDir);
+      }
+
       return { incomingClientPath, metadata };
     } finally {
       if (windowsArchiveCopy) {
@@ -1220,6 +1309,88 @@ export class PanelUpdateChecker {
       }
       fs.rmSync(extractDir, { recursive: true, force: true });
     }
+  }
+
+  static LINUX_LAUNCHER_FILES = [
+    { name: "start.sh", mode: 0o755 },
+    { name: "zomboid-panel.service", mode: 0o644 },
+    { name: "install-linux-service.sh", mode: 0o755 },
+  ];
+
+  // Fixed, deterministic location — not a per-pid or per-transaction name —
+  // so activateStagedLinuxLauncherFiles() can find it on a later boot
+  // without needing anything threaded through updateBundle.js's journal.
+  static getLinuxLauncherStageDir(exeDir) {
+    return path.join(exeDir, ".update-linux-files-staged");
+  }
+
+  // Called from stageClientDist() at STAGE time, once per download. Copies
+  // only — never touches the live start.sh/unit file. See the comment at
+  // this method's one call site for why activation is deferred.
+  stageLinuxLauncherFiles(extractDir, exeDir) {
+    const stageDir = PanelUpdateChecker.getLinuxLauncherStageDir(exeDir);
+    for (const file of PanelUpdateChecker.LINUX_LAUNCHER_FILES) {
+      if (!fs.existsSync(path.join(extractDir, file.name))) {
+        throw new Error(`Release archive does not contain ${file.name}`);
+      }
+    }
+    fs.rmSync(stageDir, { recursive: true, force: true });
+    fs.mkdirSync(stageDir, { recursive: true });
+    for (const file of PanelUpdateChecker.LINUX_LAUNCHER_FILES) {
+      fs.copyFileSync(path.join(extractDir, file.name), path.join(stageDir, file.name));
+    }
+  }
+
+  // Called from server/index.js ONLY after acknowledgeUpdateBundle() has
+  // confirmed the new binary/client are good and deleted their own journal
+  // — the one point in the whole update lifecycle where a rollback of the
+  // binary/client can no longer happen, so swapping these files here can
+  // never land ahead of a binary that gets rolled back later. Best-effort:
+  // a failure here does not undo the (already-committed) binary/client
+  // update, it just leaves the old launcher/unit in place for this cycle —
+  // logged clearly, with the same remediation command getRestartAssessment()
+  // already gives an operator for exactly this state.
+  activateStagedLinuxLauncherFiles(exeDir) {
+    const stageDir = PanelUpdateChecker.getLinuxLauncherStageDir(exeDir);
+    if (!fs.existsSync(stageDir)) return false;
+
+    const swapped = [];
+    try {
+      for (const file of PanelUpdateChecker.LINUX_LAUNCHER_FILES) {
+        const source = path.join(stageDir, file.name);
+        const target = path.join(exeDir, file.name);
+        const staged = `${target}.new`;
+        const backup = `${target}.previous`;
+        fs.rmSync(staged, { force: true });
+        fs.rmSync(backup, { force: true });
+        fs.copyFileSync(source, staged);
+        fs.chmodSync(staged, file.mode);
+        if (fs.existsSync(target)) fs.renameSync(target, backup);
+        try {
+          fs.renameSync(staged, target);
+        } catch (error) {
+          if (fs.existsSync(backup) && !fs.existsSync(target)) {
+            fs.renameSync(backup, target);
+          }
+          throw error;
+        }
+        swapped.push({ target, backup });
+      }
+    } catch (error) {
+      for (const { target, backup } of swapped.reverse()) {
+        try {
+          fs.rmSync(target, { force: true });
+          if (fs.existsSync(backup)) fs.renameSync(backup, target);
+        } catch (rollbackError) {
+          log.error(`Could not roll back ${target}: ${rollbackError.message}`);
+        }
+      }
+      throw error;
+    }
+    for (const { backup } of swapped) fs.rmSync(backup, { force: true });
+    fs.rmSync(stageDir, { recursive: true, force: true });
+    log.info("Updated Linux launcher and service templates from verified release archive");
+    return true;
   }
 
   runUpdateCommand(command, args) {
@@ -1446,6 +1617,9 @@ export class PanelUpdateChecker {
     info.isPackaged = isPackaged;
     info.platform = process.platform;
     info.updateMode = this.dockerUpdateProxy.mode;
+    info.restartAssessment = getRestartAssessment();
+    info.temporaryDirectory = os.tmpdir();
+    info.applyLogPath = path.join(getDataPaths().logsDir, "panel-update-last.log");
 
     if (this.dockerUpdateProxy.enabled) {
       info.dockerUpdater = true;
@@ -1532,9 +1706,7 @@ export class PanelUpdateChecker {
       info.writable = true;
     } catch (err) {
       info.writable = false;
-      blockers.push(
-        `Panel folder is not writable by this process: ${err.code || err.message}. Try running as Administrator, or move the panel out of a protected folder.`,
-      );
+      blockers.push(getPanelFolderPermissionGuidance(process.platform, err.code || err.message));
     } finally {
       if (probeCreated) {
         try {

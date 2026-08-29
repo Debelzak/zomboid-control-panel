@@ -96,6 +96,7 @@ import { RconTestConnection } from '@/components/RconTestConnection'
 import { MountDiscoveryBanner } from '@/components/MountDiscoveryBanner'
 import { DiscoverySetup } from '@/components/DiscoverySetup'
 import { DisabledReason } from '@/components/DisabledReason'
+import { platformTranslationKey, useRuntimeInfo } from '@/hooks/useRuntimeInfo'
 
 interface DetectedServerConfig {
   dataPath: string
@@ -246,6 +247,7 @@ export function resolveDockerCardHostStatus(
 
 export default function Servers() {
   const { t, i18n } = useTranslation('servers')
+  const runtimeInfo = useRuntimeInfo()
   const confirm = useConfirm()
   const { can } = useAuth()
   // bug-hunt-2026-08-27 (Tier 3 gating sweep): six distinct capabilities
@@ -2282,7 +2284,7 @@ export default function Servers() {
                 <Input
                   value={newServer.installPath}
                   onChange={e => setNewServer({ ...newServer, installPath: e.target.value })}
-                  placeholder={t('localForm.installPathPlaceholder')}
+                  placeholder={t(platformTranslationKey('localForm.installPathPlaceholder', runtimeInfo?.family))}
                   className="font-mono text-sm"
                   maxLength={260}
                 />
@@ -2635,7 +2637,7 @@ export default function Servers() {
                   value={editingServer.startCommand || ''}
                   onChange={e => setEditingServer({ ...editingServer, startCommand: e.target.value })}
                   className="font-mono text-sm"
-                  placeholder={t('editDialog.customStartCommandPlaceholder')}
+                  placeholder={t(platformTranslationKey('editDialog.customStartCommandPlaceholder', runtimeInfo?.family))}
                   maxLength={1024}
                 />
                 {editingServer.startCommand && /[&|;<>`${}()!\[\]]/.test(editingServer.startCommand) && (

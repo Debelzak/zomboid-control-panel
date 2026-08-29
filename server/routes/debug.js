@@ -2875,12 +2875,12 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
             );
           } else {
             const javaBin = isWin ? "java.exe" : "java";
-            const jreNotFoundMessage = `Could not locate jre64/bin/${javaBin} under the install path. Server may fail to start unless system Java is on PATH.`;
             // hint's content genuinely differs by platform (not just a
             // filled-in value) -- variant, not params, for the hint; two
             // literal-variant branches so the registry test can statically
             // find both, same reasoning as server.installPath above.
             if (isLinux) {
+              const jreNotFoundMessage = `Could not locate jre64/bin/${javaBin} under the install path. Run command -v java to check the service user's PATH.`;
               checks.push(
                 diagWarn(
                   "server.jre",
@@ -2895,6 +2895,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 ),
               );
             } else {
+              const jreNotFoundMessage = `Could not locate jre64/bin/${javaBin} under the install path. Run where java to check the service account's PATH.`;
               checks.push(
                 diagWarn(
                   "server.jre",

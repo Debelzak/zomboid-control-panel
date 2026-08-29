@@ -368,12 +368,12 @@
           "warn": {
             "linux": {
               "label": "JRE incluido no encontrado",
-              "message": "No se pudo localizar jre64/bin/{{javaBin}} en la ruta de instalación. Es posible que el servidor no pueda iniciarse a menos que haya un Java del sistema disponible en el PATH.",
+              "message": "No se encontró jre64/bin/{{javaBin}} en la ruta de instalación. Comprueba Java con command -v java; un servicio systemd puede tener un $PATH distinto al de tu shell de inicio de sesión.",
               "hint": "La mayoría de las instalaciones incluyen un JRE en jre64/. Si falta, volver a ejecutar SteamCMD."
             },
             "windows": {
               "label": "JRE incluido no encontrado",
-              "message": "No se pudo localizar jre64/bin/{{javaBin}} en la ruta de instalación. Es posible que el servidor no pueda iniciarse a menos que haya un Java del sistema disponible en el PATH.",
+              "message": "No se encontró jre64/bin/{{javaBin}} en la ruta de instalación. Ejecuta where java para comprobar si Java está disponible mediante %PATH%.",
               "hint": "Volver a ejecutar SteamCMD para restaurar el JRE incluido"
             }
           }

@@ -67,6 +67,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useSocket } from "@/contexts/SocketContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { DisabledReason } from "@/components/DisabledReason";
+import { platformTranslationKey, useRuntimeInfo } from "@/hooks/useRuntimeInfo";
 
 interface SaveInfo {
   name: string;
@@ -224,6 +225,7 @@ function findLastRenderableChunkIndex(
 
 export default function ChunkCleaner() {
   const { t, i18n } = useTranslation("chunkCleaner");
+  const runtimeInfo = useRuntimeInfo();
   const { theme } = useTheme();
   const socket = useSocket();
   const { can } = useAuth();
@@ -2183,7 +2185,7 @@ export default function ChunkCleaner() {
                       <Input
                         value={customPathInput}
                         onChange={(e) => setCustomPathInput(e.target.value)}
-                        placeholder={t("save.customPathPlaceholder")}
+                        placeholder={t(platformTranslationKey("save.customPathPlaceholder", runtimeInfo?.family))}
                         aria-label={t("save.customPathAria")}
                         className="text-xs h-7"
                         onKeyDown={(e) => {
@@ -2204,7 +2206,7 @@ export default function ChunkCleaner() {
                     </div>
                     <p className="text-[10px] text-muted-foreground/80 leading-snug">
                       <Trans
-                        i18nKey="save.customPathHint"
+                        i18nKey={platformTranslationKey("save.customPathHint", runtimeInfo?.family)}
                         t={t}
                         components={{
                           1: <span className="font-mono" />,

@@ -19,15 +19,19 @@
     "modifiedDaysAgo": "il y a {{count}} j",
     "customPathHide": "Masquer",
     "customPathShow": "Chemin personnalisé...",
-    "customPathPlaceholder": "~/Zomboid  ou  C:\\Users\\…\\Zomboid",
+    "customPathPlaceholder": "Path to the Zomboid data folder",
     "customPathAria": "Chemin serveur personnalisé",
     "load": "Charger",
-    "customPathHint": "Indiquez votre dossier de données Zomboid, un dossier <1>Saves/Multiplayer</1>, ou un dossier de sauvegarde unique. <2>~</2> et les variables d'environnement (<3>%USERPROFILE%</3>, <4>$HOME</4>) sont développées.",
+    "customPathHint": "Point at your Zomboid data folder, a <1>Saves/Multiplayer</1> folder, or a single save directory.",
     "saveAsDefaultTitle": "Faire de ce dossier le dossier de données Zomboid par défaut du panneau, pour ne plus avoir à le ressaisir.",
     "saveAsDefault": "Définir par défaut",
     "saving": "Enregistrement...",
     "reset": "Réinitialiser",
-    "autoDetected": "Ce dossier a été détecté automatiquement. Le définir par défaut ?"
+    "autoDetected": "Ce dossier a été détecté automatiquement. Le définir par défaut ?",
+    "customPathPlaceholderWindows": "%USERPROFILE%\\Zomboid or C:\\Users\\…\\Zomboid",
+    "customPathPlaceholderPosix": "$HOME/Zomboid or ~/Zomboid",
+    "customPathHintWindows": "Point at your Zomboid data folder, a <1>Saves/Multiplayer</1> folder, or a single save directory. Windows variables such as <3>%USERPROFILE%</3> are expanded.",
+    "customPathHintPosix": "Point at your Zomboid data folder, a <1>Saves/Multiplayer</1> folder, or a single save directory. <2>~</2>, <4>$HOME</4>, and ${NAME} variables are expanded."
   },
   "stats": {
     "worldFootprint": "Empreinte du monde",

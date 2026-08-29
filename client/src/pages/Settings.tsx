@@ -68,6 +68,7 @@ import { Label } from "@/components/ui/label";
 import { HelpTip } from "@/components/HelpTip";
 import { AutoUpdateResultBanner } from "@/components/AutoUpdateResultBanner";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -107,6 +108,7 @@ import { resolveRegisteredTranslation } from "@/lib/paramTranslation";
 import { useSocket } from "@/contexts/SocketContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme, type ThemeName } from "@/contexts/ThemeContext";
+import { platformTranslationKey, useRuntimeInfo } from "@/hooks/useRuntimeInfo";
 import { BridgeStatusBadge } from "@/components/BridgeStatusBadge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -283,6 +285,7 @@ function ThemeSelect() {
 
 export default function Settings() {
   const { t, i18n } = useTranslation("settings");
+  const runtimeInfo = useRuntimeInfo();
   const socket = useSocket();
   const [settings, setSettings] = useState<AppSettings>({
     panelBridgeAutoUpdate: true,
@@ -355,6 +358,10 @@ export default function Settings() {
   const [panelApplyLog, setPanelApplyLog] = useState<string | null>(null);
   const [panelApplyResultDismissed, setPanelApplyResultDismissed] =
     useState(false);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+  const [restartRiskConfirmed, setRestartRiskConfirmed] = useState(false);
+  const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
+  const [applyRiskConfirmed, setApplyRiskConfirmed] = useState(false);
   const { toast } = useToast();
   const { user, authEnabled, logout, can } = useAuth();
 
@@ -817,6 +824,27 @@ export default function Settings() {
   );
   const isDockerPanelUpdate = panelUpdateStatus?.updateMode === "docker";
   const stagedPanelUpdatePath = panelUpdateStatus?.stagedUpdate?.path;
+  const panelRestartAssessment = runtimeInfo?.restartAssessment;
+  const updateRestartAssessment =
+    panelUpdatePreflight?.info.restartAssessment ?? panelRestartAssessment;
+  const panelRestartIsRisky =
+    panelRestartAssessment?.gameServers !== "preserved" ||
+    Boolean(panelRestartAssessment?.requiresConfirmation);
+  const updateRestartIsRisky =
+    updateRestartAssessment?.gameServers !== "preserved" ||
+    Boolean(updateRestartAssessment?.requiresConfirmation);
+  const restartAssessmentMessage = (
+    assessment: typeof panelRestartAssessment,
+    scope: "general" | "updates",
+  ) => {
+    if (assessment?.gameServers === "preserved") {
+      return t(`${scope}.${scope === "general" ? "restartGameServerPreserved" : "gameServerPreserved"}`);
+    }
+    if (assessment?.gameServers === "at-risk") {
+      return t(`${scope}.${scope === "general" ? "restartGameServerRisk" : "gameServerRisk"}`);
+    }
+    return t(`${scope}.${scope === "general" ? "restartGameServerUnknown" : "gameServerUnknown"}`);
+  };
 
   // Run preflight once status tells us we're in a packaged build and there is
   // anything actionable (either an available update or a staged file on disk).
@@ -2399,23 +2427,56 @@ export default function Settings() {
                     </Alert>
                   )}
                 <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      restartPanelWithReconnect(
-                        t("general.restartToastDesc", { port: settings.panelPort }),
-                      )
-                    }
-                    disabled={restarting || isDirty}
-                    className="gap-2"
+                  <AlertDialog
+                    open={restartConfirmOpen}
+                    onOpenChange={(open) => {
+                      setRestartConfirmOpen(open);
+                      if (!open) setRestartRiskConfirmed(false);
+                    }}
                   >
-                    {restarting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <RotateCw className="w-4 h-4" />
-                    )}
-                    {restarting ? t("general.restartingButton") : t("general.restartButton")}
-                  </Button>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={restarting || isDirty}
+                        className="gap-2"
+                      >
+                        {restarting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RotateCw className="w-4 h-4" />
+                        )}
+                        {restarting ? t("general.restartingButton") : t("general.restartButton")}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("general.confirmRestartTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {restartAssessmentMessage(panelRestartAssessment, "general")}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      {panelRestartIsRisky && (
+                        <label className="flex items-start gap-2 text-sm">
+                          <Checkbox
+                            checked={restartRiskConfirmed}
+                            onCheckedChange={(checked) => setRestartRiskConfirmed(checked === true)}
+                          />
+                          <span>{t("general.confirmRestartRisk")}</span>
+                        </label>
+                      )}
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("updates.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                          disabled={panelRestartIsRisky && !restartRiskConfirmed}
+                          onClick={() => restartPanelWithReconnect(
+                            t("general.restartToastDesc", { port: settings.panelPort }),
+                          )}
+                        >
+                          {t("general.restartButton")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                   {isDirty && (
                     <p className="text-xs text-muted-foreground">
                       {t("general.saveBeforeRestart")}
@@ -2882,7 +2943,7 @@ export default function Settings() {
                               : t("updates.stagedGone")}
                           </span>
                           {panelUpdateStatus.lastApplyResult.likelyCause ===
-                            "av_quarantine" && (
+                            "av_quarantine" && runtimeInfo?.family === "windows" && (
                             <div className="rounded-md border border-destructive/40 bg-background/50 p-2 text-xs leading-relaxed">
                               <strong className="text-destructive-foreground">
                                 {t("updates.likelyCauseLabel")}
@@ -2927,11 +2988,11 @@ export default function Settings() {
                               <strong className="text-destructive-foreground">
                                 {t("updates.likelyCauseLabel")}
                               </strong>{" "}
-                              {t("updates.permissionDenied")}
+                              {t(platformTranslationKey("updates.permissionDenied", runtimeInfo?.family))}
                             </div>
                           )}
                           {panelUpdateStatus.lastApplyResult.likelyCause ===
-                            "helper_blocked" && (
+                            "helper_blocked" && runtimeInfo?.family === "windows" && (
                             <div className="rounded-md border border-destructive/40 bg-background/50 p-2 text-xs leading-relaxed">
                               <strong className="text-destructive-foreground">
                                 {t("updates.likelyCauseLabel")}
@@ -3142,7 +3203,13 @@ export default function Settings() {
                       </Button>
                     )}
 
-                    {!isDockerPanelUpdate && <AlertDialog>
+                    {!isDockerPanelUpdate && <AlertDialog
+                      open={applyConfirmOpen}
+                      onOpenChange={(open) => {
+                        setApplyConfirmOpen(open);
+                        if (!open) setApplyRiskConfirmed(false);
+                      }}
+                    >
                       <AlertDialogTrigger asChild>
                         <Button
                           variant="warning"
@@ -3177,6 +3244,9 @@ export default function Settings() {
                                   ? t("updates.confirmApplyVersionSuffix", { version: panelUpdateStatus.stagedUpdate.version })
                                   : ""}
                               </p>
+                              <p className={updateRestartIsRisky ? "font-medium text-destructive" : "text-foreground"}>
+                                {restartAssessmentMessage(updateRestartAssessment, "updates")}
+                              </p>
                               {panelUpdatePreflight?.warnings.length ? (
                                 <div>
                                   <p className="font-medium text-foreground">
@@ -3197,14 +3267,33 @@ export default function Settings() {
                                 </div>
                               ) : null}
                               <p className="text-xs text-muted-foreground">
-                                <Trans t={t} i18nKey="updates.helperLogHint" components={{ code: <code /> }} />
+                                <Trans
+                                  t={t}
+                                  i18nKey={platformTranslationKey("updates.helperLogHint", runtimeInfo?.family)}
+                                  values={{
+                                    path: panelUpdatePreflight?.info.applyLogPath
+                                      || runtimeInfo?.temporaryDirectory
+                                      || t("updates.logPathUnavailable"),
+                                  }}
+                                  components={{ code: <code /> }}
+                                />
                               </p>
+                              {updateRestartIsRisky && (
+                                <label className="flex items-start gap-2 text-sm text-foreground">
+                                  <Checkbox
+                                    checked={applyRiskConfirmed}
+                                    onCheckedChange={(checked) => setApplyRiskConfirmed(checked === true)}
+                                  />
+                                  <span>{t("updates.confirmGameServerRisk")}</span>
+                                </label>
+                              )}
                             </div>
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>{t("updates.cancel")}</AlertDialogCancel>
                           <AlertDialogAction
+                            disabled={updateRestartIsRisky && !applyRiskConfirmed}
                             onClick={() =>
                               restartPanelWithReconnect(
                                 t("updates.applyingDownloadedToast"),
@@ -3351,7 +3440,7 @@ export default function Settings() {
                         onChange={(e) =>
                           updateSetting("httpsCertPath", e.target.value)
                         }
-                        placeholder="Example: C:\\certs\\panel.fullchain.pem"
+                        placeholder={t(platformTranslationKey("https.certPathPlaceholder", runtimeInfo?.family))}
                         maxLength={260}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
@@ -3371,7 +3460,7 @@ export default function Settings() {
                         onChange={(e) =>
                           updateSetting("httpsKeyPath", e.target.value)
                         }
-                        placeholder="Example: C:\\certs\\panel.privkey.pem"
+                        placeholder={t(platformTranslationKey("https.keyPathPlaceholder", runtimeInfo?.family))}
                         maxLength={260}
                       />
                       <p className="text-xs text-muted-foreground mt-1">

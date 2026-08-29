@@ -27,7 +27,8 @@ import {
   ArrowRight,
   AlertTriangle,
 } from "lucide-react";
-import { configApi, serverApi, serversApi, debugApi, apiFetch } from "@/lib/api";
+import { configApi, serverApi, serversApi, debugApi } from "@/lib/api";
+import { platformTranslationKey, useRuntimeInfo } from "@/hooks/useRuntimeInfo";
 import { HelpTip } from "@/components/HelpTip";
 import { NumberInput } from "@/components/NumberInput";
 import { DisabledReason } from "@/components/DisabledReason";
@@ -236,6 +237,7 @@ export function installationErrorGuidance(
 }
 
 export default function ServerSetup() {
+  const runtimeInfo = useRuntimeInfo();
   const { t } = useTranslation("serverSetup");
   const [setupMode, setSetupMode] = useState<SetupMode>("select");
   const [currentStep, setCurrentStep] = useState(1);
@@ -281,7 +283,7 @@ export default function ServerSetup() {
   const [detectingRam, setDetectingRam] = useState(false);
   // Drives installationErrorGuidance's Linux-only remediation suffix --
   // null until resolved, so we never show wrong-platform advice on a guess.
-  const [serverPlatform, setServerPlatform] = useState<string | null>(null);
+  const serverPlatform = runtimeInfo?.platform ?? null;
 
   // Installation state
   const [installing, setInstalling] = useState(false);
@@ -431,27 +433,6 @@ export default function ServerSetup() {
       return;
     }
     setResumeMarker(marker);
-  }, []);
-
-  // Learn the panel host's actual OS on mount, so a Windows/macOS
-  // installation failure never gets told to edit a systemd unit.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch("/debug/system");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled && typeof data?.platform === "string") {
-          setServerPlatform(data.platform);
-        }
-      } catch {
-        // Silent fail - guidance falls back to the plain message
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   // Load saved settings
@@ -1479,7 +1460,7 @@ export default function ServerSetup() {
                     <ol className="list-decimal list-inside space-y-1 text-muted-foreground mt-2">
                       <li>{t("full.step1.manualStep1")}</li>
                       <li>
-                        <Trans i18nKey="full.step1.manualStep2" t={t} components={{ 1: <code className="bg-muted px-1 rounded" />, 2: <code className="bg-muted px-1 rounded" /> }} />
+                        <Trans i18nKey={platformTranslationKey("full.step1.manualStep2", runtimeInfo?.family)} t={t} components={{ 1: <code className="bg-muted px-1 rounded" /> }} />
                       </li>
                       <li>
                         <Trans i18nKey="full.step1.manualStep3" t={t} components={{ 1: <code className="bg-muted px-1 rounded" /> }} />
@@ -1591,7 +1572,7 @@ export default function ServerSetup() {
             <Input
               value={installPath}
               onChange={(e) => setInstallPath(e.target.value)}
-              placeholder={t("full.step2.installFolderPlaceholder")}
+              placeholder={t(platformTranslationKey("full.step2.installFolderPlaceholder", runtimeInfo?.family))}
               className="font-mono flex-1"
               maxLength={260}
             />
@@ -1735,7 +1716,7 @@ export default function ServerSetup() {
                       <Input
                         value={zomboidDataPath}
                         onChange={(e) => setZomboidDataPath(e.target.value)}
-                        placeholder={t("common.customDataPathPlaceholder")}
+                        placeholder={t(platformTranslationKey("common.customDataPathPlaceholder", runtimeInfo?.family))}
                         className="font-mono flex-1"
                         maxLength={260}
                       />
@@ -2309,7 +2290,7 @@ export default function ServerSetup() {
               <p className="font-medium">{t("quick.step1.usingExistingTitle")}</p>
               <p className="text-sm text-muted-foreground">
                 <Trans
-                  i18nKey="quick.step1.usingExistingDesc"
+                  i18nKey={platformTranslationKey("quick.step1.usingExistingDesc", runtimeInfo?.family)}
                   t={t}
                   components={{
                     1: <code className="bg-muted px-1 rounded" />,
@@ -2651,7 +2632,7 @@ export default function ServerSetup() {
                     <Input
                       value={zomboidDataPath}
                       onChange={(e) => setZomboidDataPath(e.target.value)}
-                      placeholder={t("common.customDataPathPlaceholder")}
+                      placeholder={t(platformTranslationKey("common.customDataPathPlaceholder", runtimeInfo?.family))}
                       className="font-mono flex-1"
                       maxLength={260}
                     />

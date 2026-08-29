@@ -441,8 +441,9 @@ async function handleResponse<T = any>(response: Response): Promise<T> {
 function apiGet<T = any>(
   endpoint: string,
   options?: RequestInit & { timeout?: number },
+  retries?: number,
 ): Promise<T> {
-  return fetchWithRetry(`${API_BASE}${endpoint}`, options).then((response) =>
+  return fetchWithRetry(`${API_BASE}${endpoint}`, options, retries).then((response) =>
     handleResponse<T>(response),
   );
 }
@@ -3140,7 +3141,16 @@ export interface PanelUpdatePreflight {
     programFiles?: boolean;
     stagedUpdate?: { version: string | null; path: string };
     oldPath?: string;
+    temporaryDirectory?: string;
+    applyLogPath?: string;
+    restartAssessment?: RestartAssessment;
   };
+}
+
+export interface RestartAssessment {
+  gameServers: "preserved" | "at-risk" | "unknown";
+  requiresConfirmation: boolean;
+  reason: string;
 }
 
 export interface PanelUpdateActionResult {
@@ -3209,7 +3219,7 @@ export const panelUpdateApi = {
     apiGet("/panel/update-preflight"),
   download: (confirm: boolean = false): Promise<PanelUpdateActionResult> =>
     apiPost("/panel/update-download", { confirm }),
-  getApplyLog: (): Promise<{ log: string | null }> =>
+  getApplyLog: (): Promise<{ log: string | null; logPath: string }> =>
     apiGet("/panel/update-apply-log"),
 };
 
@@ -3240,10 +3250,22 @@ export interface StorageHealth {
   circuitBreaker: CircuitBreakerStatus;
 }
 
+export interface RuntimeInfo {
+  platform: string;
+  family: "windows" | "posix" | "unknown";
+  pathSeparator: string;
+  temporaryDirectory: string;
+  serviceManager: "systemd" | "openrc" | "container" | "none" | "unknown";
+  restartAssessment: RestartAssessment;
+}
+
 export const systemApi = {
   getDiskSpace: (): Promise<DiskSpaceReport> => apiGet("/system/disk-space"),
   getStorageHealth: (): Promise<StorageHealth> =>
     apiGet("/system/storage-health"),
+  // UI copy can safely remain neutral when this optional discovery request
+  // fails; avoid delaying unrelated screens with transport backoff.
+  getRuntime: (): Promise<RuntimeInfo> => apiGet("/system/runtime", undefined, 0),
 };
 
 // ============================================

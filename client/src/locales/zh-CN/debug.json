@@ -368,12 +368,12 @@
           "warn": {
             "linux": {
               "label": "找不到内置 JRE",
-              "message": "在安装路径下找不到 jre64/bin/{{javaBin}}。除非系统 Java 已加入 PATH，否则服务器可能无法启动。",
+              "message": "在安装路径下找不到 jre64/bin/{{javaBin}}。请使用 command -v java 检查系统 Java；systemd 服务的 $PATH 可能与登录 shell 不同。",
               "hint": "大多数安装都会在 jre64/ 下附带 JRE。如果缺失，请重新运行 SteamCMD。"
             },
             "windows": {
               "label": "找不到内置 JRE",
-              "message": "在安装路径下找不到 jre64/bin/{{javaBin}}。除非系统 Java 已加入 PATH，否则服务器可能无法启动。",
+              "message": "在安装路径下找不到 jre64/bin/{{javaBin}}。请运行 where java，检查系统 Java 是否可通过 %PATH% 使用。",
               "hint": "重新运行 SteamCMD 以恢复内置 JRE"
             }
           }

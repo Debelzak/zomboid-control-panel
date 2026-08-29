@@ -368,12 +368,12 @@
           "warn": {
             "linux": {
               "label": "Bundled JRE not found",
-              "message": "Could not locate jre64/bin/{{javaBin}} under the install path. Server may fail to start unless system Java is on PATH.",
+              "message": "Could not locate jre64/bin/{{javaBin}} under the install path. Check system Java with command -v java; a systemd service may have a different $PATH from your login shell.",
               "hint": "Most installs ship a JRE under jre64/. Re-run SteamCMD if missing."
             },
             "windows": {
               "label": "Bundled JRE not found",
-              "message": "Could not locate jre64/bin/{{javaBin}} under the install path. Server may fail to start unless system Java is on PATH.",
+              "message": "Could not locate jre64/bin/{{javaBin}} under the install path. Run where java to check whether system Java is available through %PATH%.",
               "hint": "Re-run SteamCMD to restore the bundled JRE"
             }
           }

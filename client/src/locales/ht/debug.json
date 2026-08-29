@@ -368,12 +368,12 @@
           "warn": {
             "linux": {
               "label": "JRE enkli pa jwenn",
-              "message": "Pa t kapab jwenn jre64/bin/{{javaBin}} anba chemen enstalasyon an. Sèvè a ka pa demare sof si Java sistèm nan sou PATH.",
+              "message": "Nou pa jwenn jre64/bin/{{javaBin}} nan chemen enstalasyon an. Verifye Java ak command -v java; yon sèvis systemd ka itilize yon $PATH diferan ak shell koneksyon an.",
               "hint": "Pifò enstalasyon gen yon JRE anba jre64/. Re-egzekite SteamCMD si li manke."
             },
             "windows": {
               "label": "JRE enkli pa jwenn",
-              "message": "Pa t kapab jwenn jre64/bin/{{javaBin}} anba chemen enstalasyon an. Sèvè a ka pa demare sof si Java sistèm nan sou PATH.",
+              "message": "Nou pa jwenn jre64/bin/{{javaBin}} nan chemen enstalasyon an. Egzekite where java pou verifye si Java disponib atravè %PATH%.",
               "hint": "Re-egzekite SteamCMD pou retabli JRE enkli a"
             }
           }

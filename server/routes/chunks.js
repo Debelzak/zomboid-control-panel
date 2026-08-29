@@ -575,12 +575,22 @@ router.get("/saves", async (req, res) => {
         `[ChunkCleaner] Failed to read saves dir ${savesPath}: ${e.message}`,
       );
       const code = e.code || "EREAD";
-      const hint =
-        code === "EACCES" || code === "EPERM"
-          ? `Panel does not have permission to read this folder. On Linux, check that the panel runs as the same user that owns the Zomboid folder (or fix permissions with chown/chmod).`
-          : `Could not read the saves folder (${code}).`;
+      const permissionDenied = code === "EACCES" || code === "EPERM";
+      const variant = process.platform === "win32"
+        ? "windows"
+        : process.platform === "linux"
+          ? "linux"
+          : "generic";
+      const hint = !permissionDenied
+        ? `Could not read the saves folder (${code}).`
+        : variant === "linux"
+          ? "Panel cannot read this folder. Check ownership and read permissions for the panel service user."
+          : variant === "windows"
+            ? "Panel cannot read this folder. Check that the panel service account has read access to it."
+            : "Panel cannot read this folder. Check the folder permissions for the account running the panel.";
       return res.status(403).json({
         error: hint,
+        variant,
         debug: {
           zomboidDataPath,
           savesPath,
