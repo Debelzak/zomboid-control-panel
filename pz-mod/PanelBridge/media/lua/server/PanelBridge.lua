@@ -4136,17 +4136,30 @@ handlers.getAllSandboxOptions = function(args)
                 info.type = "number"
             elseif className:find("Enum") then
                 info.type = "enum"
-                -- Try to get enum values
+                -- Try to get enum values. 2026-08-30, total-audit batch 3,
+                -- item 4: this used to gate on `opt.getNumValues and
+                -- opt.getValueName` (a field-test on a Java object -- the
+                -- same anti-pattern this file bans elsewhere, e.g. world
+                -- .saveWorld) and call opt:getValueName(i), a method that
+                -- does not exist anywhere in the real jar's SandboxOption/
+                -- ConfigOption hierarchy (confirmed by parsing
+                -- EnumSandboxOption/StrongEnumSandboxOption/EnumConfigOption/
+                -- ConfigOption's own class files) -- the real method is
+                -- getValueTranslationByIndexOrNull. Either the field-test
+                -- never fired (most likely, per this file's own established
+                -- lesson about field-tests on Java objects) or the per-index
+                -- pcall silently swallowed the throw every time -- either
+                -- way, every enum sandbox option's enumValues came back
+                -- empty or absent, always, with no error surfaced.
                 pcall(function()
-                    if opt.getNumValues and opt.getValueName then
-                        local numVals = opt:getNumValues()
-                        if numVals and numVals > 0 then
-                            info.enumValues = {}
-                            local cap = math.min(numVals, 50)
-                            for i = 0, cap - 1 do
-                                pcall(function()
-                                    table.insert(info.enumValues, tostring(opt:getValueName(i)))
-                                end)
+                    local numVals = tonumber(PanelBridge.tryGet(opt, "getNumValues"))
+                    if numVals and numVals > 0 then
+                        info.enumValues = {}
+                        local cap = math.min(numVals, 50)
+                        for i = 0, cap - 1 do
+                            local translated = PanelBridge.tryGet(opt, "getValueTranslationByIndexOrNull", i)
+                            if translated ~= nil then
+                                table.insert(info.enumValues, tostring(translated))
                             end
                         end
                     end
