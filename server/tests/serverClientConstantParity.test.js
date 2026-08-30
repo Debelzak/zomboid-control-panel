@@ -82,3 +82,104 @@ describe("LEGACY_USER_ROLES (client) vs USER_ROLES (server): parity", () => {
     ).toEqual(USER_ROLES);
   });
 });
+
+// hunt-wave16-2026-08-30: closes out duplication-survey-uncovered-remainder
+// (the not-covered list hunt-wave14's survey named rather than glossing
+// over). Two more real pairs found by finally scanning server/routes/*.js
+// and server/index.js (never checked before) and opening the remaining
+// name-scanned-but-unopened client constants. Both confirmed IN SYNC as of
+// this commit -- pure guard installation, no behavior change. Everything
+// else on that not-covered list was checked and rejected with a reason (see
+// the survey report), not silently dropped.
+
+describe("AIRDROP_PRESETS (client) vs airdrop's VALID_PRESETS (server): parity", () => {
+  // client/src/pages/WorldMap.tsx's AIRDROP_PRESETS is `[{ id, icon }, ...]`,
+  // not a flat string array -- extract just the id field. server/routes/
+  // panelBridge.js's VALID_PRESETS lives INSIDE the POST /command handler
+  // (not a module-level export), so it's regex-extracted too rather than
+  // imported, same reasoning as the client side.
+  const CLIENT_PATH = "client/src/pages/WorldMap.tsx";
+  const SERVER_PATH = "server/routes/panelBridge.js";
+
+  function extractAirdropPresetIds() {
+    const content = fs.readFileSync(path.join(ROOT, CLIENT_PATH), "utf-8");
+    const arrayMatch = content.match(/const AIRDROP_PRESETS = \[([\s\S]*?)\] as const/);
+    if (!arrayMatch) return null;
+    return [...arrayMatch[1].matchAll(/id:\s*'([^']+)'/g)].map((m) => m[1]);
+  }
+
+  function extractValidPresets() {
+    const content = fs.readFileSync(path.join(ROOT, SERVER_PATH), "utf-8");
+    const arrayMatch = content.match(/const VALID_PRESETS = \[([^\]]*)\]/);
+    if (!arrayMatch) return null;
+    return arrayMatch[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.replace(/^['"]|['"]$/g, ""));
+  }
+
+  it(`${CLIENT_PATH}'s AIRDROP_PRESETS ids match ${SERVER_PATH}'s VALID_PRESETS exactly`, () => {
+    const clientIds = extractAirdropPresetIds();
+    const serverIds = extractValidPresets();
+    expect(
+      clientIds,
+      `could not find "const AIRDROP_PRESETS = [...] as const" in ${CLIENT_PATH} -- the extraction regex needs updating, not this test relaxing`,
+    ).not.toBeNull();
+    expect(
+      serverIds,
+      `could not find "const VALID_PRESETS = [...]" in ${SERVER_PATH} -- the extraction regex needs updating, not this test relaxing`,
+    ).not.toBeNull();
+    expect(
+      clientIds,
+      "the airdrop preset picker and the server's accepted preset list have drifted apart -- the UI would offer a preset the server's airdrop validation (PANELBRIDGE_AIRDROP_INVALID_PRESET) then rejects, or hide one the server accepts",
+    ).toEqual(serverIds);
+  });
+});
+
+describe("DISK_SOCKET_EVENTS (client) vs diskMonitor's io.emit() calls (server): parity", () => {
+  // client/src/components/SystemHealthBanner.tsx literally iterates this
+  // array to bind/unbind socket listeners (DISK_SOCKET_EVENTS.forEach((evt)
+  // => socket.on(evt, refresh))) -- not just a UI label list, a real event
+  // subscription contract. server/services/diskMonitor.js has no single
+  // named export enumerating its event names; it emits them at three
+  // separate call sites, so the server side is reconstructed from those
+  // call sites rather than imported.
+  const CLIENT_PATH = "client/src/components/SystemHealthBanner.tsx";
+  const SERVER_PATH = "server/services/diskMonitor.js";
+
+  function extractClientDiskEvents() {
+    const content = fs.readFileSync(path.join(ROOT, CLIENT_PATH), "utf-8");
+    const match = content.match(/const DISK_SOCKET_EVENTS = \[([^\]]*)\]/);
+    if (!match) return null;
+    return match[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.replace(/^['"]|['"]$/g, ""))
+      .sort();
+  }
+
+  function extractServerDiskEvents() {
+    const content = fs.readFileSync(path.join(ROOT, SERVER_PATH), "utf-8");
+    const events = new Set([...content.matchAll(/\.io\.emit\(\s*["'](disk:[a-zA-Z]+)["']/g)].map((m) => m[1]));
+    return [...events].sort();
+  }
+
+  it(`${CLIENT_PATH}'s DISK_SOCKET_EVENTS matches every "disk:*" event ${SERVER_PATH} actually emits`, () => {
+    const clientEvents = extractClientDiskEvents();
+    const serverEvents = extractServerDiskEvents();
+    expect(
+      clientEvents,
+      `could not find "const DISK_SOCKET_EVENTS = [...]" in ${CLIENT_PATH} -- the extraction regex needs updating, not this test relaxing`,
+    ).not.toBeNull();
+    expect(
+      serverEvents.length,
+      `found zero "this.io.emit(\\"disk:...\\"` + `)" call sites in ${SERVER_PATH} -- the extraction regex needs updating, not this test relaxing`,
+    ).toBeGreaterThan(0);
+    expect(
+      clientEvents,
+      "the client's disk-event listener list and the server's actual disk:* emit() call sites have drifted apart -- a renamed or newly added disk event would silently never trigger a refresh in the banner",
+    ).toEqual(serverEvents);
+  });
+});
