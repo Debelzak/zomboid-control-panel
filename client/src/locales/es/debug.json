@@ -1427,7 +1427,7 @@
     "commandsLabel": "Comandos OK / total",
     "commandsFailedLabel": "Comandos fallidos",
     "detectedVersionLabel": "Build detectada",
-    "detectedVersionCaveat": "Detectada a partir de la cadena de build, no de las pruebas de funciones en vivo — esas pruebas son conocidas por no ser fiables en esta versión del mod y no se muestran aquí.",
+    "detectedVersionCaveat": "Determinada a partir del análisis de la cadena de build del mod — su vía de detección principal y fiable, no una alternativa de respaldo. Los indicadores de funciones meteorológicas en vivo no se pueden confirmar de forma segura sin desencadenar un evento climático real, así que se omiten por completo aquí en lugar de mostrarse como un «no» posiblemente incorrecto.",
     "debugModeLabel": "Modo depuración",
     "debugModeDesc": "Registro detallado del lado del mod. Se puede alternar sin riesgo — solo afecta al volumen de registro.",
     "debugModeEnabledTitle": "Modo depuración de la bridge activado",

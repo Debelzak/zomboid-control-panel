@@ -1427,7 +1427,7 @@
     "commandsLabel": "成功命令数 / 总数",
     "commandsFailedLabel": "失败命令数",
     "detectedVersionLabel": "检测到的构建版本",
-    "detectedVersionCaveat": "该结果基于构建版本字符串检测，而非实时功能探测 —— 探测机制在此模组版本上已知不可靠，因此此处不显示。",
+    "detectedVersionCaveat": "该结果来自模组对构建版本字符串的解析 —— 这是其可靠的主要检测方式，而非备用方案。实时天气功能标志无法在不真正触发天气事件的情况下安全确认，因此此处完全不显示这两项，而不是显示一个可能错误的「否」。",
     "debugModeLabel": "调试模式",
     "debugModeDesc": "模组端的详细日志记录。可放心切换 —— 只影响日志量。",
     "debugModeEnabledTitle": "已启用桥接调试模式",

@@ -1427,7 +1427,7 @@
     "commandsLabel": "Commands OK / total",
     "commandsFailedLabel": "Commands failed",
     "detectedVersionLabel": "Detected build",
-    "detectedVersionCaveat": "Detected from the build string, not live feature probes -- those probes are known unreliable on this mod version and are not shown here.",
+    "detectedVersionCaveat": "Determined from the mod's build-string parse -- its reliable primary detection path, not a fallback. Live weather-feature flags (blizzard/tropical) can't be safely confirmed without actually triggering a real weather event, so they're left out entirely here rather than shown as a possibly-wrong false.",
     "debugModeLabel": "Debug mode",
     "debugModeDesc": "Verbose logging on the mod side. Safe to toggle -- affects log volume only.",
     "debugModeEnabledTitle": "Bridge debug mode enabled",

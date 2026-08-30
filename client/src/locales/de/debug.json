@@ -1427,7 +1427,7 @@
     "commandsLabel": "Befehle OK / gesamt",
     "commandsFailedLabel": "Fehlgeschlagene Befehle",
     "detectedVersionLabel": "Erkannter Build",
-    "detectedVersionCaveat": "Aus dem Build-String erkannt, nicht aus Live-Funktionsprüfungen — diese Prüfungen sind auf dieser Mod-Version bekanntermaßen unzuverlässig und werden hier nicht angezeigt.",
+    "detectedVersionCaveat": "Ermittelt aus dem Build-String-Parsing der Mod — ihrem zuverlässigen primären Erkennungsweg, kein Ausweichmechanismus. Live-Wetterfunktions-Flags lassen sich nicht gefahrlos bestätigen, ohne tatsächlich ein echtes Wetterereignis auszulösen, daher werden sie hier ganz weggelassen statt als möglicherweise falsches „Nein“ angezeigt.",
     "debugModeLabel": "Debug-Modus",
     "debugModeDesc": "Ausführliche Protokollierung auf Mod-Seite. Gefahrlos umschaltbar — betrifft nur die Protokollmenge.",
     "debugModeEnabledTitle": "Bridge-Debug-Modus aktiviert",

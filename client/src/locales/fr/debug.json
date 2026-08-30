@@ -1427,7 +1427,7 @@
     "commandsLabel": "Commandes OK / total",
     "commandsFailedLabel": "Commandes échouées",
     "detectedVersionLabel": "Build détectée",
-    "detectedVersionCaveat": "Détectée à partir de la chaîne de build, pas des sondes de fonctionnalités en direct — ces sondes sont connues pour être peu fiables sur cette version du mod et ne sont pas affichées ici.",
+    "detectedVersionCaveat": "Déterminée à partir de l'analyse de la chaîne de build du mod — sa méthode de détection principale et fiable, pas une solution de repli. Les indicateurs de fonctionnalités météo en direct ne peuvent pas être confirmés sans risque sans déclencher un véritable événement météo, ils sont donc totalement omis ici plutôt qu'affichés comme un « non » potentiellement erroné.",
     "debugModeLabel": "Mode débogage",
     "debugModeDesc": "Journalisation détaillée côté mod. Peut être activé sans risque — n'affecte que le volume de journalisation.",
     "debugModeEnabledTitle": "Mode débogage du pont activé",

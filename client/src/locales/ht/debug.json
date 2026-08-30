@@ -1427,7 +1427,7 @@
     "commandsLabel": "Kòmand OK / total",
     "commandsFailedLabel": "Kòmand ki echwe",
     "detectedVersionLabel": "Build ki detekte",
-    "detectedVersionCaveat": "Detekte apati chèn build la, pa apati tès fonksyon an dirèk yo — tès sa yo konnen pou pa fyab sou vèsyon mod sa a e yo pa parèt isit la.",
+    "detectedVersionCaveat": "Detèmine apati analiz chèn build mod la — chemen deteksyon prensipal ki fyab li, se pa yon plan sekou. Endikatè fonksyon metewolojik an dirèk yo pa ka konfime san danje san yo pa deklannche yon vrè evènman metewolojik, kidonk yo pa parèt ditou isit la olye pou yo montre kòm yon \"non\" ki ka pa kòrèk.",
     "debugModeLabel": "Modd debog",
     "debugModeDesc": "Jounal detaye sou kote mod la. Ou ka chanje l san danje — sa afekte sèlman kantite jounal la.",
     "debugModeEnabledTitle": "Modd debog pon an aktive",
