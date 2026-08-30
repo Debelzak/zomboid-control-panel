@@ -55,6 +55,11 @@
       "hint": "Ranplase bouya, van, tanperati, nyaj, imidite, ak presipitasyon.",
       "keywords": "bouya van tanperati nyaj imidite presipitasyon klima"
     },
+    "visual": {
+      "label": "Randisman vizyèl",
+      "hint": "Ranplase distans vizyon, fòs limyè lajounen, fènwa lannwit, dezateyasyon, ak limyè anbyant.",
+      "keywords": "distans vizyon limyè lajounen lannwit fòs dezateyasyon limyè anbyant vizyèl randisman"
+    },
     "clock": {
       "label": "Lè jwèt la",
       "hint": "Defini lè, jou, ak mwa nan jwèt la.",
@@ -151,6 +156,22 @@
     "cloudsAria": "Entansite nyaj",
     "humidityAria": "Imidite",
     "precipitationAria": "Entansite presipitasyon"
+  },
+  "visual": {
+    "sublabelOnline": "bridge · ranplasman admin",
+    "sublabelOffline": "bridge òfliy",
+    "reset": "reyinisyalize",
+    "viewDistance": "distans vizyon",
+    "dayLight": "fòs limyè lajounen",
+    "nightStrength": "fòs lannwit",
+    "desaturation": "dezateyasyon",
+    "ambient": "limyè anbyant",
+    "applyAll": "aplike tout",
+    "viewDistanceAria": "Distans vizyon",
+    "dayLightAria": "Fòs limyè lajounen",
+    "nightStrengthAria": "Fòs lannwit",
+    "desaturationAria": "Dezateyasyon",
+    "ambientAria": "Limyè anbyant"
   },
   "clock": {
     "sublabel": "bridge · dat ak lè mond lan",

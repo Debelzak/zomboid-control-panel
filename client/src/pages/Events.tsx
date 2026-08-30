@@ -27,9 +27,13 @@ import {
   AlertTriangle,
   Droplets,
   Sun,
+  SunMedium,
   Moon,
   Eye,
   Gauge,
+  Telescope,
+  Contrast,
+  Lightbulb,
   RotateCcw,
   Calendar,
   Sunrise,
@@ -840,6 +844,7 @@ type EventSectionKey =
   | 'rain'
   | 'severe'
   | 'climate'
+  | 'visual'
   | 'clock'
   | 'timespeed'
   | 'utilities'
@@ -905,6 +910,7 @@ export default function Events() {
         { id: 'rain' as const, label: t('sections.rain.label'), hint: t('sections.rain.hint'), keywords: t('sections.rain.keywords'), icon: CloudRain, needsBridge: false },
         { id: 'severe' as const, label: t('sections.severe.label'), hint: t('sections.severe.hint'), keywords: t('sections.severe.keywords'), icon: Snowflake, needsBridge: true },
         { id: 'climate' as const, label: t('sections.climate.label'), hint: t('sections.climate.hint'), keywords: t('sections.climate.keywords'), icon: Gauge, needsBridge: true },
+        { id: 'visual' as const, label: t('sections.visual.label'), hint: t('sections.visual.hint'), keywords: t('sections.visual.keywords'), icon: Telescope, needsBridge: true },
       ],
     },
     {
@@ -983,6 +989,19 @@ export default function Events() {
   // Real per-float min/max from getClimateFloats, keyed by ClimateFloat id. Populated
   // once the bridge reports them; sliders fall back to the old hardcoded range until then.
   const [climateRanges, setClimateRanges] = useState<Record<number, ClimateFloatRange>>({})
+
+  // Visual controls (hunt-wave12-2026-08-30: setViewDistance/setDayLight/
+  // setNightStrength/setDesaturation/setAmbient each have a dead dedicated
+  // route -- applied the same way climate above is, through
+  // setClimateFloat with these floats' ids (0/2/9/10/11, see
+  // PanelBridge.lua's handlers.getClimateFloats). Read-back verified before
+  // building this: getClimateFloats already reports all five, so these
+  // sliders show real state, not a seeded guess.
+  const [viewDistance, setViewDistance] = useState(0)
+  const [dayLight, setDayLight] = useState(0)
+  const [nightStrength, setNightStrength] = useState(0)
+  const [desaturation, setDesaturation] = useState(0)
+  const [ambient, setAmbient] = useState(0)
 
   // Game time controls
   const [gameHour, setGameHour] = useState(12)
@@ -1082,7 +1101,7 @@ export default function Events() {
           // capture it so the sliders below can bind to it instead of a hardcoded range.
           setClimateRanges((prev) => {
             const next = { ...prev }
-            for (const id of [3, 4, 5, 6, 8, 12]) {
+            for (const id of [3, 4, 5, 6, 8, 12, 0, 2, 9, 10, 11]) {
               const f = findFloat(id)
               if (f) next[id] = { min: f.min, max: f.max }
             }
@@ -1097,6 +1116,11 @@ export default function Events() {
             setCloudIntensity(Math.round((findFloat(8)?.value ?? 0) * 100))
             setHumidity(Math.round((findFloat(12)?.value ?? 0.5) * 100))
             setPrecipitationIntensity(Math.round((findFloat(3)?.value ?? 0) * 100))
+            setDesaturation(Math.round((findFloat(0)?.value ?? 0) * 100))
+            setNightStrength(Math.round((findFloat(2)?.value ?? 0) * 100))
+            setAmbient(Math.round((findFloat(9)?.value ?? 0) * 100))
+            setViewDistance(Math.round((findFloat(10)?.value ?? 0) * 100))
+            setDayLight(Math.round((findFloat(11)?.value ?? 0) * 100))
           }
         }
 
@@ -1793,6 +1817,11 @@ export default function Events() {
   const cloudBounds = climateSliderBounds(climateRanges[8], 0, 100, 100)
   const humidityBounds = climateSliderBounds(climateRanges[12], 0, 100, 100)
   const precipitationBounds = climateSliderBounds(climateRanges[3], 0, 100, 100)
+  const desaturationBounds = climateSliderBounds(climateRanges[0], 0, 100, 100)
+  const nightStrengthBounds = climateSliderBounds(climateRanges[2], 0, 100, 100)
+  const ambientBounds = climateSliderBounds(climateRanges[9], 0, 100, 100)
+  const viewDistanceBounds = climateSliderBounds(climateRanges[10], 0, 100, 100)
+  const dayLightBounds = climateSliderBounds(climateRanges[11], 0, 100, 100)
 
   return (
     <div className="mx-auto max-w-[1180px] space-y-5 pb-8 page-transition">
@@ -2244,6 +2273,102 @@ export default function Events() {
                 </Button>
                 <Button variant="outline" onClick={() => handleBridgeAction('Stop Rain', () => panelBridgeApi.stopRain())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
                   <CloudOff className="w-3.5 h-3.5" /> {t('climate.stopRain')}
+                </Button>
+              </div>
+            </div>
+          </TacticalPanel>
+        )}
+
+        {activeSection === 'visual' && (
+          <TacticalPanel tone={bridgeConnected ? 'primary' : 'warning'} className={!bridgeConnected ? 'opacity-60' : ''}>
+            <SectionHeader
+              label={activeMeta.label}
+              sublabel={bridgeConnected ? t('visual.sublabelOnline') : t('visual.sublabelOffline')}
+              icon={Telescope}
+              tone={bridgeConnected ? 'primary' : 'warning'}
+              action={bridgeConnected ? (
+                <Button variant="ghost" size="sm" onClick={() => handleBridgeAction('Reset Climate', async () => { const r = await panelBridgeApi.resetClimateOverrides(); climateDirtyUntilRef.current = 0; return r })} disabled={bridgeLoading !== null} className="h-6 px-2 gap-1 text-xs font-medium">
+                  <RotateCcw className="w-3 h-3" />
+                  {t('visual.reset')}
+                </Button>
+              ) : undefined}
+            />
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Telescope className="w-3.5 h-3.5 text-primary/80" />
+                      {t('visual.viewDistance')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{viewDistance}%</span>
+                  </div>
+                  <Slider aria-label={t('visual.viewDistanceAria')} value={[viewDistance]} onValueChange={([val]) => { markClimateDirty(); setViewDistance(val) }} min={viewDistanceBounds.min} max={viewDistanceBounds.max} step={5} disabled={!bridgeConnected} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <SunMedium className="w-3.5 h-3.5 text-primary/80" />
+                      {t('visual.dayLight')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{dayLight}%</span>
+                  </div>
+                  <Slider aria-label={t('visual.dayLightAria')} value={[dayLight]} onValueChange={([val]) => { markClimateDirty(); setDayLight(val) }} min={dayLightBounds.min} max={dayLightBounds.max} step={5} disabled={!bridgeConnected} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Moon className="w-3.5 h-3.5 text-primary/80" />
+                      {t('visual.nightStrength')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{nightStrength}%</span>
+                  </div>
+                  <Slider aria-label={t('visual.nightStrengthAria')} value={[nightStrength]} onValueChange={([val]) => { markClimateDirty(); setNightStrength(val) }} min={nightStrengthBounds.min} max={nightStrengthBounds.max} step={5} disabled={!bridgeConnected} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Contrast className="w-3.5 h-3.5 text-primary/80" />
+                      {t('visual.desaturation')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{desaturation}%</span>
+                  </div>
+                  <Slider aria-label={t('visual.desaturationAria')} value={[desaturation]} onValueChange={([val]) => { markClimateDirty(); setDesaturation(val) }} min={desaturationBounds.min} max={desaturationBounds.max} step={5} disabled={!bridgeConnected} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Lightbulb className="w-3.5 h-3.5 text-primary/80" />
+                      {t('visual.ambient')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{ambient}%</span>
+                  </div>
+                  <Slider aria-label={t('visual.ambientAria')} value={[ambient]} onValueChange={([val]) => { markClimateDirty(); setAmbient(val) }} min={ambientBounds.min} max={ambientBounds.max} step={5} disabled={!bridgeConnected} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-border/40">
+                <Button
+                  onClick={() => handleBridgeAction('Apply All Visual', async () => {
+                    await Promise.all([
+                      panelBridgeApi.setClimateFloat(10, viewDistance / 100),
+                      panelBridgeApi.setClimateFloat(11, dayLight / 100),
+                      panelBridgeApi.setClimateFloat(2, nightStrength / 100),
+                      panelBridgeApi.setClimateFloat(0, desaturation / 100),
+                      panelBridgeApi.setClimateFloat(9, ambient / 100),
+                    ])
+                    // Allow the next poll to re-sync from authoritative game state.
+                    climateDirtyUntilRef.current = 0
+                  })}
+                  disabled={bridgeLoading !== null || !bridgeConnected}
+                  className="h-9 gap-2 text-xs font-medium"
+                >
+                  {bridgeLoading === 'Apply All Visual' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gauge className="w-3.5 h-3.5" />}
+                  {t('visual.applyAll')}
                 </Button>
               </div>
             </div>

@@ -55,6 +55,11 @@
       "hint": "Modifier le brouillard, le vent, la température, les nuages, l'humidité et les précipitations.",
       "keywords": "brouillard vent température nuages humidité précipitations climat"
     },
+    "visual": {
+      "label": "Rendu visuel",
+      "hint": "Modifier la distance d'affichage, l'intensité de la lumière du jour, l'obscurité nocturne, la désaturation et la lumière ambiante.",
+      "keywords": "distance d'affichage lumière du jour nuit intensité désaturation lumière ambiante visuel rendu"
+    },
     "clock": {
       "label": "Horloge du jeu",
       "hint": "Définir l'heure, le jour et le mois du jeu.",
@@ -151,6 +156,22 @@
     "cloudsAria": "Intensité des nuages",
     "humidityAria": "Humidité",
     "precipitationAria": "Intensité des précipitations"
+  },
+  "visual": {
+    "sublabelOnline": "bridge · réglage admin",
+    "sublabelOffline": "bridge hors ligne",
+    "reset": "réinitialiser",
+    "viewDistance": "distance d'affichage",
+    "dayLight": "intensité de la lumière du jour",
+    "nightStrength": "intensité nocturne",
+    "desaturation": "désaturation",
+    "ambient": "lumière ambiante",
+    "applyAll": "tout appliquer",
+    "viewDistanceAria": "Distance d'affichage",
+    "dayLightAria": "Intensité de la lumière du jour",
+    "nightStrengthAria": "Intensité nocturne",
+    "desaturationAria": "Désaturation",
+    "ambientAria": "Lumière ambiante"
   },
   "clock": {
     "sublabel": "bridge · date et heure du monde",

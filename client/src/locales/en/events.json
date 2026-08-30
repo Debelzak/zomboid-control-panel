@@ -55,6 +55,11 @@
       "hint": "Override fog, wind, temperature, clouds, humidity, and precipitation.",
       "keywords": "fog wind temperature clouds humidity precipitation climate"
     },
+    "visual": {
+      "label": "Visual rendering",
+      "hint": "Override view distance, daylight strength, night darkness, desaturation, and ambient light.",
+      "keywords": "view distance daylight night strength desaturation ambient visual rendering"
+    },
     "clock": {
       "label": "Game clock",
       "hint": "Set the in-game hour, day, and month.",
@@ -151,6 +156,22 @@
     "cloudsAria": "Cloud intensity",
     "humidityAria": "Humidity",
     "precipitationAria": "Precipitation intensity"
+  },
+  "visual": {
+    "sublabelOnline": "bridge · admin override",
+    "sublabelOffline": "bridge offline",
+    "reset": "reset",
+    "viewDistance": "view distance",
+    "dayLight": "daylight strength",
+    "nightStrength": "night strength",
+    "desaturation": "desaturation",
+    "ambient": "ambient light",
+    "applyAll": "apply all",
+    "viewDistanceAria": "View distance",
+    "dayLightAria": "Daylight strength",
+    "nightStrengthAria": "Night strength",
+    "desaturationAria": "Desaturation",
+    "ambientAria": "Ambient light"
   },
   "clock": {
     "sublabel": "bridge · world date and time",

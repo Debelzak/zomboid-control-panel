@@ -55,6 +55,11 @@
       "hint": "Anular la niebla, el viento, la temperatura, las nubes, la humedad y la precipitación.",
       "keywords": "niebla viento temperatura nubes humedad precipitación clima"
     },
+    "visual": {
+      "label": "Renderizado visual",
+      "hint": "Anular la distancia de visión, la intensidad de la luz diurna, la oscuridad nocturna, la desaturación y la luz ambiental.",
+      "keywords": "distancia de visión luz diurna noche intensidad desaturación luz ambiental visual renderizado"
+    },
     "clock": {
       "label": "Reloj del juego",
       "hint": "Establecer la hora, el día y el mes dentro del juego.",
@@ -151,6 +156,22 @@
     "cloudsAria": "Intensidad de las nubes",
     "humidityAria": "Humedad",
     "precipitationAria": "Intensidad de la precipitación"
+  },
+  "visual": {
+    "sublabelOnline": "puente · anulación de administrador",
+    "sublabelOffline": "puente fuera de línea",
+    "reset": "restablecer",
+    "viewDistance": "distancia de visión",
+    "dayLight": "intensidad de luz diurna",
+    "nightStrength": "intensidad nocturna",
+    "desaturation": "desaturación",
+    "ambient": "luz ambiental",
+    "applyAll": "aplicar todo",
+    "viewDistanceAria": "Distancia de visión",
+    "dayLightAria": "Intensidad de luz diurna",
+    "nightStrengthAria": "Intensidad nocturna",
+    "desaturationAria": "Desaturación",
+    "ambientAria": "Luz ambiental"
   },
   "clock": {
     "sublabel": "puente · fecha y hora del mundo",

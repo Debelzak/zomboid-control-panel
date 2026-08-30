@@ -55,6 +55,11 @@
       "hint": "覆盖雾、风、温度、云量、湿度与降水。",
       "keywords": "雾 风 温度 云量 湿度 降水 气候"
     },
+    "visual": {
+      "label": "视觉渲染",
+      "hint": "覆盖视距、日光强度、夜晚黑暗度、去饱和度与环境光。",
+      "keywords": "视距 日光 夜晚 强度 去饱和度 环境光 视觉 渲染"
+    },
     "clock": {
       "label": "游戏时钟",
       "hint": "设置游戏内的小时、日期与月份。",
@@ -151,6 +156,22 @@
     "cloudsAria": "云量强度",
     "humidityAria": "湿度",
     "precipitationAria": "降水强度"
+  },
+  "visual": {
+    "sublabelOnline": "桥接 · 管理员覆盖",
+    "sublabelOffline": "桥接离线",
+    "reset": "重置",
+    "viewDistance": "视距",
+    "dayLight": "日光强度",
+    "nightStrength": "夜晚强度",
+    "desaturation": "去饱和度",
+    "ambient": "环境光",
+    "applyAll": "应用全部",
+    "viewDistanceAria": "视距",
+    "dayLightAria": "日光强度",
+    "nightStrengthAria": "夜晚强度",
+    "desaturationAria": "去饱和度",
+    "ambientAria": "环境光"
   },
   "clock": {
     "sublabel": "桥接 · 世界日期与时间",

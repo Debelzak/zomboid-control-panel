@@ -55,6 +55,11 @@
       "hint": "Überschreibe Nebel, Wind, Temperatur, Wolken, Luftfeuchtigkeit und Niederschlag.",
       "keywords": "nebel wind temperatur wolken luftfeuchtigkeit niederschlag klima"
     },
+    "visual": {
+      "label": "Visuelle Darstellung",
+      "hint": "Überschreibe Sichtweite, Tageslichtstärke, Nachtdunkelheit, Entsättigung und Umgebungslicht.",
+      "keywords": "sichtweite tageslicht nacht stärke entsättigung umgebungslicht visuell darstellung"
+    },
     "clock": {
       "label": "Ingame-Uhr",
       "hint": "Lege Ingame-Stunde, -Tag und -Monat fest.",
@@ -151,6 +156,22 @@
     "cloudsAria": "Wolkenintensität",
     "humidityAria": "Luftfeuchtigkeit",
     "precipitationAria": "Niederschlagsintensität"
+  },
+  "visual": {
+    "sublabelOnline": "Brücke · Admin-Override",
+    "sublabelOffline": "Brücke offline",
+    "reset": "zurücksetzen",
+    "viewDistance": "Sichtweite",
+    "dayLight": "Tageslichtstärke",
+    "nightStrength": "Nachtstärke",
+    "desaturation": "Entsättigung",
+    "ambient": "Umgebungslicht",
+    "applyAll": "alle anwenden",
+    "viewDistanceAria": "Sichtweite",
+    "dayLightAria": "Tageslichtstärke",
+    "nightStrengthAria": "Nachtstärke",
+    "desaturationAria": "Entsättigung",
+    "ambientAria": "Umgebungslicht"
   },
   "clock": {
     "sublabel": "Brücke · Datum und Uhrzeit der Welt",
