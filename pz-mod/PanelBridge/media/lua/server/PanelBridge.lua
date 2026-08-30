@@ -3628,14 +3628,38 @@ handlers.importPlayerData = function(args)
                     for lvl = 1, perkData.level do
                         player:LevelPerk(perk, false)
                     end
-                    -- Set XP last. Level and cumulative XP are independently
-                    -- tracked, but XP must never be below the level threshold:
-                    -- an imported level 5 with XP 0 renders as -1275 / 1500.
-                    if xp and type(perkData.xp) == "number" then
-                        local minimumXP = perk:getTotalXpForLevel(perkData.level)
-                        xp:setXP(perk, math.max(perkData.xp, minimumXP))
-                    end
+                    -- Count the restore here, once the real, provable action
+                    -- (the level change above) has genuinely landed -- NOT
+                    -- after the XP step below, which used to be the LAST
+                    -- statement in this pcall. xp:setXP(perk, value) does
+                    -- not exist anywhere in the confirmed API (Kevin's jar
+                    -- audit, 2026-08-30), so every throw there used to
+                    -- silently undercount restored.perks even though the
+                    -- level change had already happened for real.
                     restored.perks = restored.perks + 1
+
+                    -- Set within-level XP to the target level's own
+                    -- threshold. xp:setXP(perk, exactValue) is absent
+                    -- (above); restoring the EXACT saved within-level XP is
+                    -- not provably expressible with the confirmed API either
+                    -- -- the alternative (read getXP(perk), then
+                    -- AddXPNoMultiplier(perk, delta)) could not be ruled out
+                    -- to clamp, round, or trigger level-boundary side
+                    -- effects without decompiling. Operator ruling,
+                    -- 2026-08-30: an unprovable method that could silently
+                    -- corrupt real player progression is strictly worse than
+                    -- a provable one that loses part of one level's
+                    -- progress -- and this is not a downgrade from what
+                    -- already happens: level0()/LevelPerk() above already
+                    -- run and land; this makes the XP side of that exact,
+                    -- provable, and no longer able to undercount a perk that
+                    -- DID restore. Wrapped in its OWN pcall, separate from
+                    -- the count above, so a setXPToLevel failure cannot
+                    -- un-count a level change that genuinely already
+                    -- happened.
+                    if xp then
+                        pcall(function() xp:setXPToLevel(perk, perkData.level) end)
+                    end
                 end)
             end
         end
