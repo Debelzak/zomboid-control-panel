@@ -3662,7 +3662,7 @@ export default function Settings() {
                               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                                 {t("bridge.unlocksTitle")}
                               </p>
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                 <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
                                   <p className="font-medium text-foreground">
                                     {t("bridge.unlockWeatherTitle")}
@@ -4200,7 +4200,7 @@ export default function Settings() {
                       <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
                     </div>
                     <div className="flex flex-wrap items-end gap-3">
-                      <div className="min-w-[18rem] flex-1 space-y-1.5">
+                      <div className="min-w-0 flex-1 space-y-1.5 sm:min-w-[18rem]">
                         <Label htmlFor="sftp-config-path">{t("bridge.remoteServerFolderLabel")}</Label>
                         <Input
                           id="sftp-config-path"
@@ -4247,7 +4247,7 @@ export default function Settings() {
                       <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
                     </div>
                     <div className="flex flex-wrap items-end gap-3">
-                      <div className="min-w-[18rem] flex-1 space-y-1.5">
+                      <div className="min-w-0 flex-1 space-y-1.5 sm:min-w-[18rem]">
                         <Label htmlFor="sftp-log-path">{t("bridge.remoteLogFolderLabel")}</Label>
                         <Input
                           id="sftp-log-path"
@@ -6720,11 +6720,11 @@ function WorkshopCollectionSyncCard({
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-muted/80 backdrop-blur z-10">
                       <tr className="text-left text-muted-foreground border-b border-border/50">
-                        <th className="font-medium px-3 py-2 w-[120px]">
+                        <th className="font-medium px-3 py-2 sm:w-[120px]">
                           {t("workshopSync.columnStatus")}
                         </th>
                         <th className="font-medium px-3 py-2">{t("workshopSync.columnMod")}</th>
-                        <th className="font-medium px-3 py-2 w-[540px] text-right">
+                        <th className="font-medium px-3 py-2 sm:w-[540px] text-right">
                           {t("workshopSync.columnActions")}
                         </th>
                       </tr>
@@ -6789,13 +6789,13 @@ function WorkshopCollectionSyncCard({
                                     </span>
                                   )}
                                 </a>
-                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground/80 font-mono">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground/80 font-mono">
                                   <span>{it.workshopId}</span>
-                                  <span>·</span>
+                                  <span className="hidden sm:inline">·</span>
                                   <span>
                                     {it.inTracked ? t("workshopSync.trackedTag") : t("workshopSync.notTrackedTag")}
                                   </span>
-                                  <span>·</span>
+                                  <span className="hidden sm:inline">·</span>
                                   <span>
                                     {it.inCollection
                                       ? t("workshopSync.inCollectionTag")
@@ -6828,7 +6828,7 @@ function WorkshopCollectionSyncCard({
                                     ) : (
                                       <Server className="w-3 h-3" />
                                     )}
-                                    <span className="ml-1">{t("workshopSync.fromServer")}</span>
+                                    <span className="ml-1 hidden sm:inline">{t("workshopSync.fromServer")}</span>
                                   </Button>
                                 ) : (
                                   <Button
@@ -6847,7 +6847,7 @@ function WorkshopCollectionSyncCard({
                                     ) : (
                                       <Server className="w-3 h-3" />
                                     )}
-                                    <span className="ml-1">{t("workshopSync.toServer")}</span>
+                                    <span className="ml-1 hidden sm:inline">{t("workshopSync.toServer")}</span>
                                   </Button>
                                 )}
                                 {/* Collection side */}
@@ -6869,7 +6869,7 @@ function WorkshopCollectionSyncCard({
                                       ) : (
                                         <Minus className="w-3 h-3" />
                                       )}
-                                      <span className="ml-1">
+                                      <span className="ml-1 hidden sm:inline">
                                         {t("workshopSync.fromCollection")}
                                       </span>
                                     </Button>
@@ -6892,7 +6892,7 @@ function WorkshopCollectionSyncCard({
                                       ) : (
                                         <Plus className="w-3 h-3" />
                                       )}
-                                      <span className="ml-1">{t("workshopSync.toCollection")}</span>
+                                      <span className="ml-1 hidden sm:inline">{t("workshopSync.toCollection")}</span>
                                     </Button>
                                   </DisabledReason>
                                 )}
@@ -6914,7 +6914,7 @@ function WorkshopCollectionSyncCard({
                                     ) : (
                                       <Bookmark className="w-3 h-3" />
                                     )}
-                                    <span className="ml-1">{t("workshopSync.untrack")}</span>
+                                    <span className="ml-1 hidden sm:inline">{t("workshopSync.untrack")}</span>
                                   </Button>
                                 ) : (
                                   <Button
@@ -6933,7 +6933,7 @@ function WorkshopCollectionSyncCard({
                                     ) : (
                                       <BookmarkPlus className="w-3 h-3" />
                                     )}
-                                    <span className="ml-1">{t("workshopSync.track")}</span>
+                                    <span className="ml-1 hidden sm:inline">{t("workshopSync.track")}</span>
                                   </Button>
                                 )}
                                 <span
@@ -6959,7 +6959,7 @@ function WorkshopCollectionSyncCard({
                                   ) : (
                                     <Trash2 className="w-3 h-3" />
                                   )}
-                                  <span className="ml-1">{t("workshopSync.everywhere")}</span>
+                                  <span className="ml-1 hidden sm:inline">{t("workshopSync.everywhere")}</span>
                                 </Button>
                               </div>
                             </td>
