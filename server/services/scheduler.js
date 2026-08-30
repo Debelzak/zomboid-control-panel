@@ -150,6 +150,7 @@ export class Scheduler {
     this.serverManager = serverManager;
     this.backupService = null;
     this.discordBot = null;
+    this.io = null;
     this.jobs = new Map();
     this.jobLabels = new Map(); // task id -> human label, for reporting next run
     this.autoRestartJob = null;
@@ -174,6 +175,36 @@ export class Scheduler {
 
   setDiscordBot(discordBot) {
     this.discordBot = discordBot;
+  }
+
+  // Wired once from index.js. Lets performRestart() push server:status at
+  // its own VERIFIED stop/start transitions (see its own comments) instead
+  // of leaving the client blind for the whole restart -- previously up to
+  // 60+ seconds with only a terminal scheduler:action_result event once the
+  // entire restart resolved. Optional: a scheduler constructed without it
+  // (e.g. in a test) just skips the emit, exactly like every other
+  // `this.io?.emit(...)` guard in this class.
+  setIo(io) {
+    this.io = io;
+  }
+
+  // Only emits when the claim is already VERIFIED true by the caller (a
+  // confirmed process-exit poll, a confirmed process/RCON-up poll, or
+  // Docker's OWN restart action -- which per dockerClient.js's
+  // lifecycleTimeoutMs comment "answers only once the action completes"),
+  // never a merely-requested/accepted state -- the same distinction
+  // server/routes/server.js's /start and /stop routes already draw (see
+  // their own comments) to avoid the exact "confident but unconfirmed
+  // claim" shape the 2026-08-26 bug hunt fixed for /stop's graceful path.
+  // Deliberately does NOT go through checkServerStatusNow() (server/
+  // index.js) -- these transitions are already independently confirmed
+  // here, so there is nothing left for that function to verify -- but see
+  // its own header comment for why every OTHER "did state change" decision
+  // still funnels through it alone.
+  _emitVerifiedTransition(running) {
+    if (typeof this.io?.emit === "function") {
+      this.io.emit("server:status", { running });
+    }
   }
 
   // Resolves the install-wide scheduler timezone, migrating a not-yet-
@@ -1419,6 +1450,14 @@ export class Scheduler {
           await this.sleep(5000);
         }
 
+        // The old process is now confirmed stopped (either the while loop
+        // above observed processDetails.running go false, or the forced
+        // stop just above succeeded) -- push it instead of leaving clients
+        // reading the pre-restart "running" status for the whole remainder
+        // of this sequence (config backup + relaunch + up to 4 more minutes
+        // of RCON waiting below).
+        this._emitVerifiedTransition(false);
+
         // Extra delay after stop — give OS time to fully reap the process
         // (zombie processes on Linux, WMI cache on Windows)
         await this.sleep(3000);
@@ -1509,6 +1548,14 @@ export class Scheduler {
         log.error("Auto-restart: Server stopped but failed to start");
         return { success: false, wasRunning: true };
       }
+
+      // The new instance is now confirmed up -- either Docker's own restart
+      // action already blocked until the container was running again
+      // (managed.handled branch above), or the process/RCON poll just
+      // confirmed it natively. RCON itself may still take another 60-240s
+      // below, but the host/container signal is real now; no reason to make
+      // clients wait for that too.
+      this._emitVerifiedTransition(true);
 
       // Wait for RCON to be ready (PZ server takes 60-180s to fully initialize)
       // Keep serverStarting=true the whole time to block auto-reconnect

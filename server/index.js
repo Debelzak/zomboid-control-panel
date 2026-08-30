@@ -944,6 +944,7 @@ scheduler.setBackupService(backupService);
 // fire event notifications (scheduledRestart, backupComplete) without
 // needing req.app access.
 scheduler.setDiscordBot(discordBot);
+scheduler.setIo(io);
 backupService.setDiscordBot(discordBot);
 
 // Start RCON auto-reconnect for automatic recovery
