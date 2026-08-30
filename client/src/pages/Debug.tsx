@@ -93,6 +93,8 @@ import { SocketContext } from "@/contexts/SocketContext";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { DisabledReason } from "@/components/DisabledReason";
+import { BridgeStatusBadge } from "@/components/BridgeStatusBadge";
+import { NumberInput } from "@/components/NumberInput";
 import { cn, copyText } from "@/lib/utils";
 import {
   apiFetch,
@@ -838,6 +840,28 @@ export default function Debug() {
   >("food");
   const [armedAction, setArmedAction] = useState<string | null>(null);
   const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Bridge tab — the 7 PanelBridge debug/diagnostics handlers
+  // (getStats/checkAPI/getAvailableHandlers/getDebugLog/setDebugMode/
+  // clearErrors/debugItemScript). Read probes reuse the same
+  // probeResults/probeLoading/runProbe machinery the World Map tab already
+  // has (each gets its own id); only the two mutating actions
+  // (setDebugMode, clearErrors) reuse actionLoading/runAction. Connectivity
+  // is its own lightweight poll rather than the World Map tab's heavier
+  // /api/debug/worldmap aggregation -- this tab only needs "is the bridge
+  // service up and is the mod connected", not tile/save diagnostics.
+  const [bridgeDiagConnected, setBridgeDiagConnected] = useState(false);
+  const [bridgeDiagRunning, setBridgeDiagRunning] = useState(false);
+  const [bridgeDiagStatusLoading, setBridgeDiagStatusLoading] = useState(true);
+  const [bridgeDiagPermissionDenied, setBridgeDiagPermissionDenied] =
+    useState(false);
+  const [checkApiObject, setCheckApiObject] = useState("ClimateManager");
+  const [checkApiMethod, setCheckApiMethod] = useState("");
+  const [handlerSearchQuery, setHandlerSearchQuery] = useState("");
+  const [debugLogLimit, setDebugLogLimit] = useState(50);
+  const [debugLogMinLevel, setDebugLogMinLevel] = useState<
+    "DEBUG" | "INFO" | "WARN" | "ERROR"
+  >("DEBUG");
   // Generation counters so a slower response to an earlier filter selection
   // (activitySource / perfRange) can't land after a newer one and overwrite
   // it with stale data -- both are dropdowns a user can click through
@@ -1572,6 +1596,178 @@ export default function Debug() {
     [toast, t],
   );
 
+  // Bridge tab -- shared fetch wrapper for all 7 debug/diagnostics routes.
+  // authFetch doesn't throw on a non-2xx the way apiGet/apiPost do (see
+  // fetchWorldMapDiag above), so every call site needs the same ok-check +
+  // body-read; centralized here rather than repeated per handler. A 403
+  // specifically flips bridgeDiagPermissionDenied so the whole tab can show
+  // one permission-denied state instead of five separate error banners --
+  // same reasoning as diagnosticsPermissionDenied above, scoped to
+  // bridge.diagnostics rather than the page-wide capability.
+  const bridgeDiagFetch = useCallback(
+    async (path: string, options?: RequestInit) => {
+      const res = await authFetch(path, options);
+      if (res.status === 403) {
+        setBridgeDiagPermissionDenied(true);
+        throw new Error(await parseDownloadError(res, "HTTP 403"));
+      }
+      if (!res.ok) {
+        throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
+      }
+      setBridgeDiagPermissionDenied(false);
+      return res.json();
+    },
+    [authFetch],
+  );
+
+  const checkBridgeDiagStatus = useCallback(async () => {
+    setBridgeDiagStatusLoading(true);
+    try {
+      const res = await authFetch("/api/panel-bridge/status");
+      if (!res.ok) throw new Error(await parseDownloadError(res, `HTTP ${res.status}`));
+      const data = await res.json();
+      setBridgeDiagRunning(data?.isRunning === true);
+      setBridgeDiagConnected(data?.modConnected === true);
+    } catch (error) {
+      reportClientError("Failed to check bridge status for the Bridge tab.", error);
+      setBridgeDiagRunning(false);
+      setBridgeDiagConnected(false);
+    } finally {
+      setBridgeDiagStatusLoading(false);
+    }
+  }, [authFetch]);
+
+  const probeBridgeStats = useCallback(
+    () =>
+      runProbe(
+        "bridgeStats",
+        () => bridgeDiagFetch("/api/panel-bridge/debug/stats"),
+        (r: unknown) => {
+          const data = (r as { data?: unknown })?.data;
+          return { count: null, sample: data ?? null };
+        },
+      ),
+    [runProbe, bridgeDiagFetch],
+  );
+
+  const probeCheckApi = useCallback(
+    () =>
+      runProbe(
+        "checkApi",
+        () => {
+          const params = new URLSearchParams({ object: checkApiObject });
+          if (checkApiMethod.trim()) params.set("method", checkApiMethod.trim());
+          return bridgeDiagFetch(`/api/panel-bridge/debug/api?${params.toString()}`);
+        },
+        (r: unknown) => {
+          const data = (r as { data?: unknown })?.data;
+          return { count: null, sample: data ?? null };
+        },
+      ),
+    [runProbe, bridgeDiagFetch, checkApiObject, checkApiMethod],
+  );
+
+  const probeAvailableHandlers = useCallback(
+    () =>
+      runProbe(
+        "availableHandlers",
+        () => bridgeDiagFetch("/api/panel-bridge/debug/handlers"),
+        (r: unknown) => {
+          const data = (r as {
+            data?: { handlers?: string[]; count?: number; version?: string };
+          })?.data;
+          return {
+            count: Array.isArray(data?.handlers) ? data.handlers.length : null,
+            sample: data ?? null,
+          };
+        },
+      ),
+    [runProbe, bridgeDiagFetch],
+  );
+
+  const probeDebugLog = useCallback(
+    () =>
+      runProbe(
+        "debugLog",
+        () => {
+          const params = new URLSearchParams({
+            limit: String(debugLogLimit),
+            level: debugLogMinLevel,
+          });
+          return bridgeDiagFetch(`/api/panel-bridge/debug/log?${params.toString()}`);
+        },
+        (r: unknown) => {
+          const data = (r as {
+            data?: { entries?: unknown[]; totalEntries?: number };
+          })?.data;
+          return {
+            count: Array.isArray(data?.entries) ? data.entries.length : null,
+            sample: data ?? null,
+          };
+        },
+      ),
+    [runProbe, bridgeDiagFetch, debugLogLimit, debugLogMinLevel],
+  );
+
+  // debugItemScript -- a fixed, zero-argument self-test (probes 9 known
+  // method names against the first 3 catalog items; there is nothing for an
+  // operator to configure, see the handler's own PanelBridge.lua source).
+  // Modeled as a probe rather than a mutating action since it changes
+  // nothing server- or game-side -- purely a read/report.
+  const probeSelfTest = useCallback(
+    () =>
+      runProbe(
+        "selfTest",
+        () => bridgeDiagFetch("/api/panel-bridge/catalog/debug-item-script", { method: "POST" }),
+        (r: unknown) => {
+          const data = (r as { data?: { probes?: unknown[] } })?.data;
+          const probes = Array.isArray(data?.probes) ? data.probes : [];
+          return { count: probes.length, sample: probes };
+        },
+      ),
+    [runProbe, bridgeDiagFetch],
+  );
+
+  const toggleBridgeDebugMode = useCallback(
+    (nextEnabled: boolean) =>
+      runAction(
+        "bridgeDebugMode",
+        async () => {
+          await bridgeDiagFetch("/api/panel-bridge/debug/mode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: nextEnabled }),
+          });
+          await probeBridgeStats();
+        },
+        nextEnabled
+          ? t("bridgeTab.debugModeEnabledTitle")
+          : t("bridgeTab.debugModeDisabledTitle"),
+      ),
+    [runAction, bridgeDiagFetch, probeBridgeStats, t],
+  );
+
+  const clearBridgeErrors = useCallback(async () => {
+    const ok = await confirm({
+      title: t("bridgeTab.clearErrorsConfirmTitle"),
+      description: t("bridgeTab.clearErrorsConfirmDesc"),
+      confirmLabel: t("bridgeTab.clearErrorsConfirmButton"),
+      destructive: true,
+    });
+    if (!ok) return;
+    await runAction(
+      "bridgeClearErrors",
+      async () => {
+        const res = await bridgeDiagFetch("/api/panel-bridge/debug/clear-errors", {
+          method: "POST",
+        });
+        await probeBridgeStats();
+        return res;
+      },
+      t("bridgeTab.clearErrorsSuccessTitle"),
+    );
+  }, [confirm, t, runAction, bridgeDiagFetch, probeBridgeStats]);
+
   // Fetch log files list
   const fetchLogFiles = async () => {
     try {
@@ -1757,6 +1953,32 @@ export default function Debug() {
     }, 30000);
     return () => clearInterval(interval);
   }, [activeTab, fetchWorldMapDiag]);
+
+  // Bridge tab — connectivity poll on entry + every 15s while visible.
+  // getStats auto-refreshes alongside it (it's the "is anything wrong right
+  // now" summary view); checkAPI/getAvailableHandlers/getDebugLog/the
+  // self-test stay manual (button-triggered) since they take operator input
+  // or return a larger payload not worth fetching on every poll tick.
+  useEffect(() => {
+    if (activeTab !== "bridge") return;
+    checkBridgeDiagStatus();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      checkBridgeDiagStatus();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [activeTab, checkBridgeDiagStatus]);
+
+  useEffect(() => {
+    if (activeTab !== "bridge") return;
+    if (!bridgeDiagConnected) return;
+    probeBridgeStats();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      probeBridgeStats();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [activeTab, bridgeDiagConnected, probeBridgeStats]);
 
   // Auto-probe live players once when tab opens so test actions have a target.
   useEffect(() => {
@@ -2426,6 +2648,10 @@ export default function Debug() {
                   {worldMapDiag.summary.fail + worldMapDiag.summary.warn}
                 </Badge>
               )}
+          </TabsTrigger>
+          <TabsTrigger value="bridge" className="gap-2">
+            <Bug className="w-4 h-4" />
+            {t("tabs.bridge")}
           </TabsTrigger>
           <TabsTrigger value="performance" className="gap-2">
             <TrendingUp className="w-4 h-4" />
@@ -6154,6 +6380,667 @@ export default function Debug() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Bridge Tab — the 7 PanelBridge debug/diagnostics handlers
+            (getStats/checkAPI/getAvailableHandlers/getDebugLog/
+            setDebugMode/clearErrors/debugItemScript). Gated on
+            bridge.diagnostics specifically -- narrower than whatever
+            permission gates this whole page, so a role with page access
+            can still lack this tab's data (see bridgeDiagFetch above). */}
+        <TabsContent value="bridge" className="space-y-4">
+          {bridgeDiagPermissionDenied ? (
+            <EmptyState
+              icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
+              title={t("bridgeTab.permissionDeniedTitle")}
+              description={t("bridgeTab.permissionDeniedDesc")}
+            />
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-medium">{t("bridgeTab.heading")}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t("bridgeTab.headingDesc")}
+                  </p>
+                </div>
+                <BridgeStatusBadge
+                  connected={bridgeDiagConnected}
+                  running={bridgeDiagRunning}
+                  loading={bridgeDiagStatusLoading}
+                  interactive={false}
+                />
+              </div>
+
+              {!bridgeDiagStatusLoading && !bridgeDiagConnected && (
+                <div className="p-2.5 rounded-md border border-warning/40 bg-warning/5 text-xs flex items-start gap-2">
+                  <WifiOff className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
+                  <div>{t("bridgeTab.notConnectedDesc")}</div>
+                </div>
+              )}
+
+              {/* Stats + debug mode + error log */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Activity className="w-4 h-4 text-primary" />
+                        {t("bridgeTab.statsTitle")}
+                      </CardTitle>
+                      <CardDescription>{t("bridgeTab.statsDesc")}</CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={probeBridgeStats}
+                      disabled={!bridgeDiagConnected || probeLoading === "bridgeStats"}
+                      className="shrink-0"
+                    >
+                      {probeLoading === "bridgeStats" ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      <span className="ml-1.5">{t("common.refresh")}</span>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {!bridgeDiagConnected ? (
+                    <div className="text-sm text-muted-foreground">
+                      {t("bridgeTab.offlineNoData")}
+                    </div>
+                  ) : !probeResults["bridgeStats"] ? (
+                    <div className="text-sm text-muted-foreground">
+                      {t("bridgeTab.notYetProbed")}
+                    </div>
+                  ) : !probeResults["bridgeStats"].ok ? (
+                    <div className="text-sm text-destructive">
+                      {probeResults["bridgeStats"].error}
+                    </div>
+                  ) : (
+                    (() => {
+                      const stats = probeResults["bridgeStats"].sample as {
+                        version?: string;
+                        uptime?: number;
+                        commandsProcessed?: number;
+                        commandsSucceeded?: number;
+                        commandsFailed?: number;
+                        debugMode?: boolean;
+                        lastError?: { timestamp?: number; message?: string } | null;
+                        recentErrors?: Array<{ timestamp?: number; message?: string }>;
+                        detectedVersion?: {
+                          build?: string;
+                          isB42?: boolean;
+                          isB41?: boolean;
+                        };
+                      };
+                      const uptimeSec = Math.max(0, Math.round(stats.uptime ?? 0));
+                      const h = Math.floor(uptimeSec / 3600);
+                      const m = Math.floor((uptimeSec % 3600) / 60);
+                      const s = uptimeSec % 60;
+                      const uptimeLabel = h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+                      const errCount = stats.recentErrors?.length ?? 0;
+                      return (
+                        <>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                            <div className="p-2 rounded border bg-card">
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {t("bridgeTab.versionLabel")}
+                              </div>
+                              <div className="font-medium font-mono">
+                                {stats.version ?? t("common.notAvailable")}
+                              </div>
+                            </div>
+                            <div className="p-2 rounded border bg-card">
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {t("bridgeTab.uptimeLabel")}
+                              </div>
+                              <div className="font-medium">{uptimeLabel}</div>
+                            </div>
+                            <div className="p-2 rounded border bg-card">
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {t("bridgeTab.commandsLabel")}
+                              </div>
+                              <div className="font-medium">
+                                {stats.commandsSucceeded ?? 0} / {stats.commandsProcessed ?? 0}
+                              </div>
+                            </div>
+                            <div
+                              className={cn(
+                                "p-2 rounded border",
+                                (stats.commandsFailed ?? 0) > 0
+                                  ? "border-warning/40 bg-warning/5"
+                                  : "bg-card",
+                              )}
+                            >
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {t("bridgeTab.commandsFailedLabel")}
+                              </div>
+                              <div className="font-medium">{stats.commandsFailed ?? 0}</div>
+                            </div>
+                          </div>
+
+                          {stats.detectedVersion && (
+                            <div className="p-2 rounded border bg-card text-sm">
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                                {t("bridgeTab.detectedVersionLabel")}
+                              </div>
+                              <div className="font-mono">
+                                {stats.detectedVersion.build ?? t("common.notAvailable")}
+                                {" · "}
+                                {stats.detectedVersion.isB42
+                                  ? "B42"
+                                  : stats.detectedVersion.isB41
+                                    ? "B41"
+                                    : t("common.notAvailable")}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground mt-1">
+                                {t("bridgeTab.detectedVersionCaveat")}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between gap-2 p-2 rounded border bg-card">
+                            <div>
+                              <div className="text-sm font-medium">
+                                {t("bridgeTab.debugModeLabel")}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {t("bridgeTab.debugModeDesc")}
+                              </div>
+                            </div>
+                            <DisabledReason
+                              reason={
+                                !can("bridge.diagnostics")
+                                  ? t("bridgeTab.noPermission")
+                                  : null
+                              }
+                            >
+                              <Switch
+                                checked={stats.debugMode === true}
+                                disabled={
+                                  !can("bridge.diagnostics") ||
+                                  actionLoading === "bridgeDebugMode"
+                                }
+                                onCheckedChange={(checked) =>
+                                  toggleBridgeDebugMode(checked)
+                                }
+                              />
+                            </DisabledReason>
+                          </div>
+
+                          <div className="p-2 rounded border bg-card">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium">
+                                {t("bridgeTab.errorLogLabel", { count: errCount })}
+                              </div>
+                              <DisabledReason
+                                reason={
+                                  !can("bridge.diagnostics")
+                                    ? t("bridgeTab.noPermission")
+                                    : errCount === 0
+                                      ? t("bridgeTab.noErrorsToClear")
+                                      : null
+                                }
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={clearBridgeErrors}
+                                  disabled={
+                                    !can("bridge.diagnostics") ||
+                                    errCount === 0 ||
+                                    actionLoading === "bridgeClearErrors"
+                                  }
+                                >
+                                  {actionLoading === "bridgeClearErrors" ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  )}
+                                  <span className="ml-1.5">
+                                    {t("bridgeTab.clearErrorsButton")}
+                                  </span>
+                                </Button>
+                              </DisabledReason>
+                            </div>
+                            {stats.lastError?.message && (
+                              <div className="text-[11px] text-destructive mt-1.5 font-mono break-all">
+                                {stats.lastError.message}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* checkAPI */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Search className="w-4 h-4 text-primary" />
+                    {t("bridgeTab.checkApiTitle")}
+                  </CardTitle>
+                  <CardDescription>{t("bridgeTab.checkApiDesc")}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("bridgeTab.checkApiObjectLabel")}</Label>
+                      <Select value={checkApiObject} onValueChange={setCheckApiObject}>
+                        <SelectTrigger className="h-8 w-44 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ClimateManager">ClimateManager</SelectItem>
+                          <SelectItem value="GameTime">GameTime</SelectItem>
+                          <SelectItem value="World">World</SelectItem>
+                          <SelectItem value="ChatServer">ChatServer</SelectItem>
+                          <SelectItem value="SandboxOptions">SandboxOptions</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1 flex-1 min-w-[10rem]">
+                      <Label className="text-xs">{t("bridgeTab.checkApiMethodLabel")}</Label>
+                      <Input
+                        className="h-8 text-xs font-mono"
+                        placeholder={t("bridgeTab.checkApiMethodPlaceholder")}
+                        value={checkApiMethod}
+                        onChange={(e) => setCheckApiMethod(e.target.value)}
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={probeCheckApi}
+                      disabled={!bridgeDiagConnected || probeLoading === "checkApi"}
+                    >
+                      {probeLoading === "checkApi" ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <PlayCircle className="w-3.5 h-3.5" />
+                      )}
+                      <span className="ml-1.5">{t("bridgeTab.checkApiRunButton")}</span>
+                    </Button>
+                  </div>
+
+                  {probeResults["checkApi"] &&
+                    (!probeResults["checkApi"].ok ? (
+                      <div className="text-sm text-destructive">
+                        {probeResults["checkApi"].error}
+                      </div>
+                    ) : (
+                      (() => {
+                        const r = probeResults["checkApi"].sample as {
+                          object?: string;
+                          available?: boolean;
+                          type?: string;
+                          method?: string;
+                          methodAvailable?: boolean;
+                          methods?: string[];
+                          methodsError?: string;
+                        };
+                        return (
+                          <div className="p-2.5 rounded border bg-card text-sm space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant={r.available ? "outline" : "destructive"}>
+                                {r.available
+                                  ? t("bridgeTab.checkApiAvailable")
+                                  : t("bridgeTab.checkApiUnavailable")}
+                              </Badge>
+                              {r.method && (
+                                <Badge
+                                  variant={r.methodAvailable ? "outline" : "destructive"}
+                                  className="font-mono"
+                                >
+                                  {r.method}: {r.methodAvailable ? "✓" : "✗"}
+                                </Badge>
+                              )}
+                            </div>
+                            {r.methods && r.methods.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {r.methods.map((m) => (
+                                  <Badge
+                                    key={m}
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    {m}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                            {r.methodsError && (
+                              <div className="text-[11px] text-muted-foreground">
+                                {r.methodsError}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
+                    ))}
+                </CardContent>
+              </Card>
+
+              {/* getAvailableHandlers */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Terminal className="w-4 h-4 text-primary" />
+                        {t("bridgeTab.handlersTitle")}
+                      </CardTitle>
+                      <CardDescription>{t("bridgeTab.handlersDesc")}</CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={probeAvailableHandlers}
+                      disabled={!bridgeDiagConnected || probeLoading === "availableHandlers"}
+                      className="shrink-0"
+                    >
+                      {probeLoading === "availableHandlers" ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      <span className="ml-1.5">{t("bridgeTab.handlersRunButton")}</span>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {!probeResults["availableHandlers"] ? (
+                    <div className="text-sm text-muted-foreground">
+                      {t("bridgeTab.notYetProbed")}
+                    </div>
+                  ) : !probeResults["availableHandlers"].ok ? (
+                    <div className="text-sm text-destructive">
+                      {probeResults["availableHandlers"].error}
+                    </div>
+                  ) : (
+                    (() => {
+                      const data = probeResults["availableHandlers"].sample as {
+                        handlers?: string[];
+                        count?: number;
+                      };
+                      const all = data.handlers ?? [];
+                      const q = handlerSearchQuery.trim().toLowerCase();
+                      const filtered = q
+                        ? all.filter((h) => h.toLowerCase().includes(q))
+                        : all;
+                      return (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder={t("bridgeTab.handlersSearchPlaceholder")}
+                              value={handlerSearchQuery}
+                              onChange={(e) => setHandlerSearchQuery(e.target.value)}
+                            />
+                            <span className="text-[11px] text-muted-foreground shrink-0">
+                              {t("bridgeTab.handlersCount", {
+                                shown: filtered.length,
+                                total: data.count ?? all.length,
+                              })}
+                            </span>
+                          </div>
+                          <ScrollArea className="h-48 rounded border bg-card p-2">
+                            <div className="flex flex-wrap gap-1">
+                              {filtered.map((h) => (
+                                <Badge
+                                  key={h}
+                                  variant="outline"
+                                  className="text-[10px] font-mono"
+                                >
+                                  {h}
+                                </Badge>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </>
+                      );
+                    })()
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* getDebugLog */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <FileText className="w-4 h-4 text-primary" />
+                    {t("bridgeTab.debugLogTitle")}
+                  </CardTitle>
+                  <CardDescription>{t("bridgeTab.debugLogDesc")}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("bridgeTab.debugLogLimitLabel")}</Label>
+                      <NumberInput
+                        className="h-8 w-24 text-xs"
+                        value={debugLogLimit}
+                        min={1}
+                        max={200}
+                        clamp={(v) => Math.min(200, Math.max(1, Math.round(v)))}
+                        onChange={(v) => setDebugLogLimit(Number.isFinite(v) ? v : 50)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t("bridgeTab.debugLogLevelLabel")}</Label>
+                      <Select
+                        value={debugLogMinLevel}
+                        onValueChange={(v) =>
+                          setDebugLogMinLevel(v as typeof debugLogMinLevel)
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-32 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DEBUG">{t("common.levelDebug")}</SelectItem>
+                          <SelectItem value="INFO">{t("common.levelInfo")}</SelectItem>
+                          <SelectItem value="WARN">{t("common.levelWarn")}</SelectItem>
+                          <SelectItem value="ERROR">{t("common.levelError")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={probeDebugLog}
+                      disabled={!bridgeDiagConnected || probeLoading === "debugLog"}
+                    >
+                      {probeLoading === "debugLog" ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <PlayCircle className="w-3.5 h-3.5" />
+                      )}
+                      <span className="ml-1.5">{t("bridgeTab.debugLogRunButton")}</span>
+                    </Button>
+                  </div>
+
+                  {probeResults["debugLog"] &&
+                    (!probeResults["debugLog"].ok ? (
+                      <div className="text-sm text-destructive">
+                        {probeResults["debugLog"].error}
+                      </div>
+                    ) : (
+                      (() => {
+                        const data = probeResults["debugLog"].sample as {
+                          entries?: Array<{
+                            timestamp?: number;
+                            level?: string;
+                            message?: string;
+                          }>;
+                          totalEntries?: number;
+                        };
+                        const entries = data.entries ?? [];
+                        return (
+                          <>
+                            <div className="text-[11px] text-muted-foreground">
+                              {t("bridgeTab.debugLogShown", {
+                                shown: entries.length,
+                                total: data.totalEntries ?? entries.length,
+                              })}
+                            </div>
+                            <ScrollArea className="h-64 rounded border bg-card">
+                              <div className="divide-y divide-border/40">
+                                {entries.length === 0 ? (
+                                  <div className="p-3 text-sm text-muted-foreground">
+                                    {t("bridgeTab.debugLogEmpty")}
+                                  </div>
+                                ) : (
+                                  entries
+                                    .slice()
+                                    .reverse()
+                                    .map((logEntry, i) => (
+                                      <div
+                                        key={i}
+                                        className="p-2 text-xs font-mono flex items-start gap-2"
+                                      >
+                                        <Badge
+                                          variant={
+                                            logEntry.level === "ERROR"
+                                              ? "destructive"
+                                              : "outline"
+                                          }
+                                          className="text-[9px] shrink-0"
+                                        >
+                                          {logEntry.level}
+                                        </Badge>
+                                        <span className="text-muted-foreground shrink-0">
+                                          {logEntry.timestamp
+                                            ? new Date(logEntry.timestamp).toLocaleTimeString()
+                                            : ""}
+                                        </span>
+                                        <span className="break-all">{logEntry.message}</span>
+                                      </div>
+                                    ))
+                                )}
+                              </div>
+                            </ScrollArea>
+                          </>
+                        );
+                      })()
+                    ))}
+                </CardContent>
+              </Card>
+
+              {/* debugItemScript -- fixed, zero-argument self-test */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <ShieldAlert className="w-4 h-4 text-primary" />
+                        {t("bridgeTab.selfTestTitle")}
+                      </CardTitle>
+                      <CardDescription>{t("bridgeTab.selfTestDesc")}</CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={probeSelfTest}
+                      disabled={!bridgeDiagConnected || probeLoading === "selfTest"}
+                      className="shrink-0"
+                    >
+                      {probeLoading === "selfTest" ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <PlayCircle className="w-3.5 h-3.5" />
+                      )}
+                      <span className="ml-1.5">{t("bridgeTab.selfTestRunButton")}</span>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {!probeResults["selfTest"] ? (
+                    <div className="text-sm text-muted-foreground">
+                      {t("bridgeTab.notYetProbed")}
+                    </div>
+                  ) : !probeResults["selfTest"].ok ? (
+                    <div className="text-sm text-destructive">
+                      {probeResults["selfTest"].error}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-1.5 font-medium">
+                              {t("bridgeTab.selfTestItemColumn")}
+                            </th>
+                            {[
+                              "getTypeString",
+                              "getType",
+                              "getCategory",
+                              "getDisplayCategory",
+                              "getBodyLocation",
+                              "getSubCategory",
+                              "getCategories",
+                              "getTypeToItem",
+                              "getScriptObjectType",
+                            ].map((m) => (
+                              <th
+                                key={m}
+                                className="text-left p-1.5 font-mono font-medium whitespace-nowrap"
+                              >
+                                {m}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(
+                            probeResults["selfTest"].sample as Array<
+                              Record<string, string>
+                            >
+                          ).map((probe, i) => (
+                            <tr key={i} className="border-b border-border/30">
+                              <td className="p-1.5 font-mono">{probe.id}</td>
+                              {[
+                                "getTypeString",
+                                "getType",
+                                "getCategory",
+                                "getDisplayCategory",
+                                "getBodyLocation",
+                                "getSubCategory",
+                                "getCategories",
+                                "getTypeToItem",
+                                "getScriptObjectType",
+                              ].map((m) => (
+                                <td
+                                  key={m}
+                                  className={cn(
+                                    "p-1.5 font-mono whitespace-nowrap",
+                                    probe[m] === "nil"
+                                      ? "text-muted-foreground"
+                                      : probe[m]?.startsWith("ERROR")
+                                        ? "text-destructive"
+                                        : "text-primary",
+                                  )}
+                                >
+                                  {probe[m]}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
       </Tabs>
       )}

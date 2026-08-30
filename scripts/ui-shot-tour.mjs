@@ -308,6 +308,7 @@ const SETTINGS_TABS = ['updates', 'https', 'access', 'security', 'users', 'roles
 
 const DEBUG_TABS = [
   { value: 'worldmap', label: 'World Map' },
+  { value: 'bridge', label: 'PanelBridge' },
   { value: 'performance', label: 'Performance' },
   { value: 'activity', label: 'Activity' },
   { value: 'logs', label: 'Logs' },
