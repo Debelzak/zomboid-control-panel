@@ -537,11 +537,56 @@ async function login(page) {
 // instant. Applied to every capture (both viewports), not just mobile --
 // desktop pages fit today, but there's no guarantee that stays true, and
 // this costs nothing when there's nothing to expand.
+//
+// mobile-full-pass-2026-08-30 follow-up -- the fix above has a WIDTH side
+// effect that produced a false-positive "renders at desktop width" on every
+// settings:* view, including settings:about, which has no fixed-width
+// content of its own. #main-content is `flex-1` inside Layout.tsx's flex
+// shell; with its normal `overflow-auto`, any value other than 'visible' on
+// overflow-x/overflow-y resets that axis's *automatic minimum size* to 0,
+// which is what lets a flex item shrink below its content's intrinsic
+// (min-content) width in the first place. Flipping the whole `overflow`
+// shorthand to 'visible' resets BOTH axes' automatic minimum size back to
+// content-based -- so if any view has a horizontally-scrolling descendant
+// with its own (perfectly correct) `overflow-x-auto` -- Settings' tab strip,
+// 13 buttons wide, ~1280px unwrapped -- #main-content's own automatic
+// min-width becomes that descendant's full min-content width, and the flex
+// layout genuinely grows the box to 1280px. That's not a paint artifact:
+// scrollWidth/clientWidth on #main-content itself become 1280 the instant
+// this runs, so fullPage faithfully (and wrongly) captures a 1280px-wide
+// mobile screenshot for a page a real 390px-viewport user never sees wider
+// than 390px.
+//
+// The obvious-looking fix -- set only `overflow-y: visible`, leave
+// overflow-x untouched -- does NOT work; verified empirically, not assumed.
+// Per the CSS Overflow spec, if overflow-x and overflow-y disagree and
+// exactly one of them is 'visible', the 'visible' one is *computed as
+// 'auto'* instead. So `overflow-y: visible` next to an unset overflow-x
+// (still 'auto' from the Tailwind class) silently becomes `overflow-y:
+// auto` -- no different from doing nothing -- and the original vertical
+// truncation comes right back (confirmed: docScrollHeight stayed pinned to
+// the viewport height instead of growing to the real content height).
+//
+// What actually works: capture #main-content's current (correct, clipped)
+// width BEFORE touching overflow, then pin it back with an explicit inline
+// `width` at the same time overflow flips to 'visible'. An explicit width
+// overrides the flex algorithm's content-based sizing outright, so the box
+// can no longer grow to fit a wide descendant's min-content -- while height
+// is still `auto`/`max-height: none` with overflow fully 'visible', so
+// vertical content still flows out into the document exactly as before.
+// Verified on both known repro cases: events:climate-trim (390x844) still
+// reveals its full height (844 -> 1861), and settings:mods no longer
+// balloons in either dimension (stays 390 wide; height now correctly
+// reflects true 390px-wide wrapping -- 3236, MORE accurate than the old
+// buggy capture's 2546, which undercounted height too because reflowing
+// text into a false 1280px-wide box also shortens it).
 async function expandMainForCapture(page) {
   return page.evaluate(() => {
     const el = document.getElementById('main-content')
     if (!el) return null
     const prevStyle = el.getAttribute('style')
+    const width = el.getBoundingClientRect().width
+    el.style.setProperty('width', `${width}px`, 'important')
     el.style.setProperty('overflow', 'visible', 'important')
     el.style.setProperty('height', 'auto', 'important')
     el.style.setProperty('max-height', 'none', 'important')
