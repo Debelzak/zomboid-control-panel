@@ -141,7 +141,10 @@
     "frontStationary": "静止锋",
     "frontCold": "冷锋",
     "frontWarm": "暖锋",
-    "triggerFront": "生成锋面"
+    "triggerFront": "生成锋面",
+    "helicopterLabel": "直升机事件",
+    "triggerHelicopter": "触发直升机",
+    "stopHelicopter": "停止直升机"
   },
   "climate": {
     "sublabelOnline": "桥接 · 管理员覆盖",
@@ -544,6 +547,8 @@
     "powerRestored": { "title": "电力已恢复", "description": "电力服务已恢复在线。" },
     "waterRestored": { "title": "供水已恢复", "description": "供水服务已恢复在线。" },
     "helicopterTriggered": { "title": "直升机已触发", "description": "直升机事件现已生效。" },
+    "helicopterEventTriggered": { "title": "直升机事件已触发", "description": "全服直升机事件现已生效。" },
+    "helicopterEventStopped": { "title": "直升机事件已停止", "description": "已发送全服直升机事件的停止信号。" },
     "gunshotTriggered": { "title": "枪声已触发", "description": "已生成一次枪声。" },
     "alarmTriggered": { "title": "警报已触发", "description": "警报已被触发。" },
     "noiseCreated": { "title": "噪音已生成", "description": "已放置一个自定义声音诱饵。" },

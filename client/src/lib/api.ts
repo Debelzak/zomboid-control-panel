@@ -2434,6 +2434,23 @@ export const panelBridgeApi = {
   ) =>
     apiPost<BridgeCommandResult<T>>("/panel-bridge/command", { action, args }),
 
+  // Server-wide helicopter event (2026-08-30). Zero-arg, no dedicated route
+  // -- same generic-passthrough shape trigger already used before this
+  // (VALID_ACTIONS in server/routes/panelBridge.js), not a new pattern.
+  // See PanelBridge.lua's handlers.triggerHelicopterEvent/
+  // stopHelicopterEvent for why there's no per-player targeting: the only
+  // confirmed real API (testHelicopter/endHelicopter) is server-wide.
+  triggerHelicopterEvent: () =>
+    apiPost<BridgeCommandResult<{ message: string }>>(
+      "/panel-bridge/command",
+      { action: "triggerHelicopterEvent", args: {} },
+    ),
+  stopHelicopterEvent: () =>
+    apiPost<BridgeCommandResult<{ message: string }>>(
+      "/panel-bridge/command",
+      { action: "stopHelicopterEvent", args: {} },
+    ),
+
   // Get weather info
   getWeather: () =>
     apiGet("/panel-bridge/weather") as Promise<{

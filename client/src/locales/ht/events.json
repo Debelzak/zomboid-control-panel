@@ -141,7 +141,10 @@
     "frontStationary": "estasyonè",
     "frontCold": "fwon frèt",
     "frontWarm": "fwon cho",
-    "triggerFront": "jenere fwon"
+    "triggerFront": "jenere fwon",
+    "helicopterLabel": "evènman elikoptè",
+    "triggerHelicopter": "deklanche elikoptè",
+    "stopHelicopter": "sispann elikoptè"
   },
   "climate": {
     "sublabelOnline": "bridge · ranplasman admin",
@@ -544,6 +547,8 @@
     "powerRestored": { "title": "Elektrisite Retabli", "description": "Sèvis elektrik tounen anliy." },
     "waterRestored": { "title": "Dlo Retabli", "description": "Sèvis dlo tounen anliy." },
     "helicopterTriggered": { "title": "Elikoptè Deklanche", "description": "Yon evènman elikoptè aktif kounye a." },
+    "helicopterEventTriggered": { "title": "Evènman Elikoptè Deklanche", "description": "Yon evènman elikoptè pou tout sèvè a aktif kounye a." },
+    "helicopterEventStopped": { "title": "Evènman Elikoptè Sispann", "description": "Siyal sispansyon voye pou evènman elikoptè pou tout sèvè a." },
     "gunshotTriggered": { "title": "Kout Zam Deklanche", "description": "Yon son kout zam kreye." },
     "alarmTriggered": { "title": "Alam Deklanche", "description": "Yon alam deklanche." },
     "noiseCreated": { "title": "Bri Kreye", "description": "Yon lèg son pèsonalize mete." },

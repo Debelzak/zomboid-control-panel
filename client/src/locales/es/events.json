@@ -141,7 +141,10 @@
     "frontStationary": "estacionario",
     "frontCold": "frente frío",
     "frontWarm": "frente cálido",
-    "triggerFront": "generar frente"
+    "triggerFront": "generar frente",
+    "helicopterLabel": "evento de helicóptero",
+    "triggerHelicopter": "activar helicóptero",
+    "stopHelicopter": "detener helicóptero"
   },
   "climate": {
     "sublabelOnline": "puente · anulación de administrador",
@@ -675,6 +678,14 @@
     "helicopterTriggered": {
       "title": "Helicóptero activado",
       "description": "Ahora hay un evento de helicóptero activo."
+    },
+    "helicopterEventTriggered": {
+      "title": "Evento de helicóptero activado",
+      "description": "Ahora hay un evento de helicóptero activo en todo el servidor."
+    },
+    "helicopterEventStopped": {
+      "title": "Evento de helicóptero detenido",
+      "description": "Señal de parada enviada para el evento de helicóptero de todo el servidor."
     },
     "gunshotTriggered": {
       "title": "Disparo activado",

@@ -141,7 +141,10 @@
     "frontStationary": "stationnaire",
     "frontCold": "front froid",
     "frontWarm": "front chaud",
-    "triggerFront": "générer le front"
+    "triggerFront": "générer le front",
+    "helicopterLabel": "événement hélicoptère",
+    "triggerHelicopter": "déclencher l'hélicoptère",
+    "stopHelicopter": "arrêter l'hélicoptère"
   },
   "climate": {
     "sublabelOnline": "bridge · réglage admin",
@@ -544,6 +547,8 @@
     "powerRestored": { "title": "Électricité rétablie", "description": "Le service électrique est de nouveau en ligne." },
     "waterRestored": { "title": "Eau rétablie", "description": "Le service d'eau est de nouveau en ligne." },
     "helicopterTriggered": { "title": "Hélicoptère déclenché", "description": "Un événement hélicoptère est maintenant actif." },
+    "helicopterEventTriggered": { "title": "Événement hélicoptère déclenché", "description": "Un événement hélicoptère à l'échelle du serveur est maintenant actif." },
+    "helicopterEventStopped": { "title": "Événement hélicoptère arrêté", "description": "Signal d'arrêt envoyé pour l'événement hélicoptère à l'échelle du serveur." },
     "gunshotTriggered": { "title": "Coup de feu déclenché", "description": "Un bruit de coup de feu a été créé." },
     "alarmTriggered": { "title": "Alarme déclenchée", "description": "Une alarme a été déclenchée." },
     "noiseCreated": { "title": "Bruit créé", "description": "Un leurre sonore personnalisé a été placé." },

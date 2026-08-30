@@ -3073,6 +3073,47 @@ handlers.triggerHelicopterEvent = function(args)
     }
 end
 
+-- Stop a running server-wide helicopter event. The trigger side above
+-- (testHelicopter()) had no counterpart until now -- an operator could
+-- start one and then had no way to end it early. endHelicopter() is the
+-- real, adjacent sibling on the same bare-global binding tier, confirmed
+-- directly against the real B42 jar (javap against
+-- zombie.Lua.LuaManager$GlobalObject): `public static void endHelicopter()`,
+-- zero-arg, same shape as testHelicopter(). 2026-08-30, god's foundation-lens
+-- follow-up to ce29ee63.
+--
+-- No read-back exists to verify a helicopter event was actually running
+-- before this call, or that it actually stopped -- there is no exposed
+-- query for helicopter-event state anywhere in the confirmed jar. Calling
+-- this when no event is active is not confirmed harmless from a static
+-- read; pcall still guards it the same as every other bare-global call in
+-- this file, so a throw here fails cleanly rather than crashing the mod.
+--
+-- Same username guard as triggerHelicopterEvent, same reason: endHelicopter()
+-- is zero-arg and server-wide, so a per-player stop is exactly as impossible
+-- as a per-player trigger. Silently ignoring a username here would be the
+-- same defect class fixed everywhere else in this audit.
+handlers.stopHelicopterEvent = function(args)
+    if args.username then
+        return false, nil, "Helicopter events cannot target a specific player on this build -- " ..
+            "endHelicopter() (the only real API, confirmed against the real B42 jar) stops the " ..
+            "server-wide event and takes no arguments. Call this action with no username."
+    end
+
+    local ok, err = pcall(function()
+        endHelicopter()
+    end)
+
+    if not ok then
+        return false, nil, "Failed to stop helicopter: " .. tostring(err)
+    end
+
+    PanelBridge.info("Helicopter stopped (server-wide)")
+    return true, {
+        message = "Helicopter event stop signal sent server-wide"
+    }
+end
+
 -- Get detailed player info
 handlers.getPlayerDetails = function(args)
     local username = args.username

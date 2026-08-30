@@ -48,7 +48,8 @@ import {
   X,
   Info,
   Search,
-  Waves
+  Waves,
+  Plane
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -246,6 +247,10 @@ function getEventSuccessCopy(action: string, t: TFunction) {
       return copy('announcementSent')
     case 'Apply All Climate':
       return copy('climateApplied')
+    case 'Helicopter Event':
+      return copy('helicopterEventTriggered')
+    case 'Stop Helicopter Event':
+      return copy('helicopterEventStopped')
     default:
       return { title: t('successCopy.actionCompleteDefault.title'), description: t('successCopy.actionCompleteDefault.description', { action }) }
   }
@@ -2281,6 +2286,23 @@ export default function Events() {
                     {bridgeLoading === 'Generate Weather Front' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Waves className="w-3.5 h-3.5" />}
                     {t('severe.triggerFront')}
                   </Button>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                    <Plane className="w-3.5 h-3.5 text-primary" />
+                    {t('severe.helicopterLabel')}
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => handleBridgeAction('Helicopter Event', () => panelBridgeApi.triggerHelicopterEvent())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
+                      {bridgeLoading === 'Helicopter Event' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plane className="w-3.5 h-3.5" />}
+                      {t('severe.triggerHelicopter')}
+                    </Button>
+                    <Button variant="outline" onClick={() => handleBridgeAction('Stop Helicopter Event', () => panelBridgeApi.stopHelicopterEvent())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium text-destructive/85 hover:text-destructive hover:border-destructive/40">
+                      {bridgeLoading === 'Stop Helicopter Event' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                      {t('severe.stopHelicopter')}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </TacticalPanel>

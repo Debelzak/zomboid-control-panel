@@ -141,7 +141,10 @@
     "frontStationary": "stationary",
     "frontCold": "cold front",
     "frontWarm": "warm front",
-    "triggerFront": "generate front"
+    "triggerFront": "generate front",
+    "helicopterLabel": "helicopter event",
+    "triggerHelicopter": "trigger helicopter",
+    "stopHelicopter": "stop helicopter"
   },
   "climate": {
     "sublabelOnline": "bridge · admin override",
@@ -544,6 +547,8 @@
     "powerRestored": { "title": "Power Restored", "description": "Electrical service is back online." },
     "waterRestored": { "title": "Water Restored", "description": "Water service is back online." },
     "helicopterTriggered": { "title": "Helicopter Triggered", "description": "A helicopter event is now active." },
+    "helicopterEventTriggered": { "title": "Helicopter Event Triggered", "description": "A server-wide helicopter event is now active." },
+    "helicopterEventStopped": { "title": "Helicopter Event Stopped", "description": "Stop signal sent for the server-wide helicopter event." },
     "gunshotTriggered": { "title": "Gunshot Triggered", "description": "A gunshot sound has been created." },
     "alarmTriggered": { "title": "Alarm Triggered", "description": "An alarm has been triggered." },
     "noiseCreated": { "title": "Noise Created", "description": "A custom sound lure has been placed." },

@@ -141,7 +141,10 @@
     "frontStationary": "stationär",
     "frontCold": "Kaltfront",
     "frontWarm": "Warmfront",
-    "triggerFront": "Front erzeugen"
+    "triggerFront": "Front erzeugen",
+    "helicopterLabel": "Hubschrauberereignis",
+    "triggerHelicopter": "Hubschrauber auslösen",
+    "stopHelicopter": "Hubschrauber stoppen"
   },
   "climate": {
     "sublabelOnline": "Brücke · Admin-Override",
@@ -544,6 +547,8 @@
     "powerRestored": { "title": "Strom wiederhergestellt", "description": "Die Stromversorgung ist wieder online." },
     "waterRestored": { "title": "Wasser wiederhergestellt", "description": "Die Wasserversorgung ist wieder online." },
     "helicopterTriggered": { "title": "Hubschrauber ausgelöst", "description": "Ein Hubschrauberereignis ist jetzt aktiv." },
+    "helicopterEventTriggered": { "title": "Hubschrauberereignis ausgelöst", "description": "Ein serverweites Hubschrauberereignis ist jetzt aktiv." },
+    "helicopterEventStopped": { "title": "Hubschrauberereignis gestoppt", "description": "Stoppsignal für das serverweite Hubschrauberereignis gesendet." },
     "gunshotTriggered": { "title": "Schuss ausgelöst", "description": "Ein Schussgeräusch wurde erzeugt." },
     "alarmTriggered": { "title": "Alarm ausgelöst", "description": "Ein Alarm wurde ausgelöst." },
     "noiseCreated": { "title": "Geräusch erzeugt", "description": "Ein benutzerdefinierter Tonköder wurde platziert." },
