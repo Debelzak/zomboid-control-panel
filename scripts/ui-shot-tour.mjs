@@ -359,6 +359,11 @@ const VIEWS = [
   {
     name: 'players:powers-kill-confirm',
     path: '/players',
+    dialogExpected: true, // see waitForSettle/dismissOpenDialogs -- this is the
+    // one view in the whole sweep whose entire point is an open dialog at
+    // capture time, so the generic leaked-overlay defense must not close it
+    // before the shot (it still gets swept up afterward like every other
+    // view's dialog would, so it can't leak forward into whatever runs next).
     interact: async (page) => {
       await selectFirstPlayer(page)
       await clickTabByRole(page, 'Powers')
@@ -653,8 +658,10 @@ async function restoreMainAfterCapture(page, prevStyle) {
 // error alert -- absent from the shots -- before asking for this fix, so
 // the pages themselves were never in question, only this script's timing.
 //
-// Two independent signals, chosen from what's ALREADY a real, load-bearing
-// convention in this codebase rather than invented for this script:
+// Three independent signals (a third, the page-enter CSS fade, was added
+// after the first two shipped -- see its own inline comment below), chosen
+// from what's ALREADY a real, load-bearing convention in this codebase
+// rather than invented for this script:
 //   - `[aria-busy="true"]` -- PageSkeleton (components/PageSkeleton.tsx)
 //     puts this on its wrapping element for every one of its variants
 //     (dashboard/list/form/console/map/default), and it's what a whole-page
@@ -684,7 +691,28 @@ async function waitForSettle(page, { timeoutMs = 8000, quietMs = 500, pollMs = 1
   let quietSince = null
   while (Date.now() - start < timeoutMs) {
     const busy = await page
-      .evaluate(() => !!document.querySelector('[aria-busy="true"], .animate-spin'))
+      .evaluate(() => {
+        if (document.querySelector('[aria-busy="true"], .animate-spin')) return true
+        // A THIRD tour-only artifact, found while chasing down the dimming
+        // reported in three lanes as a leaked dialog: `.page-transition`
+        // (index.css) plays a 0.3s opacity 0->1 `pageEnter` fade on mount,
+        // applied on nearly every page's own root div. Real users never
+        // notice a 300ms fade; a screenshot taken mid-fade freezes it as a
+        // permanently washed-out page. This reproduced specifically on the
+        // FIRST authenticated view of a session (cold JIT/paint/font costs
+        // push the fade's start later than a warm navigation's), which is
+        // exactly the position-1-only pattern this repo's own settings
+        // capture showed even after the leaked-dialog fix below found zero
+        // stray dialogs -- ruling out AlertDialogOverlay's `bg-background/78`
+        // scrim as the (only) explanation for that specific case. Waited
+        // out via the Web Animations API rather than a fixed extra sleep,
+        // for the same reason the busy/spin check above polls instead of
+        // guessing a duration: an animation genuinely still running is a
+        // fact, not an estimate.
+        const transitioning = document.querySelector('.page-transition')
+        if (transitioning?.getAnimations().some((a) => a.playState === 'running')) return true
+        return false
+      })
       .catch(() => false) // page mid-navigation/crashed -- treat as not-busy, let the outer timeout/catch handle it
     if (busy) {
       quietSince = null
@@ -695,6 +723,55 @@ async function waitForSettle(page, { timeoutMs = 8000, quietMs = 500, pollMs = 1
     await page.waitForTimeout(pollMs)
   }
   return false
+}
+
+// visual-sweep-2026-08-30 defect 2: three agents independently reported a
+// dimmed/washed-out capture in three unrelated lanes (players, events,
+// discord), each reading it as a bug in their own page. god's diagnosis,
+// proven by ORDER rather than guessed: within one page's run of sub-views
+// (e.g. players -> moderation -> vitals -> spawn -> powers -> notes ->
+// kill-confirm), the dimming starts at some position and never recovers --
+// a real page bug follows the PAGE, this followed the ORDINAL POSITION.
+// This script never pressed Escape or closed a dialog anywhere, and a
+// Radix Dialog/AlertDialog's Overlay+Content are portaled onto
+// document.body -- outside whatever DOM subtree a client-side tab switch
+// replaces -- so once something opens one, it can silently outlive
+// everything after it in the same browser tab, across routes, not just
+// sub-views. Ruled out as a REAL (non-tour) bug before writing this fix,
+// not assumed: grepped for the actual banner behind the one confirmed
+// correlation (a disk-space warning showing up alongside the scrim in
+// several lanes) -- SystemHealthBanner.tsx renders a plain non-portaled
+// <div>, no overlay, no z-index, no backdrop, so it cannot be the source
+// for a real user either. The correlation was two symptoms of the same
+// stale session, not one causing the other.
+//
+// Every Dialog/AlertDialog Content in this codebase (ui/dialog.tsx,
+// ui/alert-dialog.tsx) is Radix's own primitive with no onEscapeKeyDown
+// override that blocks it, so Escape is a safe, generic dismissal that
+// doesn't need to know which specific dialog might be open -- this fix
+// doesn't need to find (and isn't trying to find) whichever page actually
+// leaves one open; it makes the TOUR immune regardless of which page does.
+async function detectOpenDialog(page) {
+  return page.evaluate(() => {
+    const el = document.querySelector('[role="dialog"], [role="alertdialog"]')
+    if (!el) return null
+    const label =
+      el.getAttribute('aria-label') ||
+      el.querySelector('h1, h2, [id$="title" i]')?.textContent ||
+      el.textContent?.slice(0, 60) ||
+      '(unlabeled dialog)'
+    return label.trim()
+  })
+}
+
+async function dismissOpenDialogs(page, { maxAttempts = 3 } = {}) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const open = await detectOpenDialog(page)
+    if (!open) return null
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(200)
+  }
+  return detectOpenDialog(page) // still non-null after every attempt -- genuinely stuck
 }
 
 async function setTheme(page, theme) {
@@ -795,6 +872,13 @@ async function main() {
             // finished loading says so in the manifest instead of silently
             // passing as an ordinary success.
             const settled = await waitForSettle(page)
+            // Leaked-overlay defense (see dismissOpenDialogs' own header):
+            // any view NOT deliberately capturing an open dialog gets one
+            // dismissed before the shot, and `strayOverlay` records the
+            // dialog's own label when three Escape presses couldn't close
+            // it -- a genuinely stuck dialog, not a false alarm from this
+            // check misfiring on a view that wants one open.
+            const strayOverlay = view.dialogExpected ? null : await dismissOpenDialogs(page)
             // `:` is a reserved path character on Windows (NTFS Alternate
             // Data Stream syntax, `base:stream`) -- a filename built
             // straight from an addressable name like `players:vitals` does
@@ -812,8 +896,18 @@ async function main() {
             const prevMainStyle = await expandMainForCapture(page)
             await page.screenshot({ path: filePath, fullPage: true })
             await restoreMainAfterCapture(page, prevMainStyle)
-            manifest.push({ file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme, width: viewport.width, height: viewport.height, settled })
-            console.log(`[ui-shot-tour] captured ${fileName}${settled ? '' : ' -- NOT SETTLED (spinner/skeleton still present after timeout)'}`)
+            // Unconditional cleanup, even for a `dialogExpected` view whose
+            // own dialog was deliberately left open for the shot just taken
+            // -- this is the half of the fix that actually stops a leak
+            // reaching the NEXT view, as opposed to the check above, which
+            // only asserts one didn't already leak in from the last one.
+            await dismissOpenDialogs(page)
+            manifest.push({ file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme, width: viewport.width, height: viewport.height, settled, strayOverlay })
+            const flags = [
+              settled ? '' : ' -- NOT SETTLED (spinner/skeleton still present after timeout)',
+              strayOverlay ? ` -- STRAY OVERLAY LEAKED IN ("${strayOverlay}")` : '',
+            ].join('')
+            console.log(`[ui-shot-tour] captured ${fileName}${flags}`)
           } catch (err) {
             console.error(`[ui-shot-tour] FAILED ${view.name} (${viewport.key}/${theme}): ${err.message}`)
             manifest.push({ file: null, view: view.name, path: view.path, viewport: viewport.key, theme, error: err.message })
@@ -852,21 +946,28 @@ async function main() {
   // too-short wait. `settled === false` (not just falsy/undefined) so an
   // older manifest entry or a non-capture entry never misreports here.
   const unsettled = manifest.filter((m) => m.file && m.settled === false)
+  // visual-sweep-2026-08-30 defect 2: a stray dialog that Escape couldn't
+  // close within dismissOpenDialogs' own retry budget -- distinct from the
+  // ordinary case (leaked in, one Escape closed it, capture is clean) which
+  // never reaches here at all.
+  const strayOverlays = manifest.filter((m) => m.file && m.strayOverlay)
   const md = [
     '# UI shot tour manifest',
     '',
-    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled) from \`${args.root}\` against \`${BASE_URL}\`.`,
+    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay) from \`${args.root}\` against \`${BASE_URL}\`.`,
     ...(unsettled.length ? ['', '**Not settled means the capture may show a mid-load spinner or skeleton, not the real page -- verify before treating it as a finding.**'] : []),
+    ...(strayOverlays.length ? ['', '**Stray overlay means a leaked dialog from an earlier view survived three Escape presses -- the capture may be dimmed by its backdrop with the dialog itself off-screen or unrendered. Verify before treating it as a finding.**'] : []),
     '',
-    '| File | View | Route | Viewport | Theme | Settled |',
-    '| --- | --- | --- | --- | --- | --- |',
-    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${m.settled === false ? '⚠️ NO' : 'yes'} |`),
+    '| File | View | Route | Viewport | Theme | Settled | Stray overlay |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${m.settled === false ? '⚠️ NO' : 'yes'} | ${m.strayOverlay ? `⚠️ ${m.strayOverlay}` : '--'} |`),
     ...(failCount ? ['', '## Failed captures', '', ...manifest.filter((m) => !m.file).map((m) => `- **${m.view}** (${m.viewport}/${m.theme}, \`${m.path}\`): ${m.error}`)] : []),
     ...(unsettled.length ? ['', '## Captured but not settled', '', 'Spinner or skeleton (`[aria-busy="true"]` / `.animate-spin`) was still present when the timeout hit -- the file exists but may not show the real page.', '', ...unsettled.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\``)] : []),
+    ...(strayOverlays.length ? ['', '## Captured with a stray overlay', '', 'A dialog leaked in from an earlier view and three Escape presses did not close it before the shot.', '', ...strayOverlays.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\` -- "${m.strayOverlay}"`)] : []),
   ].join('\n')
   writeFileSync(path.join(args.out, 'MANIFEST.md'), md)
 
-  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled. Output: ${args.out}`)
+  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay. Output: ${args.out}`)
   if (failCount) process.exitCode = 1
 }
 
