@@ -1126,7 +1126,20 @@ class PanelBridge extends EventEmitter {
         const isChatFallback = pending.action === 'sendToServerChat' || pending.action === 'sendToAdminChat' || pending.action === 'sendToGeneralChat';
         const logLevel = isChatFallback ? 'debug' : 'warn';
         log[logLevel](`PanelBridge result: action=${pending.action} failed: ${result.error || 'unknown'} (${elapsed}ms)`);
-        pending.reject(new Error(result.error || 'Command failed'));
+        // Some handlers return a "soft failure" with a rich diagnostic table
+        // instead of (or in addition to) an error string -- e.g. killPlayer's
+        // not-dead path sets no error at all, only data.message; teleportPlayer's
+        // verify-false path sets both. Previously this whole data table was
+        // dropped here regardless, so a handler could craft the most honest,
+        // diagnostic-rich failure imaginable and the caller would only ever see
+        // "Command failed". Preserve result.error as the message whenever it's
+        // present (unchanged behavior); only fall back to data.message when
+        // there's no error string, and always attach the full data table to
+        // the rejected Error so a caller that wants the diagnostics can get them.
+        const message = result.error || result.data?.message || 'Command failed';
+        const err = new Error(message);
+        err.data = result.data;
+        pending.reject(err);
       }
     }
 
