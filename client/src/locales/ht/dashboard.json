@@ -35,6 +35,7 @@
     "ariaLabel": "Estati sèvè",
     "everythingNominal": "Tout bagay nòmal",
     "upPrefix": "an fonksyone depi {{uptime}}",
+    "mapTooltip": "Kat (soti nan PanelBridge)",
     "remoteBadge": "aleka",
     "noActiveServer": "Pa gen sèvè aktif"
   },
@@ -252,6 +253,7 @@
   },
   "workItems": {
     "players": "Jwè",
+    "zombies": "Zonbi",
     "console": "Konsòl",
     "mods": "Mods",
     "schedule": "Orè",

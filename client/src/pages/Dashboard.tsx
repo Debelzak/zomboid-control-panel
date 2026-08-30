@@ -230,6 +230,17 @@ export default function Dashboard() {
   const [composedStatus, setComposedStatus] = useState<ComposedServerStatus | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null)
+  // hunt-wave12-2026-08-30: getZombieCount and getWorldStats were both
+  // confirmed working by Kevin's engine-side audit but had no caller
+  // anywhere in the client -- nothing on the Dashboard showed a zombie or
+  // survivor count from any source. Checked first (per the same
+  // precondition as the visual controls, 1c6ea6cc): neither value arrives
+  // via any existing poll or the panelBridge:modStatus socket push (that
+  // push only carries alive/version/serverName/playerCount), so this is a
+  // genuine new poll, not five fields nobody was reading out of one that
+  // already ran.
+  const [zombieCount, setZombieCount] = useState<number | null>(null)
+  const [worldMap, setWorldMap] = useState<string | null>(null)
   const [playerActivity, setPlayerActivity] = useState<PlayerActivity[]>([])
   const [performanceHistory, setPerformanceHistory] = useState<PerformancePoint[]>([])
   const [loading, setLoading] = useState<string | null>(null)
@@ -389,6 +400,25 @@ export default function Dashboard() {
   }, [])
   const fetchBridgeStatus = useCallback(async () => {
     try { setBridgeStatus(await panelBridgeApi.getStatus()) } catch { setBridgeStatus(null) }
+  }, [])
+  // Uses two distinct getters rather than one: getZombieCount is the
+  // purpose-built number for the tile below; getWorldStats' only
+  // non-duplicate field is the map name, shown next to the server name in
+  // the header. Neither result is seeded with a plausible-looking default
+  // on failure -- null means "unknown", not "0".
+  const fetchWorldZombieStats = useCallback(async () => {
+    const [zc, ws] = await Promise.allSettled([
+      panelBridgeApi.getZombieCount(),
+      panelBridgeApi.getWorldStats(),
+    ])
+    setZombieCount(
+      zc.status === 'fulfilled' && zc.value?.success && typeof zc.value.data?.zombieCount === 'number'
+        ? zc.value.data.zombieCount
+        : null,
+    )
+    setWorldMap(
+      ws.status === 'fulfilled' && ws.value?.success && ws.value.data?.map ? ws.value.data.map : null,
+    )
   }, [])
   const fetchPlayerActivity = useCallback(async () => {
     try { const d = await playersApi.getActivityLogs(undefined, 15); if (d.logs) setPlayerActivity(d.logs.slice(0, 12)) }
@@ -556,6 +586,24 @@ export default function Dashboard() {
       socket.off('panelBridge:modStatus', onBridgeMod)
     }
   }, [socket, fetchStatus, fetchComposedStatus, fetchPlayers, fetchBridgeStatus, fetchActiveServer])
+
+  // Zombie count changes continuously while the server runs -- unlike
+  // bridgeStatus (pushed live over the socket), nothing pushes this, so it
+  // needs its own poll. Same cadence and visibility-pause as Events.tsx's
+  // own bridge-data poll. Only runs while the mod is actually connected --
+  // an offline bridge would just 400 every 10s for nothing.
+  useEffect(() => {
+    if (!bridgeStatus?.modConnected) {
+      setZombieCount(null)
+      setWorldMap(null)
+      return
+    }
+    fetchWorldZombieStats()
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') fetchWorldZombieStats()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [bridgeStatus?.modConnected, fetchWorldZombieStats])
 
   useEffect(() => {
     if (initialLoading || showPerformanceCharts) return
@@ -939,6 +987,11 @@ export default function Dashboard() {
       tone: !online ? 'bad' : players.length > 0 ? 'good' : 'default',
     },
     {
+      to: '/events', icon: Skull, label: t('workItems.zombies'),
+      state: bridgeStatus?.modConnected ? (zombieCount !== null ? String(zombieCount) : t('connLine.pending')) : t('liveActivity.offline'),
+      tone: !bridgeStatus?.modConnected ? 'default' : zombieCount !== null ? 'good' : 'default',
+    },
+    {
       to: '/console', icon: Wifi, label: t('workItems.console'),
       state: status?.rcon?.connected ? t('workItems.rconReady') : t('workItems.rconOffline'),
       tone: status?.rcon?.connected ? 'good' : 'warning',
@@ -1013,6 +1066,15 @@ export default function Dashboard() {
             {online && status && status.uptime > 0 && (
               <span className="hidden font-mono text-[11px] tabular-nums text-muted-foreground/60 sm:inline">
                 {t('header.upPrefix', { uptime: formatUptime(status.uptime) })}
+              </span>
+            )}
+            {/* Map name -- from getWorldStats, the only field it reports that
+                getZombieCount doesn't already cover. Bridge-sourced, so it's
+                unknown (hidden) rather than guessed until the bridge poll
+                actually reports one. */}
+            {worldMap && (
+              <span className="hidden font-mono text-[11px] text-muted-foreground/60 sm:inline" title={t('header.mapTooltip')}>
+                {worldMap}
               </span>
             )}
             {activeServer?.isRemote && (

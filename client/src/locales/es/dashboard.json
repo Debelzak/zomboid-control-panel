@@ -35,6 +35,7 @@
     "ariaLabel": "Estado del servidor",
     "everythingNominal": "Todo en orden",
     "upPrefix": "activo {{uptime}}",
+    "mapTooltip": "Mapa (de PanelBridge)",
     "remoteBadge": "remoto",
     "noActiveServer": "Ningún servidor activo"
   },
@@ -252,6 +253,7 @@
   },
   "workItems": {
     "players": "Jugadores",
+    "zombies": "Zombis",
     "console": "Consola",
     "mods": "Mods",
     "schedule": "Programación",

@@ -35,6 +35,7 @@
     "ariaLabel": "Server status",
     "everythingNominal": "Everything nominal",
     "upPrefix": "up {{uptime}}",
+    "mapTooltip": "Map (from PanelBridge)",
     "remoteBadge": "remote",
     "noActiveServer": "No active server"
   },
@@ -252,6 +253,7 @@
   },
   "workItems": {
     "players": "Players",
+    "zombies": "Zombies",
     "console": "Console",
     "mods": "Mods",
     "schedule": "Schedule",

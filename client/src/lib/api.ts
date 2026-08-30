@@ -2513,7 +2513,19 @@ export const panelBridgeApi = {
   }) => apiPost("/panel-bridge/time", options),
 
   // World controls (v1.1.0)
-  getWorldStats: () => apiGet("/panel-bridge/world/stats"),
+  getWorldStats: () =>
+    apiGet("/panel-bridge/world/stats") as Promise<{
+      success: boolean;
+      data: { serverName: string; map: string; zombiesInCell: number };
+    }>,
+
+  // Zombie count in currently loaded cells only (PanelBridge.lua's own
+  // caveat -- not a world-wide total, Project Zomboid has no such number).
+  getZombieCount: () =>
+    apiGet("/panel-bridge/zombies/count") as Promise<{
+      success: boolean;
+      data: { zombieCount: number; note: string };
+    }>,
   saveWorld: () => apiPost("/panel-bridge/world/save"),
 
   // Player controls (v1.1.0)
