@@ -7139,23 +7139,50 @@ handlers.vehicleHotwire = function(args)
         end
 
         -- 4. Start engine — try multiple B42/B41 approaches
+        --
+        -- 2026-08-30, Kevin's jar audit: of the three methods tried below, only
+        -- engineDoStarting exists on BaseVehicle in the real B42 jar, so it is the
+        -- one that actually fires, every time. startEngine and setEngineRunning
+        -- are both ABSENT from BaseVehicle -- despite the "B42/B41: setEngineRunning"
+        -- label reading like a confirmed method name, it is not one; that tier
+        -- (and the startEngine tier before it) never executes. Nothing here is
+        -- user-visibly broken -- tier 3 always lands and vehicles start -- but two
+        -- of the three "approaches" are dead code.
+        --
+        -- BaseVehicle also declares tryStartEngine (two overloads) and a real
+        -- isEngineRunning getter, and this handler uses NEITHER. That is a
+        -- deliberate choice, not an oversight: tryStartEngine reads like it may
+        -- respect preconditions (key, fuel, battery) and refuse to start if they
+        -- are unmet, where engineDoStarting reads like it drives the starting
+        -- sequence directly regardless. Swapping to tryStartEngine could silently
+        -- turn this working admin command into one that refuses on an unfueled
+        -- vehicle, and nothing in this repo's test suite can tell us that -- it
+        -- needs a live server to observe. Choosing between them is a product
+        -- decision, not a cleanup, so it is left alone here.
+        --
+        -- All three tiers stay in place below, dead or not: removing the dead
+        -- ones without this note would either get something new wired to a dead
+        -- path, or get the live one deleted by a future reader thinking it's the
+        -- duplicate.
         local engineStarted = false
 
-        -- B42: startEngine method
+        -- B42: startEngine method -- ABSENT from BaseVehicle; this branch never fires.
         if not engineStarted and vehicle.startEngine then
             vehicle:startEngine()
             engineStarted = true
             table.insert(actions, "startEngine")
         end
 
-        -- B42/B41: setEngineRunning
+        -- B42/B41: setEngineRunning -- ABSENT from BaseVehicle, not "the real B42
+        -- name"; this branch never fires either.
         if not engineStarted and vehicle.setEngineRunning then
             vehicle:setEngineRunning(true)
             engineStarted = true
             table.insert(actions, "setEngineRunning")
         end
 
-        -- B42: engineDoStarting (forces engine into starting sequence)
+        -- B42: engineDoStarting (forces engine into starting sequence) -- REAL on
+        -- BaseVehicle, so this is the tier that actually runs, every time.
         if not engineStarted and vehicle.engineDoStarting then
             vehicle:engineDoStarting()
             engineStarted = true
