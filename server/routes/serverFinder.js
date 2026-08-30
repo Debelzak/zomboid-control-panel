@@ -139,7 +139,21 @@ export async function queryServerInfo(ip, port, onFailureReason) {
           resolve(null);
         }, SERVER_QUERY_TIMEOUT);
         // No destination args -- this socket is connect()-ed, see below.
-        socket.send(buildA2SInfoQuery(challenge));
+        // send() on a connected UDP socket can throw SYNCHRONOUSLY (e.g.
+        // ERR_SOCKET_BAD_PORT) -- this call is inside a 'message' listener,
+        // so a throw here would escape both this Promise's executor and
+        // the socket's own 'error' handler and become a process-crashing
+        // uncaught exception instead of a resolved query failure. See the
+        // matching try/catch on the initial send() below and
+        // serverFinderSocketSendSyncThrow.test.js for why this matters.
+        try {
+          socket.send(buildA2SInfoQuery(challenge));
+        } catch (err) {
+          clearTimeout(timeout);
+          socket.close();
+          onFailureReason?.('socket-error');
+          resolve(null);
+        }
         return;
       }
       try {
@@ -175,7 +189,21 @@ export async function queryServerInfo(ip, port, onFailureReason) {
     // reply for a server the operator is actually checking on, not merely
     // add noise to a list.
     socket.connect(port, ip, () => {
-      socket.send(buildA2SInfoQuery());
+      // Same escape hazard as the retry send() above: a synchronous throw
+      // from send() here runs inside connect()'s callback, not this
+      // Promise's own executor, so nothing upstream would ever catch it
+      // without this try/catch -- it would kill the whole server process,
+      // not just this one query. Confirmed for real in
+      // server/routes/serverFinder.js's queryMasterServer() (2026-08-30);
+      // this function has the identical shape and needed the identical fix.
+      try {
+        socket.send(buildA2SInfoQuery());
+      } catch (err) {
+        clearTimeout(timeout);
+        socket.close();
+        onFailureReason?.('socket-error');
+        resolve(null);
+      }
     });
   });
 }
@@ -368,7 +396,28 @@ export async function queryMasterServer(masterHost, masterPort, region = 0xFF, f
       Buffer.from(filterStr).copy(packet, offset);
 
       // No destination args -- this socket is connect()-ed, see above.
-      socket.send(packet);
+      //
+      // send() on a connected UDP socket can throw SYNCHRONOUSLY (observed
+      // in production: RangeError [ERR_SOCKET_BAD_PORT], the connected
+      // socket's own remote port having gone bad after connect()'s
+      // callback already fired -- not a caller passing a bad masterPort,
+      // which fails at connect() itself, before this ever runs). sendQuery
+      // is called from two places, both inside async callbacks (the
+      // connect() callback below, and the 'message' handler above for
+      // pagination) -- NEITHER is inside this function's own Promise
+      // executor, so a throw here would reach neither `reject` above nor
+      // the socket's own 'error' listener. Node's default handling of an
+      // uncaught exception is to kill the whole process, not just this
+      // request -- confirmed the hard way, twice, via
+      // scripts/ui-shot-tour.mjs's server-finder capture (2026-08-30).
+      // Catching it here, once, covers both call sites.
+      try {
+        socket.send(packet);
+      } catch (err) {
+        clearTimeout(timeout);
+        socket.close();
+        reject(err);
+      }
     };
 
     // sendQuery() only runs once the connect() actually resolves (the
