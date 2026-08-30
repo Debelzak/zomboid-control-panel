@@ -10,6 +10,11 @@
     "addExisting": "Ajoute Sèvè ki Egziste",
     "installNew": "Enstale Nouvo Sèvè"
   },
+  "fetchError": {
+    "title": "Sèvè yo pa t kapab chaje",
+    "fallback": "Echwe pou chaje sèvè yo. Backend la ka pa aksesib.",
+    "retry": "Eseye ankò"
+  },
   "emptyState": {
     "title": "Pa gen Sèvè Konfigire",
     "description": "Kòmanse ak yon sèl sèvè. Yon fwa li aktif, tablo, jwè, kopi sovgad, mods, ak aksyon aleka vin disponib.",

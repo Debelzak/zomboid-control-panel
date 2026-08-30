@@ -10,6 +10,11 @@
     "addExisting": "Add Existing Server",
     "installNew": "Install New Server"
   },
+  "fetchError": {
+    "title": "Servers could not be loaded",
+    "fallback": "Failed to load your servers. The backend may be unreachable.",
+    "retry": "Retry"
+  },
   "emptyState": {
     "title": "No Servers Configured",
     "description": "Start with one server. After it is active, dashboard, players, backups, mods, and remote actions come online.",

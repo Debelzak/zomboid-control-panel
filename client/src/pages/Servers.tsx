@@ -267,7 +267,14 @@ export default function Servers() {
   // execution today (activate succeeds and the server record changes state,
   // then start/stop 403s), not a clean refusal. Gate on both present.
   const canInlineStartStop = canServersManage && canServerControl
-  const [servers, setServers] = useState<ServerInstance[]>([])
+  // null = we don't yet know (still loading, or the last fetch failed) --
+  // distinct from [] (fetch succeeded and confirmed there really are zero
+  // servers). See fetchServers() below: on failure `servers` is deliberately
+  // left untouched rather than reset to [], so this stays accurate across
+  // background refetches too, not just the first mount.
+  const [servers, setServers] = useState<ServerInstance[] | null>(null)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const serversConfirmedEmpty = servers !== null && servers.length === 0
   const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
   const [rconStatuses, setRconStatuses] = useState<Record<string, string>>({})
   const [dockerAvailable, setDockerAvailable] = useState(false)
@@ -316,7 +323,7 @@ export default function Servers() {
 
   const tandemConflicts = useMemo(() => {
     if (addMode !== 'local') return []
-    const others = servers.filter(s => !s.isRemote)
+    const others = (servers || []).filter(s => !s.isRemote)
     if (others.length === 0) return []
     const found: Array<{ label: string; detail: string }> = []
     for (const other of others) {
@@ -381,7 +388,7 @@ export default function Servers() {
   const connectableMounts = discoveredMounts.filter(
     (mount) => mount.dataPath && mount.serverNames.length > 0,
   )
-  const activeServerId = servers.find((server) => server.isActive)?.id ?? null
+  const activeServerId = servers?.find((server) => server.isActive)?.id ?? null
 
   const { toast } = useToast()
   const socket = useContext(SocketContext)
@@ -391,17 +398,22 @@ export default function Servers() {
 
   // Fetch servers
   const fetchServers = useCallback(async () => {
+    setFetchError(null)
     try {
       const data = await serversApi.getAll()
       setServers(data.servers || [])
       setManagedLifecycleSupported(data.lifecycleCapabilities?.supported === true)
     } catch (error) {
       reportClientError('Failed to fetch servers.', error)
-      toast({ title: t('toasts.error'), description: getUserErrorMessage(error, t('toasts.loadServersFailed')), variant: 'destructive' })
+      // Leave `servers` untouched -- a failed fetch must not read as "you
+      // have no servers" (see the state's own comment above). The alert
+      // below is the single, retry-able error affordance for this page's
+      // load, same shape as Scheduler's fetchError.
+      setFetchError(getUserErrorMessage(error, t('fetchError.fallback')))
     } finally {
       setLoading(false)
     }
-  }, [toast, t])
+  }, [t])
 
   // Per-server running status — scans host processes once and attributes
   // matches to each configured server's install path. Refreshes on a slow
@@ -458,7 +470,7 @@ export default function Servers() {
     if (!canDockerManage) return
     setDockerActionPending(`${action}-${container.id}`)
     try {
-      const server = servers.find((item) => item.dockerContainerName === container.name || item.dockerContainerName === container.id)
+      const server = servers?.find((item) => item.dockerContainerName === container.name || item.dockerContainerName === container.id)
       if (!server) throw new Error('No server profile maps to this container')
       const result = await dockerApi.runAction(server.dockerContainerName || container.id, action, server.id)
       if (!result.success) throw new Error(result.error || `Failed to ${action} container`)
@@ -1105,7 +1117,7 @@ export default function Servers() {
     if (!editingServer || savingEdit) return
     if (!canServersManage) return
     const storedLifecycleProvider =
-      servers.find((server) => server.id === editingServer.id)?.lifecycleProvider || 'direct'
+      servers?.find((server) => server.id === editingServer.id)?.lifecycleProvider || 'direct'
     if ((editingServer.lifecycleProvider || 'direct') !== storedLifecycleProvider) {
       toast({
         title: t('toasts.warningTitle'),
@@ -1194,7 +1206,7 @@ export default function Servers() {
 
   const handleActivateLifecycleProvider = async (server: ServerInstance) => {
     const provider = server.lifecycleProvider || 'direct'
-    const stored = servers.find((candidate) => candidate.id === server.id)
+    const stored = servers?.find((candidate) => candidate.id === server.id)
     const currentProvider = stored?.lifecycleProvider || 'direct'
     if (provider === currentProvider || lifecyclePending) return
 
@@ -1505,8 +1517,21 @@ export default function Servers() {
         }
       />
 
+      {fetchError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>{t('fetchError.title')}</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words" dir="auto">{fetchError}</span>
+            <Button variant="outline" size="sm" onClick={fetchServers} className="self-start">
+              <RefreshCw className="mr-2 h-4 w-4" /> {t('fetchError.retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Discovered mounts — offer a one-click connect when no server profile uses them yet */}
-      {servers.length === 0 && connectableMounts.length > 0 && (
+      {serversConfirmedEmpty && connectableMounts.length > 0 && (
         <div className="space-y-2">
           {connectableMounts.map(mount => (
             <MountDiscoveryBanner
@@ -1518,8 +1543,11 @@ export default function Servers() {
         </div>
       )}
 
-      {/* Server Grid */}
-      {servers.length === 0 ? (
+      {/* Server Grid — a confirmed-empty roster gets the onboarding card; an
+          unknown roster (still loading past the initial spinner, or the last
+          fetch failed) renders neither that nor a stale grid, only the alert
+          above. */}
+      {serversConfirmedEmpty ? (
         <Card className="mission-brief overflow-hidden border-primary/20 bg-card">
           <CardContent className="py-10">
             <div className="mx-auto max-w-4xl space-y-8">
@@ -1594,7 +1622,7 @@ export default function Servers() {
             </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : servers && servers.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 stagger-in">
           {servers.map(server => {
             const hasUpdate = updateInfo?.updateAvailable && server.isActive
@@ -2010,7 +2038,7 @@ export default function Servers() {
             </Card>
           )})}
         </div>
-      )}
+      ) : null}
 
       {/* Add Existing Server Dialog */}
       <Dialog open={showAddDialog} onOpenChange={(open) => !open && resetAddDialog()}>
@@ -2024,7 +2052,7 @@ export default function Servers() {
             </DialogDescription>
           </DialogHeader>
 
-          {addMode === 'local' && servers.some(s => !s.isRemote) && (
+          {addMode === 'local' && !!servers?.some(s => !s.isRemote) && (
             <div className="space-y-1.5 rounded-md border border-border/60 p-3">
               <p className="text-xs font-medium">{t('tandem.sectionTitle')}</p>
               <ul className="space-y-1">
@@ -2615,7 +2643,7 @@ export default function Servers() {
                       </Button>
                     )}
                     {(editingServer.lifecycleProvider || 'direct') !==
-                      (servers.find((server) => server.id === editingServer.id)?.lifecycleProvider || 'direct') && (
+                      (servers?.find((server) => server.id === editingServer.id)?.lifecycleProvider || 'direct') && (
                       <Button
                         type="button"
                         variant="warning"

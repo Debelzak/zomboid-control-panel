@@ -10,6 +10,11 @@
     "addExisting": "Ajouter un serveur existant",
     "installNew": "Installer un nouveau serveur"
   },
+  "fetchError": {
+    "title": "Impossible de charger les serveurs",
+    "fallback": "Échec du chargement des serveurs. Le backend est peut-être injoignable.",
+    "retry": "Réessayer"
+  },
   "emptyState": {
     "title": "Aucun serveur configuré",
     "description": "Commencez par un serveur. Une fois qu'il est actif, le tableau de bord, les joueurs, les sauvegardes, les mods et les actions distantes deviennent disponibles.",

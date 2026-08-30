@@ -10,6 +10,11 @@
     "addExisting": "Bestehenden Server hinzufügen",
     "installNew": "Neuen Server installieren"
   },
+  "fetchError": {
+    "title": "Server konnten nicht geladen werden",
+    "fallback": "Server konnten nicht geladen werden. Das Backend ist möglicherweise nicht erreichbar.",
+    "retry": "Erneut versuchen"
+  },
   "emptyState": {
     "title": "Keine Server konfiguriert",
     "description": "Beginne mit einem Server. Sobald er aktiv ist, werden Dashboard, Spieler, Backups, Mods und Remote-Aktionen verfügbar.",

@@ -10,6 +10,11 @@
     "addExisting": "添加现有服务器",
     "installNew": "安装新服务器"
   },
+  "fetchError": {
+    "title": "服务器列表加载失败",
+    "fallback": "服务器列表加载失败，后端可能无法访问。",
+    "retry": "重试"
+  },
   "emptyState": {
     "title": "未配置服务器",
     "description": "先添加一台服务器。激活后，仪表盘、玩家、备份、模组和远程操作即可使用。",

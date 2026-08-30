@@ -10,6 +10,11 @@
     "addExisting": "Añadir servidor existente",
     "installNew": "Instalar servidor nuevo"
   },
+  "fetchError": {
+    "title": "No se pudieron cargar los servidores",
+    "fallback": "No se pudieron cargar los servidores. Es posible que el backend no esté disponible.",
+    "retry": "Reintentar"
+  },
   "emptyState": {
     "title": "No hay servidores configurados",
     "description": "Empieza con un servidor. Una vez activo, el tablero, los jugadores, las copias de seguridad, los mods y las acciones remotas estarán disponibles.",
