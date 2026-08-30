@@ -611,19 +611,22 @@ export class ServerManager {
    * this exists to catch. Windows doesn't have this failure mode at all
    * (file locking works differently there), so this is a no-op on Windows.
    *
-   * ONLY SAFE TO CALL where "busy" has one unambiguous cause -- i.e., right
-   * after this manager told a specific process at this path to quit and is
-   * waiting to see it actually release the binary (restartServer()'s wait
-   * loop). It answers "is this file busy", not "is this MY server's old
-   * process", and multiple PZ servers legitimately sharing one install
+   * This answers "is this file busy", never "is this MY server's old
+   * process" -- multiple PZ servers legitimately sharing one install
    * directory (differing only by -servername/-cachedir, a normal
    * deployment shape this codebase already accommodates elsewhere) both
-   * execute this same binary -- a generic pre-start guard using this would
-   * refuse to start server A because unrelated server B is legitimately
-   * running from the same install. Deliberately NOT wired into
-   * startServer()'s guard for that reason (2026-08-30, caught before
-   * landing) -- do not add it there without a way to attribute the
-   * busy-ness to a specific server first.
+   * execute this same binary, so a "busy" result alone is NOT evidence of
+   * anything wrong. That makes it safe to use as a REFUSAL only where the
+   * cause is already known and unambiguous -- restartServer()'s wait loop,
+   * right after THIS manager told the process at THIS path to quit. Anywhere
+   * else (2026-08-30, caught before landing -- see startServer()'s own
+   * comment at its call site), it must never be more than a bounded WAIT
+   * that proceeds regardless once the bound expires: launching a new process
+   * against a binary another process is already executing is ordinary,
+   * unrestricted POSIX behavior (ETXTBSY is about opening for WRITE, never
+   * about a second execute), so "still busy" after waiting a little is not
+   * a reason to refuse -- it likely just means a sibling server is
+   * legitimately running from the same install.
    */
   isJvmExecutableBusy() {
     if (isWindows) return false;
@@ -1276,28 +1279,36 @@ export class ServerManager {
           );
         }
 
-        // Deliberately NOT checking isJvmExecutableBusy() here (2026-08-30,
-        // same Discord thread that added it to restartServer() below --
-        // caught before landing). In restartServer()'s wait loop the
-        // question is unambiguous: "the process I just told to quit at THIS
-        // path -- has it released the binary yet?" Here it would be asking
-        // something broader -- "is ANY process anywhere executing this
-        // binary?" -- and that has a legitimate "yes" that isn't a bug:
-        // multiple PZ servers (differing only by -servername/-cachedir)
-        // sharing ONE install directory to avoid a second multi-gigabyte
-        // copy is a normal deployment shape, and this codebase already
-        // accommodates shared installPaths elsewhere (db.data.servers has
-        // no installPath uniqueness constraint; server/routes/server.js's
-        // and updateChecker.js's activeSteamOperations guards are keyed by
-        // PATH, not by server, for exactly this reason). A blanket check
-        // here would refuse to start server A because server B is
-        // legitimately running from the same install -- trading a real fix
-        // for Rhazun's topology for a new false refusal on a shared-install
-        // one. No available signal can attribute busy-ness to a specific
-        // server (the process-table `owned`/`matched` split doesn't help:
-        // it depends on the exact process visibility this whole class of
-        // bug is about the absence of), so this is scoped to the one place
-        // that has a genuinely unambiguous answer instead of guessing here.
+        // isJvmExecutableBusy() here answers a DIFFERENT question than in
+        // restartServer()'s wait loop: not "has the process I just told to
+        // quit released the binary" but "is ANY process anywhere executing
+        // it" -- and that has a legitimate "yes" that isn't a bug. Multiple
+        // PZ servers (differing only by -servername/-cachedir) sharing ONE
+        // install directory to avoid a second multi-gigabyte copy is a
+        // normal deployment shape this codebase already accommodates
+        // elsewhere (db.data.servers has no installPath uniqueness
+        // constraint; server/routes/server.js's and updateChecker.js's
+        // activeSteamOperations guards are keyed by PATH, not by server,
+        // for exactly this reason).
+        //
+        // So this WAITS, then PROCEEDS regardless -- never refuses. The
+        // actual danger ETXTBSY describes is something REWRITING the binary
+        // while a process executes it; simply launching a new process
+        // against a binary another process is already executing is
+        // ordinary, unrestricted POSIX behavior (many processes can
+        // execve() the same file at once with zero conflict -- ETXTBSY is
+        // specifically about OPENING FOR WRITE, never about a second
+        // execute). So a bounded wait protects the case this exists for
+        // (Rhazun's own prior instance still finishing its exit right after
+        // a manual Stop, in the Stop-then-Start workaround) without ever
+        // punishing the shared-install case: if it's still busy once the
+        // bound expires -- most likely a legitimately running sibling
+        // server -- starting anyway is correct, not a compromise.
+        if (this.isJvmExecutableBusy()) {
+          for (let attempt = 0; attempt < 10 && this.isJvmExecutableBusy(); attempt++) {
+            await this.sleep(300);
+          }
+        }
       }
 
       // Start the server process

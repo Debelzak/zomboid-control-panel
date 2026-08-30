@@ -150,13 +150,15 @@ async function waitUntil(predicate, { timeoutMs = 3000, intervalMs = 50 } = {}) 
     // updateChecker.js both guard concurrent Steam operations by PATH, not
     // by server, for exactly this reason). isJvmExecutableBusy() can only
     // ever answer "is this file busy", not "is this MY server's old
-    // process" -- so it must NOT gate startServer()'s generic pre-start
-    // guard, where an unrelated sibling server legitimately running from
-    // the same install would look identical to a not-yet-dead corpse and
-    // get refused for no real reason. It stays scoped to restartServer()'s
-    // wait loop, where the question is unambiguous (the process THIS
-    // manager just told to quit, at THIS path).
-    it("startServer() does NOT refuse to start just because the shared install's JVM binary is busy -- that busy-ness may belong to an unrelated sibling server", async () => {
+    // process" -- so startServer() must never REFUSE on it the way
+    // restartServer() does. Instead it waits a bounded amount (protecting
+    // the manual Stop-then-Start workaround, where the busy-ness really is
+    // this server's own not-quite-dead-yet process) and then proceeds
+    // regardless -- launching a new process against a binary another
+    // process is already executing is ordinary POSIX behavior (ETXTBSY is
+    // about opening for WRITE, never a second execute), so "still busy"
+    // after waiting is not evidence of anything wrong.
+    it("startServer() proceeds (never throws the busy error) if the shared install's JVM binary stays busy the whole bounded wait -- that busy-ness may belong to an unrelated sibling server", async () => {
       const { spawn } = await import("child_process");
       child = spawn(javaPath, ["30"], { stdio: "ignore" });
       await new Promise((resolve, reject) => {
@@ -172,12 +174,40 @@ async function waitUntil(predicate, { timeoutMs = 3000, intervalMs = 50 } = {}) 
 
       const manager = new ServerManager();
       // No start-server.sh exists in this fixture, so startServer() still
-      // fails -- but it must fail for THAT reason, never because of the
-      // busy JVM binary the sibling server is legitimately holding open.
+      // fails -- but it must fail for THAT reason (after waiting out the
+      // bound), never because of the busy JVM binary a sibling server is
+      // legitimately holding open.
       await expect(
         manager.startServer({ skipRunningCheck: false }),
       ).rejects.not.toThrow(/Text file busy/);
-    });
+    }, 10000);
+
+    it("startServer() stops waiting as soon as the binary frees, rather than always sleeping the full bound", async () => {
+      const { spawn } = await import("child_process");
+      child = spawn(javaPath, ["1"], { stdio: "ignore" }); // exits after ~1s
+      await new Promise((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+
+      getActiveServer.mockResolvedValue({
+        serverName: "JvmBusyTest",
+        serverPath: tmpDir,
+        serverBat: "start-server.sh",
+      });
+
+      const manager = new ServerManager();
+      const start = Date.now();
+      await expect(
+        manager.startServer({ skipRunningCheck: false }),
+      ).rejects.not.toThrow(/Text file busy/);
+      const elapsedMs = Date.now() - start;
+
+      // The full bound (10 x 300ms = 3000ms) would fire if this were a
+      // fixed sleep instead of a poll -- the binary frees after ~1s, so a
+      // real poll loop should return well before the bound expires.
+      expect(elapsedMs).toBeLessThan(2500);
+    }, 10000);
   },
 );
 
