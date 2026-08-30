@@ -37,21 +37,36 @@ describe("flushForShutdown()", () => {
     await commitNow();
   });
 
+  // mirrors flushForShutdown()'s own SHUTDOWN_FLUSH_MAX_ATTEMPTS -- not
+  // exported, same convention as MAX_WRITE_RETRIES in
+  // dbFlushWritesTmpCleanup.test.js.
+  const SHUTDOWN_FLUSH_MAX_ATTEMPTS = 3;
+
   it("succeeds on the first attempt when nothing is contending -- the normal shutdown case", async () => {
-    const start = Date.now();
     // commitNow() marks dirty and flushes once already (real success);
     // flushForShutdown() is what a shutdown listener calls afterwards, and
-    // with nothing pending it must return immediately -- true, and fast.
+    // with nothing pending it must return immediately without incurring
+    // any retry.
     await commitNow();
+
+    let renameCalls = 0;
+    const realRename = fs.renameSync.bind(fs);
+    vi.spyOn(fs, "renameSync").mockImplementation((...args) => {
+      renameCalls++;
+      return realRename(...args);
+    });
+
     const settled = await flushForShutdown();
-    const elapsedMs = Date.now() - start;
 
     expect(settled).toBe(true);
-    // No retries were needed, so this must be near-instant -- proves the
-    // normal shutdown path isn't paying the retry-delay cost at all, let
-    // alone hanging. Generous margin for CI jitter; the real cost of zero
-    // retries is a single local disk write.
-    expect(elapsedMs).toBeLessThan(500);
+    // The property under test is "no retry was needed", not "this was
+    // fast" -- a wall-clock assertion here flakes on a busy box for
+    // reasons that have nothing to do with the code (2026-08-30: a sibling
+    // assertion in this same file tripped at 3138ms vs a 2000ms bound
+    // under real CI-comparable contention). Call count is the actual
+    // logical property and can't flake under load the way a millisecond
+    // threshold can.
+    expect(renameCalls).toBe(0); // flushWrites() returns early -- nothing was dirty
   });
 
   it("retries a transient rename failure and lands the write, well within the bound", async () => {
@@ -71,17 +86,19 @@ describe("flushForShutdown()", () => {
     const { setSetting } = await import("../database/init.js");
     await setSetting("shutdownFlushProbe", "1");
 
-    const start = Date.now();
     const settled = await flushForShutdown();
-    const elapsedMs = Date.now() - start;
 
     expect(settled).toBe(true); // the retry landed it
+    // Bounded by attempt count, not by wall-clock -- see the "THE RISKY
+    // HALF" test below for why a millisecond assertion here would flake on
+    // a busy box for reasons unrelated to the code.
     expect(renameCalls).toBe(2); // one failure, one real success
-    expect(elapsedMs).toBeLessThan(2000); // bounded: attempts * fixed delay, not exponential backoff
   });
 
   it("THE RISKY HALF: gives up after a bounded number of attempts when the write can NEVER succeed -- proves this cannot hang shutdown forever", async () => {
+    let renameCalls = 0;
     vi.spyOn(fs, "renameSync").mockImplementation(() => {
+      renameCalls++;
       const err = new Error("ENOSPC: simulated disk full, never recovers");
       err.code = "ENOSPC";
       throw err;
@@ -95,12 +112,27 @@ describe("flushForShutdown()", () => {
     const elapsedMs = Date.now() - start;
 
     expect(settled).toBe(false); // honestly reports it did NOT land
-    // Bounded by attempt count * fixed delay, not by flushWrites()'s own
-    // exponential backoff (which alone could run past a minute) and not
-    // unbounded -- this is the assertion that turns "a fix that makes
-    // shutdown wait for a flush that can never succeed" into "a panel that
-    // will not stop" into a proven non-issue instead of an assumption.
-    expect(elapsedMs).toBeLessThan(2000);
+    // THE actual bound being proven: flushForShutdown() made EXACTLY
+    // SHUTDOWN_FLUSH_MAX_ATTEMPTS real attempts and stopped -- not
+    // flushWrites()'s own exponential backoff (which alone could run past
+    // a minute) and not an infinite retry loop. This is a call count, not
+    // a clock, so it cannot flake under CPU contention the way the
+    // previous version of this test did (2026-08-30: measured 3138ms vs a
+    // 2000ms bound on god's gate while running alongside the full client
+    // suite -- a real, reproducible contention flake on this exact
+    // assertion, not a one-off).
+    expect(renameCalls).toBe(SHUTDOWN_FLUSH_MAX_ATTEMPTS);
+    // A generous backstop against an actual hang (the thing that would be
+    // catastrophic -- see index.js's gracefulShutdown()), not a
+    // performance assertion: SHUTDOWN_FLUSH_MAX_ATTEMPTS attempts at
+    // ~200ms fixed delay apart is ~400ms of deliberate waiting, so even at
+    // several times the worst contention actually observed (3138ms) this
+    // has wide margin without being tight enough to flake again. The
+    // suite's own global testTimeout (60000ms, vitest.config.js) is the
+    // real, unconditional hang backstop; this exists only to fail with a
+    // message that says "took too long" instead of vitest's generic
+    // "test timed out" if something regresses toward one.
+    expect(elapsedMs).toBeLessThan(15000);
   });
 
   it("does not disturb flushWrites()'s own retry/circuit-breaker bookkeeping", async () => {
