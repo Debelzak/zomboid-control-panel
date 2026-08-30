@@ -26,6 +26,19 @@ function mode(p) {
 
 const realWriteFileSync = fs.writeFileSync;
 
+// 2026-08-30, flake-class-fixed-margin-sync: same shape as
+// server/tests/supervisor-restart.test.js's waitForCondition -- poll for the
+// actual post-condition instead of a wall-clock guess at when a scheduled
+// retry will have fired and landed.
+async function waitForCondition(check, timeoutMs, description) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (check()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -122,7 +135,27 @@ describe("db.json write — crash-safety via fault injection at the write bounda
 
       // And the write path self-heals on its own scheduled retry -- no
       // operator action needed, no data loss beyond the interrupted write.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // 2026-08-30, flake-class-fixed-margin-sync: this used to be a blind
+      // `await sleep(1500)` -- a wall-clock guess that the first retry
+      // (WRITE_BACKOFF_BASE_MS = 1000ms in database/init.js) would have
+      // fired AND landed with 500ms to spare. Under this floor's routine
+      // multi-agent CPU contention, a delayed timer callback could still be
+      // mid-flight at the 1500ms mark. Poll for the actual post-condition
+      // instead, with a deadline generous enough to absorb real contention.
+      await waitForCondition(
+        () => {
+          try {
+            return (
+              JSON.parse(fs.readFileSync(dbPath, "utf-8")).settings.crashProbeMarker ===
+              "should-not-appear-if-killed-mid-write"
+            );
+          } catch {
+            return false; // mid-retry read of a not-yet-rewritten or transiently invalid file
+          }
+        },
+        10000,
+        "the scheduled retry to heal db.json",
+      );
       const healed = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
       expect(healed.settings.crashProbeMarker).toBe("should-not-appear-if-killed-mid-write");
 
