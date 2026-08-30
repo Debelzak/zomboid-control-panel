@@ -123,10 +123,34 @@
     "noTargetDesc": "Chwazi yon jwè nan lis la pou wè dosye yo, oswa tape yon non itilizatè anba <1>› Sib manyèl</1>."
   },
   "tabs": {
+    "vitals": "Sinyo Vital",
     "moderation": "Moderasyon",
     "spawn": "Fè Parèt",
     "powers": "Pouvwa",
     "notesLog": "Nòt & Jounal"
+  },
+  "vitals": {
+    "noTarget": "Chwazi yon jwè pou wè estati vivan li.",
+    "offline": "Jwè sa a pa konekte.",
+    "bridgeRequired": "PanelBridge pa konekte.",
+    "loading": "Ap chaje estati vivan…",
+    "unavailable": "Estati vivan pa disponib pou jwè sa a.",
+    "loadError": "Echwe pou chaje estati vivan.",
+    "infected": "Enfekte",
+    "bleeding": "Ap senyen",
+    "asleep": "Ap dòmi",
+    "sneaking": "Ap mache dousman",
+    "running": "Ap kouri",
+    "health": "HP",
+    "hunger": "Grangou",
+    "thirst": "Swaf",
+    "fatigue": "Fatig",
+    "endurance": "Andirans",
+    "stress": "Estrès",
+    "boredom": "Enève",
+    "unhappiness": "Malere",
+    "pain": "Doulè",
+    "wetness": "Mouye"
   },
   "actionTiles": {
     "kickDesc": "Mete jwè a deyò ak yon rezon",

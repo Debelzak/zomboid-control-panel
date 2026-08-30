@@ -2570,7 +2570,43 @@ export const panelBridgeApi = {
       };
     }>,
   getPlayerDetails: (username: string) =>
-    apiGet(`/panel-bridge/players/${encodeURIComponent(username)}`),
+    apiGet(`/panel-bridge/players/${encodeURIComponent(username)}`) as Promise<{
+      success: boolean;
+      data: {
+        username?: string;
+        displayName?: string;
+        x?: number;
+        y?: number;
+        z?: number;
+        accessLevel?: string;
+        isAlive?: boolean;
+        isAsleep?: boolean;
+        isSneaking?: boolean;
+        isRunning?: boolean;
+        // Any field PZ's Stats/BodyDamage couldn't read is OMITTED (not
+        // defaulted to 0) -- see PanelBridge.lua's statGet(). Never treat an
+        // absent key here as "0", only as "unknown".
+        stats?: {
+          hunger?: number;
+          thirst?: number;
+          fatigue?: number;
+          stress?: number;
+          boredom?: number;
+          unhappiness?: number;
+          pain?: number;
+          endurance?: number;
+        };
+        health?: {
+          overallBodyHealth?: number;
+          isInfected?: boolean;
+          isBleeding?: boolean;
+          health?: number;
+          temperature?: number;
+          wetness?: number;
+        };
+      };
+      error?: string;
+    }>,
   teleportPlayerBridge: (username: string, x: number, y: number, z?: number) =>
     apiPost(`/panel-bridge/players/${encodeURIComponent(username)}/teleport`, {
       x,

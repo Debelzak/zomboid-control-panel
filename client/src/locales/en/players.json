@@ -123,10 +123,34 @@
     "noTargetDesc": "Pick a player from the roster to view their dossier, or type a username under <1>› Manual target</1>."
   },
   "tabs": {
+    "vitals": "Vitals",
     "moderation": "Moderation",
     "spawn": "Spawn",
     "powers": "Powers",
     "notesLog": "Notes & Log"
+  },
+  "vitals": {
+    "noTarget": "Select a player to see their live status.",
+    "offline": "This player is offline.",
+    "bridgeRequired": "PanelBridge is not connected.",
+    "loading": "Loading live status…",
+    "unavailable": "Live status is unavailable for this player.",
+    "loadError": "Failed to load live status.",
+    "infected": "Infected",
+    "bleeding": "Bleeding",
+    "asleep": "Asleep",
+    "sneaking": "Sneaking",
+    "running": "Running",
+    "health": "HP",
+    "hunger": "Hunger",
+    "thirst": "Thirst",
+    "fatigue": "Fatigue",
+    "endurance": "Endurance",
+    "stress": "Stress",
+    "boredom": "Boredom",
+    "unhappiness": "Unhappiness",
+    "pain": "Pain",
+    "wetness": "Wetness"
   },
   "actionTiles": {
     "kickDesc": "Boot player with reason",

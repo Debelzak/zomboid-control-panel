@@ -123,10 +123,34 @@
     "noTargetDesc": "Wähle einen Spieler aus der Liste, um sein Dossier anzuzeigen, oder gib einen Benutzernamen unter <1>› Manuelles Ziel</1> ein."
   },
   "tabs": {
+    "vitals": "Vitalwerte",
     "moderation": "Moderation",
     "spawn": "Spawn",
     "powers": "Fähigkeiten",
     "notesLog": "Notizen & Protokoll"
+  },
+  "vitals": {
+    "noTarget": "Wähle einen Spieler, um den Live-Status zu sehen.",
+    "offline": "Dieser Spieler ist offline.",
+    "bridgeRequired": "PanelBridge ist nicht verbunden.",
+    "loading": "Live-Status wird geladen…",
+    "unavailable": "Live-Status ist für diesen Spieler nicht verfügbar.",
+    "loadError": "Live-Status konnte nicht geladen werden.",
+    "infected": "Infiziert",
+    "bleeding": "Blutet",
+    "asleep": "Schläft",
+    "sneaking": "Schleicht",
+    "running": "Rennt",
+    "health": "HP",
+    "hunger": "Hunger",
+    "thirst": "Durst",
+    "fatigue": "Erschöpfung",
+    "endurance": "Ausdauer",
+    "stress": "Stress",
+    "boredom": "Langeweile",
+    "unhappiness": "Unzufriedenheit",
+    "pain": "Schmerz",
+    "wetness": "Nässe"
   },
   "actionTiles": {
     "kickDesc": "Spieler mit Grund kicken",

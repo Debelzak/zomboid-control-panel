@@ -123,10 +123,34 @@
     "noTargetDesc": "Elegir un jugador de la lista para ver su expediente, o escribir un nombre de usuario en <1>› Objetivo manual</1>."
   },
   "tabs": {
+    "vitals": "Constantes",
     "moderation": "Moderación",
     "spawn": "Generar",
     "powers": "Poderes",
     "notesLog": "Notas y registro"
+  },
+  "vitals": {
+    "noTarget": "Selecciona un jugador para ver su estado en vivo.",
+    "offline": "Este jugador está desconectado.",
+    "bridgeRequired": "PanelBridge no está conectado.",
+    "loading": "Cargando estado en vivo…",
+    "unavailable": "El estado en vivo no está disponible para este jugador.",
+    "loadError": "No se pudo cargar el estado en vivo.",
+    "infected": "Infectado",
+    "bleeding": "Sangrando",
+    "asleep": "Dormido",
+    "sneaking": "Agachado",
+    "running": "Corriendo",
+    "health": "PS",
+    "hunger": "Hambre",
+    "thirst": "Sed",
+    "fatigue": "Fatiga",
+    "endurance": "Resistencia",
+    "stress": "Estrés",
+    "boredom": "Aburrimiento",
+    "unhappiness": "Infelicidad",
+    "pain": "Dolor",
+    "wetness": "Humedad"
   },
   "actionTiles": {
     "kickDesc": "Expulsar jugador con motivo",

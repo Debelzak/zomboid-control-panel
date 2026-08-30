@@ -123,10 +123,34 @@
     "noTargetDesc": "Choisissez un joueur dans l'effectif pour voir son dossier, ou saisissez un nom d'utilisateur sous <1>› Cible manuelle</1>."
   },
   "tabs": {
+    "vitals": "Constantes",
     "moderation": "Modération",
     "spawn": "Génération",
     "powers": "Pouvoirs",
     "notesLog": "Notes et journal"
+  },
+  "vitals": {
+    "noTarget": "Sélectionnez un joueur pour voir son état en direct.",
+    "offline": "Ce joueur est hors ligne.",
+    "bridgeRequired": "PanelBridge n'est pas connecté.",
+    "loading": "Chargement de l'état en direct…",
+    "unavailable": "L'état en direct n'est pas disponible pour ce joueur.",
+    "loadError": "Échec du chargement de l'état en direct.",
+    "infected": "Infecté",
+    "bleeding": "Saigne",
+    "asleep": "Endormi",
+    "sneaking": "Furtif",
+    "running": "Court",
+    "health": "PV",
+    "hunger": "Faim",
+    "thirst": "Soif",
+    "fatigue": "Fatigue",
+    "endurance": "Endurance",
+    "stress": "Stress",
+    "boredom": "Ennui",
+    "unhappiness": "Malheur",
+    "pain": "Douleur",
+    "wetness": "Humidité"
   },
   "actionTiles": {
     "kickDesc": "Expulser avec un motif",

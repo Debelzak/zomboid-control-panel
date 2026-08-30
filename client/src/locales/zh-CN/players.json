@@ -123,10 +123,34 @@
     "noTargetDesc": "从名册中选择一名玩家以查看其档案，或在<1>› 手动目标</1>下输入用户名。"
   },
   "tabs": {
+    "vitals": "生命体征",
     "moderation": "管理操作",
     "spawn": "生成",
     "powers": "特殊能力",
     "notesLog": "备注与日志"
+  },
+  "vitals": {
+    "noTarget": "选择一名玩家以查看其实时状态。",
+    "offline": "该玩家当前离线。",
+    "bridgeRequired": "PanelBridge 未连接。",
+    "loading": "正在加载实时状态…",
+    "unavailable": "无法获取该玩家的实时状态。",
+    "loadError": "加载实时状态失败。",
+    "infected": "已感染",
+    "bleeding": "流血",
+    "asleep": "睡眠中",
+    "sneaking": "潜行中",
+    "running": "奔跑中",
+    "health": "生命值",
+    "hunger": "饥饿",
+    "thirst": "口渴",
+    "fatigue": "疲劳",
+    "endurance": "耐力",
+    "stress": "压力",
+    "boredom": "无聊",
+    "unhappiness": "不快",
+    "pain": "疼痛",
+    "wetness": "湿度"
   },
   "actionTiles": {
     "kickDesc": "附带原因踢出玩家",
