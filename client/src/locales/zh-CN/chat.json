@@ -28,9 +28,9 @@
   },
   "input": {
     "aria": "聊天消息",
-    "placeholderAdmin": "仅管理员可见——按回车发送…",
-    "placeholderGeneral": "以管理员身份发布——按回车发送…",
-    "placeholderServer": "广播给所有玩家——按回车发送…",
+    "placeholderAdmin": "仅管理员可见…",
+    "placeholderGeneral": "以管理员身份发布…",
+    "placeholderServer": "广播给所有玩家…",
     "sendButton": "发送",
     "noPermission": "您没有权限发送聊天消息。"
   },

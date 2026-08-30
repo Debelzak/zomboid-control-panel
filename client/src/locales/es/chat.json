@@ -28,9 +28,9 @@
   },
   "input": {
     "aria": "Mensaje de chat",
-    "placeholderAdmin": "solo administradores — pulsar Intro para enviar…",
-    "placeholderGeneral": "publicar como Administrador — pulsar Intro para enviar…",
-    "placeholderServer": "difundir a todos los jugadores — pulsar Intro para enviar…",
+    "placeholderAdmin": "solo administradores…",
+    "placeholderGeneral": "publicar como Administrador…",
+    "placeholderServer": "difundir a todos los jugadores…",
     "sendButton": "enviar",
     "noPermission": "No tienes permiso para enviar mensajes de chat."
   },

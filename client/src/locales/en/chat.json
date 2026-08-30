@@ -28,9 +28,9 @@
   },
   "input": {
     "aria": "Chat message",
-    "placeholderAdmin": "admins only — press enter to send…",
-    "placeholderGeneral": "post as Admin — press enter to send…",
-    "placeholderServer": "broadcast to all players — press enter to send…",
+    "placeholderAdmin": "admins only…",
+    "placeholderGeneral": "post as Admin…",
+    "placeholderServer": "broadcast to all players…",
     "sendButton": "send",
     "noPermission": "You don't have permission to send chat messages."
   },
