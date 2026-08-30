@@ -5,6 +5,7 @@ import archiver from "archiver";
 import { createReadStream } from "fs";
 import { crc32 } from "zlib";
 import { createLogger } from "../utils/logger.js";
+import { isPidAlive } from "../utils/pidLiveness.js";
 const log = createLogger("Backup");
 import {
   getActiveServer,
@@ -99,14 +100,18 @@ async function countFiles(rootDir) {
 // backups ever become possible, this deleted a live backup's temp with no
 // warning.
 //
-// Applies fileWriteQueue.js's model exactly: process.kill(pid, 0), and any
-// outcome other than a confirmed ESRCH (including EPERM, a pid this
+// Applies the shared isPidAlive() helper (utils/pidLiveness.js) exactly:
+// any outcome other than a confirmed ESRCH (including EPERM, a pid this
 // process cannot signal) is treated as "still alive" -- an ambiguous
-// signal never authorises a delete.
+// signal never authorises a delete. fileWriteQueue.js's writeFileAtomic
+// sweep applies the same helper to its own, differently-shaped pattern
+// (hunt-wave12, 2026-08-30: unifies what used to be two duplicated copies
+// of this pid-liveness check, one per file).
 //
-// The two patterns this sweeps do NOT uniformly embed a pid, so this
-// deliberately does NOT force one mechanism onto both (that generalisation
-// is what Dwight correctly deferred rather than inventing):
+// The two patterns THIS function sweeps do NOT uniformly embed a pid, so
+// this deliberately does NOT force one sweep mechanism onto both (that
+// generalisation is what Dwight correctly deferred rather than inventing,
+// and unifying the pid-liveness check above does not change that):
 //   - .central-{pid}-{timestamp}-{random}.tmp (StreamingZipWriter's own
 //     centralPath, server/utils/streamingZip.js) DOES embed a pid as its
 //     first segment, extracted and liveness-checked below.
@@ -119,18 +124,11 @@ async function countFiles(rootDir) {
 //     name that cannot carry one.
 const CENTRAL_TEMP_PATTERN = /^\.central-(\d+)-\d+-[0-9a-z]+\.tmp$/;
 
-// Exported purely so the sweep can be unit-tested directly against a
-// scratch directory (dead pid vs live pid vs malformed name) without
-// spinning up a full BackupService/createBackup flow for every case --
-// widening visibility only, no behavior change.
-export function isBackupTempOwnerAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code !== "ESRCH";
-  }
-}
+// Exported alias, not a fresh implementation: kept so this sweep's own
+// tests and callers can name the check in domain terms (is the temp
+// file's *owner* still alive) without every caller needing to know the
+// underlying check is now shared with fileWriteQueue.js.
+export const isBackupTempOwnerAlive = isPidAlive;
 
 export function cleanupOrphanBackupTemps(backupsPath) {
   let entries;

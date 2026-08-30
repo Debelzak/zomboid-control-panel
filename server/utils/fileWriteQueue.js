@@ -10,6 +10,7 @@
  */
 import fs from "fs";
 import path from "path";
+import { isPidAlive } from "./pidLiveness.js";
 
 const fileLocks = new Map(); // resolved path -> tail of the pending promise chain
 
@@ -58,25 +59,11 @@ function sleepSync(ms) {
 // sites shared across processes that can briefly overlap (this codebase's
 // own supervised-restart window runs an outgoing and incoming process
 // together), so a temp can't be assumed dead just because it exists. The
-// pid is embedded in the name for exactly this reason -- checked here with
-// process.kill(pid, 0), the standard way to probe for a running process
-// without signaling it (confirmed on this platform and on Linux: throws
-// ESRCH for a pid that is not running, does not throw for one that is).
-// Any outcome other than a confirmed ESRCH is treated as "still alive" --
-// a pid this process cannot signal (EPERM) is left alone rather than
-// risked, matching the boundary that this must never delete a live write's
-// temp even at the cost of occasionally leaving a truly-dead one behind a
-// little longer.
+// pid is embedded in the name for exactly this reason -- liveness checked
+// via the shared isPidAlive() helper (utils/pidLiveness.js, hunt-wave12
+// unification of this file's and backupService.js's until-then-duplicated
+// copies of the same process.kill(pid, 0) check).
 const ORPHAN_TEMP_PATTERN = /^\.(.+)\.(\d+)\.[0-9a-z]{6}\.tmp$/;
-
-function isPidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code !== "ESRCH";
-  }
-}
 
 function sweepOrphanWriteTemps(dir) {
   let entries;
