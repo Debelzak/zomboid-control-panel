@@ -119,7 +119,7 @@
     "modeRemoteTitle": "Remote-Server",
     "modeRemoteDesc": "Nur RCON — anderer Rechner",
     "rconOnlyTitle": "Reine RCON-Verbindung",
-    "rconOnlyDesc": "Funktionen wie das Bearbeiten der Konfiguration, die Mod-Verwaltung, Backups, Start/Stopp des Servers und Dateioperationen stehen nicht zur Verfügung. Du kannst weiterhin die Konsole nutzen, Spieler verwalten, Chatnachrichten senden, Wetter und Ereignisse steuern und geplante Befehle ausführen.",
+    "rconOnlyDesc": "Funktionen wie das Bearbeiten der Konfiguration, die Mod-Verwaltung, Backups, Start/Stopp des Servers und Dateioperationen stehen nicht zur Verfügung. Du kannst weiterhin die Konsole nutzen, Spieler verwalten, Chatnachrichten senden und geplante Befehle über RCON ausführen. Wetter und Weltereignisse benötigen die dateibasierte Verbindung des PanelBridge-Mods, die erst verfügbar ist, sobald du die SFTP-Brücke konfigurierst — suche nach der Schaltfläche „SFTP-Brücke konfigurieren“ bei diesem Server, sobald du ihn hinzugefügt hast.",
     "cancel": "Abbrechen",
     "adding": "Wird hinzugefügt...",
     "addServer": "Server hinzufügen",

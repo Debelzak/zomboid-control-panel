@@ -119,7 +119,7 @@
     "modeRemoteTitle": "Servidor remoto",
     "modeRemoteDesc": "Solo RCON — otra máquina",
     "rconOnlyTitle": "Conexión solo RCON",
-    "rconOnlyDesc": "Funciones como la edición de configuración, la gestión de mods, las copias de seguridad, iniciar/detener el servidor y las operaciones de archivos no estarán disponibles. Aun así, puedes usar la consola, gestionar jugadores, enviar mensajes de chat, controlar el clima y los eventos, y ejecutar comandos programados.",
+    "rconOnlyDesc": "Funciones como la edición de configuración, la gestión de mods, las copias de seguridad, iniciar/detener el servidor y las operaciones de archivos no estarán disponibles. Aun así, puedes usar la consola, gestionar jugadores, enviar mensajes de chat y ejecutar comandos programados mediante RCON. El clima y los eventos del mundo necesitan la conexión basada en archivos del mod PanelBridge, que no está disponible hasta que configures el puente SFTP — busca el botón «Configurar puente SFTP» en este servidor una vez que lo hayas añadido.",
     "cancel": "Cancelar",
     "adding": "Añadiendo…",
     "addServer": "Añadir servidor",

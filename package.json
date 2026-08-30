@@ -22,7 +22,8 @@
     "lint:server": "eslint server eslint-rules --max-warnings=0",
     "ui:shot-tour": "node scripts/ui-shot-tour.mjs",
     "check:engine-signatures": "node scripts/check-engine-signatures.mjs",
-    "gen:engine-signatures": "node scripts/gen-engine-signatures.mjs"
+    "gen:engine-signatures": "node scripts/gen-engine-signatures.mjs",
+    "check:i18n-staleness": "node scripts/i18n-staleness-check.mjs"
   },
   "dependencies": {
     "archiver": "^7.0.1",

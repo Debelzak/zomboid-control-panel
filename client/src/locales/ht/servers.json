@@ -119,7 +119,7 @@
     "modeRemoteTitle": "Sèvè Aleka",
     "modeRemoteDesc": "RCON sèlman — yon lòt machin",
     "rconOnlyTitle": "Koneksyon RCON Sèlman",
-    "rconOnlyDesc": "Fonksyon tankou modifikasyon konfig, jesyon mods, kopi sovgad, demaraj/sispann sèvè, ak operasyon dosye pap disponib. Ou toujou ka itilize konsòl la, jere jwè, voye mesaj chat, kontwole move tan ak evènman, epi fè kòmand pwograme kouri.",
+    "rconOnlyDesc": "Fonksyon tankou modifikasyon konfig, jesyon mods, kopi sovgad, demaraj/sispann sèvè, ak operasyon dosye pap disponib. Ou toujou ka itilize konsòl la, jere jwè, voye mesaj chat, epi fè kòmand pwograme kouri atravè RCON. Move tan ak evènman mondyal bezwen koneksyon ki baze sou dosye mod PanelBridge la, ki pa disponib toutotan ou pa konfigire pon SFTP la — chèche bouton \"Konfigire Pon SFTP\" sou sèvè sa a apre ou fin ajoute li.",
     "cancel": "Anile",
     "adding": "N ap ajoute...",
     "addServer": "Ajoute Sèvè",
