@@ -105,6 +105,7 @@
   "RCON_CONNECT_FAILED": "Could not connect to RCON. Is the server running and RCON enabled?",
   "RCON_CONNECT_UNREACHABLE": "Could not connect to RCON. Is the server running and RCON enabled?",
   "RCON_CONNECT_AUTH_FAILED": "Connected to the server, but authentication failed. Check the RCON password in server settings.",
+  "RCON_EXECUTE_DISCONNECTED": "RCON disconnected while running a command.",
   "BACKUP_REMOTE_NOT_AVAILABLE": "Backups are not available for remote servers. The server filesystem is not accessible from this panel.",
   "BACKUPS_FOLDER_NOT_FOUND": "Backups folder not found",
   "BACKUP_INVALID_FILE": "Invalid backup file",

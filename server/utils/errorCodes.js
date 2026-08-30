@@ -429,6 +429,24 @@ export const ErrorCode = Object.freeze({
    * services/rcon.js). Also emitted by server/routes/config.js -- POST
    * /api/config/test-rcon (added 2026-08-26), same reasoning. */
   RCON_CONNECT_AUTH_FAILED: "RCON_CONNECT_AUTH_FAILED",
+  /** server/services/rcon.js -- RconService.execute(), attached alongside
+   * getUserFriendlyError()'s prose (POST /api/rcon/execute's response body)
+   * whenever the failure represents the RCON session having dropped
+   * (connection refused/reset/timed out, exhausted reconnect attempts, not
+   * connected, or the game server itself not running). Exists so the
+   * client's disconnect detection (client/src/pages/Console.tsx's
+   * isRconDisconnectError) can check THIS instead of substring-matching
+   * the prose, which silently broke once already: 2026-08-30,
+   * rcon-disconnect-detection-matches-prose-not-codes -- "Server is not
+   * running" was reworded to "Game server is not running." and the
+   * client's case-sensitive phrase list missed it, because it was an
+   * independently-maintained copy of the same classification with no way
+   * to notice the two had drifted. One shared code for every disconnect
+   * reason, not one per reason -- the client only ever needs a yes/no
+   * answer, and unlike N maintained phrases a single stable code can't
+   * itself drift out of sync. Deliberately NOT attached to an
+   * authentication failure: a wrong RCON password is not a disconnect. */
+  RCON_EXECUTE_DISCONNECTED: "RCON_EXECUTE_DISCONNECTED",
 
   /** server/routes/backup.js -- POST /api/backup/create, active server is
    * remote (SFTP-managed), so there's no local filesystem to back up. */

@@ -12,6 +12,62 @@ import { SourceRconClient } from "../utils/sourceRcon.js";
 import { readSecret } from "../utils/secrets.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 import { redactRconCommandSecrets } from "../utils/rconCommandRedaction.js";
+import { ErrorCode } from "../utils/errorCodes.js";
+
+// Ordered classification of the technical error messages execute()'s catch
+// block sees, feeding BOTH getUserFriendlyError()'s user-facing prose and
+// the RCON_EXECUTE_DISCONNECTED code attached alongside it -- one shared
+// source of truth, not two independently-maintained lists. Before this,
+// the client (client/src/pages/Console.tsx's RCON_DISCONNECT_PHRASES) kept
+// its OWN copy of these same six outcomes as substrings to match against
+// the prose below, and a 2026-08-30 audit found it had already silently
+// drifted: "Server is not running" was reworded to "Game server is not
+// running." here without the client's phrase list ever being told, so a
+// real disconnect stopped being detected. A code can't drift the same way
+// prose can -- see RCON_EXECUTE_DISCONNECTED's own comment in
+// server/utils/errorCodes.js. `disconnect: false` on the authentication
+// branch is deliberate, not an oversight: a wrong RCON password is not a
+// dropped connection, and must never be reported as one.
+const RCON_ERROR_CLASSIFICATIONS = [
+  {
+    test: (msg) => msg.includes("ECONNREFUSED"),
+    message:
+      "Cannot connect to server. Is the game server running with RCON enabled?",
+    disconnect: true,
+  },
+  {
+    test: (msg) => msg.includes("ETIMEDOUT") || msg.includes("timed out"),
+    message:
+      "Connection timed out. Server may be unresponsive or firewall is blocking.",
+    disconnect: true,
+  },
+  {
+    test: (msg) => msg.includes("ECONNRESET") || msg.includes("EPIPE"),
+    message: "Connection was reset. Server may have restarted or crashed.",
+    disconnect: true,
+  },
+  {
+    test: (msg) => msg.includes("authentication") || msg.includes("password"),
+    message: "Authentication failed. Check RCON password in server settings.",
+    disconnect: false,
+  },
+  {
+    test: (msg) => msg.includes("Max reconnection attempts"),
+    message:
+      "Could not reconnect after multiple attempts. Server may be offline.",
+    disconnect: true,
+  },
+  {
+    test: (msg) => msg.includes("not connected"),
+    message: "Not connected to server. Please check if server is running.",
+    disconnect: true,
+  },
+  {
+    test: (msg) => msg.includes("Server is not running"),
+    message: "Game server is not running.",
+    disconnect: true,
+  },
+];
 
 // Common accented Latin letters (French in particular -- this panel ships an
 // FR locale) transliterated to their closest plain-ASCII equivalent, for
@@ -1153,7 +1209,14 @@ export class RconService extends EventEmitter {
         const connectResult = await this.connect();
         // If connect returns false, server is not running
         if (connectResult === false) {
-          return { success: false, error: "Server is not running" };
+          // Raw literal, not routed through getUserFriendlyError() -- kept
+          // exactly as-is (quit()'s own comparison below depends on this
+          // exact string), with the code attached directly here instead.
+          return {
+            success: false,
+            error: "Server is not running",
+            code: ErrorCode.RCON_EXECUTE_DISCONNECTED,
+          };
         }
       }
 
@@ -1291,7 +1354,11 @@ export class RconService extends EventEmitter {
           if (!skipLog) {
             logCommand(command, reconnectMsg, false);
           }
-          return { success: false, error: reconnectMsg };
+          return {
+            success: false,
+            error: reconnectMsg,
+            code: this.getRconDisconnectCode(reconnectError.message),
+          };
         }
       }
 
@@ -1299,37 +1366,31 @@ export class RconService extends EventEmitter {
       if (!skipLog) {
         logCommand(command, friendlyError, false);
       }
-      return { success: false, error: friendlyError };
+      return {
+        success: false,
+        error: friendlyError,
+        code: this.getRconDisconnectCode(errorMsg),
+      };
     }
   }
 
   // Convert technical errors to user-friendly messages
   getUserFriendlyError(errorMsg) {
     if (!errorMsg) return "Unknown error occurred";
+    const match = RCON_ERROR_CLASSIFICATIONS.find((c) => c.test(errorMsg));
+    return match ? match.message : errorMsg;
+  }
 
-    if (errorMsg.includes("ECONNREFUSED")) {
-      return "Cannot connect to server. Is the game server running with RCON enabled?";
-    }
-    if (errorMsg.includes("ETIMEDOUT") || errorMsg.includes("timed out")) {
-      return "Connection timed out. Server may be unresponsive or firewall is blocking.";
-    }
-    if (errorMsg.includes("ECONNRESET") || errorMsg.includes("EPIPE")) {
-      return "Connection was reset. Server may have restarted or crashed.";
-    }
-    if (errorMsg.includes("authentication") || errorMsg.includes("password")) {
-      return "Authentication failed. Check RCON password in server settings.";
-    }
-    if (errorMsg.includes("Max reconnection attempts")) {
-      return "Could not reconnect after multiple attempts. Server may be offline.";
-    }
-    if (errorMsg.includes("not connected")) {
-      return "Not connected to server. Please check if server is running.";
-    }
-    if (errorMsg.includes("Server is not running")) {
-      return "Game server is not running.";
-    }
-
-    return errorMsg;
+  // The code counterpart to getUserFriendlyError() above, classified from
+  // the exact same table so the two can never disagree about which
+  // outcomes are a disconnect. Returns null for a non-disconnect failure
+  // (including an unrecognized error and the authentication-failure
+  // branch) -- callers attach this alongside the prose from
+  // getUserFriendlyError(), not instead of it.
+  getRconDisconnectCode(errorMsg) {
+    if (!errorMsg) return null;
+    const match = RCON_ERROR_CLASSIFICATIONS.find((c) => c.test(errorMsg));
+    return match?.disconnect ? ErrorCode.RCON_EXECUTE_DISCONNECTED : null;
   }
 
   // Sanitize input for RCON commands to prevent injection

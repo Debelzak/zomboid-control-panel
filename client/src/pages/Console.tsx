@@ -21,23 +21,20 @@ import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
 
-// rconService.execute() routes most connection-loss cases through
-// getUserFriendlyError() (server/services/rcon.js) before they reach the
-// client, rewriting raw ECONNREFUSED/etc into prose -- so a raw-string-only
-// check misses every one of those friendly-error paths and leaves
-// rconConnected stuck at its last (stale) value. Match the friendly
-// strings too so any connection-loss report is recognized.
-const RCON_DISCONNECT_PHRASES = [
-  'Server is not running',
-  'ECONNREFUSED',
-  'Cannot connect to server',
-  'Connection timed out',
-  'Connection was reset',
-  'Could not reconnect after multiple attempts',
-  'Not connected to server',
-]
-function isRconDisconnectError(error: string | undefined): boolean {
-  return !!error && RCON_DISCONNECT_PHRASES.some((phrase) => error.includes(phrase))
+// rconService.execute() (server/services/rcon.js) attaches
+// `code: ErrorCode.RCON_EXECUTE_DISCONNECTED` to its response whenever a
+// failure represents the RCON session having dropped -- check THAT, not
+// the accompanying prose. This used to substring-match a hand-maintained
+// copy of the server's user-facing messages, which silently broke the
+// moment either list was edited without updating the other: 2026-08-30,
+// rcon-disconnect-detection-matches-prose-not-codes -- "Server is not
+// running" was reworded to "Game server is not running." server-side and
+// this file's phrase list was never told, so a real disconnect stopped
+// being detected. A code can't drift out of sync with itself the way two
+// independently-maintained strings can.
+const RCON_EXECUTE_DISCONNECTED_CODE = 'RCON_EXECUTE_DISCONNECTED'
+function isRconDisconnectError(code: string | undefined): boolean {
+  return code === RCON_EXECUTE_DISCONNECTED_CODE
 }
 
 interface CommandEntry {
@@ -588,13 +585,14 @@ export default function Console() {
       // just vanished instead of showing up in the console like a real
       // terminal would). Reconstruct the { success, error } shape from the
       // caught error so failures go through the same handling as successes.
-      let result: { success: boolean; response?: string; error?: string }
+      let result: { success: boolean; response?: string; error?: string; code?: string }
       try {
         result = await rconApi.execute(command)
       } catch (error) {
         result = {
           success: false,
           error: getUserErrorMessage(error, t('toasts.commandFailedFallback')),
+          code: error instanceof ApiError ? error.code : undefined,
         }
       }
 
@@ -603,7 +601,7 @@ export default function Console() {
       // unreachable-vs-auth_failed probe testRconConnection() runs -- reset
       // to null so the banner falls back to its unreachable copy rather
       // than showing a stale auth_failed reason from an earlier test.
-      if (isRconDisconnectError(result.error)) {
+      if (isRconDisconnectError(result.code)) {
         setRconConnected(false)
         setRconFailureReason(null)
       } else if (result.success) {
@@ -702,13 +700,14 @@ export default function Console() {
       // rejecting, so handleResponse() throws before this ever sees
       // result.success === false. Reconstruct it here too, so a failed
       // broadcast still gets logged instead of silently vanishing.
-      let result: { success: boolean; response?: string; error?: string }
+      let result: { success: boolean; response?: string; error?: string; code?: string }
       try {
         result = await rconApi.execute(cmd)
       } catch (error) {
         result = {
           success: false,
           error: getUserErrorMessage(error, t('toasts.broadcastFailedFallback')),
+          code: error instanceof ApiError ? error.code : undefined,
         }
       }
 
@@ -737,7 +736,7 @@ export default function Console() {
         setRconConnected(true)
         setRconFailureReason(null)
       } else {
-        if (isRconDisconnectError(result.error)) {
+        if (isRconDisconnectError(result.code)) {
           setRconConnected(false)
           setRconFailureReason(null)
         }
@@ -749,7 +748,7 @@ export default function Console() {
       }
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.broadcastFailedFallback'))
-      if (isRconDisconnectError(message)) {
+      if (isRconDisconnectError(error instanceof ApiError ? error.code : undefined)) {
         setRconConnected(false)
         setRconFailureReason(null)
       }
