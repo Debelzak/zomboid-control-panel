@@ -3096,6 +3096,33 @@ export default function WorldMap() {
                     </div>
                   </div>
                 )}
+                {([
+                  { key: 'hunger', value: selectedPlayer.hunger, label: t('dossier.hunger') },
+                  { key: 'thirst', value: selectedPlayer.thirst, label: t('dossier.thirst') },
+                  { key: 'fatigue', value: selectedPlayer.fatigue, label: t('dossier.fatigue') },
+                ] as const).map(({ key, value, label }) => value === undefined ? null : (
+                  // PZ's stats scale is 0 (fine) to 1 (critical) -- the
+                  // inverse of the health bar above, so severity color
+                  // thresholds are flipped: full/green only near 0.
+                  <div key={key} className="flex justify-between items-center">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">{label}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-16 h-1.5 rounded-sm bg-muted/60 overflow-hidden ring-1 ring-black/20">
+                        <div
+                          className="h-full transition-all"
+                          style={{
+                            width: `${Math.max(0, Math.min(100, value * 100))}%`,
+                            backgroundColor:
+                              value < 0.5 ? 'hsl(var(--success))'
+                              : value < 0.75 ? 'hsl(var(--warning))'
+                              : 'hsl(var(--destructive))',
+                          }}
+                        />
+                      </div>
+                      <span className="font-mono tabular-nums w-8 text-right">{Math.round(value * 100)}%</span>
+                    </div>
+                  </div>
+                ))}
                 {selectedPlayer.accessLevel && selectedPlayer.accessLevel !== 'none' && selectedPlayer.accessLevel !== 'user' && selectedPlayer.accessLevel !== '' && (
                   <div className="flex justify-between items-baseline">
                     <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">{t('dossier.role')}</span>

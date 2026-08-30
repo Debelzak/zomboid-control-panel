@@ -655,6 +655,30 @@ function PanelBridge.tryGet(obj, methodName, ...)
     return nil
 end
 
+-- zombie.characters.Stats has no getHunger/getThirst/getFatigue/etc -- it
+-- works through ONE generic enum-parameterized getter, stats:get(CharacterStat.X),
+-- confirmed against the real jar (get(Lzombie/characters/CharacterStat;)F)
+-- and against real vanilla SERVER-side Lua that already calls it this exact
+-- way (media/lua/server/ClientCommands.lua, XpSystem/XpUpdate.lua,
+-- Farming/SFarmingSystem.lua -- none of them import/require CharacterStat,
+-- it is a bare global in PZ's shared Lua environment the same way getWorld()
+-- or Events is, reachable from any server-side file including this one).
+-- 2026-08-30, Kevin's jar audit + follow-up. Defined here (rather than next
+-- to its first caller) so it is in scope for every handler in the file,
+-- including ones defined earlier in the chunk like getServerInfo.
+--
+-- Guards the ENUM FIELD LOOKUP itself in its own pcall, not just the method
+-- call after it -- CharacterStat[enumName] is a plain Lua table index, not
+-- something PanelBridge.invoke's pcall would catch if CharacterStat or one
+-- of its fields were ever absent on some future build. Returns nil (never a
+-- plausible-looking 0) on any failure at either step.
+local function statGet(stats, enumName)
+    if not stats then return nil end
+    local ok, enumValue = pcall(function() return CharacterStat[enumName] end)
+    if not ok or enumValue == nil then return nil end
+    return PanelBridge.tryGet(stats, "get", enumValue)
+end
+
 -- Standardizes the FINAL (ok, data, err) shape for any handler that has
 -- already computed a `verified` tri-state by comparing a real read-back
 -- against what it just tried to do. This is the house convention as of the
@@ -1846,6 +1870,12 @@ handlers.getServerInfo = function(args)
                         health = bodyDamage:getOverallBodyHealth() or 100
                         isInfected = bodyDamage:IsInfected() or false
                     end
+                    -- WorldMap.tsx's player dossier already types/reads
+                    -- hunger/thirst/fatigue off this row -- they were never
+                    -- actually sent, so the panel silently displayed nothing.
+                    -- statGet degrades to nil (not a plausible 0) on any
+                    -- build where stats or CharacterStat is unavailable.
+                    local stats = player:getStats()
                     return {
                         name = player:getUsername() or "Unknown",
                         x = math.floor(player:getX() or 0),
@@ -1854,7 +1884,10 @@ handlers.getServerInfo = function(args)
                         health = health,
                         isAlive = player:isAlive(),
                         isInfected = isInfected,
-                        accessLevel = player:getAccessLevel() or ""
+                        accessLevel = player:getAccessLevel() or "",
+                        hunger = statGet(stats, "HUNGER"),
+                        thirst = statGet(stats, "THIRST"),
+                        fatigue = statGet(stats, "FATIGUE")
                     }
                 end)
                 if ok and playerData then
@@ -2793,8 +2826,12 @@ handlers.getGameTime = function(args)
         -- via GameTime.getInstance():setMultiplier() (confirmed against the
         -- real jar) -- a real, authoritative read-back for the panel's
         -- time-speed slider (client/src/pages/Events.tsx), not a decorative
-        -- one. tryGet rather than a bare call, matching every other getter
-        -- in this handler's own convention.
+        -- one. Deliberately DEVIATES from every other getter above, which
+        -- use bare colon-calls specifically to dodge the Kahlua-trace-log
+        -- note at the top of this handler -- getMultiplier isn't one of the
+        -- vanilla-confirmed clock methods that note restricts bare calls
+        -- to, so it goes through tryGet instead, same as any other
+        -- not-yet-vanilla-confirmed probe elsewhere in this file.
         multiplier = tonumber(PanelBridge.tryGet(gameTime, "getMultiplier")) or 1
     }
 end
@@ -2973,28 +3010,6 @@ handlers.triggerHelicopterEvent = function(args)
         username = username,
         method = method
     }
-end
-
--- zombie.characters.Stats has no getHunger/getThirst/getFatigue/etc -- it
--- works through ONE generic enum-parameterized getter, stats:get(CharacterStat.X),
--- confirmed against the real jar (get(Lzombie/characters/CharacterStat;)F)
--- and against real vanilla SERVER-side Lua that already calls it this exact
--- way (media/lua/server/ClientCommands.lua, XpSystem/XpUpdate.lua,
--- Farming/SFarmingSystem.lua -- none of them import/require CharacterStat,
--- it is a bare global in PZ's shared Lua environment the same way getWorld()
--- or Events is, reachable from any server-side file including this one).
--- 2026-08-30, Kevin's jar audit + follow-up.
---
--- Guards the ENUM FIELD LOOKUP itself in its own pcall, not just the method
--- call after it -- CharacterStat[enumName] is a plain Lua table index, not
--- something PanelBridge.invoke's pcall would catch if CharacterStat or one
--- of its fields were ever absent on some future build. Returns nil (never a
--- plausible-looking 0) on any failure at either step.
-local function statGet(stats, enumName)
-    if not stats then return nil end
-    local ok, enumValue = pcall(function() return CharacterStat[enumName] end)
-    if not ok or enumValue == nil then return nil end
-    return PanelBridge.tryGet(stats, "get", enumValue)
 end
 
 -- Get detailed player info
