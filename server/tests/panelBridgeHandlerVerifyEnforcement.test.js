@@ -138,7 +138,7 @@ const CANNOT_VERIFY_OR_EQUIVALENT = {
   sendToServerChat: 'No delivery receipt exists; already falls through to a useRCON routing signal when neither ChatServer nor player:Say worked -- pcall-not-throwing is the ceiling.',
   sendToAdminChat: 'Same ceiling as sendToServerChat.',
   sendToGeneralChat: 'Same ceiling as sendToServerChat.',
-  triggerHelicopterEvent: 'No observable state confirms a helicopter spawned; pcall-not-throwing across multiple fallback methods is the ceiling.',
+  triggerHelicopterEvent: 'No observable state confirms a helicopter spawned; pcall-not-throwing on the single real API (testHelicopter(), zero-arg, void return -- the four prior fallback tiers were all fabricated and removed 2026-08-30) is the ceiling.',
 
   // PROVISIONAL -- not yet re-audited against the getFinalValue()/
   // isEnableAdmin() read-back pattern that handlers.getClimateFloats

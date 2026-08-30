@@ -2970,70 +2970,51 @@ handlers.setTimeSpeed = function(args)
     return false, nil, "Time speed must use the server RCON command; PanelBridge cannot change the dedicated server clock multiplier"
 end
 
--- Trigger helicopter event near a player. Real and working (targets the
--- SPECIFIC named player), but currently unused by the panel: the
--- "Helicopter" quick-sound button in client/src/pages/Events.tsx calls
+-- Trigger a server-wide helicopter event. Currently unused by the panel:
+-- the "Helicopter" quick-sound button in client/src/pages/Events.tsx calls
 -- serverApi.triggerChopper() -> POST /server/events/chopper -> RCON's
 -- chopper command instead, which targets a RANDOM online player (see that
--- file's own "chopper and gunshot target a RANDOM online player" comment) --
--- not a duplicate of this handler's behavior, just the one the UI wires to.
+-- file's own "chopper and gunshot target a RANDOM online player" comment).
+--
+-- 2026-08-30, operator: "Fix event." All four of this handler's previous
+-- fallback tiers were fabricated -- verified ABSENT against the real B42
+-- jar (Kevin's audit), not a B41/B42 divergence or a near-miss name:
+--   HelicopterClass.getInstance()+activateForPlayer -- neither exists on
+--     the real zombie.iso.Helicopter, and there is no singleton field
+--   RZSUtil.triggerRandomEvent -- RZSUtil does not exist ANYWHERE in the
+--     jar, nor in the shipped vanilla Lua tree
+--   addHelicopter -- zero matches jar-wide, including on the GlobalObject
+--     class that backs every other bare global in this file
+--   ServerCheatInterface.triggerHelicopter -- the class does not exist
+-- Deleted rather than kept "just in case": there is nothing for a future
+-- reader to rediscover except the fact that they never existed.
+--
+-- What IS real: LuaManager$GlobalObject.testHelicopter() -- same bare-global
+-- binding tier as getWorld()/getCell()/saveGame(), called directly, not on
+-- a receiver -- ZERO-ARG. There is no per-player targeting API anywhere in
+-- the confirmed jar, so this can no longer accept a username: silently
+-- accepting an argument it cannot honour is the same defect class as
+-- everything else fixed in this audit. A working server-wide helicopter
+-- beats a per-player one that had never once fired.
 handlers.triggerHelicopterEvent = function(args)
-    local username = args.username
-    if not username then
-        return false, nil, "Username required"
+    if args.username then
+        return false, nil, "Helicopter events cannot target a specific player on this build -- " ..
+            "testHelicopter() (the only real API, confirmed against the real B42 jar) triggers " ..
+            "server-wide and takes no arguments. Call this action with no username."
     end
 
-    local player = getPlayerByUsername(username)
-    if not player then
-        return false, nil, "Player not found: " .. username
-    end
-
-    local method = "unknown"
     local ok, err = pcall(function()
-        -- B42: use the helicopter events system
-        local HelicopterClass = resolveJavaClass("Helicopter", "zombie.characters.Helicopter")
-        if HelicopterClass and HelicopterClass.getInstance then
-            local heli = HelicopterClass.getInstance()
-            if heli and heli.activateForPlayer then
-                heli:activateForPlayer(player)
-                method = "Helicopter.activateForPlayer"
-                return
-            end
-        end
-
-        -- Try via RandomizedWorldBase / MetaEvents
-        if RZSUtil and RZSUtil.triggerRandomEvent then
-            RZSUtil.triggerRandomEvent("Helicopter", player)
-            method = "RZSUtil.triggerRandomEvent"
-            return
-        end
-
-        -- Try direct addHelicopter if available
-        if addHelicopter then
-            addHelicopter(player)
-            method = "addHelicopter"
-            return
-        end
-
-        -- ServerCheatInterface fallback
-        if ServerCheatInterface and ServerCheatInterface.triggerHelicopter then
-            ServerCheatInterface.triggerHelicopter(player)
-            method = "ServerCheatInterface"
-            return
-        end
-
-        error("No helicopter API available in this build")
+        testHelicopter()
     end)
 
     if not ok then
         return false, nil, "Failed to trigger helicopter: " .. tostring(err)
     end
 
-    PanelBridge.info("Helicopter triggered", { username = username, method = method })
+    PanelBridge.info("Helicopter triggered (server-wide)")
     return true, {
-        message = "Helicopter event triggered for " .. username,
-        username = username,
-        method = method
+        message = "Helicopter event triggered server-wide (not per-player -- no per-player " ..
+            "targeting API exists on this build)"
     }
 end
 
