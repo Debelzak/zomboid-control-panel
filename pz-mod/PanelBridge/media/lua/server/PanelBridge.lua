@@ -2788,7 +2788,14 @@ handlers.getGameTime = function(args)
         worldAgeHours = gameTime:getWorldAgeHours(),
         timeSinceApo = 0,
         moonPhase = 0,
-        nightsSurvived = gameTime:getNightsSurvived()
+        nightsSurvived = gameTime:getNightsSurvived(),
+        -- Same GameTime singleton/field RCON's setTimeSpeed command writes
+        -- via GameTime.getInstance():setMultiplier() (confirmed against the
+        -- real jar) -- a real, authoritative read-back for the panel's
+        -- time-speed slider (client/src/pages/Events.tsx), not a decorative
+        -- one. tryGet rather than a bare call, matching every other getter
+        -- in this handler's own convention.
+        multiplier = tonumber(PanelBridge.tryGet(gameTime, "getMultiplier")) or 1
     }
 end
 
