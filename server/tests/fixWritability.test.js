@@ -108,8 +108,12 @@ describe("POST /fix-writability", () => {
 
     expect(res.getStatusCode()).toBe(400);
     expect(res.getBody().code).toBe("WRITABILITY_TARGET_UNSUPPORTED");
-    // Confirm nothing was touched -- still read-only.
-    expect(() => fs.appendFileSync(dbPath, "x")).toThrow();
+    // Confirm nothing was touched -- still read-only. Assert the MODE
+    // bits directly rather than "can I write to it": a write-attempt
+    // proxy is false as root (root bypasses POSIX permission checks
+    // entirely, so an append would succeed even on a 0o400 file), but
+    // the mode bits themselves are true regardless of who is asking.
+    expect(fs.statSync(dbPath).mode & 0o222).toBe(0);
   });
 
   it("rejects a missing target field the same way as an unsupported one", async () => {
@@ -128,7 +132,7 @@ describe("POST /fix-writability", () => {
 
   it("clears a real read-only file and reports success", async () => {
     fs.chmodSync(dbPath, 0o400); // read-only
-    expect(() => fs.appendFileSync(dbPath, "x")).toThrow();
+    expect(fs.statSync(dbPath).mode & 0o222).toBe(0);
 
     const res = await postFixWritability({ target: "db" });
 
@@ -136,9 +140,12 @@ describe("POST /fix-writability", () => {
     const body = res.getBody();
     expect(body.success).toBe(true);
     expect(body.path).toBe(dbPath);
-    // The real, load-bearing assertion: the file is now actually writable,
-    // not just that the route claimed success.
-    expect(() => fs.appendFileSync(dbPath, "x")).not.toThrow();
+    // The real, load-bearing assertion: the chmod actually happened, not
+    // just that the route claimed success. Assert the MODE bits rather
+    // than a write attempt -- root bypasses POSIX write checks, so
+    // "did the write succeed" is not a reliable proxy for "did the mode
+    // change" when this suite runs as root (e.g. the WSL/Linux CI gate).
+    expect(fs.statSync(dbPath).mode & 0o200).toBeTruthy();
   });
 
   it("is a harmless no-op (still success) when the file was already writable", async () => {
@@ -169,12 +176,31 @@ describe("POST /fix-writability", () => {
     const chmodSpy = vi.spyOn(fs.promises, "chmod").mockResolvedValue(undefined);
     fs.chmodSync(dbPath, 0o400);
 
+    // The route's post-chmod recheck goes through fs.promises.access(p,
+    // W_OK). That call is not a reliable "still blocked" signal as root --
+    // root bypasses POSIX write checks and access() would report writable
+    // regardless of mode. Force the recheck itself to see "still blocked"
+    // (rejecting only the W_OK call; the existence check earlier in the
+    // route uses access() with no mode and must keep succeeding) so this
+    // test proves the route's honest-failure branch independent of the
+    // uid running the suite.
+    const realAccess = fs.promises.access.bind(fs.promises);
+    const accessSpy = vi
+      .spyOn(fs.promises, "access")
+      .mockImplementation(async (p, mode) => {
+        if (mode === fs.constants.W_OK) {
+          throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+        }
+        return realAccess(p, mode);
+      });
+
     const res = await postFixWritability({ target: "db" });
 
     expect(res.getStatusCode()).toBe(400);
     const body = res.getBody();
     expect(body.success).toBe(false);
     expect(body.code).toBe("WRITABILITY_STILL_BLOCKED");
+    accessSpy.mockRestore();
     chmodSpy.mockRestore();
   });
 });
