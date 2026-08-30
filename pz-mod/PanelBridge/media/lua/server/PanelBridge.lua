@@ -5423,6 +5423,28 @@ handlers.healPlayer = function(args)
     end
 
     PanelBridge.info("Healed player", { username = username, healed = healed })
+
+    if not ok1 or not healed.bodyDamage then
+        -- The core healing action itself did not happen -- this used to be
+        -- an unconditional `return true` regardless of what actually
+        -- occurred, so zero body parts healed (or the healing pcall itself
+        -- throwing) still read as a clean success to any caller checking
+        -- `ok` alone; the real reason sat only in a nested healed.errors
+        -- array. Per the transport finding above (data is DROPPED on every
+        -- failure, only the third slot survives), the real reason has to be
+        -- IN the error string here, not just in the data table.
+        -- Network sync failing on its OWN does not reach this branch: the
+        -- player really was healed server-side even if the client doesn't
+        -- see it yet until a future sync, a materially different (and
+        -- lesser) problem than "nothing was healed" -- same distinction the
+        -- faction sync fix drew between a real mutation and its
+        -- propagation. That case still returns true, with the sync error
+        -- visible in healed.errors (which DOES reach the caller on success).
+        local reason = ok1 and "No body parts were healed (empty body part collection)"
+            or ("Body healing failed: " .. tostring(err1))
+        return false, { username = username, healed = healed }, reason
+    end
+
     return true, { message = "Player healed", username = username, healed = healed }
 end
 
