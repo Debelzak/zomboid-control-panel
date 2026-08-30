@@ -5418,7 +5418,14 @@ handlers.killPlayer = function(args)
 
     local debugInfo = {}
 
-    -- Force godmode OFF — otherwise setHealth(0) is a no-op
+    -- Force godmode OFF — otherwise setHealth(0) is a no-op. This is a REAL
+    -- MUTATION that happens before the kill itself can be confirmed to have
+    -- worked -- if Kill(nil) below has no effect on this build, the player
+    -- has ALREADY had godmode/invincibility stripped regardless. The failure
+    -- return below says so explicitly instead of reporting a bare failure
+    -- while that mutation silently stands (2026-08-30, the same
+    -- mutate-then-fail class fixed for the faction handlers above: a real
+    -- change landed but the caller was never told).
     if PanelBridge.invoke(player, "setGodMod", false) then
         table.insert(debugInfo, "godMod disabled")
     elseif PanelBridge.invoke(player, "setGodMode", false) then
@@ -5451,10 +5458,25 @@ handlers.killPlayer = function(args)
 
     local debugStr = table.concat(debugInfo, " | ")
     PanelBridge.info("Killed player", { username = username, isDead = isDead, debug = debugStr })
-    return isDead, {
-        message = isDead and "Player killed" or "Kill attempted (player may respawn if not dead)",
+
+    if not isDead then
+        -- Matches this file's (ok, data, err) contract the way teleportPlayer
+        -- does: a real error string in the third slot (the dispatcher logs
+        -- and forwards it to the panel), not left nil with the real reason
+        -- buried in a data field the failure path never surfaces. Also names
+        -- the mutate-then-fail hazard explicitly: godmode/invincibility were
+        -- unconditionally disabled above and are NOT restored here.
+        return false, {
+            username = username,
+            isDead = false,
+            debug = debugStr
+        }, "Kill attempted but player is not dead (Kill(nil) may have had no effect on this build, or the player respawned) -- godmode/invincibility were already disabled by this call and were NOT restored"
+    end
+
+    return true, {
+        message = "Player killed",
         username = username,
-        isDead = isDead,
+        isDead = true,
         debug = debugStr
     }
 end
