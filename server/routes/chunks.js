@@ -448,8 +448,20 @@ async function assertKnownSaveRoot(zomboidDataPath) {
   throw error;
 }
 
+// Operator ruling, hunt-wave12 2026-08-30: /saves, /suggested-paths,
+// /chunks/:saveName, /stats/:saveName and /browse below used to sit only
+// behind the global auth middleware, authed but not permissioned, while
+// their mutating siblings (/delete-chunks, /delete-region, /save-path) all
+// require chunks.manage. docker.js's own GET /stats already gates behind
+// docker.manage -- chunks.js was the outlier, not the convention.
+// chunks.manage is the ONLY chunks capability that exists (no read-level
+// chunks.view); gating reads behind it therefore couples "can look at
+// saves" to "can delete them," which is a real, deliberate tradeoff, not
+// an oversight -- a future chunks.view split is a policy call for the
+// operator, not something to invent here.
+//
 // Get list of available saves
-router.get("/saves", async (req, res) => {
+router.get("/saves", requirePermission("chunks.manage"), async (req, res) => {
   try {
     // Support custom path override from query parameter
     const customPath = req.query.customPath
@@ -739,7 +751,7 @@ router.get("/saves", async (req, res) => {
 
 // List common Zomboid path candidates so the UI can present clickable
 // suggestions when the panel can't find a data folder on its own.
-router.get("/suggested-paths", async (req, res) => {
+router.get("/suggested-paths", requirePermission("chunks.manage"), async (req, res) => {
   try {
     // Allow the UI to bust the 30s cache after the user creates/moves a
     // folder (?refresh=1) so suggestions update without a panel restart.
@@ -836,7 +848,7 @@ router.post("/save-path", requirePermission("chunks.manage"), async (req, res) =
 });
 
 // Get chunk data for a specific save
-router.get("/chunks/:saveName", async (req, res) => {
+router.get("/chunks/:saveName", requirePermission("chunks.manage"), async (req, res) => {
   try {
     const { saveName } = req.params;
     const customPath = req.query.customPath
@@ -2146,7 +2158,7 @@ router.post("/delete-region", requirePermission("chunks.manage"), async (req, re
 });
 
 // Get save statistics
-router.get("/stats/:saveName", async (req, res) => {
+router.get("/stats/:saveName", requirePermission("chunks.manage"), async (req, res) => {
   try {
     const { saveName } = req.params;
     const customPath = req.query.customPath
@@ -2667,7 +2679,7 @@ function formatBytes(bytes) {
 // Browse a path — list directories for manual navigation. Confined to the
 // active server's zomboidDataPath so this can't be used to walk the entire
 // host filesystem (it was previously unconfined path.resolve()).
-router.get("/browse", async (req, res) => {
+router.get("/browse", requirePermission("chunks.manage"), async (req, res) => {
   try {
     const browsePath = req.query.path ? String(req.query.path) : null;
     const zomboidDataPath = await getZomboidDataPath();
