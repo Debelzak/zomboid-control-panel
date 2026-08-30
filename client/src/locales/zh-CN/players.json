@@ -288,6 +288,13 @@
     "healLabel": "治疗",
     "healDesc": "恢复全部生命值与状态",
     "healButton": "治疗",
+    "killLabel": "击杀",
+    "killDesc": "永久结束该角色",
+    "killButton": "击杀",
+    "killConfirmTitle": "击杀 {{player}}?",
+    "killConfirmDesc": "此操作会立即结束 {{player}} 的角色。在永久死亡服务器上,没有撤销、没有以同一角色重生、也没有恢复。请在下方输入其用户名以确认你确实要这样对待该玩家。",
+    "killConfirmButton": "击杀玩家",
+    "killConfirmTypeLabel": "输入 {{player}} 以确认",
     "on": "开",
     "off": "关",
     "enable": "启用",
@@ -385,7 +392,8 @@
     "disableInvisible": "关闭隐身",
     "enableNoclip": "启用穿墙",
     "disableNoclip": "关闭穿墙",
-    "healPlayer": "治疗玩家"
+    "healPlayer": "治疗玩家",
+    "killPlayer": "击杀玩家"
   },
   "toasts": {
     "successTitle": "成功",

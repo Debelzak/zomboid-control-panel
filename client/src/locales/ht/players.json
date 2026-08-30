@@ -288,6 +288,13 @@
     "healLabel": "Geri",
     "healDesc": "Retabli sante ak estatistik konplè",
     "healButton": "Geri",
+    "killLabel": "Touye",
+    "killDesc": "Fini karaktè a pou tout tan",
+    "killButton": "Touye",
+    "killConfirmTitle": "Touye {{player}}?",
+    "killConfirmDesc": "Sa a fini karaktè {{player}} a imedyatman. Sou yon sèvè permadeath, pa gen anile, pa gen respawn ak menm karaktè a, e pa gen restorasyon. Tape non itilizatè yo anba a pou konfime se sa ou vle fè yo.",
+    "killConfirmButton": "Touye jwè a",
+    "killConfirmTypeLabel": "Tape {{player}} pou konfime",
     "on": "AKTIVE",
     "off": "DEZAKTIVE",
     "enable": "Aktive",
@@ -385,7 +392,8 @@
     "disableInvisible": "Dezaktive envizib",
     "enableNoclip": "Aktive noclip",
     "disableNoclip": "Dezaktive noclip",
-    "healPlayer": "Geri jwè a"
+    "healPlayer": "Geri jwè a",
+    "killPlayer": "Touye jwè a"
   },
   "toasts": {
     "successTitle": "Siksè",

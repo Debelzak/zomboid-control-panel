@@ -12,7 +12,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 // AND godmode/invisible/noclip/heal -- these route through the generic
 // PanelBridge passthrough, POST /panel-bridge/command, gated on
 // players.gm_tools alone there per an operator ruling, bug-hunt-2026-08-27;
-// see server/routes/panelBridge.js's GM_TOOLS_ONLY_ACTIONS).
+// see server/routes/panelBridge.js's GM_TOOLS_ONLY_ACTIONS). Kill joined
+// the same players.gm_tools gate when wired up killplayer-ui-2026-08-30,
+// but via its own dedicated route (not the passthrough) -- see that
+// card's comment further down.
 // Several actions have more than one render-level trigger (Kick and Ban each
 // have an ActionTile AND a dossier quick-action button; Unban SteamID has
 // THREE: a summary banner, a Banned-tab row button, and an ActionTile) --
@@ -75,6 +78,7 @@ vi.mock('@/lib/api', async () => {
       sendCommand: vi.fn(),
       exportCharacter: vi.fn(),
       importCharacter: vi.fn(),
+      killPlayer: vi.fn(),
     },
     configApi: {
       ...actual.configApi,
@@ -112,6 +116,7 @@ const addVehicle = vi.mocked(playersApi.addVehicle)
 const addXp = vi.mocked(playersApi.addXp)
 const getStatus = vi.mocked(panelBridgeApi.getStatus)
 const sendCommand = vi.mocked(panelBridgeApi.sendCommand)
+const killPlayer = vi.mocked(panelBridgeApi.killPlayer)
 const getAppSettings = vi.mocked(configApi.getAppSettings)
 
 afterEach(() => {
@@ -281,9 +286,17 @@ describe('Players.tsx: capability gating', () => {
     expect(enableButtons).toHaveLength(3)
     enableButtons.forEach(b => expect(b).toBeDisabled())
     expect(screen.getByRole('button', { name: 'Heal' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Kill' })).toBeDisabled()
     enableButtons.forEach(b => fireEvent.click(b))
     fireEvent.click(screen.getByRole('button', { name: 'Heal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Kill' }))
     expect(sendCommand).not.toHaveBeenCalled()
+    // A disabled native <button> never fires onClick, so this proves the
+    // click above never even reached the confirm() call that would have
+    // opened the typed-confirmation dialog -- not just that killPlayer
+    // wasn't invoked after some dialog step.
+    expect(screen.queryByText('Kill player')).not.toBeInTheDocument()
+    expect(killPlayer).not.toHaveBeenCalled()
 
     // Notes tab -- players.moderate.
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Notes/ }), { button: 0 })
@@ -324,6 +337,7 @@ describe('Players.tsx: capability gating', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Heal' })).toBeInTheDocument(), { timeout: 3000 })
     screen.getAllByRole('button', { name: 'Enable' }).forEach(b => expect(b).not.toBeDisabled())
     expect(screen.getByRole('button', { name: 'Heal' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Kill' })).not.toBeDisabled()
   })
 
   // bug-hunt-2026-08-27, operator ruling (supersedes server commit c3083d5
@@ -340,6 +354,13 @@ describe('Players.tsx: capability gating', () => {
   // must be SUFFICIENT (not just necessary, which the deny-all test above
   // already covers), and bridge.command alone must remain insufficient
   // (gm_tools is still the real gate, not dropped entirely).
+  //
+  // killPlayer-ui-2026-08-30: Kill joined this same players.gm_tools gate
+  // when it was wired up (see server/routes/panelBridge.js's POST
+  // /players/:username/kill, requirePermission("players.gm_tools") --
+  // the same capability the four above are checked against, not a new
+  // one). Asserted alongside the original four in both tests below rather
+  // than in a separate pair, since it is the same gate, not a new one.
   it('bridge.command alone is not sufficient for the GM-tools four -- players.gm_tools is still required', async () => {
     mockCan = (capability) => capability === 'bridge.command'
     await setUpFixtures()
@@ -352,9 +373,12 @@ describe('Players.tsx: capability gating', () => {
     expect(enableButtons).toHaveLength(3)
     enableButtons.forEach(b => expect(b).toBeDisabled())
     expect(screen.getByRole('button', { name: 'Heal' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Kill' })).toBeDisabled()
     enableButtons.forEach(b => fireEvent.click(b))
     fireEvent.click(screen.getByRole('button', { name: 'Heal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Kill' }))
     expect(sendCommand).not.toHaveBeenCalled()
+    expect(killPlayer).not.toHaveBeenCalled()
   })
 
   it('players.gm_tools alone is sufficient for the GM-tools four, without bridge.command (Technician regains all four)', async () => {
@@ -369,6 +393,7 @@ describe('Players.tsx: capability gating', () => {
     expect(enableButtons).toHaveLength(3)
     enableButtons.forEach(b => expect(b).not.toBeDisabled())
     expect(screen.getByRole('button', { name: 'Heal' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Kill' })).not.toBeDisabled()
 
     // Teleport still reachable too -- confirms gm_tools wasn't accidentally
     // narrowed anywhere else on the page by this change.

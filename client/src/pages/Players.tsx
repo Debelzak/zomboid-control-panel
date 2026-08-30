@@ -96,6 +96,7 @@ import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { PageHeader } from '@/components/PageHeader'
 import { DisabledReason } from '@/components/DisabledReason'
 import { useAuth } from '@/contexts/AuthContext'
+import { useConfirm } from '@/contexts/ConfirmContext'
 import { cn, copyText } from '@/lib/utils'
 
 interface PerkChoice {
@@ -351,6 +352,7 @@ export default function Players() {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   // Stats tracking
   const [peakPlayers, setPeakPlayers] = useState(0)
@@ -1175,6 +1177,34 @@ export default function Players() {
     handleAction(t('actions.healPlayer'),
       async () => {
         await panelBridgeApi.sendCommand('healPlayer', { username: player })
+      })
+  }
+
+  // Permanent character loss in a permadeath game, inflicted on someone
+  // else -- the only destructive one of these five GM-tools actions. Guarded
+  // by requiring the operator to type the TARGET's username (not just click
+  // through), so a fast-clicking admin can't kill the wrong player they
+  // happened to have selected. killPlayer has no players.js-native route and
+  // isn't bridge-verify-gated (see bridgeVerify.ts), unlike heal/godmode/
+  // invisible/noclip -- it goes through panelBridgeApi.killPlayer (the
+  // dedicated PanelBridge route), not the generic sendCommand passthrough.
+  const handleKillPlayer = async () => {
+    const player = selectedPlayer
+    if (!player) return
+    const confirmed = await confirm({
+      title: t('powers.killConfirmTitle', { player }),
+      description: t('powers.killConfirmDesc', { player }),
+      confirmLabel: t('powers.killConfirmButton'),
+      destructive: true,
+      requireTypedConfirmation: {
+        value: player,
+        label: t('powers.killConfirmTypeLabel', { player }),
+      },
+    })
+    if (!confirmed) return
+    handleAction(t('actions.killPlayer'),
+      async () => {
+        await panelBridgeApi.killPlayer(player)
       })
   }
 
@@ -2916,6 +2946,31 @@ export default function Players() {
                         onClick={handleHealPlayer}
                       >
                         {t('powers.healButton')}
+                      </Button>
+                    </DisabledReason>
+                  </div>
+
+                  {/* Kill -- destructive, permanent in permadeath. Only power on this
+                      tab that can inflict irreversible harm on someone other than the
+                      admin, so it gets a red treatment the others don't. */}
+                  <div className="flex items-center justify-between rounded-xl border border-destructive/30 bg-destructive/5 p-4 transition-colors hover:bg-destructive/10">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-destructive">
+                        <Skull className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{t('powers.killLabel')}</p>
+                        <p className="text-xs text-muted-foreground">{t('powers.killDesc')}</p>
+                      </div>
+                    </div>
+                    <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
+                        onClick={handleKillPlayer}
+                      >
+                        {t('powers.killButton')}
                       </Button>
                     </DisabledReason>
                   </div>

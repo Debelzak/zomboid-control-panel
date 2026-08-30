@@ -288,6 +288,13 @@
     "healLabel": "Heal",
     "healDesc": "Restore full health & stats",
     "healButton": "Heal",
+    "killLabel": "Kill",
+    "killDesc": "Permanently ends the character",
+    "killButton": "Kill",
+    "killConfirmTitle": "Kill {{player}}?",
+    "killConfirmDesc": "This immediately ends {{player}}'s character. On a permadeath server there is no undo, no respawn as the same character, and no restore. Type their username below to confirm you mean to do this to them.",
+    "killConfirmButton": "Kill player",
+    "killConfirmTypeLabel": "Type {{player}} to confirm",
     "on": "ON",
     "off": "OFF",
     "enable": "Enable",
@@ -385,7 +392,8 @@
     "disableInvisible": "Disable invisible",
     "enableNoclip": "Enable noclip",
     "disableNoclip": "Disable noclip",
-    "healPlayer": "Heal player"
+    "healPlayer": "Heal player",
+    "killPlayer": "Kill player"
   },
   "toasts": {
     "successTitle": "Success",

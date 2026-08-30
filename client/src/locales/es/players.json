@@ -288,6 +288,13 @@
     "healLabel": "Curar",
     "healDesc": "Restaurar salud y estadísticas al máximo",
     "healButton": "Curar",
+    "killLabel": "Matar",
+    "killDesc": "Termina el personaje de forma permanente",
+    "killButton": "Matar",
+    "killConfirmTitle": "¿Matar a {{player}}?",
+    "killConfirmDesc": "Esto termina de inmediato el personaje de {{player}}. En un servidor de muerte permanente no hay deshacer, no hay reaparición con el mismo personaje y no hay restauración. Escribe su nombre de usuario abajo para confirmar que quieres hacerle esto.",
+    "killConfirmButton": "Matar jugador",
+    "killConfirmTypeLabel": "Escribe {{player}} para confirmar",
     "on": "ACTIVADO",
     "off": "DESACTIVADO",
     "enable": "Activar",
@@ -385,7 +392,8 @@
     "disableInvisible": "Desactivar invisible",
     "enableNoclip": "Activar noclip",
     "disableNoclip": "Desactivar noclip",
-    "healPlayer": "Curar jugador"
+    "healPlayer": "Curar jugador",
+    "killPlayer": "Matar jugador"
   },
   "toasts": {
     "successTitle": "Éxito",

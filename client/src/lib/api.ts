@@ -2614,6 +2614,19 @@ export const panelBridgeApi = {
       z,
     }),
 
+  // Kill player -- permanent character loss in a permadeath game, unlike
+  // heal/godmode/invisible/noclip which route through the generic
+  // sendCommand passthrough. There is no players.js-native equivalent (the
+  // way teleport/give-item have one) for this action to shadow, so this
+  // dedicated route (server/routes/panelBridge.js's POST
+  // /players/:username/kill) is the one genuine live path, not a redundant
+  // second one -- keep calling it here rather than switching to
+  // sendCommand('killPlayer', ...) later.
+  killPlayer: (username: string) =>
+    apiPost<BridgeCommandResult<{ message: string; username: string; isDead: boolean; debug: string }>>(
+      `/panel-bridge/players/${encodeURIComponent(username)}/kill`,
+    ),
+
   // Server message (v1.1.0)
   sendServerMessage: (message: string, color?: string) =>
     apiPost("/panel-bridge/message", { message, color }),

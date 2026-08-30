@@ -288,6 +288,13 @@
     "healLabel": "Soigner",
     "healDesc": "Restaurer la santé et les stats au complet",
     "healButton": "Soigner",
+    "killLabel": "Tuer",
+    "killDesc": "Met fin au personnage de façon permanente",
+    "killButton": "Tuer",
+    "killConfirmTitle": "Tuer {{player}} ?",
+    "killConfirmDesc": "Ceci met fin immédiatement au personnage de {{player}}. Sur un serveur permadeath, il n'y a ni annulation, ni réapparition avec le même personnage, ni restauration. Tapez son nom d'utilisateur ci-dessous pour confirmer que c'est bien ce que vous voulez lui faire.",
+    "killConfirmButton": "Tuer le joueur",
+    "killConfirmTypeLabel": "Tapez {{player}} pour confirmer",
     "on": "ACTIVÉ",
     "off": "DÉSACTIVÉ",
     "enable": "Activer",
@@ -385,7 +392,8 @@
     "disableInvisible": "Désactiver invisible",
     "enableNoclip": "Activer la traversée",
     "disableNoclip": "Désactiver la traversée",
-    "healPlayer": "Soigner le joueur"
+    "healPlayer": "Soigner le joueur",
+    "killPlayer": "Tuer le joueur"
   },
   "toasts": {
     "successTitle": "Succès",
