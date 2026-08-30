@@ -508,6 +508,56 @@ async function login(page) {
   await page.waitForTimeout(500)
 }
 
+// wired-no-ui-2026-08-30 mobile-shot follow-up: page.screenshot({fullPage:
+// true}) only expands to the OUTER page's own document bounds -- it has no
+// way to know a page's real scrolling happens inside a nested overflow:auto
+// element instead. This app's shell (client/src/components/Layout.tsx) puts
+// EVERY page's content inside a single `<main id="main-content"
+// class="... overflow-auto ...">`, and that element -- not <body> or
+// <html> -- is the actual scroll container on every route. The tell, if you
+// hit this again on some other app: document.body.scrollHeight equals
+// window.innerHeight (the document itself never scrolls) while some
+// descendant's own scrollHeight is much larger than its clientHeight.
+// Confirmed the hard way on events:climate-trim at 390x844: the selected
+// panel's own heading was already in the DOM at getBoundingClientRect().
+// top=1164 -- past the fold -- before touching anything; setting
+// mainEl.scrollTop = mainEl.scrollHeight (what a real scroll gesture does)
+// moved it to top=147, fully visible, with the real content ("fog") now in
+// document.body.innerText. The panel was never missing -- fullPage just
+// never scrolled the container that actually holds it, on EVERY view this
+// tool has ever captured on mobile, not just Events.
+//
+// Fix: immediately before the screenshot, override #main-content's overflow
+// and height with inline styles so its content flows naturally into the
+// page instead of scrolling inside its own box -- the outer document then
+// grows to include all of it, which is exactly what fullPage needs. Restore
+// the original inline style right after so the live page (and the next
+// interact() step, if any) is untouched. Harmless when the container
+// doesn't overflow: same content, same layout, just no scrollbar for an
+// instant. Applied to every capture (both viewports), not just mobile --
+// desktop pages fit today, but there's no guarantee that stays true, and
+// this costs nothing when there's nothing to expand.
+async function expandMainForCapture(page) {
+  return page.evaluate(() => {
+    const el = document.getElementById('main-content')
+    if (!el) return null
+    const prevStyle = el.getAttribute('style')
+    el.style.setProperty('overflow', 'visible', 'important')
+    el.style.setProperty('height', 'auto', 'important')
+    el.style.setProperty('max-height', 'none', 'important')
+    return prevStyle
+  })
+}
+
+async function restoreMainAfterCapture(page, prevStyle) {
+  await page.evaluate((saved) => {
+    const el = document.getElementById('main-content')
+    if (!el) return
+    if (saved === null || saved === undefined) el.removeAttribute('style')
+    else el.setAttribute('style', saved)
+  }, prevStyle)
+}
+
 async function setTheme(page, theme) {
   await page.evaluate((t) => localStorage.setItem('pz-panel-theme', t), theme)
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -615,7 +665,9 @@ async function main() {
             // filename now deliberately differ.
             const fileName = `${view.name.replace(/:/g, '-')}__${viewport.key}__${theme}.png`
             const filePath = path.join(args.out, fileName)
+            const prevMainStyle = await expandMainForCapture(page)
             await page.screenshot({ path: filePath, fullPage: true })
+            await restoreMainAfterCapture(page, prevMainStyle)
             manifest.push({ file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme, width: viewport.width, height: viewport.height })
             console.log(`[ui-shot-tour] captured ${fileName}`)
           } catch (err) {
