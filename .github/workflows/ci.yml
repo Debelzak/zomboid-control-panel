@@ -75,6 +75,16 @@ jobs:
             exit 1
           fi
 
+      # Validates every engine method call in PanelBridge.lua against
+      # scripts/engine-signatures.manifest.json, a real jar-derived record of what methods
+      # actually exist on each Java class (see scripts/gen-engine-signatures.mjs). No JDK needed
+      # here -- the manifest is committed; only regenerating it requires one, done locally and
+      # committed as its own step. FAILS only on a method the manifest confirms is definitively
+      # absent from a resolved receiver's class -- see scripts/check-engine-signatures.mjs's
+      # header for the full PASS/FAIL contract and its reported-coverage output.
+      - name: Engine signature check
+        run: npm run check:engine-signatures
+
   client:
     name: Client (lint + types + tests)
     runs-on: ubuntu-latest
