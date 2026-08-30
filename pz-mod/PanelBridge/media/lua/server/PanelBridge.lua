@@ -5252,7 +5252,26 @@ handlers.restoreUtilities = function(args, cmdId)
     end)
 
     if not success then
-        return false, nil, "Failed to restore utilities: " .. tostring(err)
+        -- 2026-08-30, total-audit batch 3, item 2 (mutate-then-fail): the
+        -- pcall above can throw partway through -- SandboxVars, the Java
+        -- sync, and/or the hydro power flag may already be mutated by the
+        -- time it does. This used to return `nil` for data, discarding
+        -- debugInfo (which already records exactly which steps completed
+        -- before the throw) and leaving the caller with nothing but an
+        -- error string -- no way to tell what, if anything, already landed.
+        -- Not adding rollback (a retry with the same args is idempotent,
+        -- per the operator-impact review this fix came from) -- just
+        -- reporting what happened, now that a failure's data actually
+        -- reaches the caller (see the processResult transport fix,
+        -- 19f56d98 -- this handler is the reason that fix matters).
+        local hydroPowerOn = nil
+        pcall(function() hydroPowerOn = world:isHydroPowerOn() end)
+        return false, {
+            power = restorePower,
+            water = restoreWater,
+            hydroPowerOn = hydroPowerOn,
+            debug = debugInfo
+        }, "Failed to restore utilities: " .. tostring(err)
     end
 
     -- Steps 6-7 (client sync) + final verification logging, shared by every
@@ -5393,7 +5412,17 @@ handlers.shutOffUtilities = function(args, cmdId)
     end)
 
     if not success then
-        return false, nil, "Failed to shut off utilities: " .. tostring(err)
+        -- See restoreUtilities' matching comment (2026-08-30, total-audit
+        -- batch 3, item 2) -- same mutate-then-fail shape, same fix: report
+        -- what debugInfo already recorded instead of discarding it as nil.
+        local hydroPowerOn = nil
+        pcall(function() hydroPowerOn = world:isHydroPowerOn() end)
+        return false, {
+            power = shutPower,
+            water = shutWater,
+            hydroPowerOn = hydroPowerOn,
+            debug = debugInfo
+        }, "Failed to shut off utilities: " .. tostring(err)
     end
 
     -- Steps 6-7 (client sync) + final verification, shared by every path
