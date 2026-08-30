@@ -3335,8 +3335,18 @@ local function getPlayerPerks(player)
 
     local failures = 0
     for _, perkName in ipairs(perkNames) do
-        local perk = Perks[perkName]
-        if perk then
+        -- Guards the TABLE INDEX itself, not just the method calls after
+        -- it -- Perks[perkName] is a bare Lua table index, not something
+        -- PanelBridge.invoke's pcall would catch if Perks itself were ever
+        -- absent on some future build (same shape as statGet's
+        -- CharacterStat guard above, 2026-08-30). An absent Perks used to
+        -- throw uncaught here, crashing the ENTIRE exportPlayerData --
+        -- losing traits/wornItems/inventory too -- directly contradicting
+        -- this handler's own per-field pcall protection everywhere else.
+        local perkOk, perk = pcall(function() return Perks[perkName] end)
+        if not perkOk then
+            failures = failures + 1
+        elseif perk then
             local ok, level, perkXp = pcall(function()
                 return player:getPerkLevel(perk), xp:getXP(perk)
             end)
@@ -3638,8 +3648,15 @@ handlers.importPlayerData = function(args)
     if data.perks and options.restorePerks ~= false then
         local xp = PanelBridge.tryGet(player, "getXp")
         for perkName, perkData in pairs(data.perks) do
-            local perk = Perks[perkName]
-            if perk and perkData.level then
+            -- Guards the TABLE INDEX itself -- Perks[perkName] is a bare Lua
+            -- table index, not covered by the per-perk pcall below (which
+            -- only starts after this line). Same shape as the already-fixed
+            -- bare getXp() call above: an absent Perks would otherwise
+            -- crash the ENTIRE handler, aborting the inventory restore
+            -- below too even though it's logically independent (gated on
+            -- its own data.inventory check).
+            local perkOk, perk = pcall(function() return Perks[perkName] end)
+            if perkOk and perk and perkData.level then
                 -- Use pcall for safety
                 pcall(function()
                     -- Reset perk to 0 first
