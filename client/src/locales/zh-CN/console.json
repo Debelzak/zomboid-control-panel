@@ -88,6 +88,8 @@
     "noCommandsTitle": "尚无命令",
     "noCommandsDesc": "运行 RCON 命令后，响应将显示于此。",
     "quickLabel": "快捷",
+    "commandLabel": "命令",
+    "commandTip": "这里的命令会立即在正在运行的服务器上执行，没有确认步骤——即使是会停止服务器或移除玩家的命令也是如此。如果不确定某条命令的作用，请先查清楚再执行；大多数命令无法撤销。",
     "promptPrefix": "rcon $",
     "placeholder": "输入命令…",
     "inputAria": "RCON 命令输入框",

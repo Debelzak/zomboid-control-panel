@@ -67,6 +67,7 @@
     "cronFormatHint": "Format: minute hour day month weekday",
     "cronValidExpression": "Valid expression",
     "commandLabel": "Command",
+    "commandTip": "This runs unattended on the schedule above, with no confirmation each time it fires. Pick something safe to repeat automatically -- a custom command isn't checked against a safe list, and it keeps running until you disable or delete this task.",
     "commandSelectPlaceholder": "Select common command...",
     "commandCustomPlaceholder": "Or enter custom command",
     "bridgeFormatHint": "Format: <1>bridge:&lt;action&gt; {json args}</1> — e.g. <2>bridge:triggerBlizzard {\"durationHours\":2}</2>. Args are optional. Only allow-listed actions run via the scheduler.",

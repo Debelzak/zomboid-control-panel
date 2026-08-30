@@ -67,6 +67,7 @@
     "cronFormatHint": "Format: Minute Stunde Tag Monat Wochentag",
     "cronValidExpression": "Gültiger Ausdruck",
     "commandLabel": "Befehl",
+    "commandTip": "Dies läuft unbeaufsichtigt nach dem Zeitplan oben, ohne Bestätigung bei jeder Ausführung. Wählen Sie etwas, das sich sicher automatisch wiederholen lässt — ein benutzerdefinierter Befehl wird nicht gegen eine Liste sicherer Befehle geprüft und läuft weiter, bis Sie diese Aufgabe deaktivieren oder löschen.",
     "commandSelectPlaceholder": "Häufigen Befehl auswählen …",
     "commandCustomPlaceholder": "Oder eigenen Befehl eingeben",
     "bridgeFormatHint": "Format: <1>bridge:&lt;action&gt; {json args}</1> — z. B. <2>bridge:triggerBlizzard {\"durationHours\":2}</2>. Argumente sind optional. Nur freigegebene Aktionen werden über den Zeitplaner ausgeführt.",

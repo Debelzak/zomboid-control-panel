@@ -67,6 +67,7 @@
     "cronFormatHint": "Formato: minuto hora día mes día de la semana",
     "cronValidExpression": "Expresión válida",
     "commandLabel": "Comando",
+    "commandTip": "Esto se ejecuta sin supervisión según el horario de arriba, sin confirmación cada vez que se activa. Elige algo seguro para repetir automáticamente — un comando personalizado no se comprueba contra ninguna lista segura y seguirá ejecutándose hasta que desactives o elimines esta tarea.",
     "commandSelectPlaceholder": "Seleccionar comando común…",
     "commandCustomPlaceholder": "O introducir un comando personalizado",
     "bridgeFormatHint": "Formato: <1>bridge:&lt;action&gt; {json args}</1> — p. ej. <2>bridge:triggerBlizzard {\"durationHours\":2}</2>. Los argumentos son opcionales. Solo se ejecutan mediante el programador las acciones incluidas en la lista de permitidas.",

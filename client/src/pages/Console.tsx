@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { EmptyState } from '@/components/EmptyState'
 import { PageHeader } from '@/components/PageHeader'
 import { DisabledReason } from '@/components/DisabledReason'
+import { HelpTip } from '@/components/HelpTip'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { usePageShortcut } from '@/hooks/useKeyboardShortcuts'
@@ -1155,6 +1156,10 @@ export default function Console() {
           </div>
 
           {/* Command Input */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-primary/60">{t('rcon.commandLabel')}</span>
+            <HelpTip label={t('rcon.commandLabel')}>{t('rcon.commandTip')}</HelpTip>
+          </div>
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] uppercase tracking-[0.18em] text-primary/70 pointer-events-none select-none" aria-hidden="true">

@@ -88,6 +88,8 @@
     "noCommandsTitle": "No commands yet",
     "noCommandsDesc": "Run an RCON command to see the response here.",
     "quickLabel": "quick",
+    "commandLabel": "command",
+    "commandTip": "Commands here run immediately against the live server, with no confirmation step -- even for something that stops the server or removes a player. If you're not sure what a command does, check it before running it; most have no undo.",
     "promptPrefix": "rcon $",
     "placeholder": "type a command…",
     "inputAria": "RCON command input",

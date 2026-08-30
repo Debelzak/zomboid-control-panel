@@ -88,6 +88,8 @@
     "noCommandsTitle": "Poko gen kòmand",
     "noCommandsDesc": "Fè kouri yon kòmand RCON pou wè repons lan isit la.",
     "quickLabel": "rapid",
+    "commandLabel": "kòmand",
+    "commandTip": "Kòmand isit yo egzekite imedyatman sou sèvè k ap fonksyone a, san okenn etap konfimasyon — menm pou yon bagay ki rete sèvè a oswa ki retire yon jwè. Si ou pa sèten sa yon kòmand fè, verifye l anvan ou egzekite l; pifò pa gen fason pou defèt yo.",
     "promptPrefix": "rcon $",
     "placeholder": "tape yon kòmand…",
     "inputAria": "Antre kòmand RCON",

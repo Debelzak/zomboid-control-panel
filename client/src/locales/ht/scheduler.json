@@ -67,6 +67,7 @@
     "cronFormatHint": "Fòma: minit èdtan jou mwa jou semèn",
     "cronValidExpression": "Ekspresyon valid",
     "commandLabel": "Kòmand",
+    "commandTip": "Sa a egzekite san sipèvizyon selon orè ki anwo a, san konfimasyon chak fwa li deklanche. Chwazi yon bagay ki san danje pou repete otomatikman — yon kòmand pèsonalize pa verifye kont okenn lis sekirite, epi li kontinye kouri jiskaske ou dezaktive oswa efase travay sa a.",
     "commandSelectPlaceholder": "Chwazi kòmand komen...",
     "commandCustomPlaceholder": "Oswa antre kòmand pèsonalize",
     "bridgeFormatHint": "Fòma: <1>bridge:&lt;action&gt; {json args}</1> — pa egzanp <2>bridge:triggerBlizzard {\"durationHours\":2}</2>. Agiman yo opsyonèl. Sèlman aksyon ki sou lis otorize yo fonksyone atravè planifikatè a.",

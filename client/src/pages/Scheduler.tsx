@@ -63,6 +63,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { NumberInput } from '@/components/NumberInput'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { DisabledReason } from '@/components/DisabledReason'
+import { HelpTip } from '@/components/HelpTip'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface ScheduledTask {
@@ -879,7 +880,10 @@ export default function Scheduler() {
                 </Tabs>
               </div>
               <div>
-                <Label>{t('dialog.commandLabel')}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label>{t('dialog.commandLabel')}</Label>
+                  <HelpTip label={t('dialog.commandLabel')}>{t('dialog.commandTip')}</HelpTip>
+                </div>
                 <Select onValueChange={(value) => setNewTaskCommand(value)}>
                   <SelectTrigger>
                     <SelectValue placeholder={t('dialog.commandSelectPlaceholder')} />
