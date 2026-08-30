@@ -15,7 +15,6 @@ import cron from "node-cron";
 export function isValidIanaTimezone(tz) {
   if (typeof tz !== "string" || !tz.trim()) return false;
   try {
-    // eslint-disable-next-line no-new
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
     return true;
   } catch {

@@ -301,7 +301,7 @@ describe("GET /ini -> PUT /ini round trip: byte-order mark (suspect 8)", () => {
   // string. String.prototype.trim() does not strip U+FEFF either (it is not
   // in ECMAScript's WhiteSpace/LineTerminator set), so if a BOM prefixes the
   // file's first key=value line, parseIni()'s `.trim()`'d key comes out as
-  // "﻿PVP" instead of "PVP" -- a key the panel's schema, and every other
+  // "\uFEFFPVP" instead of "PVP" -- a key the panel's schema, and every other
   // reader of this settings object, will never recognize as PVP.
   const BOM = "﻿";
 
