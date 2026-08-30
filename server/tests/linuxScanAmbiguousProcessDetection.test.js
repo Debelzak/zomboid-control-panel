@@ -94,13 +94,29 @@ function makeManager(overrides) {
       });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+      // 2026-08-30, flake-class-fixed-margin-sync: SIGKILL is delivered
+      // asynchronously -- a killed process can still be visible in /proc for
+      // a short window after this call returns, while the kernel finishes
+      // tearing it down. This was previously masked by each test's own
+      // fixed-300ms warmup wait incidentally giving the PREVIOUS test's
+      // killed process time to be fully reaped too; removing that wait (see
+      // waitUntilVisibleInProcTable above) exposed the gap as a real
+      // cross-test race -- a later test's pgrep scan could still see an
+      // earlier test's not-yet-reaped process and miscount `owned`. Wait for
+      // the actual post-condition (gone from /proc) instead of assuming
+      // SIGKILL is synchronous.
       while (spawnedPids.length) {
         const pid = spawnedPids.pop();
         try {
           process.kill(pid, "SIGKILL");
         } catch {
           /* already gone */
+          continue;
+        }
+        const deadline = Date.now() + 5000;
+        while (fs.existsSync(`/proc/${pid}`) && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 10));
         }
       }
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -113,11 +129,35 @@ function makeManager(overrides) {
       return proc.pid;
     }
 
+    // 2026-08-30, flake-class-fixed-margin-sync: this used to be a blind
+    // `await new Promise(r => setTimeout(r, 300))` after spawnBg(), guessing
+    // how long the OS takes to make a freshly-forked process visible to a
+    // process-table scan. Under this floor's routine multi-agent CPU/process
+    // contention, 300ms is not a guaranteed margin. getServerProcessDetails()
+    // itself scans via pgrep/ps, both of which read from /proc on Linux, so
+    // poll the exact same real signal (/proc/<pid> existing) instead of
+    // guessing a duration -- deterministic, and no slower than the fixed
+    // wait in the common case where the process is already visible.
+    async function waitUntilVisibleInProcTable(pid, timeoutMs = 10000) {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        try {
+          // cmdline (not just the pid directory) so a still-forking process
+          // mid-exec doesn't count as "visible" a moment before pgrep/ps
+          // would actually report it with real argv content.
+          if (fs.readFileSync(`/proc/${pid}/cmdline`).length > 0) return;
+        } catch {
+          /* not there yet, or already gone -- keep polling until the deadline */
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      throw new Error(`Timed out waiting for pid ${pid} to appear in /proc`);
+    }
+
     it("THE LIVE BUG: a -jar-style launch (a real, running PZ server the narrow matcher doesn't recognize) reports scanFailed:true, not a confident running:false", async () => {
       // "java" in its own path/name -- the real-world shape (java -jar
       // projectzomboid.jar) always has this, since it's a JVM.
-      spawnBg(fakeJava, ["-jar", "projectzomboid.jar"]);
-      await new Promise((r) => setTimeout(r, 300));
+      await waitUntilVisibleInProcTable(spawnBg(fakeJava, ["-jar", "projectzomboid.jar"]));
 
       const manager = makeManager({
         serverName: "NewServer",
@@ -131,8 +171,7 @@ function makeManager(overrides) {
     });
 
     it("THE CI REGRESSION: a non-java process whose own path/name merely mentions zomboid (a sibling test worker, a shell in a zomboid-named checkout) is discarded as noise, NOT treated as ambiguous evidence", async () => {
-      spawnBg(fakeNonJava, []);
-      await new Promise((r) => setTimeout(r, 300));
+      await waitUntilVisibleInProcTable(spawnBg(fakeNonJava, []));
 
       const manager = makeManager({
         serverName: "IdleServer",
@@ -149,16 +188,17 @@ function makeManager(overrides) {
     });
 
     it("positive control: the panel's own generated-script shape is still confirmed normally (proves the fix didn't weaken real detection)", async () => {
-      spawnBg(fakeJava, [
-        "-Djava.library.path=natives/",
-        "-cp",
-        "java/.",
-        "zombie.network.GameServer",
-        "-servername",
-        "GoodServer",
-        "-cachedir=/tmp/GoodServerZomboid",
-      ]);
-      await new Promise((r) => setTimeout(r, 300));
+      await waitUntilVisibleInProcTable(
+        spawnBg(fakeJava, [
+          "-Djava.library.path=natives/",
+          "-cp",
+          "java/.",
+          "zombie.network.GameServer",
+          "-servername",
+          "GoodServer",
+          "-cachedir=/tmp/GoodServerZomboid",
+        ]),
+      );
 
       const manager = makeManager({
         serverName: "GoodServer",
