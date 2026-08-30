@@ -53,7 +53,7 @@ import {
 import { RconService } from "./services/rcon.js";
 import { ServerManager } from "./services/serverManager.js";
 import { DockerClient } from "./services/dockerClient.js";
-import { setDockerClient } from "./services/managedContainer.js";
+import { setDockerClient, resolveDockerHostSignal } from "./services/managedContainer.js";
 import { ModChecker } from "./services/modChecker.js";
 import { Scheduler } from "./services/scheduler.js";
 import { DiscordBot } from "./services/discordBot.js";
@@ -88,6 +88,7 @@ import {
   writeLuaAtomic,
 } from "./utils/embeddedLua.js";
 import { isServerObservedRunning } from "./utils/serverStatus.js";
+import { resolveProvider } from "./utils/serverStatusModel.js";
 import { discoverMounts } from "./services/mountDiscovery.js";
 import { shouldAutoOpenBrowser } from "./utils/browserLaunch.js";
 
@@ -2434,6 +2435,26 @@ export async function getObservedServerRunning() {
       processRunning: false,
       rconConnected: rconService.connected,
       bridgeConnected: panelBridge.isModConnected(),
+    });
+  }
+
+  // docker-local/docker-managed: PZ runs as PID 1 of a *different*
+  // container, so the local process scan below can never see it (GH#114,
+  // same reasoning server/routes/serverStatus.js's dashboard badge already
+  // follows). Without this branch the watchdog always saw processRunning
+  // false/scanFailed for these providers and could never detect a
+  // transition -- a Docker container start/stop/crash/external `docker
+  // stop` got NO push, ever, only the client's own 10-15s polling. Reuses
+  // resolveDockerHostSignal so this and the dashboard badge can never
+  // disagree about what "Docker says running" means at the same moment.
+  const provider = resolveProvider(activeServer);
+  if (provider === "docker-local" || provider === "docker-managed") {
+    const dockerSignal = await resolveDockerHostSignal(activeServer, dockerClient);
+    return isServerObservedRunning({
+      processRunning: dockerSignal.running,
+      rconConnected: rconService.connected,
+      bridgeConnected: panelBridge.isModConnected(),
+      processScanFailed: dockerSignal.scanFailed,
     });
   }
 

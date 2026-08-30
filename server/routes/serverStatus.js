@@ -8,7 +8,7 @@ import { sanitizeError } from "../utils/sanitize.js";
 import { getActiveServer } from "../database/init.js";
 import panelBridge from "../services/panelBridge.js";
 import { composeServerStatus, resolveProvider } from "../utils/serverStatusModel.js";
-import { resolveManagedContainer } from "../services/managedContainer.js";
+import { resolveDockerHostSignal } from "../services/managedContainer.js";
 
 const log = createLogger("API:ServerStatus");
 const router = express.Router();
@@ -42,31 +42,18 @@ router.get("/active/status", async (req, res) => {
     let processDetails;
     let dockerContainer = null;
     if (isContainerProvider) {
-      const containerRef = server.dockerContainerName || server.dockerContainerId;
-      let container = null;
       const dockerClient = req.app.get("dockerClient");
-      if (containerRef && dockerClient?.enabled && dockerClient.available &&
-          typeof dockerClient.inspectManagedContainer === "function") {
-        container = await dockerClient.inspectManagedContainer(containerRef);
-        processDetails = container
-          ? { running: container.State?.Running === true, scanFailed: false }
-          : { running: false, scanFailed: true };
-        dockerContainer = container
-          ? { handled: true, running: processDetails.running }
-          : { handled: true, error: "Docker container status unavailable" };
-      } else {
-        const managed = await resolveManagedContainer({
-          serverId: server.id,
-          dockerClient,
-        });
-        if (managed.handled) {
-          processDetails = managed.error
-            ? { running: false, scanFailed: true }
-            : { running: managed.running === true, scanFailed: false };
-          dockerContainer = managed;
-        }
-      }
-      if (!processDetails) processDetails = { running: false, scanFailed: true };
+      // resolveDockerHostSignal is also what the status watchdog
+      // (server/index.js's getObservedServerRunning) calls for these same
+      // two providers -- one implementation so this route's dashboard
+      // badge and the watchdog's push-on-transition emit can never disagree
+      // about what "Docker says running" means for the same server at the
+      // same moment.
+      const dockerSignal = await resolveDockerHostSignal(server, dockerClient);
+      processDetails = dockerSignal;
+      dockerContainer = dockerSignal.scanFailed
+        ? { handled: true, error: "Docker container status unavailable" }
+        : { handled: true, running: dockerSignal.running };
     } else {
       processDetails = typeof serverManager?.getServerProcessDetails === "function"
         ? await serverManager.getServerProcessDetails()
