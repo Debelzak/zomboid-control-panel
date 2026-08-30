@@ -1076,6 +1076,14 @@ export default function Events() {
   const markClimateDirty = useCallback(() => {
     climateDirtyUntilRef.current = Date.now() + 2500
   }, [])
+  // Same drag-suppression shape as climateDirtyUntilRef, kept separate (not
+  // folded into "climate") since time speed is fetched in a different poll
+  // branch (timeRes, not floatsRes) and a shared name here would read as
+  // climate state gating an unrelated control.
+  const timeSpeedDirtyUntilRef = useRef(0)
+  const markTimeSpeedDirty = useCallback(() => {
+    timeSpeedDirtyUntilRef.current = Date.now() + 2500
+  }, [])
 
   const checkBridgeStatus = useCallback(async () => {
     try {
@@ -1128,6 +1136,21 @@ export default function Events() {
           setGameHour(Math.floor(timeRes.value.data.hour))
           setGameDay(timeRes.value.data.day)
           setGameMonth(timeRes.value.data.month)
+          // getGameTime's multiplier field reads the same zombie.GameTime
+          // singleton RCON's setTimeSpeed command writes to (confirmed via
+          // the real jar: SetTimeSpeedCommand calls
+          // GameTime.getInstance().setMultiplier(), the exact object/field
+          // this reads) -- a real, authoritative read-back, not a decorative
+          // one. Without this the slider was local-only useState(1), never
+          // reassigned by any fetch, and could show a stale multiplier
+          // after any change made outside the panel (RCON, another admin,
+          // a restart).
+          if (
+            typeof timeRes.value.data.multiplier === 'number' &&
+            Date.now() >= timeSpeedDirtyUntilRef.current
+          ) {
+            setTimeSpeed(timeRes.value.data.multiplier)
+          }
         }
 
         if (utilitiesRes.status === 'fulfilled' && utilitiesRes.value.success && utilitiesRes.value.data) {
@@ -1491,9 +1514,15 @@ export default function Events() {
   const removeZombies = () => panelBridgeApi.clearAllZombies()
 
   // Time commands
-  // Build 42 applies its effective server clock multiplier through RCON. The
-  // PanelBridge GameTime multiplier accepts the value but does not speed up the
-  // dedicated server clock.
+  // CORRECTED 2026-08-30 (panelbridge-audit): this comment used to claim the
+  // PanelBridge GameTime multiplier "does not speed up the dedicated server
+  // clock" -- checked against the real jar rather than trusted, and it's
+  // wrong. SetTimeSpeedCommand.class's own method refs are
+  // GameTime.getInstance() -> GameTime.setMultiplier(), the exact same
+  // singleton and field PanelBridge.lua's getGameTime/getTimeSpeed read via
+  // gt:getMultiplier(). RCON's setTimeSpeed IS the authoritative multiplier,
+  // not a separate, disconnected value -- which is why reading it back
+  // (getGameTime's poll, below) is safe to treat as real state.
   const setGameTimeSpeed = () => executeCommand(`setTimeSpeed ${timeSpeed}`)
 
   // Teleport commands
@@ -2450,13 +2479,13 @@ export default function Events() {
                     <Label className="text-xs font-medium text-foreground/85">{t('timespeed.multiplier')}</Label>
                     <span className="font-mono text-[11px] tabular-nums text-primary">{timeSpeed}x</span>
                   </div>
-                  <Slider aria-label={t('timespeed.speedAria')} value={[timeSpeed]} onValueChange={([val]) => setTimeSpeed(val)} min={1} max={100} step={1} />
+                  <Slider aria-label={t('timespeed.speedAria')} value={[timeSpeed]} onValueChange={([val]) => { markTimeSpeedDirty(); setTimeSpeed(val) }} min={1} max={100} step={1} />
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <Button size="sm" onClick={() => setTimeSpeed(1)} variant={timeSpeed === 1 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">1×</Button>
-                  <Button size="sm" onClick={() => setTimeSpeed(5)} variant={timeSpeed === 5 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">5×</Button>
-                  <Button size="sm" onClick={() => setTimeSpeed(10)} variant={timeSpeed === 10 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">10×</Button>
-                  <Button size="sm" onClick={() => setTimeSpeed(24)} variant={timeSpeed === 24 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">24×</Button>
+                  <Button size="sm" onClick={() => { markTimeSpeedDirty(); setTimeSpeed(1) }} variant={timeSpeed === 1 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">1×</Button>
+                  <Button size="sm" onClick={() => { markTimeSpeedDirty(); setTimeSpeed(5) }} variant={timeSpeed === 5 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">5×</Button>
+                  <Button size="sm" onClick={() => { markTimeSpeedDirty(); setTimeSpeed(10) }} variant={timeSpeed === 10 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">10×</Button>
+                  <Button size="sm" onClick={() => { markTimeSpeedDirty(); setTimeSpeed(24) }} variant={timeSpeed === 24 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">24×</Button>
                 </div>
                 <Button variant="outline" onClick={() => handleAction('Set time speed', setGameTimeSpeed)} disabled={loading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
                   {loading === 'Set time speed' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
