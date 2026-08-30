@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "fs";
 
 // hunt-wave10-2026-08-29, suspect 4 (REAL): serveTile() set
 // Cache-Control: public, max-age=604800 (7 days) on every tile response,
@@ -183,19 +184,81 @@ describe("suspect 4 (REAL): tile Cache-Control must not outlive the build-resolu
       const warm = makeRes();
       await handler({ params: { level: "5", tile: "2_3.jpg" }, query: {} }, warm);
       expect(warm.headers["X-Tile-Cache"]).toBe("miss");
-      // writeDiskCacheAsync is fire-and-forget; give its promise chain a turn.
-      await new Promise((r) => setTimeout(r, 50));
 
-      mockCurlForB42_20_0();
-      const { default: freshRouter } = await freshModule();
-      const freshHandler = findRoute(freshRouter, "/tiles/:level/:tile", "get");
-      const cold = makeRes();
-      await freshHandler({ params: { level: "5", tile: "2_3.jpg" }, query: {} }, cold);
+      // writeDiskCacheAsync is fire-and-forget (mkdir -> writeFile -> rename,
+      // three real fs calls the request handler deliberately never awaits).
+      // 2026-08-30, flake-class-fixed-margin-sync: this used to be a single
+      // blind `await new Promise(r => setTimeout(r, 50))`. Under this
+      // floor's routine multi-agent CPU contention, 50ms is not always
+      // enough for the write to land, and the test would then correctly
+      // read "miss" instead of "hit-disk" -- the CODE is right, the TEST's
+      // synchronisation was probabilistic. Poll for the actual
+      // post-condition -- a fresh module instance (cold tier-1) genuinely
+      // reporting hit-disk -- instead of guessing a duration; each retry is
+      // a real, cheap re-check of the real disk state, not a bigger magic
+      // number.
+      let cold;
+      const deadline = Date.now() + 10000;
+      do {
+        mockCurlForB42_20_0();
+        const { default: freshRouter } = await freshModule();
+        const freshHandler = findRoute(freshRouter, "/tiles/:level/:tile", "get");
+        cold = makeRes();
+        await freshHandler({ params: { level: "5", tile: "2_3.jpg" }, query: {} }, cold);
+        if (cold.headers["X-Tile-Cache"] === "hit-disk") break;
+        await new Promise((r) => setTimeout(r, 10));
+      } while (Date.now() < deadline);
 
       expect(cold.headers["X-Tile-Cache"]).toBe("hit-disk");
       expect(cold.headers["Cache-Control"]).toBe("public, max-age=3600");
     } finally {
       global.fetch = originalFetch;
+    }
+  });
+
+  it("/tiles: a disk hit is still found when the real write is slower than the old fixed 50ms margin (regression coverage for the flake this poll replaced)", async () => {
+    mockCurlForB42_20_0();
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    // Simulate the exact contention this floor sees in practice: the real
+    // rename() step of writeDiskCacheAsync's fire-and-forget chain lands
+    // ~200ms late -- four times the old fixed margin. The old
+    // `await sleep(50)` version of this test would have read "miss" here;
+    // the poll must still find "hit-disk" well inside its 10s deadline.
+    const realRename = fs.promises.rename;
+    const renameSpy = vi.spyOn(fs.promises, "rename").mockImplementation(async (...args) => {
+      await new Promise((r) => setTimeout(r, 200));
+      return realRename.apply(fs.promises, args);
+    });
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/tiles/:level/:tile", "get");
+      // A tile path not used by any other test in this file -- the disk
+      // cache directory is real, persistent filesystem state that survives
+      // across tests (only in-memory module state resets), so reusing
+      // 2_3.jpg here would find the earlier tests' own cached file and
+      // short-circuit straight to "hit-disk" before this test's delayed
+      // rename() is ever relevant.
+      const warm = makeRes();
+      await handler({ params: { level: "5", tile: "9_9.jpg" }, query: {} }, warm);
+      expect(warm.headers["X-Tile-Cache"]).toBe("miss");
+
+      let cold;
+      const deadline = Date.now() + 10000;
+      do {
+        mockCurlForB42_20_0();
+        const { default: freshRouter } = await freshModule();
+        const freshHandler = findRoute(freshRouter, "/tiles/:level/:tile", "get");
+        cold = makeRes();
+        await freshHandler({ params: { level: "5", tile: "9_9.jpg" }, query: {} }, cold);
+        if (cold.headers["X-Tile-Cache"] === "hit-disk") break;
+        await new Promise((r) => setTimeout(r, 10));
+      } while (Date.now() < deadline);
+
+      expect(cold.headers["X-Tile-Cache"]).toBe("hit-disk");
+    } finally {
+      global.fetch = originalFetch;
+      renameSpy.mockRestore();
     }
   });
 
