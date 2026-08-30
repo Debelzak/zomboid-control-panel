@@ -77,6 +77,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
+import { buildTileQuery } from './worldMapTileUrl'
 import { bridgeSupportsPlayerStatus } from './worldMapBridgeVersion'
 import { diagnoseTileFailure, tileFailureCopyKeys, type TileFailureDiagnosis } from './worldMapTileFailureDiagnosis'
 
@@ -1062,8 +1063,16 @@ export default function WorldMap() {
 
     // Every B42 layer DZI declares JPEG tiles, including upper floors.
     const ext = 'jpg'
-    const proxyFloorParam = f !== 0 ? `?floor=${f}` : ''
-    const proxyUrl = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${proxyFloorParam}`
+    // `v` names the resolved B42 build this URL was built against -- see
+    // mapProxy.js's TILE_BROWSER_CACHE_CONTROL_VERSIONED comment. Only
+    // meaningful for B42 (B41's upstream directory is a fixed literal, not
+    // dynamically resolved, so there's nothing to version there), and only
+    // once mapSourceRef's one-shot /resolve() has actually completed --
+    // tiles requested before that finishes just miss out on the long-cache
+    // upgrade, same as before this change, never a correctness problem.
+    const isB41 = mapCfgRef.current === MAP_B41
+    const versionDir = !isB41 ? (mapSourceRef.current?.b42Dir ?? null) : null
+    const proxyUrl = `${mapCfgRef.current.tileUrl}/${level}/${col}_${row}.${ext}${buildTileQuery(f, versionDir)}`
 
     // Loads through this server's proxy — the "smart" path that can tell a
     // real 404 (tile genuinely absent — see tileCacheRef's comment above for

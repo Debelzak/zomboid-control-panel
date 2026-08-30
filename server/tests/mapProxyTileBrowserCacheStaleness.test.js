@@ -242,3 +242,147 @@ describe("suspect 4 (REAL): tile Cache-Control must not outlive the build-resolu
     }
   });
 });
+
+// hunt-wave12-2026-08-30 (version-the-tile-url-by-resolved-b42-build): the
+// 1h cap above bounds staleness, it doesn't eliminate it. The complete fix
+// is to put the resolved B42 build into the browser-facing tile URL
+// (WorldMap.tsx / ChunkCleaner.tsx append `?v=<b42Dir>` once they know it --
+// see worldMapTileUrl.ts) so two different builds are two different URLs,
+// making the URL itself an accurate cache key. Once true, correctness no
+// longer trades against cache lifetime, so a request carrying that marker
+// can safely be cached indefinitely -- these tests cover the SERVER half:
+// presence of `?v=` (any non-empty value; the server never inspects it
+// past that, see requestIsVersioned's own comment) switches the response
+// to the long/immutable Cache-Control, while its absence keeps the
+// original bounded value as the safe fallback for anything that hasn't
+// opted in (an old cached JS bundle from before this change, a manual
+// request). /b41tiles never switches regardless of `v` -- its directory is
+// a hardcoded literal, never dynamically resolved, so there's nothing to
+// version there.
+describe("suspect 4 follow-up (REAL): a versioned request (?v=<build>) gets a long-lived Cache-Control, matching the accurate cache key", () => {
+  it("/tiles: a request WITH ?v= gets the long/immutable Cache-Control instead of the bounded fallback", async () => {
+    mockCurlForB42_20_0();
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/tiles/:level/:tile", "get");
+      const res = makeRes();
+      await handler(
+        { params: { level: "6", tile: "3_4.jpg" }, query: { v: "42.20.0" } },
+        res,
+      );
+
+      expect(res.headers["X-Tile-Cache"]).toBe("miss");
+      expect(res.headers["Cache-Control"]).toBe("public, max-age=604800, immutable");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("/tiles: an in-memory hit for a versioned request ALSO reports the long-lived Cache-Control -- the upgrade applies uniformly across cache tiers, same discipline as the original bounded fix", async () => {
+    mockCurlForB42_20_0();
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/tiles/:level/:tile", "get");
+
+      const first = makeRes();
+      await handler(
+        { params: { level: "6", tile: "3_5.jpg" }, query: { v: "42.20.0" } },
+        first,
+      );
+      expect(first.headers["X-Tile-Cache"]).toBe("miss");
+
+      const second = makeRes();
+      await handler(
+        { params: { level: "6", tile: "3_5.jpg" }, query: { v: "42.20.0" } },
+        second,
+      );
+      expect(second.headers["X-Tile-Cache"]).toBe("hit-mem");
+      expect(second.headers["Cache-Control"]).toBe("public, max-age=604800, immutable");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("/tiles: a request WITHOUT ?v= still gets the original bounded Cache-Control -- the safe fallback for anything that hasn't opted in", async () => {
+    mockCurlForB42_20_0();
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/tiles/:level/:tile", "get");
+      const res = makeRes();
+      await handler({ params: { level: "6", tile: "3_6.jpg" }, query: {} }, res);
+
+      expect(res.headers["Cache-Control"]).toBe("public, max-age=3600");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("/tiles: an empty-string ?v= is treated the same as absent -- not a signal of anything", async () => {
+    mockCurlForB42_20_0();
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/tiles/:level/:tile", "get");
+      const res = makeRes();
+      await handler({ params: { level: "6", tile: "3_7.jpg" }, query: { v: "" } }, res);
+
+      expect(res.headers["Cache-Control"]).toBe("public, max-age=3600");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("/toptiles: a request WITH ?v= also gets the long-lived Cache-Control", async () => {
+    mockCurlRouter((url) => {
+      if (url.endsWith("/api/builds/default")) {
+        return curlResult(200, JSON.stringify({ directory: "42.20.0", default: true }));
+      }
+      if (url.includes("/base/layer0.dzi")) return curlResult(200, dziXml(GEOMETRY_42_20_0));
+      if (url.includes("/base/map_info.json")) return curlResult(200, mapInfoJson());
+      if (url.endsWith("/base_top/layer0.dzi")) {
+        return curlResult(200, '<?xml version="1.0"?><Image Format="webp"/>');
+      }
+      throw new Error(`unexpected curl URL in test: ${url}`);
+    });
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/toptiles/:level/:tile", "get");
+      const res = makeRes();
+      await handler(
+        { params: { level: "6", tile: "3_8.webp" }, query: { v: "42.20.0" } },
+        res,
+      );
+
+      expect(res.headers["Cache-Control"]).toBe("public, max-age=604800, immutable");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("/b41tiles: NEVER switches to the long-lived value, even with ?v= supplied -- its directory is a hardcoded literal, not dynamically resolved, so there's nothing to accurately version against", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = mockFetchServingTiles();
+    try {
+      const { default: router } = await freshModule();
+      const handler = findRoute(router, "/b41tiles/:level/:tile", "get");
+      const res = makeRes();
+      await handler(
+        { params: { level: "6", tile: "3_9.jpg" }, query: { v: "41.78.16" } },
+        res,
+      );
+
+      expect(res.headers["Cache-Control"]).toBe("public, max-age=3600");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});

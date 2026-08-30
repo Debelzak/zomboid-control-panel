@@ -61,7 +61,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { chunksApi, serversApi, panelBridgeApi, ApiError } from "@/lib/api";
+import { chunksApi, serversApi, panelBridgeApi, mapApi, ApiError } from "@/lib/api";
+import { buildTileQuery } from "./worldMapTileUrl";
 import { getUserErrorMessage } from "@/lib/errorMessage";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSocket } from "@/contexts/SocketContext";
@@ -894,6 +895,28 @@ export default function ChunkCleaner() {
   // shows through either way, which reads as a broken black hole rather
   // than "no imagery for this area".
   const dziCacheRef = useRef<Record<string, HTMLImageElement | null | false>>({});
+  // The resolved B42 build this proxy is currently serving -- named in the
+  // tile URL below (`?v=`) purely as a browser cache key so mapProxy.js can
+  // safely cache tiles long-term instead of the short bounded window it
+  // falls back to without one; see mapProxy.js's
+  // TILE_BROWSER_CACHE_CONTROL_VERSIONED comment. Fetched once on mount,
+  // same one-shot pattern as WorldMap.tsx's mapSourceRef -- this page never
+  // needed b42Dir before, its toptiles requests were unversioned entirely.
+  const b42DirRef = useRef<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    mapApi
+      .resolve()
+      .then((info) => {
+        if (!cancelled) b42DirRef.current = info.b42Dir;
+      })
+      .catch(() => {
+        /* tiles just keep using the shorter unversioned cache window */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const loadDziTile = useCallback((level: number, col: number, row: number) => {
     const key = `dzi_${level}_${col}_${row}`;
     if (key in dziCacheRef.current) return;
@@ -925,7 +948,7 @@ export default function ChunkCleaner() {
         });
       }
     };
-    img.src = `${B42_DZI_CDN}/${level}/${col}_${row}.webp`;
+    img.src = `${B42_DZI_CDN}/${level}/${col}_${row}.webp${buildTileQuery(0, b42DirRef.current)}`;
   }, []);
 
   // ─── Canvas draw (extracted to callable function for rAF use) ───
