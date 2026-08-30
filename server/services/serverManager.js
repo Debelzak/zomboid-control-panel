@@ -101,6 +101,26 @@ function buildLdLibraryPath(serverDir) {
   return result;
 }
 
+// Locates the actual JVM executable inside a PZ install directory (jre64 for
+// 64-bit installs, jre for older/32-bit ones -- same directories buildLdLibraryPath
+// already knows about). Returns null if neither exists so callers can treat
+// "can't find it" as "nothing to check" rather than failing outright -- this
+// check is best-effort, not a hard requirement of every install layout.
+function findJvmExecutable(serverDir) {
+  const candidates = [
+    path.join(serverDir, "jre64", "bin", "java"),
+    path.join(serverDir, "jre", "bin", "java"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // ignore and try the next candidate
+    }
+  }
+  return null;
+}
+
 // Allowed extensions for custom start commands
 const ALLOWED_CMD_EXTENSIONS = isWindows
   ? [".bat", ".cmd", ".exe"]
@@ -552,6 +572,76 @@ export class ServerManager {
   async checkServerRunning() {
     const details = await this.getServerProcessDetails();
     return details.running;
+  }
+
+  /**
+   * Whether the previous server's JVM binary is still held open by a running
+   * process -- checked directly at the kernel/filesystem level (ETXTBSY on
+   * open-for-write) rather than inferred from the OS process table.
+   *
+   * getServerProcessDetails()'s pgrep/ps scan only sees processes in the
+   * panel's OWN PID namespace. Our own docker-compose.yml explicitly
+   * recommends and supports topologies where that isn't true -- PZ running
+   * natively on the host, or in a separate container, with only the install
+   * directory bind-mounted into the panel's container (docker-compose.yml's
+   * "Topology 1"/"Topology 2"). In that shape the process scan can never see
+   * the real PZ process and reports a confident `running: false` even while
+   * it's still alive and shutting down -- there's nothing wrong with the
+   * scan reading empty, the emptiness just isn't evidence of anything in
+   * this topology. restartServer()'s "wait until the old process is
+   * confirmed dead" loop then has nothing left to wait on, and starts a new
+   * JVM while the old one still holds its own binary open -- the old one (or
+   * whatever validates/patches the install before relaunching) then hits
+   * "Text file busy" (Discord report, Rhazun, 2026-08-30) trying to rewrite
+   * a file a process is still executing.
+   *
+   * This asks the kernel the actual question ETXTBSY is about -- is this
+   * exact file currently busy -- which works regardless of which PID
+   * namespace holds the process, because it's a property of the inode, not
+   * the process table. Non-destructive: opens for read+write and closes
+   * immediately without writing a single byte, so a clean result never
+   * touches the binary's contents.
+   *
+   * Best-effort by design: if the JVM binary can't be located (unusual
+   * install layout, custom launcher), or the open fails for any reason OTHER
+   * than ETXTBSY (permissions, the file genuinely not existing), this
+   * returns false rather than treating an unrelated error as "still busy" --
+   * a permissions problem would fail identically forever and turn every
+   * restart into an infinite wait, which is a worse failure than the one
+   * this exists to catch. Windows doesn't have this failure mode at all
+   * (file locking works differently there), so this is a no-op on Windows.
+   *
+   * ONLY SAFE TO CALL where "busy" has one unambiguous cause -- i.e., right
+   * after this manager told a specific process at this path to quit and is
+   * waiting to see it actually release the binary (restartServer()'s wait
+   * loop). It answers "is this file busy", not "is this MY server's old
+   * process", and multiple PZ servers legitimately sharing one install
+   * directory (differing only by -servername/-cachedir, a normal
+   * deployment shape this codebase already accommodates elsewhere) both
+   * execute this same binary -- a generic pre-start guard using this would
+   * refuse to start server A because unrelated server B is legitimately
+   * running from the same install. Deliberately NOT wired into
+   * startServer()'s guard for that reason (2026-08-30, caught before
+   * landing) -- do not add it there without a way to attribute the
+   * busy-ness to a specific server first.
+   */
+  isJvmExecutableBusy() {
+    if (isWindows) return false;
+
+    const javaPath = findJvmExecutable(path.resolve(this.serverPath || ""));
+    if (!javaPath) return false;
+
+    try {
+      const fd = fs.openSync(javaPath, "r+");
+      fs.closeSync(fd);
+      return false;
+    } catch (error) {
+      if (error?.code === "ETXTBSY") return true;
+      log.debug(
+        `isJvmExecutableBusy: could not probe ${javaPath} (${error?.code || error?.message}), not treating as busy`,
+      );
+      return false;
+    }
   }
 
   // The identifying traits of the server this instance represents.
@@ -1185,6 +1275,29 @@ export class ServerManager {
             `RCON port ${rconHost}:${rconPort} is already in use — a server may be running that process detection missed. Aborting start to prevent port conflict.`,
           );
         }
+
+        // Deliberately NOT checking isJvmExecutableBusy() here (2026-08-30,
+        // same Discord thread that added it to restartServer() below --
+        // caught before landing). In restartServer()'s wait loop the
+        // question is unambiguous: "the process I just told to quit at THIS
+        // path -- has it released the binary yet?" Here it would be asking
+        // something broader -- "is ANY process anywhere executing this
+        // binary?" -- and that has a legitimate "yes" that isn't a bug:
+        // multiple PZ servers (differing only by -servername/-cachedir)
+        // sharing ONE install directory to avoid a second multi-gigabyte
+        // copy is a normal deployment shape, and this codebase already
+        // accommodates shared installPaths elsewhere (db.data.servers has
+        // no installPath uniqueness constraint; server/routes/server.js's
+        // and updateChecker.js's activeSteamOperations guards are keyed by
+        // PATH, not by server, for exactly this reason). A blanket check
+        // here would refuse to start server A because server B is
+        // legitimately running from the same install -- trading a real fix
+        // for Rhazun's topology for a new false refusal on a shared-install
+        // one. No available signal can attribute busy-ness to a specific
+        // server (the process-table `owned`/`matched` split doesn't help:
+        // it depends on the exact process visibility this whole class of
+        // bug is about the absence of), so this is scoped to the one place
+        // that has a genuinely unambiguous answer instead of guessing here.
       }
 
       // Start the server process
@@ -1848,8 +1961,13 @@ export class ServerManager {
           "Could not confirm the old server stopped because process detection failed",
         );
       }
+      // The process-table check above is blind whenever PZ runs outside the
+      // panel's own PID namespace (see isJvmExecutableBusy()'s doc comment)
+      // -- checked alongside it, not instead of it, so this only ever ADDS a
+      // wait condition on setups where it can find the binary at all.
+      let jvmBusy = this.isJvmExecutableBusy();
       let attempts = 0;
-      while (processDetails.running && attempts < 30) {
+      while ((processDetails.running || jvmBusy) && attempts < 30) {
         await this.sleep(1000);
         attempts++;
         processDetails = await this.getServerProcessDetails();
@@ -1858,6 +1976,7 @@ export class ServerManager {
             "Could not confirm the old server stopped because process detection failed",
           );
         }
+        jvmBusy = this.isJvmExecutableBusy();
       }
 
       // Force stop if still running
@@ -1869,6 +1988,22 @@ export class ServerManager {
           );
         }
         await this.sleep(5000);
+        // Re-check: a successful force-stop through the process table says
+        // nothing about whether the kernel has finished releasing the
+        // binary yet (this is the exact gap isJvmExecutableBusy exists to
+        // catch -- ETXTBSY is about the file, not the PID).
+        jvmBusy = this.isJvmExecutableBusy();
+      }
+
+      // The process table (even force-stop) has no way to act on this --
+      // ETXTBSY clears on its own once the kernel finishes tearing the old
+      // process down. If it's still busy after everything above, refuse
+      // rather than start a new JVM against a binary that may still be
+      // rewritten out from under it.
+      if (jvmBusy) {
+        throw new Error(
+          "The previous server process appears to have exited, but its Java executable is still locked by the kernel (\"Text file busy\") -- refusing to start a new one until it clears, to avoid a corrupted install",
+        );
       }
 
       // Extra delay to let OS reap the process
