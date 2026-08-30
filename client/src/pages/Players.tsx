@@ -117,24 +117,6 @@ interface WhitelistAccount {
   displayName: string | null
 }
 
-// Access levels accepted by PZ's setaccesslevel command -- mirrors
-// server/utils/commands.js's ACCESS_LEVELS (see that file's comment for the
-// full jar-evidence citation and buildid; kept in sync here by hand, not
-// imported, since this is client bundle code).
-//
-// hunt-wave13-2026-08-30: previously cited "the official PZ Admin Commands
-// wiki (Build 42.17.0)" -- replaced with jar evidence (setupRole() id
-// literals in Roles.class, buildid 24909800; could not be mapped to a
-// human-readable 42.x.y string, so whether this build IS 42.17.0 is
-// unknown). 'overseer' removed: no backing role exists on a default server,
-// so it could only ever produce "Access Level 'overseer' unknown...".
-// 'priority' added: a real role (getDefaultForPriorityUser(), display name
-// "PriorityUser") that was previously impossible to set from this panel at
-// all. 'none' is a special case handled directly inside
-// SetAccessLevelCommand's own bytecode, never validated against the live
-// Roles table the other 6 go through.
-const ACCESS_LEVELS = ['admin', 'moderator', 'gm', 'observer', 'priority', 'user', 'none']
-
 // Mirrors server/routes/players.js's own SteamID64 check (/^\d{17}$/ on both
 // /banid and /unbanid) so a manually-typed SteamID can't reach a submit
 // button in a shape the server will reject.
@@ -488,6 +470,13 @@ export default function Players() {
   const [whitelistAvailable, setWhitelistAvailable] = useState(true)
   const [whitelistError, setWhitelistError] = useState<string | null>(null)
   const [whitelistLoading, setWhitelistLoading] = useState(false)
+  // Sourced from GET /players/access-levels, which reads the server's own
+  // live role table (access-levels-should-come-from-the-server-not-a-
+  // hardcoded-array) -- no client-side fallback copy. The server already
+  // falls back to its own static list when the db is unavailable or the
+  // server is remote, so an empty array here only ever means "not loaded
+  // yet", not "the feature is unavailable".
+  const [accessLevelOptions, setAccessLevelOptions] = useState<string[]>([])
   const offlineRoster = useMemo(() => {
     const onlineLower = new Set(players.map(p => p.name.toLowerCase()))
     const stats = Object.values(playerStats) as PlayerStat[]
@@ -736,8 +725,17 @@ export default function Players() {
     }
   }, [t])
 
+  const fetchAccessLevels = useCallback(async () => {
+    try {
+      const result = await playersApi.getAccessLevels()
+      setAccessLevelOptions(result.levels || [])
+    } catch (error) {
+      reportClientError('Failed to fetch access levels.', error)
+    }
+  }, [])
+
   useEffect(() => {
-    Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats(), fetchBannedSteamIds(), fetchWhitelist()]).catch(err => {
+    Promise.all([fetchPlayers(), fetchData(), fetchNotesAndStats(), fetchBannedSteamIds(), fetchWhitelist(), fetchAccessLevels()]).catch(err => {
       reportClientError('Failed to load initial player data.', err)
     })
     let isMounted = true
@@ -763,7 +761,7 @@ export default function Players() {
       isMounted = false
       clearInterval(interval)
     }
-  }, [fetchPlayers, fetchData, fetchNotesAndStats, fetchBannedSteamIds, fetchWhitelist])
+  }, [fetchPlayers, fetchData, fetchNotesAndStats, fetchBannedSteamIds, fetchWhitelist, fetchAccessLevels])
 
   // Load note/tags when selected player changes
   useEffect(() => {
@@ -2028,7 +2026,7 @@ export default function Players() {
                             <SelectValue placeholder={t('accessLevelDialog.placeholder')} />
                           </SelectTrigger>
                           <SelectContent>
-                            {ACCESS_LEVELS.map((level) => (
+                            {accessLevelOptions.map((level) => (
                               <SelectItem key={level} value={level}>
                                 {accessLevelLabels[level] || level.charAt(0).toUpperCase() + level.slice(1)}
                               </SelectItem>

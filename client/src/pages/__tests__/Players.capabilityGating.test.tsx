@@ -43,6 +43,7 @@ vi.mock('@/lib/api', async () => {
       getPlayers: vi.fn(),
       getWhitelist: vi.fn(),
       getPerks: vi.fn(),
+      getAccessLevels: vi.fn(),
       getSteamIdBans: vi.fn(),
       getNotes: vi.fn(),
       getStats: vi.fn(),
@@ -86,6 +87,7 @@ vi.mock('@/lib/api', async () => {
 const getPlayers = vi.mocked(playersApi.getPlayers)
 const getWhitelist = vi.mocked(playersApi.getWhitelist)
 const getPerks = vi.mocked(playersApi.getPerks)
+const getAccessLevels = vi.mocked(playersApi.getAccessLevels)
 const getSteamIdBans = vi.mocked(playersApi.getSteamIdBans)
 const getNotes = vi.mocked(playersApi.getNotes)
 const getStats = vi.mocked(playersApi.getStats)
@@ -136,6 +138,7 @@ async function setUpFixtures() {
     allowedSteamIds: ['76561198000000001'],
   })
   getPerks.mockResolvedValue({ catalog: [{ id: 'Sprinting', label: 'Sprinting', category: 'Combat' }] })
+  getAccessLevels.mockResolvedValue({ levels: ['admin', 'moderator', 'gm', 'observer', 'priority', 'user', 'none'], available: true })
   getSteamIdBans.mockResolvedValue({ bans: [{ steamId: '76561198000000002', banned_at: new Date().toISOString() }] })
   getNotes.mockResolvedValue({ notes: [{ playerName: 'TestPlayer', note: 'existing note', tags: [], updated_at: new Date().toISOString() }] })
   getStats.mockResolvedValue({ stats: [] })

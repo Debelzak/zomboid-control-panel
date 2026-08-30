@@ -1,11 +1,5 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
 import { ACCESS_LEVELS } from "../utils/commands.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..", "..");
 
 // hunt-wave13-2026-08-30: ACCESS_LEVELS used to be curated from "the
 // official PZ Admin Commands wiki (Build 42.17.0)" -- a citation with its
@@ -29,26 +23,19 @@ const ROOT = path.resolve(__dirname, "..", "..");
 // the number to make the test pass.
 const EXPECTED_ACCESS_LEVELS = ["admin", "moderator", "gm", "observer", "priority", "user", "none"];
 
-// client/src/pages/Players.tsx keeps its own hand-maintained copy of this
-// same array (not imported -- server code isn't pulled into the client
-// bundle) for its access-level <Select>. Nothing enforced the two staying
-// in sync before this test; a silent drift here means the dropdown offers
-// (or is missing) a choice the server-side check at players.js:311 disagrees
-// with, which fails at submit time with no compile-time signal.
-const PLAYERS_TSX_PATH = "client/src/pages/Players.tsx";
-
-function extractPlayersTsxAccessLevels() {
-  const content = fs.readFileSync(path.join(ROOT, PLAYERS_TSX_PATH), "utf-8");
-  const match = content.match(/const ACCESS_LEVELS = \[([^\]]*)\]/);
-  if (!match) return null;
-  return match[1]
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => s.replace(/^['"]|['"]$/g, ""));
-}
-
-describe("ACCESS_LEVELS: pin and cross-file parity (hunt-wave13 drift gate)", () => {
+// The client/server cross-file parity case this file used to guard here
+// (client/src/pages/Players.tsx's own hand-maintained ACCESS_LEVELS copy)
+// is RETIRED, not just untested: access-levels-should-come-from-the-server-
+// not-a-hardcoded-array (2026-08-30) deleted that copy entirely -- Players.tsx
+// now fetches GET /players/access-levels and renders whatever it returns, so
+// there is no second literal array left to drift out of sync with this one.
+// ACCESS_LEVELS itself is still real and still pinned below: it's now the
+// server-side fallback that route (and POST /access-level's own validation
+// gate) both use when the server's live role table is unavailable (remote
+// server, or one that has never started) -- see
+// server/tests/playersAccessLevelsRoute.test.js for that route's own
+// coverage of the dynamic-list and fallback paths.
+describe("ACCESS_LEVELS: pin (hunt-wave13 drift gate)", () => {
   it("server/utils/commands.js's ACCESS_LEVELS matches the pinned, jar-derived list exactly", () => {
     expect(ACCESS_LEVELS).toEqual(EXPECTED_ACCESS_LEVELS);
   });
@@ -59,17 +46,5 @@ describe("ACCESS_LEVELS: pin and cross-file parity (hunt-wave13 drift gate)", ()
 
   it("contains 'priority' (a real setupRole() id previously missing from this array)", () => {
     expect(ACCESS_LEVELS).toContain("priority");
-  });
-
-  it(`${PLAYERS_TSX_PATH}'s hand-maintained ACCESS_LEVELS copy matches the server's exactly`, () => {
-    const clientLevels = extractPlayersTsxAccessLevels();
-    expect(
-      clientLevels,
-      `could not find "const ACCESS_LEVELS = [...]" in ${PLAYERS_TSX_PATH} -- the extraction regex needs updating, not this test relaxing`,
-    ).not.toBeNull();
-    expect(
-      clientLevels,
-      "client and server ACCESS_LEVELS have drifted apart -- the dropdown will offer (or omit) a choice the server-side check at players.js:311 disagrees with",
-    ).toEqual(ACCESS_LEVELS);
   });
 });
