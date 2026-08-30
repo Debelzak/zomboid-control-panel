@@ -4376,22 +4376,24 @@ handlers.setSandboxOption = function(args)
     PanelBridge.invoke(sandbox, "toLua")
 
     -- Trigger a world save so the changed option persists across restarts.
-    -- A bare pcall here previously discarded the result, so a failed save
-    -- (e.g. disk full, world already saving) silently reported success to
-    -- the panel and the operator even though the change would be lost on
-    -- the next restart.
-    local world = getWorld()
+    -- saveGame() is a bare global -- same LuaManager$GlobalObject binding
+    -- tier as getWorld()/getCell(), both already called elsewhere in this
+    -- file with identical bare-call syntax -- NOT a method on `world`.
+    -- world:saveWorld() does not exist anywhere in the jar (Kevin's audit,
+    -- 2026-08-30). The old `world.saveWorld` field-existence guard was
+    -- always false regardless of world's real state (a Java method can be
+    -- callable while the field reads nil, this file's own recurring lesson),
+    -- so every sandbox change reported a FALSE persistence failure ("World
+    -- not available") on top of a write that had genuinely already
+    -- succeeded. saveGame() returns void -- there is no return value to
+    -- check, so success can only come from the bare call not throwing.
     local persisted = false
     local saveErr = nil
-    if world and world.saveWorld then
-        local saveOk, saveErrMsg = pcall(function() world:saveWorld() end)
-        if saveOk then
-            persisted = true
-        else
-            saveErr = tostring(saveErrMsg)
-        end
+    local saveOk, saveErrMsg = pcall(function() saveGame() end)
+    if saveOk then
+        persisted = true
     else
-        saveErr = "World not available"
+        saveErr = tostring(saveErrMsg)
     end
     if not persisted then
         PanelBridge.error("Sandbox option set but world save failed", { name = optName, error = saveErr })
@@ -4625,20 +4627,21 @@ end
 
 -- Force save the world
 handlers.saveWorld = function(args)
-    -- Try to trigger server save
-    local world = getWorld()
-    if world and world.saveWorld then
-        local success, err = pcall(function()
-            world:saveWorld()
-        end)
-        if success then
-            return true, { message = "World save triggered" }
-        else
-            return false, nil, "World save failed: " .. tostring(err)
-        end
+    -- saveGame() is a bare global (same LuaManager$GlobalObject binding tier
+    -- as getWorld()/getCell()), NOT a method on `world` -- world:saveWorld()
+    -- does not exist anywhere in the jar (Kevin's audit, 2026-08-30). The old
+    -- `world.saveWorld` field-existence guard was always false, so this
+    -- handler could never succeed regardless of the server's real state.
+    -- saveGame() returns void -- there is no return value to check, so
+    -- success can only come from the bare call not throwing.
+    local success, err = pcall(function()
+        saveGame()
+    end)
+    if success then
+        return true, { message = "World save triggered" }
+    else
+        return false, nil, "World save failed: " .. tostring(err)
     end
-
-    return false, nil, "Cannot trigger world save from Lua"
 end
 
 -- ============================================
