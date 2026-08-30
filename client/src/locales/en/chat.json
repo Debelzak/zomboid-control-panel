@@ -20,7 +20,8 @@
     "aria": "Chat channel",
     "server": "Server broadcast",
     "admin": "Admin chat",
-    "general": "General chat"
+    "general": "General chat",
+    "tip": "Server broadcast shows a banner every player sees immediately. Admin chat is visible only to other admins — players never see it. General chat posts a normal-looking message from \"{{adminLabel}}\" into everyone's regular chat, easy to miss and indistinguishable from a real player named {{adminLabel}}."
   },
   "deliveryStatus": {
     "native": "chat delivery: native",

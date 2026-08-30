@@ -20,7 +20,8 @@
     "aria": "Canal de chat",
     "server": "Difusión del servidor",
     "admin": "Chat de administración",
-    "general": "Chat general"
+    "general": "Chat general",
+    "tip": "Difusión del servidor muestra un banner que todos los jugadores ven de inmediato. Chat de administración solo es visible para otros administradores — los jugadores nunca lo ven. Chat general publica un mensaje de aspecto normal de \"{{adminLabel}}\" en el chat habitual de todos, fácil de pasar por alto e indistinguible de un jugador real llamado {{adminLabel}}."
   },
   "deliveryStatus": {
     "native": "entrega de chat: nativa",

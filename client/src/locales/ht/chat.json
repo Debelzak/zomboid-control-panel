@@ -20,7 +20,8 @@
     "aria": "Chanèl chat",
     "server": "Anons sèvè",
     "admin": "Chat admin",
-    "general": "Chat jeneral"
+    "general": "Chat jeneral",
+    "tip": "Anons sèvè montre yon bannyè tout jwè wè imedyatman. Chat admin vizib sèlman pou lòt admin — jwè yo pa janm wè l. Chat jeneral poste yon mesaj ki sanble nòmal ki soti nan \"{{adminLabel}}\" nan chat abityèl tout moun, fasil pou manke e enposib pou distenge ak yon vrè jwè ki rele {{adminLabel}}."
   },
   "deliveryStatus": {
     "native": "livrezon chat: natif",

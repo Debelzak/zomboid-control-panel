@@ -20,7 +20,8 @@
     "aria": "Chat-Kanal",
     "server": "Server-Broadcast",
     "admin": "Admin-Chat",
-    "general": "Allgemeiner Chat"
+    "general": "Allgemeiner Chat",
+    "tip": "Server-Broadcast zeigt ein Banner, das jeder Spieler sofort sieht. Admin-Chat ist nur für andere Admins sichtbar — Spieler sehen ihn nie. Allgemeiner Chat postet eine normal aussehende Nachricht von \"{{adminLabel}}\" in den gewöhnlichen Chat aller, leicht zu übersehen und nicht von einem echten Spieler namens {{adminLabel}} zu unterscheiden."
   },
   "deliveryStatus": {
     "native": "Chat-Zustellung: nativ",

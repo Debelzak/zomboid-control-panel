@@ -96,6 +96,7 @@ import { RconTestConnection } from '@/components/RconTestConnection'
 import { MountDiscoveryBanner } from '@/components/MountDiscoveryBanner'
 import { DiscoverySetup } from '@/components/DiscoverySetup'
 import { DisabledReason } from '@/components/DisabledReason'
+import { HelpTip } from '@/components/HelpTip'
 import { platformTranslationKey, useRuntimeInfo } from '@/hooks/useRuntimeInfo'
 
 interface DetectedServerConfig {
@@ -1955,18 +1956,21 @@ export default function Servers() {
                     )
                   })()}
                   {server.isRemote && (
-                    <DisabledReason reason={!canServersManage ? t('card.noPermissionManage') : null}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleConfigureRemoteBridge(server)}
-                        disabled={!canServersManage}
-                        // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the button does; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
-                        title={t('card.configureSftpTitle')}
-                      >
-                        <Link className="w-4 h-4 mr-1.5" /> {t('card.configureSftp')}
-                      </Button>
-                    </DisabledReason>
+                    <div className="flex items-center gap-1">
+                      <DisabledReason reason={!canServersManage ? t('card.noPermissionManage') : null}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleConfigureRemoteBridge(server)}
+                          disabled={!canServersManage}
+                          // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the button does; the disabled-reason is already covered by the wrapping <DisabledReason> above. Triaged 2026-08-27.
+                          title={t('card.configureSftpTitle')}
+                        >
+                          <Link className="w-4 h-4 mr-1.5" /> {t('card.configureSftp')}
+                        </Button>
+                      </DisabledReason>
+                      <HelpTip label={t('card.configureSftp')}>{t('card.configureSftpTip')}</HelpTip>
+                    </div>
                   )}
                   {hasUpdate && (
                     <Button
@@ -2510,7 +2514,10 @@ export default function Servers() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{t('editDialog.serverNameLabel')}</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>{t('editDialog.serverNameLabel')}</Label>
+                    <HelpTip label={t('editDialog.serverNameLabel')}>{t('editDialog.serverNameTip')}</HelpTip>
+                  </div>
                   <Input
                     value={editingServer.serverName}
                     onChange={e => setEditingServer({ ...editingServer, serverName: e.target.value })}
@@ -2548,7 +2555,10 @@ export default function Servers() {
               </div>
 
               <div className="space-y-2">
-                <Label>{t('editDialog.dataPathLabel')}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label>{t('editDialog.dataPathLabel')}</Label>
+                  <HelpTip label={t('editDialog.dataPathLabel')}>{t('editDialog.dataPathTip')}</HelpTip>
+                </div>
                 <Input
                   value={editingServer.zomboidDataPath || ''}
                   onChange={e => setEditingServer({ ...editingServer, zomboidDataPath: e.target.value })}

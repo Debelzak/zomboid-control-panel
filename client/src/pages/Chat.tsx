@@ -27,6 +27,7 @@ import { useConfirm } from '@/contexts/ConfirmContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { DisabledReason } from '@/components/DisabledReason'
 import { EmptyState } from '@/components/EmptyState'
+import { HelpTip } from '@/components/HelpTip'
 import { cn } from '@/lib/utils'
 import { reportClientError } from '@/lib/client-errors'
 import { getUserErrorMessage } from '@/lib/errorMessage'
@@ -448,31 +449,34 @@ export default function Chat() {
                   </div>
                 )}
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)} disabled={sending}>
-                    <SelectTrigger className="h-10 sm:w-52 font-mono text-[11px] uppercase tracking-[0.16em] bg-card/70 border-border/55" aria-label={t('channel.aria')}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="server">
-                        <span className="flex items-center gap-2">
-                          <Megaphone className="w-3.5 h-3.5 text-amber-400" />
-                          {t('channel.server')}
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="admin">
-                        <span className="flex items-center gap-2">
-                          <Shield className="w-3.5 h-3.5 text-destructive" />
-                          {t('channel.admin')}
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="general">
-                        <span className="flex items-center gap-2">
-                          <MessageSquare className="w-3.5 h-3.5 text-primary" />
-                          {t('channel.general')}
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)} disabled={sending}>
+                      <SelectTrigger className="h-10 sm:w-52 font-mono text-[11px] uppercase tracking-[0.16em] bg-card/70 border-border/55" aria-label={t('channel.aria')}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="server">
+                          <span className="flex items-center gap-2">
+                            <Megaphone className="w-3.5 h-3.5 text-amber-400" />
+                            {t('channel.server')}
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="admin">
+                          <span className="flex items-center gap-2">
+                            <Shield className="w-3.5 h-3.5 text-destructive" />
+                            {t('channel.admin')}
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="general">
+                          <span className="flex items-center gap-2">
+                            <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                            {t('channel.general')}
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <HelpTip label={t('channel.aria')}>{t('channel.tip', { adminLabel: t('labels.admin') })}</HelpTip>
+                  </div>
                   <Input
                     ref={messageInputRef}
                     placeholder={
