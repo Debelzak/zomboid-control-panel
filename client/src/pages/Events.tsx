@@ -563,6 +563,7 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
   const { t } = useTranslation('events')
   const bridgeOperationTemplates = useMemo(() => getBridgeOperationTemplates(t), [t])
   const [showRaw, setShowRaw] = useState(false)
+  const [safehouseAddSelection, setSafehouseAddSelection] = useState<Record<string, string>>({})
   const { operation, success, data, error, timestamp } = result
   const isLoading = loading !== null
 
@@ -706,15 +707,34 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
                       <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">{t('resultDisplay.membersListPrefix', { list: members.map(String).join(', ') })}</p>
                     )}
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     {players.length > 0 && (
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={isLoading}
-                        onClick={() => {
-                          const username = players[0]?.name
-                          if (username) onInlineAction('safehouseAddPlayer', { safehouseRef: ref, username }, t('resultDisplay.addedPlayerLabel', { username, title }))
-                        }}>
-                        {t('resultDisplay.addPlayerButton')}
-                      </Button>
+                      <>
+                        <select
+                          aria-label={t('resultDisplay.addPlayerSelectLabel', { title })}
+                          className="h-7 rounded-md border border-input bg-background px-1.5 text-xs"
+                          value={safehouseAddSelection[ref] ?? ''}
+                          disabled={isLoading}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setSafehouseAddSelection((prev) => ({ ...prev, [ref]: value }))
+                          }}
+                        >
+                          <option value="">{t('resultDisplay.addPlayerSelectPlaceholder')}</option>
+                          {players.map((p) => (
+                            <option key={p.name} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={isLoading || !safehouseAddSelection[ref]}
+                          onClick={() => {
+                            const username = safehouseAddSelection[ref]
+                            if (!username) return
+                            onInlineAction('safehouseAddPlayer', { safehouseRef: ref, username }, t('resultDisplay.addedPlayerLabel', { username, title }))
+                            setSafehouseAddSelection((prev) => ({ ...prev, [ref]: '' }))
+                          }}>
+                          {t('resultDisplay.addPlayerButton')}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1432,7 +1452,6 @@ export default function Events() {
         : await panelBridgeApi.shutOffUtilities(power, water)
       await checkBridgeStatus()
       const successCopy = getEventSuccessCopy(action, t)
-      const notPersisted = result?.persisted === false
       // restoreUtilities/shutOffUtilities already compute the REAL post-
       // action power state via world:isHydroPowerOn() (a genuine read-back,
       // not a hardcoded literal -- see panelBridgeUtilitiesHydroPowerOnReporting
@@ -1444,6 +1463,20 @@ export default function Events() {
       // Water has no equivalent boolean read-back in this response (see
       // PanelBridge.lua's "Water has no Java flag like isHydroPowerOn()"
       // comment) -- only power's outcome can be verified this way.
+      //
+      // 2026-08-30, panelbridge-total-audit-2026-08-30 (Finding C): a
+      // `result?.persisted === false` / `result.persistReason` warning used
+      // to live here, checking whether the SandboxVars write would survive a
+      // server restart. Neither handler has ever set either field -- the
+      // handlers only log "FINAL SandboxVars.*Modifier=..." into an
+      // unstructured debug string array, never a structured persisted
+      // boolean -- so the warning was permanently dead code that implied a
+      // check was happening when it wasn't. Removed rather than left as a
+      // silent no-op; reported to god (in-scope: PanelBridge.lua is off
+      // limits for this fix) that a real implementation needs the Lua
+      // handlers to compare their own already-computed FINAL
+      // SandboxVars.*Modifier value against the intended target and return
+      // that comparison as an actual field.
       const powerMismatch = power && typeof result?.hydroPowerOn === 'boolean' && result.hydroPowerOn !== on
       toast({
         title: powerMismatch ? t('toasts.actionFailedTitle', { action }) : successCopy.title,
@@ -1451,10 +1484,8 @@ export default function Events() {
           ? t('toasts.powerDidNotTakeEffectDesc', {
               state: result.hydroPowerOn ? t('utilities.statusOnline') : t('utilities.statusOffline'),
             })
-          : notPersisted
-            ? t('toasts.notPersistedDesc', { reason: result.persistReason || t('toasts.notPersistedUnknownReason') })
-            : successCopy.description,
-        variant: powerMismatch ? 'destructive' : notPersisted ? 'default' : ('success' as const),
+          : successCopy.description,
+        variant: powerMismatch ? 'destructive' : ('success' as const),
       })
       pushActivity(powerMismatch ? t('toasts.actionFailedTitle', { action }) : successCopy.title, !powerMismatch)
     } catch (error) {
