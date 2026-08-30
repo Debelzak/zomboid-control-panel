@@ -119,7 +119,7 @@
     "modeRemoteTitle": "Remote Server",
     "modeRemoteDesc": "RCON only — another machine",
     "rconOnlyTitle": "RCON-Only Connection",
-    "rconOnlyDesc": "Features like config editing, mod management, backups, server start/stop, and file operations will be unavailable. You can still use the console, manage players, send chat messages, control weather and events, and run scheduled commands.",
+    "rconOnlyDesc": "Features like config editing, mod management, backups, server start/stop, and file operations will be unavailable. You can still use the console, manage players, send chat messages, and run scheduled commands over RCON. Weather and world events need the PanelBridge mod's file-based connection, which isn't available until you configure the SFTP bridge — look for \"Configure SFTP Bridge\" on this server's card after you add it.",
     "cancel": "Cancel",
     "adding": "Adding...",
     "addServer": "Add Server",

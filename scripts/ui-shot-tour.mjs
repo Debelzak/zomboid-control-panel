@@ -451,6 +451,38 @@ const VIEWS = [
   { name: 'backups', path: '/backups' },
   { name: 'chunks', path: '/chunks' },
   { name: 'servers', path: '/servers' },
+  // remote-bridge-discoverability-2026-08-30: the Add Remote Server dialog's
+  // RCON-only banner used to claim weather/events worked over plain RCON --
+  // they don't, PanelBridge needs the SFTP bridge configured first. Kept
+  // addressable so the corrected copy (and any future wording pass on it)
+  // stays easy to eyeball without adding a real remote server end to end.
+  {
+    name: 'servers:add-remote',
+    path: '/servers',
+    interact: async (page) => {
+      await page.getByRole('button', { name: 'Add Remote Server' }).first().click()
+      await page.waitForTimeout(300)
+    },
+  },
+  // Confirms "Configure SFTP Bridge" (Servers.tsx ~1957, gated on
+  // server.isRemote) actually renders on a freshly-added remote server's own
+  // card -- the affordance the corrected banner above now points to. Fake
+  // RCON details are fine here: Add Server only requires
+  // name/rconHost/rconPassword to be present, not a successful Test
+  // Connection, and this throwaway server has no real RCON target anyway.
+  {
+    name: 'servers:remote-card',
+    path: '/servers',
+    interact: async (page) => {
+      await page.getByRole('button', { name: 'Add Remote Server' }).first().click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByPlaceholder('My Remote PZ Server').fill('Tour Remote Server')
+      await dialog.getByPlaceholder('192.168.1.100 or myserver.com').fill('192.168.1.50')
+      await dialog.getByPlaceholder("Enter the RCON password set in the server's INI file").fill('tourdemo')
+      await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
+      await page.waitForTimeout(3000)
+    },
+  },
   { name: 'server-setup', path: '/server-setup' },
   { name: 'discord', path: '/discord' },
   { name: 'settings', path: '/settings' },
