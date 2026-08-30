@@ -60,7 +60,11 @@ function withAuth(options?: RequestInit): RequestInit {
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
-async function tryRefreshToken(): Promise<boolean> {
+// Exported so callers outside the 401-retry path below (App.tsx's socket
+// auth, ahead of a reconnect attempt) can reuse the exact same
+// isRefreshing/refreshPromise dedupe instead of racing a second,
+// independent refresh call against this one.
+export async function tryRefreshToken(): Promise<boolean> {
   if (isRefreshing && refreshPromise) return refreshPromise;
 
   isRefreshing = true;
