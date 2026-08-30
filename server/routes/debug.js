@@ -52,6 +52,11 @@ import {
   inspectZomboidPath,
 } from "../utils/zomboidPaths.js";
 import { requirePermission, listRolesWithMemberCounts } from "../services/permissions.js";
+import { getDockerClient } from "../services/managedContainer.js";
+import {
+  getLifecycleServiceName,
+  isManagedLifecycleProvider,
+} from "../services/linuxServiceLifecycle.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1033,6 +1038,118 @@ async function buildBackupsSummary(req) {
   }
 }
 
+// support-bundle-2026-08-30: a real production report (Discord #bug_report,
+// see hive/agents/god/research/discord-restart-etxtbsy-2026-08-30.md) was
+// only diagnosable because of one decisive line -- a "Text file busy"
+// .NET stack trace from DepotDownloader -- that a user happened to paste
+// by hand from `docker logs`. None of the collectors above would have
+// caught it: every one of them scans the FILESYSTEM (this panel's own
+// logs, the game server's own log files), and a container's stdout/stderr
+// is not a file anywhere on disk -- it is owned by Docker's log driver
+// (or, for a systemd/OpenRC managed lifecycle, by journald or whatever the
+// service supervisor does with it). A bundle generated at the moment of
+// that report would not have contained the line that solved the case.
+//
+// Bounded the same way as every other raw-log collector in this bundle:
+// last N lines, not the full history, so one chatty deployment can't
+// balloon bundle size (DockerClient.getContainerLogs also enforces a hard
+// byte cap independently of the line count, since `tail=` bounds lines,
+// not bytes).
+const SUPPORT_BUNDLE_LOG_TAIL_LINES = 500;
+
+async function buildDockerContainerLogsText(activeServer) {
+  const ref = activeServer?.dockerContainerName || activeServer?.dockerContainerId || null;
+  if (!ref) {
+    return "Docker container logs\n=====================\n\nNo Docker container is mapped to the active server -- skipped.\n";
+  }
+  const dockerClient = getDockerClient();
+  if (!dockerClient?.enabled || !dockerClient.available) {
+    return `Docker container logs\n=====================\n\nContainer "${ref}" is mapped to the active server, but Docker control is disabled or the Docker socket is unavailable on this panel host -- skipped.\n`;
+  }
+  const logs = await dockerClient.getContainerLogs(ref, {
+    tail: SUPPORT_BUNDLE_LOG_TAIL_LINES,
+  });
+  if (logs == null) {
+    return `Docker container logs\n=====================\n\nContainer "${ref}" is mapped to the active server, but its logs could not be fetched (not managed by this panel, or the Docker API call failed) -- skipped.\n`;
+  }
+  if (!logs.trim()) {
+    return `Docker container logs\n=====================\nContainer: ${ref}\n\nFetched successfully -- no stdout/stderr history yet.\n`;
+  }
+  return `Docker container logs\n=====================\nContainer: ${ref}\nLast ${SUPPORT_BUNDLE_LOG_TAIL_LINES} lines, stdout+stderr, timestamps included.\n\n${logs}`;
+}
+
+// Mirrors linuxServiceLifecycle.js's own defaultExecFile() (systemctl/rc-
+// service --user calls need XDG_RUNTIME_DIR set even when the panel process
+// itself was started without a login session) rather than importing it --
+// that function is private to a file this task does not own, and the logic
+// is small and stable enough that duplicating it here is cheaper than
+// widening that file's exported surface for one caller.
+function execLinuxUserCommand(command, args, { timeoutMs = 8000 } = {}) {
+  return new Promise((resolve) => {
+    const uid = typeof process.getuid === "function" ? process.getuid() : null;
+    const env = { ...process.env };
+    if (!env.XDG_RUNTIME_DIR && Number.isInteger(uid)) {
+      env.XDG_RUNTIME_DIR = `/run/user/${uid}`;
+    }
+    execFile(
+      command,
+      args,
+      { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env },
+      (error, stdout, stderr) => {
+        resolve({
+          code: Number.isInteger(error?.code) ? error.code : error ? 1 : 0,
+          stdout: String(stdout || ""),
+          stderr: String(stderr || error?.message || ""),
+        });
+      },
+    );
+  });
+}
+
+async function buildManagedServiceLogsText(activeServer) {
+  const provider = activeServer?.lifecycleProvider;
+  if (!isManagedLifecycleProvider(provider)) {
+    return "Managed service logs\n=====================\n\nThe active server is not running under a systemd/OpenRC managed lifecycle -- skipped.\n";
+  }
+  if (provider !== "systemd") {
+    // OpenRC's supervise-daemon can be configured to log to a file, syslog,
+    // or nowhere, and the destination is not tracked anywhere in this
+    // panel today -- an honest, reported gap rather than a guessed command
+    // that might silently return nothing (or someone else's logs) on a
+    // real OpenRC host. Verify supervise-daemon's actual log destination
+    // on a real system before adding a path here.
+    return "Managed service logs\n=====================\n\nThe active server runs under OpenRC. This panel does not yet capture OpenRC service output here (supervise-daemon's log destination is not currently tracked) -- known gap, not fetched.\n";
+  }
+  if (process.platform !== "linux") {
+    return "Managed service logs\n=====================\n\nsystemd lifecycle is Linux-only; this panel host is not Linux -- skipped.\n";
+  }
+
+  let serviceName;
+  try {
+    serviceName = getLifecycleServiceName(activeServer);
+  } catch (e) {
+    return `Managed service logs\n=====================\n\nCould not determine the systemd unit name: ${e.message}\n`;
+  }
+  const unit = `${serviceName}.service`;
+  const result = await execLinuxUserCommand("journalctl", [
+    "--user",
+    "-u",
+    unit,
+    "--no-pager",
+    "-n",
+    String(SUPPORT_BUNDLE_LOG_TAIL_LINES),
+  ]);
+  if (result.code !== 0) {
+    return `Managed service logs\n=====================\n\nCould not read the journal for systemd --user unit "${unit}": ${
+      result.stderr.trim() || `journalctl exited ${result.code}`
+    }\n`;
+  }
+  if (!result.stdout.trim()) {
+    return `Managed service logs\n=====================\nUnit: ${unit}\n\nFetched successfully -- the journal has no entries for this unit yet.\n`;
+  }
+  return `Managed service logs\n=====================\nUnit: ${unit} (systemd --user)\nLast ${SUPPORT_BUNDLE_LOG_TAIL_LINES} lines.\n\n${result.stdout}`;
+}
+
 async function buildDiscordBotStatus(req) {
   try {
     const discordBot = req?.app?.get?.("discordBot");
@@ -1080,6 +1197,10 @@ function buildBundleReadme() {
     "  Grep for `ERROR`, `Exception`, `Object tried to call nil`, `Stack trace`.",
     "- `zomboid-install/` — connection/workshop/system logs from the install side.",
     "- `crash-logs/` — Java/JVM crash dumps (`hs_err_pid*.log`) and matching error logs.",
+    "- `docker-container-logs.txt` — last 500 lines of the mapped Docker container's own stdout/stderr (only if the active server is Docker-managed and Docker control is on). This is the ONLY place an early startup crash from a container's own entrypoint script, or a JVM that died before writing its own log file, ever shows up -- none of the filesystem-scanning logs above can see it. Says why it's missing when it is (not mapped, Docker control off, socket unavailable, fetch failed).",
+    "- `managed-service-logs.txt` — last 500 lines from `journalctl --user` for a systemd-managed server (same reasoning as the Docker file, for a systemd `--user` unit instead of a container). OpenRC-managed servers are a known, reported gap here -- supervise-daemon's log destination is not currently tracked by this panel.",
+    "",
+    "**None of the raw logs above are content-scanned for secrets** -- they are exactly what the panel, the game server, or (for the two files above) a container/service supervisor wrote, unmodified. This has always been true for `admin-panel/`, `zomboid-server/`, `zomboid-install/`, and `crash-logs/`; it now also applies to `docker-container-logs.txt` and `managed-service-logs.txt`, which come from a script this panel does not control the output of. Only the JSON files above (`panel-config.json`, `sftp-diagnostics.json`, `environment.txt`, etc.) go through field-based redaction. Review before forwarding a bundle to someone outside your team.",
     "",
     "## What is NOT in this bundle",
     "",
@@ -1091,6 +1212,7 @@ function buildBundleReadme() {
     "- A record of the OIDC \"Test connection\" button's last result, or a live check against the identity provider run while building this bundle — `oidc-status.json` reports configuration only.",
     "- Failed backup attempts as structured data (only successful runs are recorded) — check `admin-panel/error.log` for those.",
     "- Retry/failure counters for config-file (INI/Lua) writes specifically — only db.json's own write health is tracked today.",
+    "- OpenRC service output (`managed-service-logs.txt` reports this explicitly rather than guessing at a log path).",
     "",
     "Generated by ZomboidControlPanel — see https://github.com/fpsacha/zomboid-control-panel",
     "",
@@ -1141,6 +1263,18 @@ async function buildBundleDiagnostics(activeServer, req) {
     {
       name: "environment.txt",
       content: await buildEnvironmentReport().catch(
+        (e) => `# error: ${e.message}\n`,
+      ),
+    },
+    {
+      name: "docker-container-logs.txt",
+      content: await buildDockerContainerLogsText(activeServer).catch(
+        (e) => `# error: ${e.message}\n`,
+      ),
+    },
+    {
+      name: "managed-service-logs.txt",
+      content: await buildManagedServiceLogsText(activeServer).catch(
         (e) => `# error: ${e.message}\n`,
       ),
     },
@@ -1339,6 +1473,7 @@ router.get("/logs/download-zip", requirePermission("diagnostics.manage"), async 
       "- zomboid-server: server-console and runtime logs",
       "- zomboid-install: install-side connection/workshop/system logs",
       "- crash-logs: matching crash/error dump files",
+      "- docker-container-logs.txt / managed-service-logs.txt: container/service stdout+stderr for a Docker- or systemd-managed server (see README.md)",
     ].join("\n");
 
     archive.append(manifest, { name: "support-bundle-info.txt" });
@@ -5770,6 +5905,8 @@ export {
   buildDbWriteHealth,
   buildBackupsSummary,
   buildDiscordBotStatus,
+  buildDockerContainerLogsText,
+  buildManagedServiceLogsText,
 };
 // Exported for direct unit testing of the GET /diagnostics thumbnail-
 // resolution check -- see server/tests/thumbnailResolutionCheck.test.js.
