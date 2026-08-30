@@ -647,6 +647,10 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
                           {alarmed ? t('resultDisplay.alarmOffButton') : t('resultDisplay.alarmOnButton')}
                         </Button>
                         <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" disabled={isLoading}
+                          onClick={() => onInlineAction('vehicleSetSiren', { vehicleId: vid, enabled: !sirening }, sirening ? t('resultDisplay.sirenDisabledLabel', { id: vid }) : t('resultDisplay.sirenEnabledLabel', { id: vid }))}>
+                          {sirening ? t('resultDisplay.sirenOffButton') : t('resultDisplay.sirenOnButton')}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" disabled={isLoading}
                           onClick={() => onInlineAction('vehicleSetTrunkLocked', { vehicleId: vid, locked: !trunkLocked }, trunkLocked ? t('resultDisplay.trunkUnlockedLabel', { id: vid }) : t('resultDisplay.trunkLockedLabel', { id: vid }))}>
                           {trunkLocked ? <><Unlock className="h-3 w-3" /> {t('resultDisplay.unlockButton')}</> : <><Lock className="h-3 w-3" /> {t('resultDisplay.lockButton')}</>}
                         </Button>

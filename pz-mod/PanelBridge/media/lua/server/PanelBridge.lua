@@ -2877,7 +2877,10 @@ handlers.getWorldStats = function(args)
     }
 end
 
--- Get current time speed multiplier
+-- Get current time speed multiplier. Real and working, but currently unused
+-- by the panel: Events.tsx's time-speed slider is local useState(1), not
+-- fetched from here, so a speed change made outside the panel (RCON, another
+-- admin) never shows up in the slider until the page is reloaded some other way.
 handlers.getTimeSpeed = function(args)
     local gt = getGameTime()
     if not gt then
@@ -2889,12 +2892,22 @@ handlers.getTimeSpeed = function(args)
     return true, { multiplier = multiplier }
 end
 
--- Set time speed multiplier (1 = normal, higher = faster)
+-- Set time speed multiplier (1 = normal, higher = faster). The live path is
+-- client/src/pages/Events.tsx's time-speed slider, which calls
+-- executeCommand(`setTimeSpeed ${timeSpeed}`) -> rconApi.execute() -> the
+-- server's own RCON setTimeSpeed/sts command, not this handler. Kept (not
+-- deleted) as a clear, named failure rather than a silently-missing handler.
 handlers.setTimeSpeed = function(args)
     return false, nil, "Time speed must use the server RCON command; PanelBridge cannot change the dedicated server clock multiplier"
 end
 
--- Trigger helicopter event near a player
+-- Trigger helicopter event near a player. Real and working (targets the
+-- SPECIFIC named player), but currently unused by the panel: the
+-- "Helicopter" quick-sound button in client/src/pages/Events.tsx calls
+-- serverApi.triggerChopper() -> POST /server/events/chopper -> RCON's
+-- chopper command instead, which targets a RANDOM online player (see that
+-- file's own "chopper and gunshot target a RANDOM online player" comment) --
+-- not a duplicate of this handler's behavior, just the one the UI wires to.
 handlers.triggerHelicopterEvent = function(args)
     local username = args.username
     if not username then
@@ -6627,6 +6640,19 @@ handlers.getVehiclesDetailed = function(args)
             local function get(methodName)
                 return vehicleGet(v, methodName)
             end
+            -- getLightbarSirenMode does not exist on BaseVehicle in the real
+            -- B42 jar (confirmed 2026-08-30, cross-checked against the same
+            -- jar that also confirmed isAlarmed/isTrunkLocked genuinely DO
+            -- exist -- this field alone was dead, not the whole trio).
+            -- getLightbarSirenModeObject() is the real accessor; it returns
+            -- a LightbarSirenMode wrapper whose own get():int is the same
+            -- primitive this code already wants. Two-hop, both hops via
+            -- tryGet (already nil-safe: PanelBridge.invoke itself treats a
+            -- nil object as a clean failure, not a throw), since vehicleGet
+            -- above only calls a method on `v` itself, not on an
+            -- intermediate object a first call returns.
+            local sirenModeObj = PanelBridge.tryGet(v, "getLightbarSirenModeObject")
+            local sirenLevel = tonumber(PanelBridge.tryGet(sirenModeObj, "get")) or 0
             return {
                 id = get("getId"),
                 x = get("getX"),
@@ -6638,7 +6664,7 @@ handlers.getVehiclesDetailed = function(args)
                 batteryCharge = get("getBatteryCharge"),
                 fuelPct = get("getRemainingFuelPercentage"),
                 alarmed = get("isAlarmed") == true,
-                sirening = (tonumber(get("getLightbarSirenMode")) or 0) > 0,
+                sirening = sirenLevel > 0,
                 trunkLocked = get("isTrunkLocked") == true
             }
         end)
@@ -6730,14 +6756,18 @@ handlers.vehicleSetSiren = function(args)
     end)
     if not ok then return false, nil, "Failed to set vehicle siren mode: " .. tostring(err) end
 
-    -- getLightbarSirenMode is already read elsewhere in this file
-    -- (getVehiclesDetailed) -- reuse it here to confirm the write stuck.
-    local okGet, actualMode = PanelBridge.invoke(vehicle, "getLightbarSirenMode")
+    -- getLightbarSirenMode does not exist on BaseVehicle (see
+    -- getVehiclesDetailed's own comment above for the jar evidence) --
+    -- getLightbarSirenModeObject().get() is the real two-hop path, same as
+    -- that read side now uses, so `verified` can finally reach true instead
+    -- of being permanently pinned at nil/"unverifiable".
+    local sirenModeObj = PanelBridge.tryGet(vehicle, "getLightbarSirenModeObject")
+    local actualMode = tonumber(PanelBridge.tryGet(sirenModeObj, "get"))
     local verified
-    if not okGet then
+    if actualMode == nil then
         verified = nil
     else
-        verified = (tonumber(actualMode) == mode)
+        verified = (actualMode == mode)
     end
 
     return PanelBridge.verifiedResult(verified,
@@ -6936,6 +6966,10 @@ handlers.removeVehiclesInArea = function(args)
     return true, { message = removed .. " vehicle(s) removed from area", removed = removed, vehicles = removedList, bounds = { minX = minX, minY = minY, maxX = maxX, maxY = maxY } }
 end
 
+-- The live path is client/src/pages/WorldMap.tsx's "Spawn Vehicle" tool,
+-- which calls playersApi.addVehicleAt() -> POST /players/add-vehicle-at ->
+-- the server's own RCON addvehicle command, not this handler. Kept (not
+-- deleted) as a clear, named failure rather than a silently-missing handler.
 handlers.spawnVehicleAt = function(args)
     return false, nil, "Vehicle spawning is handled by the panel through RCON on Build 42"
 end

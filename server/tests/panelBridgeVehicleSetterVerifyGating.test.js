@@ -12,6 +12,18 @@ import { loadPanelBridge } from './helpers/panelBridgeLua.js';
 // getBatteryCharge for its own listing. Same shape as the safehouse/faction
 // discovery: the read-back existed all along, just never reused to verify
 // a mutation.
+//
+// CORRECTED 2026-08-30 (panelbridge-audit): the siren half of that claim was
+// itself wrong, undetected until Kevin's real-jar audit -- getLightbarSirenMode
+// does not exist anywhere on BaseVehicle in the real B42 jar (confirmed by
+// two independent classfile scans); getLightbarSirenModeObject() is the real
+// accessor, returning a LightbarSirenMode wrapper whose own get():int is the
+// primitive this code wants. Both PanelBridge.lua (getVehiclesDetailed's
+// `sirening` field and vehicleSetSiren's own verify step) and FakeVehicle
+// below are updated to the real two-hop shape -- this is why this file's
+// siren stub no longer defines getLightbarSirenMode at all; a stub for a
+// method the real game doesn't have would just reintroduce the same false
+// assumption this correction exists to close.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LUA_PATH = path.join(
@@ -42,7 +54,12 @@ function FakeVehicle:setAlarmed(v) if self.sticks then self.alarmed = v end end
 function FakeVehicle:isAlarmed() return self.alarmed end
 function FakeVehicle:triggerAlarm() end
 function FakeVehicle:setLightbarSirenMode(v) if self.sticks then self.sirenMode = v end end
-function FakeVehicle:getLightbarSirenMode() return self.sirenMode end
+function FakeVehicle:getLightbarSirenModeObject()
+  local vehicle = self
+  local modeObj = {}
+  function modeObj:get() return vehicle.sirenMode end
+  return modeObj
+end
 function FakeVehicle:setTrunkLocked(v) if self.sticks then self.trunkLocked = v end end
 function FakeVehicle:isTrunkLocked() return self.trunkLocked end
 function FakeVehicle:getPartById(id) return nil end
@@ -79,7 +96,7 @@ describe('PanelBridge.lua vehicle setters -- gate on getVehiclesDetailed\'s own 
     expect(result.ok).toBe(false);
   });
 
-  it('vehicleSetSiren reports verified=true when getLightbarSirenMode confirms it', () => {
+  it('vehicleSetSiren reports verified=true when getLightbarSirenModeObject().get() confirms it', () => {
     const bridge = loadPanelBridge(LUA_PATH, vehicleStub({ sticks: true }));
     const result = bridge.callHandler('vehicleSetSiren', { vehicleId: 1, mode: 2 });
     expect(result.ok).toBe(true);
