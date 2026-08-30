@@ -155,7 +155,13 @@
     "temperatureAria": "温度",
     "cloudsAria": "云量强度",
     "humidityAria": "湿度",
-    "precipitationAria": "降水强度"
+    "precipitationAria": "降水强度",
+    "liveConditions": "实时:",
+    "thunderstorm": "雷暴",
+    "snowing": "降雪",
+    "raining": "降雨",
+    "clear": "晴朗",
+    "windReading": "{{speed}} 公里/小时 @ {{angle}}°"
   },
   "visual": {
     "sublabelOnline": "桥接 · 管理员覆盖",

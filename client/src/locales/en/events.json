@@ -155,7 +155,13 @@
     "temperatureAria": "Temperature",
     "cloudsAria": "Cloud intensity",
     "humidityAria": "Humidity",
-    "precipitationAria": "Precipitation intensity"
+    "precipitationAria": "Precipitation intensity",
+    "liveConditions": "live:",
+    "thunderstorm": "thunderstorm",
+    "snowing": "snowing",
+    "raining": "raining",
+    "clear": "clear",
+    "windReading": "{{speed}} km/h @ {{angle}}°"
   },
   "visual": {
     "sublabelOnline": "bridge · admin override",

@@ -2435,7 +2435,27 @@ export const panelBridgeApi = {
     apiPost<BridgeCommandResult<T>>("/panel-bridge/command", { action, args }),
 
   // Get weather info
-  getWeather: () => apiGet("/panel-bridge/weather"),
+  getWeather: () =>
+    apiGet("/panel-bridge/weather") as Promise<{
+      success: boolean;
+      data: {
+        temperature: number;
+        humidity: number;
+        windSpeed: number;
+        windAngle: number;
+        fogIntensity: number;
+        cloudIntensity: number;
+        precipitationIntensity: number;
+        isRaining: boolean;
+        isSnowing: boolean;
+        isThunderStorming: boolean;
+        dayLight: number;
+        nightStrength: number;
+        desaturation: number;
+        viewDistance: number;
+        ambient: number;
+      };
+    }>,
 
   // Get server info from mod
   getServerInfo: () => apiGet("/panel-bridge/server-info"),

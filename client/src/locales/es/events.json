@@ -155,7 +155,13 @@
     "temperatureAria": "Temperatura",
     "cloudsAria": "Intensidad de las nubes",
     "humidityAria": "Humedad",
-    "precipitationAria": "Intensidad de la precipitación"
+    "precipitationAria": "Intensidad de la precipitación",
+    "liveConditions": "en vivo:",
+    "thunderstorm": "tormenta eléctrica",
+    "snowing": "nevando",
+    "raining": "lloviendo",
+    "clear": "despejado",
+    "windReading": "{{speed}} km/h @ {{angle}}°"
   },
   "visual": {
     "sublabelOnline": "puente · anulación de administrador",

@@ -155,7 +155,13 @@
     "temperatureAria": "Tanperati",
     "cloudsAria": "Entansite nyaj",
     "humidityAria": "Imidite",
-    "precipitationAria": "Entansite presipitasyon"
+    "precipitationAria": "Entansite presipitasyon",
+    "liveConditions": "kounye a:",
+    "thunderstorm": "loraj",
+    "snowing": "lanèj",
+    "raining": "lapli",
+    "clear": "tan klè",
+    "windReading": "{{speed}} km/h @ {{angle}}°"
   },
   "visual": {
     "sublabelOnline": "bridge · ranplasman admin",

@@ -155,7 +155,13 @@
     "temperatureAria": "Temperatur",
     "cloudsAria": "Wolkenintensität",
     "humidityAria": "Luftfeuchtigkeit",
-    "precipitationAria": "Niederschlagsintensität"
+    "precipitationAria": "Niederschlagsintensität",
+    "liveConditions": "live:",
+    "thunderstorm": "Gewitter",
+    "snowing": "Schneefall",
+    "raining": "Regen",
+    "clear": "klar",
+    "windReading": "{{speed}} km/h @ {{angle}}°"
   },
   "visual": {
     "sublabelOnline": "Brücke · Admin-Override",

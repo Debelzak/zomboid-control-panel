@@ -1049,6 +1049,21 @@ export default function Events() {
     nightsSurvived: number
   } | null>(null)
 
+  // Live weather state -- fields getClimateFloats does not already carry
+  // (isRaining/isSnowing/isThunderStorming, and real windSpeed(kph)/
+  // windAngle(degrees) as distinct from the 0-100% wind-intensity slider
+  // above). The other getWeather fields (temperature, humidity, fog, cloud,
+  // precipitation, dayLight, nightStrength, desaturation, viewDistance,
+  // ambient) are the exact same ClimateFloat values already polled and
+  // shown as sliders, so they are deliberately not duplicated here.
+  const [liveWeather, setLiveWeather] = useState<{
+    isRaining: boolean
+    isSnowing: boolean
+    isThunderStorming: boolean
+    windSpeedKph: number
+    windAngleDeg: number
+  } | null>(null)
+
   const { toast } = useToast()
   const confirm = useConfirm()
 
@@ -1094,6 +1109,26 @@ export default function Events() {
 
       // If connected, fetch secondary data in parallel
       if (status.modConnected) {
+        // getWeather is deliberately NOT in this Promise.allSettled batch: it
+        // only feeds the small live-conditions strip below, and awaiting it
+        // alongside floatsRes/timeRes/utilitiesRes would let a slow or
+        // failing weather fetch delay the climate sliders those other reads
+        // actually drive. Fired independently so it can only ever add data,
+        // never hold up the rest of this poll tick.
+        panelBridgeApi.getWeather().then((weatherResult) => {
+          if (!mountedRef.current) return
+          if (weatherResult.success && weatherResult.data) {
+            const w = weatherResult.data
+            setLiveWeather({
+              isRaining: Boolean(w.isRaining),
+              isSnowing: Boolean(w.isSnowing),
+              isThunderStorming: Boolean(w.isThunderStorming),
+              windSpeedKph: typeof w.windSpeed === 'number' ? w.windSpeed : 0,
+              windAngleDeg: typeof w.windAngle === 'number' ? w.windAngle : 0,
+            })
+          }
+        }).catch(() => {})
+
         const [floatsRes, timeRes, utilitiesRes] = await Promise.allSettled([
           panelBridgeApi.getClimateFloats(),
           panelBridgeApi.getGameTime(),
@@ -2202,6 +2237,35 @@ export default function Events() {
               ) : undefined}
             />
             <div className="p-4 space-y-4">
+              {bridgeConnected && liveWeather && (
+                <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-border/40 text-[11px]">
+                  <span className="font-medium text-foreground/70">{t('climate.liveConditions')}</span>
+                  {liveWeather.isThunderStorming && (
+                    <Badge variant="outline" className="gap-1 text-amber-400 border-amber-400/40">
+                      <CloudLightning className="w-3 h-3" /> {t('climate.thunderstorm')}
+                    </Badge>
+                  )}
+                  {liveWeather.isSnowing && (
+                    <Badge variant="outline" className="gap-1 text-info border-info/40">
+                      <Snowflake className="w-3 h-3" /> {t('climate.snowing')}
+                    </Badge>
+                  )}
+                  {liveWeather.isRaining && !liveWeather.isSnowing && (
+                    <Badge variant="outline" className="gap-1 text-info border-info/40">
+                      <CloudRain className="w-3 h-3" /> {t('climate.raining')}
+                    </Badge>
+                  )}
+                  {!liveWeather.isRaining && !liveWeather.isSnowing && !liveWeather.isThunderStorming && (
+                    <Badge variant="outline" className="gap-1 text-muted-foreground">
+                      <CloudOff className="w-3 h-3" /> {t('climate.clear')}
+                    </Badge>
+                  )}
+                  <span className="inline-flex items-center gap-1 font-mono tabular-nums text-muted-foreground">
+                    <Wind className="w-3 h-3" />
+                    {t('climate.windReading', { speed: Math.round(liveWeather.windSpeedKph), angle: Math.round(liveWeather.windAngleDeg) })}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
