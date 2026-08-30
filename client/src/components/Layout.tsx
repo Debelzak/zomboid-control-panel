@@ -313,9 +313,13 @@ export default function Layout({ children }: LayoutProps) {
     !!activeServer?.isRemote &&
     !(item.allowRemoteConfigMirror && activeServer.remoteConfigConfigured)
   const provider = resolveClientProvider(activeServer)
-  const [servers, setServers] = useState<ServerInstance[]>([])
-  const hasServer = servers.length > 0
-  const isBlockedByNoServer = (section: NavSection) => !!section.requiresServer && !hasServer
+  // null = we don't yet know (still loading, or the last fetch failed) — distinct
+  // from [] (fetch succeeded and confirmed there really are zero servers). Collapsing
+  // those into one empty array made a slow/failed fetch render the same "no server
+  // yet" claim as a genuinely empty roster, on every load and permanently on failure.
+  const [servers, setServers] = useState<ServerInstance[] | null>(null)
+  const serversConfirmedEmpty = servers !== null && servers.length === 0
+  const isBlockedByNoServer = (section: NavSection) => !!section.requiresServer && serversConfirmedEmpty
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   // Not a Radix primitive, so it gets none of Radix's automatic focus
   // trap/restore -- handled manually below.
@@ -735,7 +739,7 @@ export default function Layout({ children }: LayoutProps) {
             (which stay in place for screen readers — this is additive, not a
             replacement). Reuses SystemHealthBanner's warning-strip language
             (border-warning/35, AlertCircle) rather than a new color. */}
-        {servers.length === 0 && !sidebarCollapsed && (
+        {serversConfirmedEmpty && !sidebarCollapsed && (
           <div className="border-b border-border/40 bg-warning/[0.04] px-3 py-2.5 shadow-[inset_2px_0_0_hsl(var(--warning))]">
             <div className="flex items-start gap-2">
               <AlertCircle className="h-3.5 w-3.5 shrink-0 text-warning mt-0.5" aria-hidden />
@@ -759,7 +763,7 @@ export default function Layout({ children }: LayoutProps) {
         )}
 
         {/* Active server strip — tactical status bar */}
-        {servers.length > 0 && !sidebarCollapsed && (
+        {servers && servers.length > 0 && !sidebarCollapsed && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
