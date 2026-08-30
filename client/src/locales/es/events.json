@@ -143,6 +143,7 @@
     "frontWarm": "frente cálido",
     "triggerFront": "generar frente",
     "helicopterLabel": "evento de helicóptero",
+    "helicopterTip": "Atrae a los zombis cercanos hacia el ruido — no es solo ambientación. Puede traer una horda sobre los jugadores cerca de la ruta de vuelo.",
     "triggerHelicopter": "activar helicóptero",
     "stopHelicopter": "detener helicóptero"
   },
@@ -296,6 +297,7 @@
     "vehicle": "vehículo",
     "selectPlaceholder": "seleccionar vehículo…",
     "spawnFor": "generar para",
+    "spawnForTip": "Solo funciona si el jugador está en la planta baja o en un sótano — falla si está en un piso superior.",
     "noPlayersOnline": "no hay jugadores en línea",
     "selectVehicleFirstTitle": "Seleccionar un vehículo primero",
     "typeAria": "Tipo de vehículo",
@@ -324,6 +326,7 @@
     "x": "x",
     "y": "y",
     "z": "z",
+    "zTip": "El piso del edificio, no una altura — 0 es la planta baja, valores más altos son pisos superiores.",
     "teleportSelf": "teletransportarse",
     "teleportSelfTitle": "Teletransportarse (el administrador debe estar dentro del juego)",
     "teleportTarget": "teletransportar a {{target}}",

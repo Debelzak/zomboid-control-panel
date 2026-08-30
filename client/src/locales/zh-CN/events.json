@@ -143,6 +143,7 @@
     "frontWarm": "暖锋",
     "triggerFront": "生成锋面",
     "helicopterLabel": "直升机事件",
+    "helicopterTip": "会把附近的僵尸吸引到声音处——不只是氛围音效。可能给飞行路径附近的玩家招来一大群僵尸。",
     "triggerHelicopter": "触发直升机",
     "stopHelicopter": "停止直升机"
   },
@@ -296,6 +297,7 @@
     "vehicle": "载具",
     "selectPlaceholder": "选择载具…",
     "spawnFor": "生成给",
+    "spawnForTip": "仅当玩家位于地面层或地下室时才有效——若玩家在楼上则会失败。",
     "noPlayersOnline": "没有在线玩家",
     "selectVehicleFirstTitle": "请先选择载具",
     "typeAria": "载具类型",
@@ -324,6 +326,7 @@
     "x": "x",
     "y": "y",
     "z": "z",
+    "zTip": "楼层，不是高度——0 表示地面层，数值越大表示楼层越高。",
     "teleportSelf": "传送自己",
     "teleportSelfTitle": "传送你自己（管理员必须在游戏中）",
     "teleportTarget": "传送 {{target}}",

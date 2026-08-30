@@ -184,6 +184,7 @@
     "reasonLabel": "Grund (optional)",
     "reasonPlaceholder": "Grund eingeben …",
     "banIpLabel": "IP-Adresse ebenfalls bannen",
+    "banIpTip": "Blockiert zusätzlich die IP, nicht nur das Konto — kann andere im selben Netzwerk betreffen, und dieses Panel bietet keine eigene Möglichkeit, IP-Sperren später zu überprüfen oder aufzuheben.",
     "cancel": "Abbrechen",
     "continue": "Weiter zum Bann"
   },
@@ -211,6 +212,7 @@
     "xLabel": "X",
     "yLabel": "Y",
     "zLabel": "Z",
+    "zTip": "Das Stockwerk, keine Höhe — 0 ist das Erdgeschoss, höhere Werte sind obere Stockwerke.",
     "submit": "Teleportieren"
   },
   "secondaryOpsHeader": "eigenständige Aktionen",
@@ -291,6 +293,7 @@
     "healButton": "Heilen",
     "killLabel": "Töten",
     "killDesc": "Beendet den Charakter dauerhaft",
+    "killTip": "Schaltet außerdem zuerst den Gottmodus aus, selbst wenn die Tötung selbst fehlschlägt — er wird nicht automatisch wieder aktiviert.",
     "killButton": "Töten",
     "killConfirmTitle": "{{player}} töten?",
     "killConfirmDesc": "Dies beendet den Charakter von {{player}} sofort. Auf einem Permadeath-Server gibt es kein Rückgängig, kein Respawn mit demselben Charakter und keine Wiederherstellung. Tippe unten den Benutzernamen ein, um zu bestätigen, dass du dies mit ihm/ihr vorhast.",

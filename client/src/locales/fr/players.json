@@ -184,6 +184,7 @@
     "reasonLabel": "Motif (optionnel)",
     "reasonPlaceholder": "Entrer un motif...",
     "banIpLabel": "Bannir aussi l'adresse IP",
+    "banIpTip": "Bloque aussi l'adresse IP, pas seulement le compte — peut affecter d'autres personnes sur le même réseau, et ce panneau ne permet pas de consulter ou de lever les bannissements IP séparément.",
     "cancel": "Annuler",
     "continue": "Continuer vers le bannissement"
   },
@@ -211,6 +212,7 @@
     "xLabel": "X",
     "yLabel": "Y",
     "zLabel": "Z",
+    "zTip": "L'étage du bâtiment, pas une hauteur — 0 est le rez-de-chaussée, les valeurs plus élevées sont des étages supérieurs.",
     "submit": "Téléporter"
   },
   "secondaryOpsHeader": "opérations autonomes",
@@ -291,6 +293,7 @@
     "healButton": "Soigner",
     "killLabel": "Tuer",
     "killDesc": "Met fin au personnage de façon permanente",
+    "killTip": "Désactive aussi d'abord le Mode Dieu, même si la mise à mort échoue elle-même — il n'est pas réactivé automatiquement.",
     "killButton": "Tuer",
     "killConfirmTitle": "Tuer {{player}} ?",
     "killConfirmDesc": "Ceci met fin immédiatement au personnage de {{player}}. Sur un serveur permadeath, il n'y a ni annulation, ni réapparition avec le même personnage, ni restauration. Tapez son nom d'utilisateur ci-dessous pour confirmer que c'est bien ce que vous voulez lui faire.",

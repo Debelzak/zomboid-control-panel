@@ -93,6 +93,7 @@
     "infected": "Infiziert",
     "heal": "Heilen",
     "god": "Godmode",
+    "godTip": "Aktiviert für diesen Spieler immer den Godmode — kein Umschalten. Zum Deaktivieren stattdessen die Spieler-Seite verwenden.",
     "healedTitle": "Geheilt",
     "healedDesc": "{{username}} wurde geheilt.",
     "godModeEnabled": "Godmode aktiviert"
@@ -188,6 +189,7 @@
   "spawnDialog": {
     "title": "Fahrzeug spawnen",
     "location": "Standort: {{x}}, {{y}} · Etage {{z}}",
+    "floorTip": "Fahrzeuge erscheinen nur im Erdgeschoss oder im Keller — auf jedem Stockwerk darüber schlägt dies fehl.",
     "cancel": "Abbrechen",
     "spawn": "Spawnen"
   },

@@ -184,6 +184,7 @@
     "reasonLabel": "Rezon (opsyonèl)",
     "reasonPlaceholder": "Antre rezon an...",
     "banIpLabel": "Bani adrès IP tou",
+    "banIpTip": "Anplis, li bloke adrès IP a, pa sèlman kont lan — sa ka afekte lòt moun sou menm rezo a, e panel sa a pa gen fason pou revize oswa retire yon ban IP apa.",
     "cancel": "Anile",
     "continue": "Kontinye pou Bani"
   },
@@ -211,6 +212,7 @@
     "xLabel": "X",
     "yLabel": "Y",
     "zLabel": "Z",
+    "zTip": "Etaj bilding lan, se pa yon wotè — 0 se etaj tè a, chif ki pi wo se yon etaj anlè.",
     "submit": "Teleporte"
   },
   "secondaryOpsHeader": "operasyon endepandan",
@@ -291,6 +293,7 @@
     "healButton": "Geri",
     "killLabel": "Touye",
     "killDesc": "Fini karaktè a pou tout tan",
+    "killTip": "Anplis, li dezaktive Mòd Bondye anvan, menm si touye a li menm echwe — li pa reyaktive otomatikman.",
     "killButton": "Touye",
     "killConfirmTitle": "Touye {{player}}?",
     "killConfirmDesc": "Sa a fini karaktè {{player}} a imedyatman. Sou yon sèvè permadeath, pa gen anile, pa gen respawn ak menm karaktè a, e pa gen restorasyon. Tape non itilizatè yo anba a pou konfime se sa ou vle fè yo.",

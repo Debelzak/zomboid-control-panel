@@ -143,6 +143,7 @@
     "frontWarm": "Warmfront",
     "triggerFront": "Front erzeugen",
     "helicopterLabel": "Hubschrauberereignis",
+    "helicopterTip": "Zieht nahe Zombies zum Geräusch — nicht nur Atmosphäre. Kann Spielern in der Nähe des Flugwegs eine Horde bescheren.",
     "triggerHelicopter": "Hubschrauber auslösen",
     "stopHelicopter": "Hubschrauber stoppen"
   },
@@ -296,6 +297,7 @@
     "vehicle": "Fahrzeug",
     "selectPlaceholder": "Fahrzeug auswählen…",
     "spawnFor": "spawnen für",
+    "spawnForTip": "Funktioniert nur, wenn sich der Spieler im Erdgeschoss oder im Keller befindet — schlägt fehl, wenn er sich in einem oberen Stockwerk befindet.",
     "noPlayersOnline": "keine Spieler online",
     "selectVehicleFirstTitle": "Zuerst ein Fahrzeug auswählen",
     "typeAria": "Fahrzeugtyp",
@@ -324,6 +326,7 @@
     "x": "x",
     "y": "y",
     "z": "z",
+    "zTip": "Das Stockwerk, keine Höhe — 0 ist das Erdgeschoss, höhere Werte sind obere Stockwerke.",
     "teleportSelf": "sich selbst teleportieren",
     "teleportSelfTitle": "Teleportiere dich selbst (Admin muss im Spiel sein)",
     "teleportTarget": "{{target}} teleportieren",

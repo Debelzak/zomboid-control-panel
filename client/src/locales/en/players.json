@@ -184,6 +184,7 @@
     "reasonLabel": "Reason (optional)",
     "reasonPlaceholder": "Enter reason...",
     "banIpLabel": "Also ban IP address",
+    "banIpTip": "Also blocks the IP, not just the account — can affect others on the same network, and this panel has no way to review or lift IP bans separately.",
     "cancel": "Cancel",
     "continue": "Continue to Ban"
   },
@@ -211,6 +212,7 @@
     "xLabel": "X",
     "yLabel": "Y",
     "zLabel": "Z",
+    "zTip": "The building floor, not a height — 0 is ground level, higher is an upper floor.",
     "submit": "Teleport"
   },
   "secondaryOpsHeader": "standalone ops",
@@ -291,6 +293,7 @@
     "healButton": "Heal",
     "killLabel": "Kill",
     "killDesc": "Permanently ends the character",
+    "killTip": "Also turns off God Mode first, even if the kill itself fails — it isn't turned back on automatically.",
     "killButton": "Kill",
     "killConfirmTitle": "Kill {{player}}?",
     "killConfirmDesc": "This immediately ends {{player}}'s character. On a permadeath server there is no undo, no respawn as the same character, and no restore. Type their username below to confirm you mean to do this to them.",

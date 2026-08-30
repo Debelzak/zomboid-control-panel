@@ -66,6 +66,7 @@ import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { DisabledReason } from '@/components/DisabledReason'
+import { HelpTip } from '@/components/HelpTip'
 import { cn } from '@/lib/utils'
 import { getUserErrorMessage } from '@/lib/errorMessage'
 import { useConfirm } from '@/contexts/ConfirmContext'
@@ -2289,10 +2290,13 @@ export default function Events() {
                 </div>
 
                 <div className="space-y-3 pt-4 border-t border-border/40">
-                  <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
-                    <Plane className="w-3.5 h-3.5 text-primary" />
-                    {t('severe.helicopterLabel')}
-                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Plane className="w-3.5 h-3.5 text-primary" />
+                      {t('severe.helicopterLabel')}
+                    </Label>
+                    <HelpTip label={t('severe.helicopterLabel')}>{t('severe.helicopterTip')}</HelpTip>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={() => handleBridgeAction('Helicopter Event', () => panelBridgeApi.triggerHelicopterEvent())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
                       {bridgeLoading === 'Helicopter Event' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plane className="w-3.5 h-3.5" />}
@@ -2994,7 +2998,10 @@ export default function Events() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">{t('vehicles.spawnFor')}</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">{t('vehicles.spawnFor')}</Label>
+                    <HelpTip label={t('vehicles.spawnFor')}>{t('vehicles.spawnForTip')}</HelpTip>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {players.length === 0 ? (
                       <p className="font-mono text-[11px] text-muted-foreground/70 italic">{t('vehicles.noPlayersOnline')}</p>
@@ -3063,7 +3070,10 @@ export default function Events() {
                     <Input id="teleport-y" aria-label={t('teleport.yAria')} type="number" placeholder="11000" value={teleportY} onChange={(e) => setTeleportY(e.target.value)} className="h-9 font-mono text-[12px] tabular-nums" />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="teleport-z" className="text-xs font-medium text-muted-foreground">{t('teleport.z')}</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Label htmlFor="teleport-z" className="text-xs font-medium text-muted-foreground">{t('teleport.z')}</Label>
+                      <HelpTip label={t('teleport.z')}>{t('teleport.zTip')}</HelpTip>
+                    </div>
                     <Input id="teleport-z" aria-label={t('teleport.zAria')} type="number" placeholder="0" value={teleportZ} onChange={(e) => setTeleportZ(e.target.value)} className="h-9 font-mono text-[12px] tabular-nums" />
                   </div>
                 </div>

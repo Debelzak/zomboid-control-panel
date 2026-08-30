@@ -89,6 +89,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/components/ui/use-toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/EmptyState'
+import { HelpTip } from '@/components/HelpTip'
 import { SpawnBrowser } from '@/components/SpawnBrowser'
 import { NumberInput } from '@/components/NumberInput'
 import { playersApi, panelBridgeApi, configApi } from '@/lib/api'
@@ -2267,6 +2268,7 @@ export default function Players() {
                             onCheckedChange={(checked) => setBanIp(checked === true)}
                           />
                           <Label htmlFor="banIp">{t('banDialog.banIpLabel')}</Label>
+                          <HelpTip label={t('banDialog.banIpLabel')}>{t('banDialog.banIpTip')}</HelpTip>
                         </div>
                       </div>
                       <DialogFooter>
@@ -2426,7 +2428,10 @@ export default function Players() {
                             />
                           </div>
                           <div>
-                            <Label htmlFor="teleport-z">{t('teleportDialog.zLabel')}</Label>
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="teleport-z">{t('teleportDialog.zLabel')}</Label>
+                              <HelpTip label={t('teleportDialog.zLabel')}>{t('teleportDialog.zTip')}</HelpTip>
+                            </div>
                             <Input
                               id="teleport-z"
                               type="number"
@@ -3010,7 +3015,10 @@ export default function Players() {
                         <Skull className="w-5 h-5" />
                       </div>
                       <div>
-                        <p className="font-medium">{t('powers.killLabel')}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium">{t('powers.killLabel')}</p>
+                          <HelpTip label={t('powers.killLabel')}>{t('powers.killTip')}</HelpTip>
+                        </div>
                         <p className="text-xs text-muted-foreground">{t('powers.killDesc')}</p>
                       </div>
                     </div>

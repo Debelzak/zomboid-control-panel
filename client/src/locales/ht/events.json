@@ -143,6 +143,7 @@
     "frontWarm": "fwon cho",
     "triggerFront": "jenere fwon",
     "helicopterLabel": "evènman elikoptè",
+    "helicopterTip": "Sa atire zonbi ki tou pre yo vè bwi a — se pa jis anbyans. Sa ka mennen yon foul zonbi sou jwè ki tou pre chemen vòl la.",
     "triggerHelicopter": "deklanche elikoptè",
     "stopHelicopter": "sispann elikoptè"
   },
@@ -296,6 +297,7 @@
     "vehicle": "veyikil",
     "selectPlaceholder": "chwazi veyikil…",
     "spawnFor": "fè parèt pou",
+    "spawnForTip": "Sa mache sèlman si jwè a sou etaj tè a oswa nan yon sousòl — li echwe si li sou yon etaj anlè.",
     "noPlayersOnline": "pa gen jwè anliy",
     "selectVehicleFirstTitle": "Chwazi yon veyikil dabò",
     "typeAria": "Kalite veyikil",
@@ -324,6 +326,7 @@
     "x": "x",
     "y": "y",
     "z": "z",
+    "zTip": "Etaj bilding lan, se pa yon wotè — 0 se etaj tè a, chif ki pi wo se yon etaj anlè.",
     "teleportSelf": "teleporte tèt ou",
     "teleportSelfTitle": "Teleporte tèt ou (admin dwe nan jwèt la)",
     "teleportTarget": "teleporte {{target}}",

@@ -93,6 +93,7 @@
     "infected": "infecté",
     "heal": "Soigner",
     "god": "Dieu",
+    "godTip": "Active toujours le Mode Dieu pour ce joueur — ce n'est pas un bouton bascule. Désactivez-le depuis Joueurs.",
     "healedTitle": "Soigné",
     "healedDesc": "{{username}} soigné",
     "godModeEnabled": "Mode Dieu activé"
@@ -188,6 +189,7 @@
   "spawnDialog": {
     "title": "Générer un véhicule",
     "location": "Position : {{x}}, {{y}} · Étage {{z}}",
+    "floorTip": "Les véhicules n'apparaissent qu'au rez-de-chaussée ou au sous-sol — cela échoue à tout étage supérieur.",
     "cancel": "Annuler",
     "spawn": "Générer"
   },

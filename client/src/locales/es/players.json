@@ -184,6 +184,7 @@
     "reasonLabel": "Motivo (opcional)",
     "reasonPlaceholder": "Escribir motivo...",
     "banIpLabel": "También banear la dirección IP",
+    "banIpTip": "También bloquea la IP, no solo la cuenta — puede afectar a otras personas en la misma red, y este panel no permite revisar ni levantar baneos de IP por separado.",
     "cancel": "Cancelar",
     "continue": "Continuar para banear"
   },
@@ -211,6 +212,7 @@
     "xLabel": "X",
     "yLabel": "Y",
     "zLabel": "Z",
+    "zTip": "El piso del edificio, no una altura — 0 es la planta baja, valores más altos son pisos superiores.",
     "submit": "Teletransportar"
   },
   "secondaryOpsHeader": "operaciones independientes",
@@ -291,6 +293,7 @@
     "healButton": "Curar",
     "killLabel": "Matar",
     "killDesc": "Termina el personaje de forma permanente",
+    "killTip": "También desactiva primero el Modo Dios, incluso si la eliminación en sí falla — no se vuelve a activar automáticamente.",
     "killButton": "Matar",
     "killConfirmTitle": "¿Matar a {{player}}?",
     "killConfirmDesc": "Esto termina de inmediato el personaje de {{player}}. En un servidor de muerte permanente no hay deshacer, no hay reaparición con el mismo personaje y no hay restauración. Escribe su nombre de usuario abajo para confirmar que quieres hacerle esto.",

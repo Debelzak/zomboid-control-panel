@@ -184,6 +184,7 @@
     "reasonLabel": "原因（可选）",
     "reasonPlaceholder": "输入原因…",
     "banIpLabel": "同时封禁 IP 地址",
+    "banIpTip": "还会封禁该 IP 地址，而不仅是账号——可能影响同一网络下的其他人，且本面板没有单独查看或解除 IP 封禁的入口。",
     "cancel": "取消",
     "continue": "继续封禁"
   },
@@ -211,6 +212,7 @@
     "xLabel": "X",
     "yLabel": "Y",
     "zLabel": "Z",
+    "zTip": "楼层，不是高度——0 表示地面层，数值越大表示楼层越高。",
     "submit": "传送"
   },
   "secondaryOpsHeader": "其他操作",
@@ -291,6 +293,7 @@
     "healButton": "治疗",
     "killLabel": "击杀",
     "killDesc": "永久结束该角色",
+    "killTip": "还会先关闭无敌模式，即使击杀本身失败——它不会自动重新开启。",
     "killButton": "击杀",
     "killConfirmTitle": "击杀 {{player}}?",
     "killConfirmDesc": "此操作会立即结束 {{player}} 的角色。在永久死亡服务器上,没有撤销、没有以同一角色重生、也没有恢复。请在下方输入其用户名以确认你确实要这样对待该玩家。",

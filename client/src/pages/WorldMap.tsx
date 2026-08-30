@@ -4,6 +4,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { DisabledReason } from '@/components/DisabledReason'
+import { HelpTip } from '@/components/HelpTip'
 import {
   Map as MapIcon,
   Crosshair,
@@ -3166,31 +3167,34 @@ export default function WorldMap() {
                     <Heart className="w-3 h-3" /> {t('dossier.heal')}
                   </Button>
                 </DisabledReason>
-                <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1">
-                  <Button
-                    size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
-                    disabled={actionLoading !== null || !canGmTools}
-                    onClick={() => {
-                      if (!canGmTools) return
-                      setActionLoading('god-card')
-                      panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
-                        .then((response) => {
-                          const state = getBridgeVerifiedState('setGodMode', response?.data)
-                          if (state === 'unverifiable') {
-                            toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('dossier.god') }), variant: 'default' })
-                          } else if (state === 'old-bridge') {
-                            toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('dossier.god') }), variant: 'default' })
-                          } else {
-                            toast({ title: t('dossier.godModeEnabled') })
-                          }
-                        })
-                        .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
-                        .finally(() => setActionLoading(null))
-                    }}
-                  >
-                    <Shield className="w-3 h-3" /> {t('dossier.god')}
-                  </Button>
-                </DisabledReason>
+                <div className="flex-1 flex items-center gap-1 min-w-0">
+                  <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1 min-w-0">
+                    <Button
+                      size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
+                      disabled={actionLoading !== null || !canGmTools}
+                      onClick={() => {
+                        if (!canGmTools) return
+                        setActionLoading('god-card')
+                        panelBridgeApi.sendCommand('setGodMode', { username: selectedPlayer.username, enabled: true })
+                          .then((response) => {
+                            const state = getBridgeVerifiedState('setGodMode', response?.data)
+                            if (state === 'unverifiable') {
+                              toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeUnverifiedDesc', { action: t('dossier.god') }), variant: 'default' })
+                            } else if (state === 'old-bridge') {
+                              toast({ title: t('dossier.godModeEnabled'), description: t('toasts.bridgeOldBridgeDesc', { action: t('dossier.god') }), variant: 'default' })
+                            } else {
+                              toast({ title: t('dossier.godModeEnabled') })
+                            }
+                          })
+                          .catch(() => toast({ title: t('errorTitle'), variant: 'destructive' }))
+                          .finally(() => setActionLoading(null))
+                      }}
+                    >
+                      <Shield className="w-3 h-3" /> {t('dossier.god')}
+                    </Button>
+                  </DisabledReason>
+                  <HelpTip label={t('dossier.god')} className="shrink-0">{t('dossier.godTip')}</HelpTip>
+                </div>
               </div>
             </div>
           </div>
@@ -3664,8 +3668,11 @@ export default function WorldMap() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="text-xs text-muted-foreground font-mono tabular-nums">
-              {t('spawnDialog.location', { x: spawnDialog?.x, y: spawnDialog?.y, z: spawnDialog?.z ?? 0 })}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                {t('spawnDialog.location', { x: spawnDialog?.x, y: spawnDialog?.y, z: spawnDialog?.z ?? 0 })}
+              </span>
+              <HelpTip label={t('spawnDialog.title')}>{t('spawnDialog.floorTip')}</HelpTip>
             </div>
             <VehiclePicker
               value={spawnVehicleId}

@@ -93,6 +93,7 @@
     "infected": "enfekte",
     "heal": "Geri",
     "god": "Bondye",
+    "godTip": "Toujou aktive Mòd Bondye pou jwè sa a — li pa yon switch. Dezaktive li nan Jwè yo.",
     "healedTitle": "Geri",
     "healedDesc": "{{username}} geri",
     "godModeEnabled": "Mòd Bondye aktive"
@@ -188,6 +189,7 @@
   "spawnDialog": {
     "title": "Fè Machin Parèt",
     "location": "Pozisyon: {{x}}, {{y}} · Etaj {{z}}",
+    "floorTip": "Machin parèt sèlman nan etaj tè a oswa nan yon sousòl — sa echwe nan nenpòt etaj ki pi wo.",
     "cancel": "Anile",
     "spawn": "Fè parèt"
   },
