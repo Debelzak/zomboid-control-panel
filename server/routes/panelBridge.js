@@ -4236,7 +4236,14 @@ router.post("/chat/alert", requirePermission("server.world_events"), async (req,
         message,
         alert: true,
       });
-      if (result?.success) return res.json(result);
+      // 2026-08-30, panelbridge-total-audit-2026-08-30 (Finding B): chat/admin
+      // and chat/general both check data.method !== "player:Say" here to
+      // detect the alert API silently degrading to plain overhead-text
+      // delivery, and fall back to RCON when it does. This route lacked that
+      // check -- a degraded alert used to return as a bare success, with no
+      // alert/banner styling at all, while the caller saw the same response
+      // shape as a real delivered alert.
+      if (result?.success && result?.data?.method !== "player:Say") return res.json(result);
     }
 
     const rconResult = await trySendViaRcon(req, message);
