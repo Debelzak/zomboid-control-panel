@@ -1984,39 +1984,47 @@ handlers.getServerInfo = function(args)
 end
 
 -- Get weather info
+-- Each field is read inside its own pcall -- this used to wrap all 15 field
+-- reads (12 of them bare direct calls) in ONE pcall, so a single throwing
+-- getter crashed the whole handler and lost the other 14 fields, which would
+-- have read fine on their own. Same per-item isolation pattern as
+-- getClimateFloats (see its 2026-08-30 fix) -- one broken field is skipped
+-- (and counted in a new `skipped` field) instead of taking down the rest.
+local GET_WEATHER_FIELDS = {
+    { key = "temperature", get = function(c) return c:getTemperature() end },
+    { key = "humidity", get = function(c) return c:getHumidity() end },
+    { key = "windSpeed", get = function(c) return c:getWindspeedKph() end },
+    { key = "windAngle", get = function(c) return c:getWindAngleDegrees() end },
+    { key = "fogIntensity", get = function(c) return c:getFogIntensity() end },
+    { key = "cloudIntensity", get = function(c) return c:getCloudIntensity() end },
+    { key = "precipitationIntensity", get = function(c) return c:getPrecipitationIntensity() end },
+    { key = "isRaining", get = function(c) return c:isRaining() end },
+    { key = "isSnowing", get = function(c) return c:isSnowing() end },
+    { key = "isThunderStorming", get = function(c) return PanelBridge.safeGet(c, "getIsThunderStorming", false) end },
+    { key = "dayLight", get = function(c) return c:getDayLightStrength() end },
+    { key = "nightStrength", get = function(c) return c:getNightStrength() end },
+    { key = "desaturation", get = function(c) return c:getDesaturation() end },
+    { key = "viewDistance", get = function(c) return PanelBridge.safeGet(c, "getViewDistance", 1.0) end },
+    { key = "ambient", get = function(c) return PanelBridge.safeGet(c, "getAmbient", 1.0) end },
+}
+
 handlers.getWeather = function(args)
     local climate = getClimateManager()
     if not climate then
         return false, nil, "ClimateManager not available"
     end
 
-    -- Get weather data with safe access for cross-version compatibility
-    local success, data = pcall(function()
-        local cloudIntensity = climate:getCloudIntensity()
-        local precipIntensity = climate:getPrecipitationIntensity()
-
-        return {
-            temperature = climate:getTemperature(),
-            humidity = climate:getHumidity(),
-            windSpeed = climate:getWindspeedKph(),
-            windAngle = climate:getWindAngleDegrees(),
-            fogIntensity = climate:getFogIntensity(),
-            cloudIntensity = cloudIntensity,
-            precipitationIntensity = precipIntensity,
-            isRaining = climate:isRaining(),
-            isSnowing = climate:isSnowing(),
-            isThunderStorming = PanelBridge.safeGet(climate, "getIsThunderStorming", false),
-            dayLight = climate:getDayLightStrength(),
-            nightStrength = climate:getNightStrength(),
-            desaturation = climate:getDesaturation(),
-            viewDistance = PanelBridge.safeGet(climate, "getViewDistance", 1.0),
-            ambient = PanelBridge.safeGet(climate, "getAmbient", 1.0)
-        }
-    end)
-
-    if not success then
-        return false, nil, "Failed to get weather data: " .. tostring(data)
+    local data = {}
+    local skipped = 0
+    for _, field in ipairs(GET_WEATHER_FIELDS) do
+        local ok, value = pcall(field.get, climate)
+        if ok then
+            data[field.key] = value
+        else
+            skipped = skipped + 1
+        end
     end
+    data.skipped = skipped
 
     return true, data
 end
