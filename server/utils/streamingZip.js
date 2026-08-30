@@ -134,8 +134,8 @@ function localFileHeader(name, date) {
   writeUInt16(date.dosTime).copy(header, 10);
   writeUInt16(date.dosDate).copy(header, 12);
   writeUInt32(0).copy(header, 14);
-  writeUInt32(0xffffffff).copy(header, 18);
-  writeUInt32(0xffffffff).copy(header, 22);
+  writeUInt32(0).copy(header, 18);
+  writeUInt32(0).copy(header, 22);
   writeUInt16(nameBytes.length).copy(header, 26);
   writeUInt16(extra.length).copy(header, 28);
   nameBytes.copy(header, 30);
@@ -190,11 +190,12 @@ function centralHeader({ name, date, method, crc, compressedSize, size, offset, 
 }
 
 function dataDescriptor(crc, compressedSize, size) {
+  const needsZip64 = compressedSize > 0xfffffffe || size > 0xfffffffe;
   return Buffer.concat([
     writeUInt32(0x08074b50),
     writeUInt32(crc),
-    writeUInt64(compressedSize),
-    writeUInt64(size),
+    needsZip64 ? writeUInt64(compressedSize) : writeUInt32(compressedSize),
+    needsZip64 ? writeUInt64(size) : writeUInt32(size),
   ]);
 }
 

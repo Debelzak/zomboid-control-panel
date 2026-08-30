@@ -2,8 +2,62 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { crc32 } from "zlib";
 import unzipper, { Open } from "unzipper";
 import { StreamingZipWriter } from "../utils/streamingZip.js";
+
+// Extracts a zip via unzip.Parse() -- the streaming, LOCAL-header reader
+// backupService.restoreBackup() actually pipes a backup through, as opposed
+// to unzip.Open.file() (the central-directory reader used only for
+// read-only inspection: _verifyExtractedIntegrity(), getBackupSnapshot()).
+// The two APIs read genuinely different bytes of the same file and can
+// disagree about whether an archive is readable at all -- see the fix
+// history below. Any new coverage of this writer's real-world readability
+// belongs on this path, not just Open.file().
+async function extractViaParse(zipPath, destDir) {
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve();
+    };
+    let pendingWrites = 0;
+    let parseClosed = false;
+    const settleIfComplete = () => {
+      if (parseClosed && pendingWrites === 0) settle();
+    };
+    fs.createReadStream(zipPath)
+      .pipe(unzipper.Parse())
+      .on("entry", (entry) => {
+        const entryPath = path.join(destDir, entry.path);
+        if (entry.type === "Directory") {
+          fs.mkdirSync(entryPath, { recursive: true });
+          entry.autodrain();
+          return;
+        }
+        fs.mkdirSync(path.dirname(entryPath), { recursive: true });
+        const ws = fs.createWriteStream(entryPath);
+        pendingWrites++;
+        ws.on("error", (err) => {
+          pendingWrites--;
+          settle(err);
+        });
+        ws.on("close", () => {
+          pendingWrites--;
+          settleIfComplete();
+        });
+        entry.on("error", settle);
+        entry.pipe(ws);
+      })
+      .on("close", () => {
+        parseClosed = true;
+        settleIfComplete();
+      })
+      .on("error", settle);
+  });
+}
 
 describe("StreamingZipWriter", () => {
   let tempDir;
@@ -21,9 +75,13 @@ describe("StreamingZipWriter", () => {
     // Object.keys(writer)).not.toContain("entries") below -- is a
     // STRUCTURAL assertion about the instance shape, exactly as true at 100
     // as at 12,000; the count was never load-bearing for it, and it doesn't
-    // cross a real format boundary either (streamingZip.js emits its ZIP64
-    // fields unconditionally on every archive, so no entry count exercises
-    // different code). It WAS load-bearing for wall-clock cost: this is the
+    // cross a real format boundary either -- the archive-level zip64 END
+    // record (needed once entry count exceeds 65,535) is emitted
+    // unconditionally regardless of count, so no entry count exercises
+    // different code there. (Per-entry format IS conditional as of the
+    // 2026-08-30 interop fix below, but on each entry's SIZE, not on how
+    // many entries came before it -- irrelevant to this test's own claim.)
+    // It WAS load-bearing for wall-clock cost: this is the
     // only test in the 316-file suite whose loop does a real awaited I/O
     // round trip per iteration (traced addBuffer -> addStream -> a real
     // fs.WriteStream write plus a real zlib deflate, each one a scheduler
@@ -53,83 +111,126 @@ describe("StreamingZipWriter", () => {
   });
 
   // hunt-2026-08-30 (wire-streamingzipwriter-into-backupservice-write-path):
-  // pins down a real, previously-undiscovered reason backupService.js still
-  // uses archiver instead of this writer. Every prior check of this
-  // migration (streamingZip.test.js's own coverage above, and the
-  // hive-floor audit that first proved this an unfinished migration) only
-  // exercised unzipper's Open.file() -- the CENTRAL-DIRECTORY reader, used
-  // by _verifyExtractedIntegrity() and getBackupSnapshot(). That path works
-  // fine against this writer's output, because the central directory always
-  // carries real, final crc32/size values.
+  // this pins down a real interop bug that was found, and now the fix, for
+  // a previously-undiscovered reason backupService.js still uses archiver
+  // instead of this writer. Every PRIOR check of this migration
+  // (streamingZip.test.js's own coverage above, and the hive-floor audit
+  // that first proved this an unfinished migration) only ever exercised
+  // unzipper's Open.file() -- the CENTRAL-DIRECTORY reader, used by
+  // _verifyExtractedIntegrity() and getBackupSnapshot(). That path worked
+  // fine against this writer's output even before the fix below, because
+  // the central directory always carried real, final crc32/size values.
   //
   // backupService.restoreBackup()'s actual extraction goes through a
   // DIFFERENT unzipper API -- unzip.Parse(), a streaming LOCAL-header
-  // reader -- and that path cannot read this writer's output at all, for
-  // every single file entry, not just an edge case:
+  // reader -- and until this fix, that path could not read this writer's
+  // output AT ALL, for every single file entry, not just an edge case. Two
+  // independent local-header/data-descriptor bugs, both now fixed here:
   //
-  //   1. This writer always sets DATA_DESCRIPTOR_FLAG (bit 3) AND writes
-  //      0xFFFFFFFF placeholders into the local header's compressed/
-  //      uncompressed size fields (localFileHeader(), streamingZip.js)
-  //      REGARDLESS of the entry's real size -- not only for entries that
-  //      actually need zip64. Per PKZIP APPNOTE 4.3.9.1, when bit 3 is set
-  //      those local-header size fields "MUST be set to zero" -- 0xFFFFFFFF
-  //      is reserved to mean "the real value is in the zip64 extra field,"
-  //      a different signal this writer is not actually using at the local
-  //      header for these entries (it only becomes accurate later, in the
-  //      central directory). Writing the zip64 sentinel while ALSO using a
-  //      data descriptor conflates two different escape hatches.
-  //   2. unzipper's parse.js computes `fileSizeKnown = !(flags & 0x08) ||
-  //      compressedSize > 0` (Parse.prototype._readFile). Since this
-  //      writer's local header always reads compressedSize as 0xFFFFFFFF
-  //      (a huge positive number), that evaluates true -- unzipper
-  //      concludes the size IS known, as ~4GiB, and tries to stream that
-  //      many bytes as this entry's compressed data instead of watching for
-  //      the data descriptor. It reads straight through the real entry,
-  //      the central directory, and the end-of-central-directory record,
-  //      then desyncs completely and throws "invalid signature" trying to
-  //      parse whatever garbage bytes it lands on next as a new record.
+  //   1. localFileHeader() used to write 0xFFFFFFFF zip64-escape
+  //      placeholders into the local header's compressed/uncompressed size
+  //      fields for EVERY entry, regardless of real size. Per PKZIP
+  //      APPNOTE 4.3.9.1, when DATA_DESCRIPTOR_FLAG (bit 3) is set those
+  //      fields "MUST be set to zero" -- 0xFFFFFFFF is a DIFFERENT signal
+  //      ("the real value is in the zip64 extra field"), and the two
+  //      conflict. unzipper's parse.js computes `fileSizeKnown =
+  //      !(flags&0x08) || compressedSize>0` -- reading the placeholder as
+  //      a real ~4GiB size and streaming that many bytes as entry data
+  //      instead of watching for the descriptor, reading straight through
+  //      the rest of the archive before desyncing. Fixed: write 0 (both
+  //      fields already were 0, before this bug's own fix pass revealed
+  //      they had never been), the spec-correct value.
+  //   2. Even with (1) fixed alone (confirmed by testing it in isolation
+  //      during this investigation -- it still failed identically), a
+  //      SECOND, independent bug remained: dataDescriptor() unconditionally
+  //      wrote the 24-byte ZIP64 form (4-byte signature + 4-byte crc32 +
+  //      TWO 8-byte size fields). unzipper's own
+  //      Parse.prototype._processDataDescriptor reads a hardcoded 16 bytes
+  //      (signature + crc32 + TWO 4-byte size fields) -- it has no zip64
+  //      variant at all, in this project's pinned unzipper version. Every
+  //      entry's descriptor left 8 stray bytes unconsumed, desyncing
+  //      whatever came next regardless of the local header being correct.
+  //      Fixed: dataDescriptor() now writes the classic 16-byte form for
+  //      any entry whose real compressedSize and size both fit under
+  //      0xFFFFFFFE (i.e. virtually every real file), and only falls back
+  //      to the 24-byte zip64 form for an entry that genuinely needs it.
   //
-  // Confirmed by elimination: the identical Parse() call against a real
-  // archiver-written zip (this project's actual production writer today)
-  // succeeds without incident, and a StreamingZipWriter zip containing only
-  // directory entries (no data descriptor involved) also parses fine -- the
-  // failure is specific to file entries, i.e. exactly the data-descriptor
-  // path this migration would need.
-  //
-  // PRACTICAL EFFECT: if backupService.js's write path were switched to
-  // this writer today, every future backup would create "successfully"
-  // (no error, checksums self-consistent via Open.file()) but be
-  // completely unrestorable -- restoreBackup would reject on the very
-  // first file it tries to extract. That is precisely the failure mode
-  // god's dispatch asked to rule out before wiring anything in: "if any
-  // part of this cannot be verified end to end -- write, read back,
-  // extract, checksum -- leave that part on archiver and say why." This
-  // is that "why," pinned as a real, currently-passing (because it proves
-  // the CURRENT, broken behavior) regression test rather than left as a
-  // one-off finding in a chat log. Flip this test's expectation (and add a
-  // byte-for-byte content assertion) the day someone fixes
-  // localFileHeader()'s size fields to be spec-correct -- that fix, proven
-  // by THIS test going from "throws" to "extracts correctly," is the real
-  // remaining blocker on the migration, not anything in backupService.js
-  // itself.
-  it("its output cannot be read by unzipper's streaming Parse() -- the API backupService.restoreBackup() actually uses", async () => {
+  // RESIDUAL, KNOWN, NOT FIXED HERE: an entry that legitimately needs the
+  // 24-byte zip64 descriptor (single file >= ~4GiB) is STILL unreadable by
+  // this project's unzip.Parse() -- that's an inherent limitation of the
+  // pinned unzipper version (it never learned to read that variant at all,
+  // for any writer, not just this one), not something fixable from this
+  // file alone. No test below exercises that size, and no claim is made
+  // that this writer is zip64-safe end-to-end; only that ordinary,
+  // realistic file sizes now round-trip correctly through both unzipper
+  // APIs backupService actually depends on.
+  it("round-trips real content through unzipper's streaming Parse() -- the API backupService.restoreBackup() actually uses", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "zcp-streaming-zip-parse-"));
-    const zipPath = path.join(tempDir, "single-file.zip");
-    const srcFile = path.join(tempDir, "source.txt");
-    fs.writeFileSync(srcFile, "some real backup content, nothing exotic\n".repeat(100));
+    const zipPath = path.join(tempDir, "mixed.zip");
+    const srcDir = path.join(tempDir, "src");
+    fs.mkdirSync(path.join(srcDir, "world", "nested"), { recursive: true });
+    fs.writeFileSync(
+      path.join(srcDir, "world", "compressible.txt"),
+      "hello world ".repeat(20000),
+    );
+    fs.writeFileSync(path.join(srcDir, "world", "empty.bin"), "");
+    const randomBuf = Buffer.alloc(1024 * 1024);
+    for (let i = 0; i < randomBuf.length; i += 1) {
+      randomBuf[i] = Math.floor(Math.random() * 256);
+    }
+    fs.writeFileSync(path.join(srcDir, "world", "random.bin"), randomBuf);
+    fs.writeFileSync(
+      path.join(srcDir, "world", "nested", "leaf.txt"),
+      "leaf content\n".repeat(500),
+    );
 
     const writer = new StreamingZipWriter(zipPath, { level: 6 });
-    await writer.addFile(srcFile, "world/source.txt");
+    await writer.addDirectory("world/nested/");
+    await writer.addFile(path.join(srcDir, "world", "compressible.txt"), "world/compressible.txt");
+    await writer.addFile(path.join(srcDir, "world", "empty.bin"), "world/empty.bin");
+    await writer.addFile(path.join(srcDir, "world", "random.bin"), "world/random.bin");
+    await writer.addFile(path.join(srcDir, "world", "nested", "leaf.txt"), "world/nested/leaf.txt");
+    await writer.addBuffer(Buffer.from(JSON.stringify({ ok: true })), "panel-server-snapshot.json");
     await writer.finalize();
 
-    const parseAttempt = new Promise((resolve, reject) => {
-      fs.createReadStream(zipPath)
-        .pipe(unzipper.Parse())
-        .on("entry", (entry) => entry.autodrain())
-        .on("close", resolve)
-        .on("error", reject);
-    });
+    // Path A: the central-directory reader (what always worked).
+    const archive = await Open.file(zipPath);
+    const byPath = Object.fromEntries(archive.files.map((f) => [f.path, f]));
 
-    await expect(parseAttempt).rejects.toThrow(/invalid signature/);
+    // Path B: the streaming local-header reader restoreBackup() actually
+    // uses -- this is the one that used to throw before the fix above.
+    const stagingPath = path.join(tempDir, "staging");
+    fs.mkdirSync(stagingPath, { recursive: true });
+    await extractViaParse(zipPath, stagingPath);
+
+    expect(
+      fs.existsSync(path.join(stagingPath, "world", "nested")) &&
+        fs.statSync(path.join(stagingPath, "world", "nested")).isDirectory(),
+    ).toBe(true);
+
+    const files = [
+      ["world/compressible.txt", path.join(srcDir, "world", "compressible.txt")],
+      ["world/empty.bin", path.join(srcDir, "world", "empty.bin")],
+      ["world/random.bin", path.join(srcDir, "world", "random.bin")],
+      ["world/nested/leaf.txt", path.join(srcDir, "world", "nested", "leaf.txt")],
+      ["panel-server-snapshot.json", null],
+    ];
+
+    for (const [zipRelPath, origPath] of files) {
+      const extracted = fs.readFileSync(path.join(stagingPath, zipRelPath));
+
+      // Exactly what _verifyExtractedIntegrity() checks on every real
+      // restore: the extracted bytes' own crc32 against the central
+      // directory's recorded value.
+      expect(crc32(extracted, 0)).toBe(byPath[zipRelPath].crc32);
+
+      // And, where we have a source file to compare against, that the
+      // extracted content is byte-identical to what was written in --
+      // the crc32 match alone can't rule out both sides being wrong the
+      // same way.
+      if (origPath) {
+        expect(extracted.equals(fs.readFileSync(origPath))).toBe(true);
+      }
+    }
   });
 });
