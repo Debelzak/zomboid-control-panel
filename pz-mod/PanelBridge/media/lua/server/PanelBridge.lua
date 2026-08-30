@@ -1410,31 +1410,47 @@ end
 local handlers = {}
 
 -- TTL cache for expensive/polled read-only handlers (audit findings L02/L06).
--- Catalogs of static script data (items/vehicles/sandbox options) only
--- change when the server restarts (new mods added), so they get a long TTL;
--- live game-state enumerations get a short TTL so a panel view left open on
--- the Vehicles/Safehouses/Players page doesn't re-trigger a full synchronous
--- game-thread scan on every single poll, while still staying reasonably
--- fresh. Keyed by action name; only successful results are cached (a
--- transient failure must not get "stuck" being replayed for the TTL window).
-local CACHEABLE_TTL_MS = {
-    getItemCatalog = 300000,       -- 5 min: static item scripts
-    getVehicleCatalog = 300000,    -- 5 min: static vehicle scripts
-    getAllSandboxOptions = 300000, -- 5 min: sandbox options rarely change mid-session
-    getVehiclesDetailed = 5000,    -- 5s: live vehicle state (panel polls every 15s)
-    getSafehouses = 5000,          -- 5s: live safehouse state (panel polls every 15s)
-    getAllPlayerDetails = 5000,    -- 5s: live player stats (panel polls every 15s)
+-- Catalogs of static script data (items/vehicles) only change when the
+-- server restarts (new mods added), so they get a long TTL and are never
+-- invalidated early; live game-state enumerations get a short TTL so a
+-- panel view left open on the Vehicles/Safehouses/Players page doesn't
+-- re-trigger a full synchronous game-thread scan on every single poll,
+-- while still staying reasonably fresh -- AND are dropped after every
+-- state-changing command, since an admin action can change what they'd
+-- return. Keyed by action name; only successful results are cached (a
+-- transient failure must not get "stuck" being replayed for the TTL
+-- window).
+--
+-- `live` is a REQUIRED field on every entry, not an optional afterthought:
+-- this used to be two separately hand-maintained tables (a flat
+-- action->TTL map here, plus a separate LIVE_STATE_CACHE_KEYS array naming
+-- only 3 of the 6 cacheable actions) with nothing enforcing that the two
+-- agreed. THAT SPLIT WAS THE BUG: getAllSandboxOptions had a real 300000ms
+-- TTL but was never in the live-invalidation list, so setSandboxOption
+-- writing a real, successful change left the panel serving up to 5 minutes
+-- of stale sandbox data -- the exact class this file's own comment history
+-- already fixed once, by enumerating the three keys that had bitten
+-- someone (repair/refuel/battery), and it survived here with a TTL sixty
+-- times longer because a 4th (well, 6th) entry didn't automatically get
+-- the same treatment. Folding `live` into this one table means a 7th
+-- cacheable action cannot be added tomorrow without an explicit answer to
+-- "can this go stale after an admin action?" -- there is no second list to
+-- forget to update.
+local CACHEABLE_ACTIONS = {
+    getItemCatalog       = { ttl = 300000, live = false }, -- static item scripts, only change on restart
+    getVehicleCatalog    = { ttl = 300000, live = false }, -- static vehicle scripts, only change on restart
+    getAllSandboxOptions = { ttl = 300000, live = true },  -- FIX: setSandboxOption changes this -- was never invalidated before
+    getVehiclesDetailed  = { ttl = 5000,   live = true },  -- live vehicle state (panel polls every 15s)
+    getSafehouses        = { ttl = 5000,   live = true },  -- live safehouse state (panel polls every 15s)
+    getAllPlayerDetails  = { ttl = 5000,   live = true },  -- live player stats (panel polls every 15s)
 }
 local readOnlyCache = {}
 
--- Live game state, unlike the static catalogs, can be changed by any admin
--- command, so these entries are dropped after every state-changing command.
--- Without this a repair/refuel/battery change stayed invisible for the TTL.
-local LIVE_STATE_CACHE_KEYS = { "getVehiclesDetailed", "getSafehouses", "getAllPlayerDetails" }
-
 local function invalidateLiveStateCache()
-    for _, key in ipairs(LIVE_STATE_CACHE_KEYS) do
-        readOnlyCache[key] = nil
+    for action, config in pairs(CACHEABLE_ACTIONS) do
+        if config.live then
+            readOnlyCache[action] = nil
+        end
     end
 end
 
@@ -1506,7 +1522,8 @@ local function processSingleCommand(cmd)
     if handler then
         -- Serve from cache if this action is cacheable and the cached entry
         -- is still within its TTL — skips the expensive handler entirely.
-        local cacheTtl = CACHEABLE_TTL_MS[cmd.action]
+        local cacheConfig = CACHEABLE_ACTIONS[cmd.action]
+        local cacheTtl = cacheConfig and cacheConfig.ttl
         if cacheTtl then
             local cached = readOnlyCache[cmd.action]
             if cached and (getTimestampMs() - cached.at) < cacheTtl then
