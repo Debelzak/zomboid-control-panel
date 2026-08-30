@@ -635,6 +635,68 @@ async function restoreMainAfterCapture(page, prevStyle) {
   }, prevStyle)
 }
 
+// visual-sweep-2026-08-30 follow-up: the tour used to capture after a fixed
+// wait with no idea whether the page had actually finished loading. That
+// missed a real failure mode -- a page that fires SEVERAL parallel mount
+// fetches can be briefly interactive-looking between two of them (one
+// spinner has already unmounted, the next hasn't mounted yet), so even a
+// generous fixed sleep can land in that gap and capture something that
+// LOOKS settled but isn't. Confirmed the hard way on this exact bug:
+// Scheduler.tsx fires five API calls on mount and came out as a bare
+// spinner in all four viewport/theme combos, which every reviewer
+// (correctly) read as "identical across combos = not a timing race" --
+// backwards. A fixed sleep against a fixed fetch produces the same wrong
+// result every time; reproducibility distinguishes a race from a flake, not
+// a bug from a too-short wait. god verified Scheduler.tsx:226 and
+// Templates.tsx:48 both clear their loading flag from a `finally` (runs on
+// success AND failure) and that a real failure path renders a distinct
+// error alert -- absent from the shots -- before asking for this fix, so
+// the pages themselves were never in question, only this script's timing.
+//
+// Two independent signals, chosen from what's ALREADY a real, load-bearing
+// convention in this codebase rather than invented for this script:
+//   - `[aria-busy="true"]` -- PageSkeleton (components/PageSkeleton.tsx)
+//     puts this on its wrapping element for every one of its variants
+//     (dashboard/list/form/console/map/default), and it's what a whole-page
+//     initial-load skeleton looks like across this app.
+//   - `.animate-spin` -- the Loader2/RefreshCw spinner icon used for every
+//     in-flight async action this script's own grep could find (initial
+//     loads, saves, refreshes, restores). Verified this actually matches
+//     Scheduler's own spinner (`<Loader2 className="w-8 h-8 animate-spin
+//     .../>`  at initialLoading) and Templates' (same pattern) before
+//     relying on it.
+// Deliberately NOT `.animate-pulse` alone -- Skeleton's own primitive uses
+// it (components/ui/skeleton.tsx), but so does a live-connection status dot
+// used as PERMANENT decor on Chat/Console/Events/WorldMap/Players/
+// ServerConfig (a pulsing "connected" indicator that is never meant to
+// stop). A bare `.animate-pulse` selector would never settle on any of
+// those pages even once fully loaded. `aria-busy` already covers the one
+// place Skeleton's animate-pulse actually signals "still loading" (the
+// PageSkeleton wrapper), without inheriting its false positives.
+//
+// Requires the busy/spin signal to be ABSENT continuously for `quietMs`,
+// not just absent at one poll -- a single instantaneous check is exactly
+// what would fall into the gap between two parallel fetches described
+// above. Polls rather than a single `waitForFunction` so the quiet window
+// is actually re-verified, not just "was true once."
+async function waitForSettle(page, { timeoutMs = 8000, quietMs = 500, pollMs = 150 } = {}) {
+  const start = Date.now()
+  let quietSince = null
+  while (Date.now() - start < timeoutMs) {
+    const busy = await page
+      .evaluate(() => !!document.querySelector('[aria-busy="true"], .animate-spin'))
+      .catch(() => false) // page mid-navigation/crashed -- treat as not-busy, let the outer timeout/catch handle it
+    if (busy) {
+      quietSince = null
+    } else {
+      if (quietSince === null) quietSince = Date.now()
+      if (Date.now() - quietSince >= quietMs) return true
+    }
+    await page.waitForTimeout(pollMs)
+  }
+  return false
+}
+
 async function setTheme(page, theme) {
   await page.evaluate((t) => localStorage.setItem('pz-panel-theme', t), theme)
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -727,7 +789,12 @@ async function main() {
               { timeout: 4000 },
             ).catch(() => {})
             if (view.interact) await view.interact(page)
-            await page.waitForTimeout(300)
+            // Real settle condition (see waitForSettle's own header) instead
+            // of a bare fixed sleep -- `settled` records whether it actually
+            // cleared or timed out still busy, so a capture that never
+            // finished loading says so in the manifest instead of silently
+            // passing as an ordinary success.
+            const settled = await waitForSettle(page)
             // `:` is a reserved path character on Windows (NTFS Alternate
             // Data Stream syntax, `base:stream`) -- a filename built
             // straight from an addressable name like `players:vitals` does
@@ -745,8 +812,8 @@ async function main() {
             const prevMainStyle = await expandMainForCapture(page)
             await page.screenshot({ path: filePath, fullPage: true })
             await restoreMainAfterCapture(page, prevMainStyle)
-            manifest.push({ file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme, width: viewport.width, height: viewport.height })
-            console.log(`[ui-shot-tour] captured ${fileName}`)
+            manifest.push({ file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme, width: viewport.width, height: viewport.height, settled })
+            console.log(`[ui-shot-tour] captured ${fileName}${settled ? '' : ' -- NOT SETTLED (spinner/skeleton still present after timeout)'}`)
           } catch (err) {
             console.error(`[ui-shot-tour] FAILED ${view.name} (${viewport.key}/${theme}): ${err.message}`)
             manifest.push({ file: null, view: view.name, path: view.path, viewport: viewport.key, theme, error: err.message })
@@ -776,19 +843,30 @@ async function main() {
   writeFileSync(path.join(args.out, 'manifest.json'), JSON.stringify(manifest, null, 2))
   const okCount = manifest.filter((m) => m.file).length
   const failCount = manifest.length - okCount
+  // A captured file whose own settle condition timed out (still busy/
+  // spinning when the timeout hit) is NOT a failure -- the screenshot
+  // exists and might even be fine -- but it must not read as an ordinary
+  // success either. visual-sweep-2026-08-30: a "204 captured / 0 failed"
+  // summary that silently included several still-loading pages is what
+  // sent two reviewers chasing bugs that were actually this script's own
+  // too-short wait. `settled === false` (not just falsy/undefined) so an
+  // older manifest entry or a non-capture entry never misreports here.
+  const unsettled = manifest.filter((m) => m.file && m.settled === false)
   const md = [
     '# UI shot tour manifest',
     '',
-    `Captured ${okCount} views (${failCount} failed) from \`${args.root}\` against \`${BASE_URL}\`.`,
+    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled) from \`${args.root}\` against \`${BASE_URL}\`.`,
+    ...(unsettled.length ? ['', '**Not settled means the capture may show a mid-load spinner or skeleton, not the real page -- verify before treating it as a finding.**'] : []),
     '',
-    '| File | View | Route | Viewport | Theme |',
-    '| --- | --- | --- | --- | --- |',
-    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} |`),
+    '| File | View | Route | Viewport | Theme | Settled |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${m.settled === false ? '⚠️ NO' : 'yes'} |`),
     ...(failCount ? ['', '## Failed captures', '', ...manifest.filter((m) => !m.file).map((m) => `- **${m.view}** (${m.viewport}/${m.theme}, \`${m.path}\`): ${m.error}`)] : []),
+    ...(unsettled.length ? ['', '## Captured but not settled', '', 'Spinner or skeleton (`[aria-busy="true"]` / `.animate-spin`) was still present when the timeout hit -- the file exists but may not show the real page.', '', ...unsettled.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\``)] : []),
   ].join('\n')
   writeFileSync(path.join(args.out, 'MANIFEST.md'), md)
 
-  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed. Output: ${args.out}`)
+  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled. Output: ${args.out}`)
   if (failCount) process.exitCode = 1
 }
 
