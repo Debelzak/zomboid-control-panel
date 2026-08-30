@@ -2981,20 +2981,35 @@ handlers.getPlayerDetails = function(args)
     end
 
     local ok, playerData = pcall(function()
-        local stats = player:getStats()
-        local bodyDamage = player:getBodyDamage()
+        -- Every field below is read via PanelBridge.tryGet, which pcalls the
+        -- underlying call ITSELF (see PanelBridge.invoke) -- an absent method
+        -- like Stats:getHunger() (2026-08-30, Kevin's jar audit: not on
+        -- zombie.characters.Stats at all) now fails ALONE and returns nil,
+        -- instead of throwing out of this whole function and losing
+        -- position/username/accessLevel/etc, which all work fine. A field
+        -- that cannot be read is left OUT of the table entirely (nil omits
+        -- the key) rather than defaulted to 0 -- a 0 for hunger is a lie a
+        -- UI would render as "not hungry". This outer pcall stays as a
+        -- backstop for something genuinely unforeseen; it should no longer
+        -- fire for the known-absent-stat case.
+        local function get(obj, methodName)
+            return PanelBridge.tryGet(obj, methodName)
+        end
+
+        local stats = PanelBridge.tryGet(player, "getStats")
+        local bodyDamage = PanelBridge.tryGet(player, "getBodyDamage")
 
         local pd = {
-            username = player:getUsername(),
-            displayName = player:getDisplayName(),
-            x = player:getX(),
-            y = player:getY(),
-            z = player:getZ(),
-            accessLevel = player:getAccessLevel(),
-            isAlive = player:isAlive(),
-            isAsleep = player:isAsleep(),
-            isSneaking = player:isSneaking(),
-            isRunning = player:isRunning(),
+            username = get(player, "getUsername"),
+            displayName = get(player, "getDisplayName"),
+            x = get(player, "getX"),
+            y = get(player, "getY"),
+            z = get(player, "getZ"),
+            accessLevel = get(player, "getAccessLevel"),
+            isAlive = get(player, "isAlive"),
+            isAsleep = get(player, "isAsleep"),
+            isSneaking = get(player, "isSneaking"),
+            isRunning = get(player, "isRunning"),
             stats = {},
             health = {}
         }
@@ -3002,26 +3017,26 @@ handlers.getPlayerDetails = function(args)
         -- Get stats if available
         if stats then
             pd.stats = {
-                hunger = stats:getHunger(),
-                thirst = stats:getThirst(),
-                fatigue = stats:getFatigue(),
-                stress = stats:getStress(),
-                boredom = stats:getBoredom(),
-                unhappiness = stats:getUnhappyness(),
-                pain = stats:getPain(),
-                endurance = stats:getEndurance()
+                hunger = get(stats, "getHunger"),
+                thirst = get(stats, "getThirst"),
+                fatigue = get(stats, "getFatigue"),
+                stress = get(stats, "getStress"),
+                boredom = get(stats, "getBoredom"),
+                unhappiness = get(stats, "getUnhappyness"),
+                pain = get(stats, "getPain"),
+                endurance = get(stats, "getEndurance")
             }
         end
 
         -- Get health if available
         if bodyDamage then
             pd.health = {
-                overallBodyHealth = bodyDamage:getOverallBodyHealth(),
-                isInfected = bodyDamage:IsInfected(),
-                isBleeding = bodyDamage:getIsBleeding(),
-                health = bodyDamage:getHealth(),
-                temperature = bodyDamage:getTemperature(),
-                wetness = bodyDamage:getWetness()
+                overallBodyHealth = get(bodyDamage, "getOverallBodyHealth"),
+                isInfected = get(bodyDamage, "IsInfected"),
+                isBleeding = get(bodyDamage, "getIsBleeding"),
+                health = get(bodyDamage, "getHealth"),
+                temperature = get(bodyDamage, "getTemperature"),
+                wetness = get(bodyDamage, "getWetness")
             }
         end
 
@@ -3048,28 +3063,40 @@ handlers.getAllPlayerDetails = function(args)
         local player = onlinePlayers:get(i)
         if player then
             local ok, playerData = pcall(function()
-                local stats = player:getStats()
-                local bodyDamage = player:getBodyDamage()
+                -- Same fix as handlers.getPlayerDetails -- every field below
+                -- goes through PanelBridge.tryGet (already-pcalled per call)
+                -- so an absent stat getter fails alone instead of taking
+                -- down this player's position/username/accessLevel with it.
+                -- A field that can't be read is left OUT (nil omits the
+                -- key), never defaulted to 0. This outer pcall + the
+                -- {username, error} fallback below stay as a backstop for
+                -- something genuinely unforeseen.
+                local function get(obj, methodName)
+                    return PanelBridge.tryGet(obj, methodName)
+                end
+
+                local stats = PanelBridge.tryGet(player, "getStats")
+                local bodyDamage = PanelBridge.tryGet(player, "getBodyDamage")
 
                 local pd = {
-                    username = player:getUsername(),
-                    displayName = player:getDisplayName(),
-                    x = player:getX(),
-                    y = player:getY(),
-                    z = player:getZ(),
-                    accessLevel = player:getAccessLevel(),
-                    isAlive = player:isAlive()
+                    username = get(player, "getUsername"),
+                    displayName = get(player, "getDisplayName"),
+                    x = get(player, "getX"),
+                    y = get(player, "getY"),
+                    z = get(player, "getZ"),
+                    accessLevel = get(player, "getAccessLevel"),
+                    isAlive = get(player, "isAlive")
                 }
 
                 if stats then
-                    pd.hunger = stats:getHunger()
-                    pd.thirst = stats:getThirst()
-                    pd.fatigue = stats:getFatigue()
+                    pd.hunger = get(stats, "getHunger")
+                    pd.thirst = get(stats, "getThirst")
+                    pd.fatigue = get(stats, "getFatigue")
                 end
 
                 if bodyDamage then
-                    pd.health = bodyDamage:getOverallBodyHealth()
-                    pd.isInfected = bodyDamage:IsInfected()
+                    pd.health = get(bodyDamage, "getOverallBodyHealth")
+                    pd.isInfected = get(bodyDamage, "IsInfected")
                 end
 
                 return pd
