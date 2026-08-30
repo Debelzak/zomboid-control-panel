@@ -6554,7 +6554,6 @@ handlers.factionAddPlayer = function(args)
 
     local ok, err = pcall(function()
         faction:addPlayer(username)
-        PanelBridge.invoke(faction, "syncFaction")
     end)
     if not ok then
         return false, nil, "Failed to add player to faction: " .. tostring(err)
@@ -6571,8 +6570,27 @@ handlers.factionAddPlayer = function(args)
         verified = (isMemberNow == true)
     end
 
-    return PanelBridge.verifiedResult(verified,
-        { message = "Player added to faction", factionName = factionName, username = username },
+    -- No syncFaction call here (there used to be one -- it silently no-opped
+    -- every time). zombie.characters.Faction has no method named or spelled
+    -- anything like sync/transmit/propagate/broadcast/update anywhere in its
+    -- class or superclass chain -- confirmed against the real B42 jar
+    -- including a constant-pool scan for the literal spellings, not just a
+    -- guessed-name miss (Kevin's audit, 2026-08-30). The real client-sync
+    -- path for a faction change is a network packet handler
+    -- (FactionAcceptPacket / FactionRemoveMemberPacket /
+    -- FactionChangeTagPacket), and that path is unreachable from ANY Lua --
+    -- client or server -- confirmed by grepping the entire shipped media/lua
+    -- tree for every packet/broadcast name involved: zero hits. This mutation
+    -- is real and durable (isMember above just confirmed it server-side), but
+    -- no mechanism this file can call propagates it to already-connected
+    -- clients, so the result says that plainly instead of a clean success.
+    local data = {
+        message = "Player added to faction (applied server-side only -- not pushed to already-connected clients; they will see it on reconnect)",
+        factionName = factionName,
+        username = username,
+        synced = false
+    }
+    return PanelBridge.verifiedResult(verified, data,
         "Add player call succeeded but " .. username .. " is not a faction member")
 end
 
@@ -6591,7 +6609,6 @@ handlers.factionRemovePlayer = function(args)
 
     local ok, err = pcall(function()
         faction:removePlayer(username)
-        PanelBridge.invoke(faction, "syncFaction")
     end)
     if not ok then
         return false, nil, "Failed to remove player from faction: " .. tostring(err)
@@ -6606,8 +6623,17 @@ handlers.factionRemovePlayer = function(args)
         verified = (isMemberNow == false)
     end
 
-    return PanelBridge.verifiedResult(verified,
-        { message = "Player removed from faction", factionName = factionName, username = username },
+    -- No syncFaction call -- see factionAddPlayer's comment above for why:
+    -- the method does not exist on Faction (jar-confirmed, no near-miss
+    -- spelling), and the real client-sync path is unreachable from any Lua.
+    -- Same honest-result treatment: the mutation is real, propagation is not.
+    local data = {
+        message = "Player removed from faction (applied server-side only -- not pushed to already-connected clients; they will see it on reconnect)",
+        factionName = factionName,
+        username = username,
+        synced = false
+    }
+    return PanelBridge.verifiedResult(verified, data,
         "Remove player call succeeded but " .. username .. " is still a faction member")
 end
 
@@ -6626,7 +6652,6 @@ handlers.factionSetTag = function(args)
 
     local ok, err = pcall(function()
         faction:setTag(tag)
-        PanelBridge.invoke(faction, "syncFaction")
     end)
     if not ok then
         return false, nil, "Failed to set faction tag: " .. tostring(err)
@@ -6644,8 +6669,17 @@ handlers.factionSetTag = function(args)
         verified = false
     end
 
-    return PanelBridge.verifiedResult(verified,
-        { message = "Faction tag updated", factionName = factionName, tag = tag },
+    -- No syncFaction call -- see factionAddPlayer's comment above for why:
+    -- the method does not exist on Faction (jar-confirmed, no near-miss
+    -- spelling), and the real client-sync path is unreachable from any Lua.
+    -- Same honest-result treatment: the mutation is real, propagation is not.
+    local data = {
+        message = "Faction tag updated (applied server-side only -- not pushed to already-connected clients; they will see it on reconnect)",
+        factionName = factionName,
+        tag = tag,
+        synced = false
+    }
+    return PanelBridge.verifiedResult(verified, data,
         "Set tag call succeeded but faction tag is still " .. tostring(actualTag))
 end
 
@@ -6706,6 +6740,61 @@ local function vehicleAt(vehicles, i)
     return nil
 end
 
+-- IsoCell.getVehicles()'s own compile-time descriptor declares java.util.Set
+-- -- a JDK interface with NO get(int) at all -- yet PanelBridge.lua has
+-- always called size()/get(i) on the result, matching real vanilla CLIENT
+-- Lua (ISVehicleBloodUI.lua) which does the same unconditionally. The
+-- concrete RUNTIME object PZ's Lua binding hands back is reflected against,
+-- not the declared type, so which shape actually comes back cannot be
+-- settled without a live server (Kevin's jar audit, 2026-08-30 -- correctly
+-- left unresolved rather than guessed). 2026-08-30 operator ruling: don't
+-- answer the question, make the code correct under EITHER answer.
+--
+-- This collects every reachable vehicle into a plain Lua array regardless of
+-- which shape the collection turns out to be: it tries size()+get(i) first
+-- (works if the runtime object is List-shaped, or a Set-lookalike that still
+-- exposes get(i)), and if that yields nothing despite a nonzero size, falls
+-- back to the iterator()/hasNext()/next() protocol that EVERY
+-- java.util.Collection guarantees -- List and genuine Set alike -- unlike
+-- get(i), which only List guarantees. So it no longer matters which one
+-- IsoCell.getVehicles() actually returns.
+--
+-- Returns (list, nil) on success -- list is `{}` when there really are zero
+-- vehicles, which is a legitimate, different outcome from failure. Returns
+-- (nil, errorMessage) only when size() itself cannot be read, or when size()
+-- reports vehicles exist but NEITHER access pattern could read even one of
+-- them -- that combination means this build's vehicle-list object supports
+-- neither shape this bridge knows, and every caller must fail loudly instead
+-- of silently reporting zero vehicles as if none existed.
+local function collectVehicles(vehicles)
+    local size = vehicleCount(vehicles)
+    if not size then return nil, "Vehicle list size lookup failed" end
+    if size == 0 then return {}, nil end
+
+    local out = {}
+    for i = 0, size - 1 do
+        local v = vehicleAt(vehicles, i)
+        if v then table.insert(out, v) end
+    end
+    if #out > 0 then return out, nil end
+
+    local iterOk, iterator = PanelBridge.invoke(vehicles, "iterator")
+    if iterOk and iterator then
+        while true do
+            local hasNextOk, hasNext = PanelBridge.invoke(iterator, "hasNext")
+            if not hasNextOk or not hasNext then break end
+            local nextOk, item = PanelBridge.invoke(iterator, "next")
+            if not nextOk or not item then break end
+            table.insert(out, item)
+        end
+    end
+    if #out > 0 then return out, nil end
+
+    return nil, "size() reported " .. size ..
+        " vehicle(s) but neither get(i) nor iterator() could read any of them " ..
+        "-- this build's vehicle-list object exposes neither access pattern this bridge knows"
+end
+
 -- Reads a single vehicle property, returning nil when it is unavailable.
 local function vehicleGet(v, methodName)
     local ok, value = PanelBridge.invoke(v, methodName)
@@ -6732,16 +6821,13 @@ local function findVehicleById(vehicleId)
     local targetId = tonumber(vehicleId)
     if not targetId then return nil end
 
-    local size = vehicleCount(vehicles)
-    if not size then return nil end
+    local list = collectVehicles(vehicles)
+    if not list then return nil end
 
-    for i = 0, size - 1 do
-        local v = vehicleAt(vehicles, i)
-        if v then
-            local idOk, id = PanelBridge.invoke(v, "getId")
-            if idOk and tonumber(id) == targetId then
-                return v
-            end
+    for _, v in ipairs(list) do
+        local idOk, id = PanelBridge.invoke(v, "getId")
+        if idOk and tonumber(id) == targetId then
+            return v
         end
     end
     return nil
@@ -6761,20 +6847,25 @@ handlers.getVehiclesDetailed = function(args)
         return false, nil, "Vehicle list not available"
     end
 
+    -- collectVehicles() tries indexed get(i) first and falls back to
+    -- iterator() if that yields nothing despite a nonzero size -- see its own
+    -- comment for why (the runtime type behind IsoCell.getVehicles() is not
+    -- confirmed, and this must work under either shape). A nil return here
+    -- means it genuinely could not read the collection at all, which is
+    -- different from "zero vehicles exist" and must not be reported as one.
+    local list, collectErr = collectVehicles(vehicles)
+    if not list then
+        return false, nil, "Vehicle list lookup failed: " .. collectErr
+    end
+
     local out = {}
     local skipped = 0
-    local size = vehicleCount(vehicles)
-    if not size then
-        return false, nil, "Vehicle list size lookup failed"
-    end
-    for i = 0, size - 1 do
+    for _, v in ipairs(list) do
         -- Wrap each vehicle individually: a single broken modded vehicle
         -- (e.g. Ki5 cars whose getters throw java.lang.RuntimeException)
         -- must not bring down the whole detail query, otherwise the panel
         -- loses visibility of every vehicle on the server.
         local ok, entry = pcall(function()
-            local v = vehicleAt(vehicles, i)
-            if not v then return nil end
             -- Each getter is independently guarded so one broken accessor
             -- (e.g. a missing battery part on a modded vehicle) doesn't
             -- void the whole row.
@@ -7120,30 +7211,38 @@ handlers.removeVehiclesInArea = function(args)
     local vehicles = getVehiclesList()
     if not vehicles then return false, nil, "Vehicle list not available" end
 
+    -- Snapshot every reachable vehicle up front via collectVehicles() (see
+    -- its comment on getVehiclesDetailed for why -- same runtime-type
+    -- uncertainty, same nil-means-genuinely-unreadable contract). Snapshotting
+    -- also means removal below no longer re-indexes into the live collection
+    -- while mutating it, which is what made the old loop need to walk in
+    -- reverse; iterating the snapshot in reverse is kept only to preserve
+    -- prior removal order, not because it's required for correctness anymore.
+    local list, collectErr = collectVehicles(vehicles)
+    if not list then
+        return false, nil, "Vehicle list lookup failed: " .. collectErr
+    end
+
     local removed = 0
     local removedList = {}
-    local size = vehicleCount(vehicles)
-    if not size then return false, nil, "Vehicle list size lookup failed" end
 
-    for i = size - 1, 0, -1 do
-        local v = vehicleAt(vehicles, i)
-        if v then
-            local vx = tonumber(vehicleGet(v, "getX")) or 0
-            local vy = tonumber(vehicleGet(v, "getY")) or 0
-            if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY then
-                local vId = vehicleGet(v, "getId")
-                local scriptName = vehicleGet(v, "getScriptName") or "unknown"
-                -- Only count a removal that actually executed. The previous
-                -- field-guarded version ran neither branch on builds that hide
-                -- these methods, yet still reported the vehicle as removed.
-                local didRemove = PanelBridge.invoke(v, "permanentlyRemove")
-                if not didRemove then
-                    didRemove = PanelBridge.invoke(v, "removeFromWorld")
-                end
-                if didRemove then
-                    removed = removed + 1
-                    table.insert(removedList, { id = vId, scriptName = scriptName, x = vx, y = vy })
-                end
+    for i = #list, 1, -1 do
+        local v = list[i]
+        local vx = tonumber(vehicleGet(v, "getX")) or 0
+        local vy = tonumber(vehicleGet(v, "getY")) or 0
+        if vx >= minX and vx <= maxX and vy >= minY and vy <= maxY then
+            local vId = vehicleGet(v, "getId")
+            local scriptName = vehicleGet(v, "getScriptName") or "unknown"
+            -- Only count a removal that actually executed. The previous
+            -- field-guarded version ran neither branch on builds that hide
+            -- these methods, yet still reported the vehicle as removed.
+            local didRemove = PanelBridge.invoke(v, "permanentlyRemove")
+            if not didRemove then
+                didRemove = PanelBridge.invoke(v, "removeFromWorld")
+            end
+            if didRemove then
+                removed = removed + 1
+                table.insert(removedList, { id = vId, scriptName = scriptName, x = vx, y = vy })
             end
         end
     end
