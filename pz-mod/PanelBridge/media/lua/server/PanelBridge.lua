@@ -3915,32 +3915,24 @@ handlers.teleportPlayer = function(args)
 end
 
 -- Get sandbox options (read-only)
+-- Used to read back 11 hand-picked getters (getZombieCount, getZombieSpeed,
+-- getDayLength, getStartMonth, getStartDay, getWaterShutoff, getElecShutoff,
+-- getZombieLore, getCharactersPerPlayer, getSleepAllowed, getSleepNeeded) --
+-- NONE of which exist anywhere on SandboxOptions in the real B42 jar
+-- (Kevin's audit, 2026-08-30). Each was wrapped in its own pcall, so every
+-- single failure was swallowed silently and `options` stayed `{}` -- this
+-- reported a clean `true, { options = {} }` success, with nothing in it, on
+-- every call.
+-- 2026-08-30 operator ruling: this handler has an api.ts wrapper but ZERO UI
+-- callers, so there is no flat-shape compatibility to preserve -- match
+-- getAllSandboxOptions' shape instead of hand-picking a second, narrower
+-- (and, it turns out, entirely broken) enumeration. That handler's primary
+-- path (getNumOptions()+getOptionByIndex(i), both jar-confirmed real on the
+-- same sandbox object) already reads every field this handler would need,
+-- so this is now a thin delegate rather than a second implementation that
+-- could drift out of sync with it.
 handlers.getSandboxOptions = function(args)
-    local sandbox = getSandboxOptions()
-    if not sandbox then
-        return false, nil, "SandboxOptions not available"
-    end
-
-    -- Get commonly used sandbox settings with safe access
-    local options = {}
-    local function safeOpt(name, getter)
-        local ok, val = pcall(getter)
-        if ok then options[name] = val end
-    end
-
-    safeOpt("zombieCount", function() return sandbox:getZombieCount() end)
-    safeOpt("zombieSpeed", function() return sandbox:getZombieSpeed() end)
-    safeOpt("dayLength", function() return sandbox:getDayLength() end)
-    safeOpt("startMonth", function() return sandbox:getStartMonth() end)
-    safeOpt("startDay", function() return sandbox:getStartDay() end)
-    safeOpt("waterShutoff", function() return sandbox:getWaterShutoff() end)
-    safeOpt("elecShutoff", function() return sandbox:getElecShutoff() end)
-    safeOpt("zombieLore", function() return sandbox:getZombieLore() end)
-    safeOpt("charactersPerPlayer", function() return sandbox:getCharactersPerPlayer() end)
-    safeOpt("sleepAllowed", function() return sandbox:getSleepAllowed() end)
-    safeOpt("sleepNeeded", function() return sandbox:getSleepNeeded() end)
-
-    return true, { options = options }
+    return handlers.getAllSandboxOptions(args)
 end
 
 -- Get ALL sandbox options including mod-added ones, grouped by source
