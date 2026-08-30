@@ -2,6 +2,10 @@
   "permissions": {
     "noManage": "Pou ou netwaye chunk mapa yo, ou bezwen pèmisyon chunks.manage, e wòl sa a pa genyen li."
   },
+  "permissionDenied": {
+    "title": "Ou pa ka gade Netwayaj Kat la",
+    "description": "Wòl kont ou a pa gen \"Jere chunk kat\". Mande yon administratè bay ou aksè sa a si ou bezwen l."
+  },
   "pageHeader": {
     "title": "Netwayaj Kat la",
     "description": "Reyinisyalize zòn kat domaje oswa twò piyaje pou mond lan ka regenere san pwoblèm",

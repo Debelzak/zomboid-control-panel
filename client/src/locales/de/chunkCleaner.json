@@ -2,6 +2,10 @@
   "permissions": {
     "noManage": "Das Bereinigen von Karten-Chunks erfordert die Berechtigung chunks.manage, über die diese Rolle nicht verfügt."
   },
+  "permissionDenied": {
+    "title": "Du kannst die Kartenbereinigung nicht einsehen",
+    "description": "Die Rolle deines Kontos enthält nicht das Recht „Kartenchunks verwalten“. Bitte einen Administrator, es zu vergeben, wenn du Zugriff auf diese Seite brauchst."
+  },
   "pageHeader": {
     "title": "Kartenbereinigung",
     "description": "Beschädigte oder übermäßig geplünderte Kartenbereiche unwiderruflich löschen, damit sich die Welt sauber neu generieren kann.",

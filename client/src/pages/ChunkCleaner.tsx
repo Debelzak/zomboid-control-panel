@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   XCircle,
   HelpCircle,
+  ShieldAlert,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
@@ -235,6 +236,21 @@ export default function ChunkCleaner() {
   // both, unlike WorldMap's mixed bridge.command/players.gm_tools/
   // server.world_events split (2026-08-27 bug-hunt capability trace).
   const canManageChunks = can("chunks.manage");
+  // 41fa20a3 gated every chunks.js READ route (saves/suggested-paths/
+  // chunks/stats/browse) behind chunks.manage, previously unpermissioned.
+  // Set from a REAL 403 on fetchSaves' mount-time call, not the client-side
+  // canManageChunks guess above -- same precedent as Mods.tsx/Users.tsx/
+  // RolesPermissions.tsx/OidcSettings.tsx/Debug.tsx (28bfb0c), and for the
+  // same reason their own comments give: a stale/wrong local capability
+  // read would either wrongly hide a page the user CAN use, or (worse)
+  // silently skip surfacing that access was genuinely denied. loadChunks
+  // below still guards on canManageChunks directly, matching this file's
+  // OWN existing savePath/deleteChunks convention (assert unreachable,
+  // don't just rely on the UI never offering the path) -- it can only ever
+  // run after a save is selected, which requires fetchSaves to have
+  // succeeded first, so by the time it could fire, canManageChunks and the
+  // real permission state have already had every chance to agree.
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [saves, setSaves] = useState<SaveInfo[]>([]);
   const [selectedSave, setSelectedSave] = useState<string>("");
   const [chunks, setChunks] = useState<ChunkInfo[]>([]);
@@ -426,6 +442,7 @@ export default function ChunkCleaner() {
       try {
         const pathToUse = pathOverride ?? (customPath || undefined);
         const result = await chunksApi.getSaves(pathToUse);
+        setPermissionDenied(false);
         setSaves(result.saves || []);
         // Backend now always returns a `debug` block; preserve it for the
         // empty state so users can see exactly what was tried.
@@ -438,10 +455,21 @@ export default function ChunkCleaner() {
         }
         return result.saves || [];
       } catch (error) {
+        const apiErr = error instanceof ApiError ? error : null;
+        // 41fa20a3 gated this route behind chunks.manage -- a real 403 here
+        // means the role genuinely lacks access, not a transient/data
+        // problem. Show the dedicated denied state instead of the normal
+        // "couldn't load saves, here's what we tried" empty state (which
+        // would be actively misleading: there's nothing wrong with the
+        // saves folder) and skip the destructive toast + suggested-paths
+        // fallback below, which would just 403 again for the same reason.
+        if (apiErr?.status === 403) {
+          setPermissionDenied(true);
+          return [];
+        }
         // Server attaches the full payload (including the diagnostic `debug`
         // block) to ApiError.data — surface that to the empty-state panel so
         // the user gets the same hints/suggestions as the success path.
-        const apiErr = error instanceof ApiError ? error : null;
         const payload = (apiErr?.data ?? null) as {
           debug?: NonNullable<typeof debugInfo>;
         } | null;
@@ -593,6 +621,16 @@ export default function ChunkCleaner() {
 
   const loadChunks = useCallback(async () => {
     if (!selectedSave) return;
+    // 41fa20a3 gated getChunks/getStats behind chunks.manage too, but
+    // selectedSave can only ever be set after fetchSaves succeeds -- a 403
+    // there returns an empty save list and permissionDenied takes over, so
+    // this is already unreachable without the capability via the fetchSaves
+    // gate above. Deliberately NOT adding a second `if (!canManageChunks)
+    // return` guard here to match: that would duplicate a check the fetch
+    // gate already makes structurally impossible to bypass, and conflicts
+    // with ChunkCleaner.capabilityGating.test.tsx's own (still valid)
+    // scenario of chunks having loaded while canManageChunks is false, which
+    // tests the DELETE action's independent guard (line ~1972) in isolation.
     const thisLoadId = ++loadIdRef.current;
     setLoading(true);
     setScanProgress(null);
@@ -2107,6 +2145,13 @@ export default function ChunkCleaner() {
           </p>
         </div>
 
+        {permissionDenied ? (
+          <EmptyState
+            icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
+            title={t("permissionDenied.title")}
+            description={t("permissionDenied.description")}
+          />
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
           {/* Left Panel - Controls */}
           <div className="space-y-3 order-2 lg:order-1">
@@ -2957,6 +3002,7 @@ export default function ChunkCleaner() {
             </Card>
           </div>
         </div>
+        )}
 
         {/* Help — collapsible */}
         <Collapsible open={showHelp} onOpenChange={setShowHelp}>

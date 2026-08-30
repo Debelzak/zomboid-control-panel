@@ -2,6 +2,10 @@
   "permissions": {
     "noManage": "清理地图区块需要 chunks.manage 权限，而该角色没有此权限。"
   },
+  "permissionDenied": {
+    "title": "无法查看地图清理",
+    "description": "当前账户的角色未包含「管理地图区块」权限。如需访问此页面，请联系管理员为该账户授予此权限。"
+  },
   "pageHeader": {
     "title": "地图清理",
     "description": "重置受损或过度搜刮的地图区域，使世界能够重新干净地生成",

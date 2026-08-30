@@ -2,6 +2,10 @@
   "permissions": {
     "noManage": "Cleaning up map chunks requires the chunks.manage permission, which this role doesn't have."
   },
+  "permissionDenied": {
+    "title": "You can't view Map Cleanup",
+    "description": "Your account's role doesn't include \"Manage map chunks\". Ask an administrator to grant it if you need access to this page."
+  },
   "pageHeader": {
     "title": "Map Cleanup",
     "description": "Reset damaged or over-looted map areas so the world can regenerate cleanly",
