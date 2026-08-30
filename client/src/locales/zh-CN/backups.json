@@ -113,6 +113,7 @@
     "bulletStopServer": "请先停止服务器。",
     "bulletSafetyBackup": "面板会在恢复前创建一份安全备份。",
     "bulletUndoRequiresRestore": "之后要撤销此操作，需要您自己手动恢复该安全备份——这不会自动完成。",
+    "scopeTip": "还原只会替换这个世界的存档文件——服务器设置、模组和创意工坊内容不受影响。",
     "cancel": "取消",
     "confirm": "恢复此备份"
   },

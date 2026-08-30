@@ -117,6 +117,7 @@
     "bulletStopServer": "Sispann sèvè a anvan.",
     "bulletSafetyBackup": "Panèl la ap kreye yon kopi sovgad sekirite anvan li retabli.",
     "bulletUndoRequiresRestore": "Pou anile sa a pita, w ap bezwen retabli kopi sovgad sekirite a ou menm — sa pa fèt otomatikman.",
+    "scopeTip": "Retablisman an ranplase sèlman fichye sovgad mond sa a — paramèt sèvè ou, mòd yo, ak atik Workshop yo pa afekte.",
     "cancel": "Anile",
     "confirm": "Retabli kopi sovgad sa a"
   },

@@ -59,7 +59,8 @@
     "selectionNone": "Ninguna",
     "all": "Todos",
     "clear": "Limpiar",
-    "invert": "Invertir"
+    "invert": "Invertir",
+    "selectAllTip": "\"Todos\" selecciona cada chunk que esta partida ha generado alguna vez, no solo los visibles en pantalla ahora mismo. Eliminar esa selección reinicia el mapa completo."
   },
   "deleteButton_one": "Eliminar {{count}} chunk",
   "deleteButton_other": "Eliminar {{count}} chunks",

@@ -113,6 +113,7 @@
     "bulletStopServer": "Detener el servidor primero.",
     "bulletSafetyBackup": "El panel creará una copia de seguridad de emergencia antes de restaurar.",
     "bulletUndoRequiresRestore": "Para deshacer esto más tarde, tendrás que restaurar tú mismo esa copia de seguridad — no ocurre automáticamente.",
+    "scopeTip": "Restaurar solo reemplaza los archivos de guardado de este mundo — la configuración del servidor, los mods y los objetos de Workshop no se ven afectados.",
     "cancel": "Cancelar",
     "confirm": "Restaurar esta copia de seguridad"
   },

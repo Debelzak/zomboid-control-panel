@@ -59,7 +59,8 @@
     "selectionNone": "Aucune",
     "all": "Tout",
     "clear": "Effacer",
-    "invert": "Inverser"
+    "invert": "Inverser",
+    "selectAllTip": "\"Tout\" sélectionne chaque chunk jamais généré par cette sauvegarde, pas seulement ceux visibles à l'écran. Supprimer cette sélection réinitialise la carte entière."
   },
   "deleteButton_one": "Supprimer {{count}} chunk",
   "deleteButton_other": "Supprimer {{count}} chunks",

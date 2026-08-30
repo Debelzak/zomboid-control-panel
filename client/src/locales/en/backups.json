@@ -117,6 +117,7 @@
     "bulletStopServer": "Stop the server first.",
     "bulletSafetyBackup": "The panel will create a safety backup before restoring.",
     "bulletUndoRequiresRestore": "Undoing this later means restoring that safety backup yourself — it won't happen automatically.",
+    "scopeTip": "Restoring only replaces this world's save files — your server settings, mods, and workshop items are untouched.",
     "cancel": "Cancel",
     "confirm": "Restore this backup"
   },

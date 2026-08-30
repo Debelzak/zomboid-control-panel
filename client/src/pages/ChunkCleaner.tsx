@@ -30,6 +30,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpTip } from "@/components/HelpTip";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -2583,6 +2584,9 @@ export default function ChunkCleaner() {
                         aria-hidden="true"
                       />
                       {t("tools.selection")}
+                      <HelpTip label={t("tools.selection")}>
+                        {t("tools.selectAllTip")}
+                      </HelpTip>
                     </span>
                     <span
                       className={`text-[11px] font-semibold tabular-nums ${selectedChunks.size > 0 ? "text-destructive" : "text-muted-foreground/70"}`}

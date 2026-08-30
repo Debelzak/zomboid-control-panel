@@ -20,6 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
+import { HelpTip } from '@/components/HelpTip'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -1134,6 +1135,7 @@ export default function Backups() {
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="w-5 h-5" />
               {t('restoreDialog.title')}
+              <HelpTip label={t('restoreDialog.title')}>{t('restoreDialog.scopeTip')}</HelpTip>
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>

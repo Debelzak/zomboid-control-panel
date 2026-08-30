@@ -113,6 +113,7 @@
     "bulletStopServer": "Stoppe zuerst den Server.",
     "bulletSafetyBackup": "Das Panel erstellt vor der Wiederherstellung ein Sicherheits-Backup.",
     "bulletUndoRequiresRestore": "Um das rückgängig zu machen, musst du dieses Sicherheits-Backup später selbst wiederherstellen — das geschieht nicht automatisch.",
+    "scopeTip": "Beim Wiederherstellen werden nur die Spielstand-Dateien dieser Welt ersetzt — deine Servereinstellungen, Mods und Workshop-Items bleiben unverändert.",
     "cancel": "Abbrechen",
     "confirm": "Dieses Backup wiederherstellen"
   },

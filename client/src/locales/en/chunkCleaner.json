@@ -59,7 +59,8 @@
     "selectionNone": "None",
     "all": "All",
     "clear": "Clear",
-    "invert": "Invert"
+    "invert": "Invert",
+    "selectAllTip": "\"All\" selects every chunk this save has ever generated, not just the ones visible on screen right now. Deleting that selection resets the entire map."
   },
   "deleteButton_one": "Delete {{count}} Chunk",
   "deleteButton_other": "Delete {{count}} Chunks",

@@ -113,6 +113,7 @@
     "bulletStopServer": "Arrêtez d'abord le serveur.",
     "bulletSafetyBackup": "Le panneau créera une sauvegarde de sécurité avant de restaurer.",
     "bulletUndoRequiresRestore": "Pour annuler cela plus tard, il faudra restaurer cette sauvegarde de sécurité vous-même — cela ne se fait pas automatiquement.",
+    "scopeTip": "La restauration remplace uniquement les fichiers de sauvegarde de ce monde — les paramètres du serveur, les mods et les objets Workshop restent inchangés.",
     "cancel": "Annuler",
     "confirm": "Restaurer cette sauvegarde"
   },
