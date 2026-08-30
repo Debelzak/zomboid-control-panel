@@ -6836,15 +6836,26 @@ local function vehicleParts(vehicle)
     return PanelBridge.tryGet(vehicle, "getParts")
 end
 
+-- Returns (vehicle, nil) on success, (nil, err) on failure -- and "not
+-- found" IS a real, distinct err (not just a bare nil) so callers can tell
+-- "no vehicle has this id" apart from "the vehicle list itself could not be
+-- read", which collectVehicles() may report separately. Discarding the
+-- second return here used to collapse both into a bare nil, so every one of
+-- this function's 8 callers (removeVehicle, vehicleRepair, vehicleHotwire,
+-- vehicleSetFuel, vehicleSetBattery, vehicleSetSiren, vehicleSetAlarm,
+-- vehicleSetTrunkLocked) reported "Vehicle not found" even when the real
+-- cause was an unreadable collection -- sending an admin hunting a
+-- vehicle-id problem that did not exist (god's catch, 2026-08-30, on code
+-- written 20 minutes earlier in this same file).
 local function findVehicleById(vehicleId)
     local vehicles = getVehiclesList()
-    if not vehicles then return nil end
+    if not vehicles then return nil, "Vehicle list not available" end
 
     local targetId = tonumber(vehicleId)
-    if not targetId then return nil end
+    if not targetId then return nil, "Invalid vehicle id" end
 
-    local list = collectVehicles(vehicles)
-    if not list then return nil end
+    local list, collectErr = collectVehicles(vehicles)
+    if not list then return nil, collectErr end
 
     for _, v in ipairs(list) do
         local idOk, id = PanelBridge.invoke(v, "getId")
@@ -6852,7 +6863,7 @@ local function findVehicleById(vehicleId)
             return v
         end
     end
-    return nil
+    return nil, "Vehicle not found: " .. tostring(vehicleId)
 end
 
 handlers.getVehiclesDetailed = function(args)
@@ -6937,8 +6948,8 @@ handlers.getVehiclesDetailed = function(args)
 end
 
 handlers.vehicleRepair = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
 
     local ok, repairedOrErr = pcall(function()
         -- getPartCount/getPartByIndex are VehicleParts methods, not vehicle
@@ -6992,8 +7003,8 @@ handlers.vehicleRepair = function(args)
 end
 
 handlers.vehicleSetAlarm = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
     local enabled = args.enabled == true
 
     local ok, err = pcall(function()
@@ -7020,8 +7031,8 @@ handlers.vehicleSetAlarm = function(args)
 end
 
 handlers.vehicleSetSiren = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
 
     local mode = tonumber(args.mode)
     if not mode then mode = (args.enabled == false and 0 or 1) end
@@ -7053,8 +7064,8 @@ handlers.vehicleSetSiren = function(args)
 end
 
 handlers.vehicleSetTrunkLocked = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
     local locked = args.locked == true
 
     local ok, err = pcall(function()
@@ -7080,8 +7091,8 @@ handlers.vehicleSetTrunkLocked = function(args)
 end
 
 handlers.vehicleSetFuel = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
 
     local pct = tonumber(args.percent)
     if not pct then return false, nil, "percent required (0-100)" end
@@ -7129,8 +7140,8 @@ handlers.vehicleSetFuel = function(args)
 end
 
 handlers.vehicleSetBattery = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
 
     local charge = tonumber(args.charge)
     if not charge then return false, nil, "charge required (0-100)" end
@@ -7188,8 +7199,8 @@ handlers.vehicleSetBattery = function(args)
 end
 
 handlers.removeVehicle = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
 
     local vId = tonumber(args.vehicleId)
     local vx = tonumber(PanelBridge.tryGet(vehicle, "getX")) or 0
@@ -7281,8 +7292,8 @@ handlers.spawnVehicleAt = function(args)
 end
 
 handlers.vehicleHotwire = function(args)
-    local vehicle = findVehicleById(args.vehicleId)
-    if not vehicle then return false, nil, "Vehicle not found" end
+    local vehicle, findErr = findVehicleById(args.vehicleId)
+    if not vehicle then return false, nil, findErr or "Vehicle not found" end
 
     local actions = {}
 
