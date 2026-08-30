@@ -28,7 +28,22 @@ const LUA_PATH = path.join(
 const COMMON_STUBS = `
 ZombRand = function(n) return 0 end
 
-FakePlayer = { x = 100, y = 100, z = 0, dir = "N", username = "Test" }
+-- getDir() returns the real IsoDirections Java enum, not a string --
+-- confirmed against real vanilla Lua (see
+-- panelBridgeSpawnHordeBehindDirection.test.js for the full citation). A
+-- bare-string stub here would silently validate spawnHordeBehindPlayer's
+-- string-keyed direction lookup bug instead of catching it.
+local function mkDir(name)
+    local d = {}
+    function d:toString() return name end
+    return d
+end
+IsoDirections = {
+    N = mkDir("N"), NE = mkDir("NE"), E = mkDir("E"), SE = mkDir("SE"),
+    S = mkDir("S"), SW = mkDir("SW"), W = mkDir("W"), NW = mkDir("NW"),
+}
+
+FakePlayer = { x = 100, y = 100, z = 0, dir = IsoDirections.N, username = "Test" }
 function FakePlayer:getX() return self.x end
 function FakePlayer:getY() return self.y end
 function FakePlayer:getZ() return self.z end

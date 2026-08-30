@@ -2921,10 +2921,13 @@ handlers.getWorldStats = function(args)
     }
 end
 
--- Get current time speed multiplier. Real and working, but currently unused
--- by the panel: Events.tsx's time-speed slider is local useState(1), not
--- fetched from here, so a speed change made outside the panel (RCON, another
--- admin) never shows up in the slider until the page is reloaded some other way.
+-- Get current time speed multiplier. Real and working, but still unused by
+-- the panel: Events.tsx's time-speed slider gets its live read-back from
+-- getGameTime's own `multiplier` field (added 2026-08-30, same GameTime
+-- singleton) instead of this dedicated handler -- confirmed via a route/
+-- client call-site check, this handler has none beyond its own registration
+-- and tests. Not a bug to fix, just noting it so a future reader doesn't
+-- re-diagnose the already-fixed stale-slider problem this handler predates.
 handlers.getTimeSpeed = function(args)
     local gt = getGameTime()
     if not gt then
@@ -3258,12 +3261,18 @@ local function serializeInventory(container, depth, maxItems, currentCount)
 end
 
 -- Helper to get all perk levels
+-- Every call below used to be bare -- a throw from ANY of them (getXp,
+-- getPerkLevel, xp:getXP) took the whole export down with it, including
+-- traits/wornItems/inventory, which already degrade gracefully on their own.
+-- pcall-per-perk here so one bad perk (or a bad getXp()/getPerkLevel on a
+-- future build) doesn't cost the others -- same fix already applied to
+-- getPlayerDetails/getAllPlayerDetails/getServerInfo tonight, just not yet
+-- to this handler.
 local function getPlayerPerks(player)
     local perks = {}
 
-    -- Get XP object
-    local xp = player:getXp()
-    if not xp then return perks end
+    local xpOk, xp = pcall(function() return player:getXp() end)
+    if not xpOk or not xp then return perks, "player:getXp() failed or returned nil" end
 
     -- Known perks from PerkFactory
     local perkNames = {
@@ -3275,19 +3284,26 @@ local function getPlayerPerks(player)
         "Fishing", "Trapping", "PlantScavenging"
     }
 
+    local failures = 0
     for _, perkName in ipairs(perkNames) do
         local perk = Perks[perkName]
         if perk then
-            local level = player:getPerkLevel(perk)
-            local perkXp = xp:getXP(perk)
-            perks[perkName] = {
-                level = level,
-                xp = perkXp
-            }
+            local ok, level, perkXp = pcall(function()
+                return player:getPerkLevel(perk), xp:getXP(perk)
+            end)
+            if ok then
+                perks[perkName] = {
+                    level = level,
+                    xp = perkXp
+                }
+            else
+                failures = failures + 1
+            end
         end
     end
 
-    return perks
+    if failures > 0 then return perks, failures .. " perk(s) failed to read" end
+    return perks, "ok"
 end
 
 -- Helper to get player traits
@@ -3371,18 +3387,23 @@ local function getPlayerTraits(player)
     return traits, method .. " found " .. #traits
 end
 
--- Helper to get known recipes
+-- Helper to get known recipes. Same broad-pcall fix as getPlayerPerks above:
+-- a throw from getKnownRecipes()/size()/get(i) used to take the whole export
+-- down with it instead of just this field.
 local function getKnownRecipes(player)
     local recipes = {}
-    local recipeList = player:getKnownRecipes()
+    local listOk, recipeList = pcall(function() return player:getKnownRecipes() end)
+    if not listOk or not recipeList then return recipes, "player:getKnownRecipes() failed or returned nil" end
 
-    if recipeList then
-        for i = 0, recipeList:size() - 1 do
-            table.insert(recipes, recipeList:get(i))
-        end
+    local sizeOk, listSize = pcall(function() return recipeList:size() end)
+    if not sizeOk or type(listSize) ~= "number" then return recipes, "getKnownRecipes():size() failed" end
+
+    for i = 0, listSize - 1 do
+        local ok, recipe = pcall(function() return recipeList:get(i) end)
+        if ok and recipe then table.insert(recipes, recipe) end
     end
 
-    return recipes
+    return recipes, #recipes .. " recipe(s) found"
 end
 
 -- Helper to get worn items
@@ -3489,30 +3510,40 @@ handlers.exportPlayerData = function(args)
     end
     diag.bagItems = bagCount .. " items in " .. (function() local c = 0; for _ in pairs(bagItems) do c = c + 1 end; return c end)() .. " bags"
 
+    -- Perks/recipes/kills all go through tryGet/pcall (see getPlayerPerks and
+    -- getKnownRecipes above) so a throw from any one of them degrades just
+    -- that field instead of losing the whole export -- same granularity as
+    -- traits/wornItems/inventory above, which already worked this way.
+    local perks, perksDiag = getPlayerPerks(player)
+    diag.perks = perksDiag
+
+    local recipes, recipesDiag = getKnownRecipes(player)
+    diag.recipes = recipesDiag
+
     local exportData = {
         version = "1.3",
         exportTime = getTimestampMs(),
         serverName = getServerName(),
 
         -- Basic info
-        username = player:getUsername(),
-        displayName = player:getDisplayName(),
+        username = PanelBridge.tryGet(player, "getUsername"),
+        displayName = PanelBridge.tryGet(player, "getDisplayName"),
 
         -- Skills/Perks with XP (this is what we need for restore)
-        perks = getPlayerPerks(player),
+        perks = perks,
 
         -- Traits
         traits = traits,
 
         -- Known recipes
-        recipes = getKnownRecipes(player),
+        recipes = recipes,
 
         -- Worn items
         wornItems = wornItems,
 
         -- Kill stats
         kills = {
-            zombies = player:getZombieKills()
+            zombies = PanelBridge.tryGet(player, "getZombieKills")
         },
 
         -- Main inventory
@@ -3551,9 +3582,12 @@ handlers.importPlayerData = function(args)
         items = 0
     }
 
-    -- Restore perks/skills
+    -- Restore perks/skills. getXp() was a bare call here -- a throw would
+    -- have taken the whole handler down with it, including the inventory
+    -- restore below, which is logically independent (gated on its own
+    -- data.inventory check).
     if data.perks and options.restorePerks ~= false then
-        local xp = player:getXp()
+        local xp = PanelBridge.tryGet(player, "getXp")
         for perkName, perkData in pairs(data.perks) do
             local perk = Perks[perkName]
             if perk and perkData.level then
@@ -5592,7 +5626,7 @@ handlers.giveItem = function(args)
         return false, nil, "Player not found: " .. username
     end
 
-    local inventory = player:getInventory()
+    local inventory = PanelBridge.tryGet(player, "getInventory")
     if not inventory then
         return false, nil, "Could not access player inventory"
     end
@@ -6078,24 +6112,40 @@ handlers.spawnHordeBehindPlayer = function(args)
     local px, py = player:getX(), player:getY()
     local pz = player:getZ()
 
-    -- Get player facing direction and compute "behind" offset
+    -- Get player facing direction and compute "behind" offset. getDir()
+    -- returns the real IsoDirections Java enum, not a string -- vanilla Lua
+    -- (client AND server: e.g. server/Animal/ISScytheGrassCursor.lua,
+    -- ISPickDungCursor.lua) always keys/compares it by IDENTITY
+    -- (`dir == IsoDirections.N`), never via tostring(). This map used to be
+    -- string-keyed off `tostring(dir)`, which never matched any of these
+    -- keys -- `facing` silently defaulted to N every time regardless of the
+    -- player's real facing, so "behind" was always S. Identity-keyed here
+    -- instead, matching the confirmed vanilla convention.
     local dir = player:getDir()
-    local dirName = dir and tostring(dir) or "N"
     -- Direction offsets: the vector the player is FACING
     local dirMap = {
-        N  = { dx =  0, dy = -1 },
-        NE = { dx =  1, dy = -1 },
-        E  = { dx =  1, dy =  0 },
-        SE = { dx =  1, dy =  1 },
-        S  = { dx =  0, dy =  1 },
-        SW = { dx = -1, dy =  1 },
-        W  = { dx = -1, dy =  0 },
-        NW = { dx = -1, dy = -1 },
+        [IsoDirections.N]  = { dx =  0, dy = -1 },
+        [IsoDirections.NE] = { dx =  1, dy = -1 },
+        [IsoDirections.E]  = { dx =  1, dy =  0 },
+        [IsoDirections.SE] = { dx =  1, dy =  1 },
+        [IsoDirections.S]  = { dx =  0, dy =  1 },
+        [IsoDirections.SW] = { dx = -1, dy =  1 },
+        [IsoDirections.W]  = { dx = -1, dy =  0 },
+        [IsoDirections.NW] = { dx = -1, dy = -1 },
     }
     -- "Behind" is the opposite of the facing direction
-    local facing = dirMap[dirName] or { dx = 0, dy = -1 }
+    local facing = (dir and dirMap[dir]) or { dx = 0, dy = -1 }
     local behindX = -facing.dx
     local behindY = -facing.dy
+    -- Human-readable direction for the response/logs only -- never fed back
+    -- into the dirMap lookup above. Vanilla always calls :toString()
+    -- explicitly for this (never bare tostring()); pcall-guarded the same
+    -- way this file treats any not-yet-vanilla-confirmed probe.
+    local dirName = "unknown"
+    if dir then
+        local ok, name = pcall(function() return dir:toString() end)
+        if ok and name then dirName = name end
+    end
 
     -- Spawn 15-25 tiles behind — within the player's loaded chunk radius so
     -- VirtualZombieManager actually materialises the zombies.
