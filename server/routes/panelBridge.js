@@ -953,6 +953,9 @@ router.post("/configure", requirePermission("bridge.setup"), async (req, res) =>
     const bridgePath = bridge.configure(zomboidSavePath);
     // Also start the bridge automatically after configuring
     bridge.start();
+    // Persist so index.js's findPanelBridgePath() restore (settings.panelBridge.bridgePath)
+    // finds this again after a panel restart instead of falling through to auto-detect.
+    await setSetting("panelBridge", { bridgePath });
     res.json({
       success: true,
       message: "Bridge configured and started",
@@ -1005,6 +1008,11 @@ router.post("/configure-direct", requirePermission("bridge.setup"), async (req, 
     }
     const configuredPath = bridge.configure(resolved, true);
     bridge.start();
+    // Persist so index.js's findPanelBridgePath() restore (settings.panelBridge.bridgePath)
+    // finds this again after a panel restart -- this route is the manual escape hatch for
+    // when auto-detect can't find the bridge on its own, so it's the one case that can't
+    // self-heal without this.
+    await setSetting("panelBridge", { bridgePath: configuredPath });
     res.json({
       success: true,
       message: "Bridge configured with manual path and started",
