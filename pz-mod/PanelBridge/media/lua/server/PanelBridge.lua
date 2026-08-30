@@ -559,10 +559,32 @@ local function capabilityKey(obj, methodName)
         return tostring(classValue) .. "#" .. methodName
     end
     -- Some Java wrappers reject getClass(). Strip the identity hash so the key
-    -- still identifies the class rather than the individual instance.
+    -- still identifies the class rather than the individual instance. This
+    -- ONLY works for Java's default toString ("ClassName@hex") -- an object
+    -- with an OVERRIDDEN toString (Stats, InventoryItem, ItemContainer, and
+    -- the IsoMovingObject family -- IsoPlayer and BaseVehicle both inherit
+    -- it -- confirmed real cases via jar audit, 2026-08-30) has no @hex to
+    -- strip, so gsub would be a no-op and the "key" would become
+    -- VALUE-derived instead of class-derived (e.g. a username, an item
+    -- name). Two objects that happen to share a toString would then share a
+    -- cache key: if the first fails MAX_METHOD_FAILURES times the key gets
+    -- marked unavailable, and every OTHER object sharing it is then refused
+    -- with "Method not available on this build" even though the method
+    -- genuinely works on it -- a false negative that disables a working
+    -- accessor. gsub's own second return (the substitution count) is the
+    -- cheap, exact way to tell the two cases apart, so only actually cache
+    -- when there was a real @hex to strip. Returning nil here is NOT a new
+    -- path -- PanelBridge.invoke already guards every cache read/write with
+    -- `if key`, so nil already means "do not cache," just now also for this
+    -- case. DO NOT strip this: those 4+ receiver types simply don't get
+    -- availability caching on this fallback path (a repeated pcall is
+    -- cheap); a cached false negative on IsoPlayer is not.
     local textOk, text = pcall(tostring, obj)
     if textOk and text then
-        return (text:gsub("@%x+", "")) .. "#" .. methodName
+        local stripped, hashCount = text:gsub("@%x+", "")
+        if hashCount > 0 then
+            return stripped .. "#" .. methodName
+        end
     end
     return nil
 end
