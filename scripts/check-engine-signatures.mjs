@@ -20,6 +20,24 @@
 // Coverage is reported every run, unconditionally: call sites found, receivers resolved, and why
 // the rest were not -- a checker that quietly resolves 3 sites and passes looks identical to one
 // that resolves 300 and passes, which is exactly the failure mode this tool exists to not repeat.
+//
+// BASELINE (operator-requested 2026-08-30, after this check would otherwise have shipped
+// permanently red): a fresh checkout of PanelBridge.lua already has 15 ABSENT findings, and they
+// were individually reviewed, not rubber-stamped -- see scripts/engine-signatures.baseline.json's
+// own header for the full reasoning. A check that is red from the moment it lands, on findings its
+// own author already called harmless, teaches everyone to stop reading it -- and the day it lands a
+// GENUINE new regression, nobody notices, which defeats the entire point of building this. So:
+// findings are matched against the baseline by CLASS+METHOD, not by line number (an edit that only
+// shifts lines shouldn't need a baseline update) and not by call site (so a second, later call to an
+// already-baselined absent pair doesn't need its own entry either) -- chosen over per-site keying
+// because the failure mode of a wrong choice is asymmetric: per-site keying breaks (spuriously RED)
+// on every unrelated edit near a baselined call, which is exactly the "everyone stops reading it"
+// outcome this baseline exists to prevent; class+method keying's failure mode is instead a NEW call
+// to an already-baselined absent method absorbing silently -- worse in principle, but the baseline's
+// own match count is printed every run specifically so that absorption stays visible rather than
+// silent (see "already-baselined" below). A method NOT in the baseline that is ABSENT still fails
+// the gate exactly as before -- the baseline only covers the 10 specific (class, method) pairs
+// reviewed and recorded in that file, nothing broader.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,10 +53,11 @@ function argValue(flag) {
   return idx !== -1 ? process.argv[idx + 1] : null;
 }
 
-// --lua/--manifest exist for break-verification (point the checker at a synthetic fixture instead
-// of the real file) -- normal use (local, CI) always takes the defaults.
+// --lua/--manifest/--baseline exist for break-verification (point the checker at a synthetic
+// fixture instead of the real files) -- normal use (local, CI) always takes the defaults.
 const LUA_PATH = argValue('--lua') || path.join(ROOT, 'pz-mod/PanelBridge/media/lua/server/PanelBridge.lua');
 const MANIFEST_PATH = argValue('--manifest') || path.join(__dirname, 'engine-signatures.manifest.json');
+const BASELINE_PATH = argValue('--baseline') || path.join(__dirname, 'engine-signatures.baseline.json');
 
 if (!fs.existsSync(MANIFEST_PATH)) {
   console.error(`Missing ${path.relative(ROOT, MANIFEST_PATH)} -- run scripts/gen-engine-signatures.mjs (needs a local JDK) and commit its output.`);
@@ -51,6 +70,23 @@ if (!fs.existsSync(LUA_PATH)) {
 
 const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
 const rawSrc = fs.readFileSync(LUA_PATH, 'utf8');
+
+// Missing baseline file is NOT a hard error (unlike a missing manifest) -- an empty baseline is a
+// valid, if maximally strict, starting state; every ABSENT finding just fails until reviewed and
+// added. Malformed JSON, on the other hand, is a real authoring mistake and should say so loudly
+// rather than silently behaving as if the baseline were empty.
+let baselineEntries = [];
+if (fs.existsSync(BASELINE_PATH)) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8'));
+    baselineEntries = Array.isArray(parsed.entries) ? parsed.entries : [];
+  } catch (err) {
+    console.error(`Malformed baseline at ${path.relative(ROOT, BASELINE_PATH)}: ${err.message}`);
+    process.exit(1);
+  }
+}
+const baselineKey = (className, methodName) => `${className}#${methodName}`;
+const baselineByKey = new Map(baselineEntries.map((e) => [baselineKey(e.class, e.method), e]));
 
 // Resolve using exactly the seeds the manifest was generated with -- not whatever
 // SEED_GLOBALS/STATIC_CLASS_SEEDS happen to contain in this checkout's copy of the shared module.
@@ -107,17 +143,56 @@ for (const [reason, count] of [...skipReasonCounts.entries()].sort((a, b) => b[1
 }
 console.log(`ABSENT methods found:  ${absent.length}`);
 
-if (absent.length > 0) {
+const baselined = [];
+const newAbsent = [];
+const matchedBaselineKeys = new Set();
+for (const f of absent) {
+  const entry = baselineByKey.get(baselineKey(f.receiverType, f.methodName));
+  if (entry) {
+    baselined.push({ finding: f, entry });
+    matchedBaselineKeys.add(baselineKey(entry.class, entry.method));
+  } else {
+    newAbsent.push(f);
+  }
+}
+
+if (baselined.length > 0) {
+  const byCategory = new Map();
+  for (const { finding, entry } of baselined) {
+    const list = byCategory.get(entry.category) || [];
+    list.push({ finding, entry });
+    byCategory.set(entry.category, list);
+  }
   console.log('');
-  console.log('DEFINITELY ABSENT (javap confirms no such method anywhere in the class chain):');
-  for (const f of absent) {
+  console.log(`already-baselined (see ${path.relative(ROOT, BASELINE_PATH)}): ${baselined.length} call site(s) across ${matchedBaselineKeys.size} entries`);
+  for (const [category, items] of byCategory) {
+    console.log(`  ${category} (${items.length} site(s)):`);
+    for (const { finding, entry } of items) {
+      console.log(`    PanelBridge.lua:${finding.line}  ${finding.receiverExpr} (${finding.receiverType}) has no ${finding.methodName}() -- ${entry.reason}`);
+    }
+  }
+}
+
+const unmatchedBaselineEntries = baselineEntries.filter((e) => !matchedBaselineKeys.has(baselineKey(e.class, e.method)));
+if (unmatchedBaselineEntries.length > 0) {
+  console.log('');
+  console.log(`NOTE: ${unmatchedBaselineEntries.length} baseline entr${unmatchedBaselineEntries.length === 1 ? 'y' : 'ies'} matched nothing this run (does not fail the gate -- the call site may have been removed or fixed; safe to delete from the baseline once confirmed):`);
+  for (const e of unmatchedBaselineEntries) {
+    console.log(`  ${e.class}#${e.method}`);
+  }
+}
+
+if (newAbsent.length > 0) {
+  console.log('');
+  console.log('NEW (not in the baseline) -- javap confirms no such method anywhere in the class chain:');
+  for (const f of newAbsent) {
     console.log(`  PanelBridge.lua:${f.line}  ${f.receiverExpr} (${f.receiverType}) has no ${f.methodName}()`);
   }
   console.log('');
-  console.log(`FAIL: ${absent.length} definitively absent engine method call(s). See scripts/engine-signatures.manifest.json for the source of truth, and scripts/gen-engine-signatures.mjs's header for what "definitely absent" does and does not prove.`);
+  console.log(`FAIL: ${newAbsent.length} newly-absent engine method call(s), not covered by the reviewed baseline. Either this is a real regression (fix PanelBridge.lua), or it's a call site worth the same review the rest of ${path.relative(ROOT, BASELINE_PATH)} got (add it there with a reason, in the right category) -- never add an entry just to make the gate pass. See scripts/engine-signatures.manifest.json for the source of truth, and scripts/gen-engine-signatures.mjs's header for what "definitely absent" does and does not prove.`);
   process.exit(1);
 }
 
 console.log('');
-console.log('PASS: no definitively absent engine method calls among the resolved call sites.');
+console.log(`PASS: no NEW definitively absent engine method calls (${baselined.length} previously-reviewed finding(s) accounted for by the baseline).`);
 process.exit(0);
