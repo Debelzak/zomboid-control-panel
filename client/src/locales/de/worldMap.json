@@ -71,7 +71,9 @@
     "panToAriaWithHealth": "Ansicht zu {{name}} schwenken, Gesundheit {{health}}%",
     "loading": "lädt …",
     "noPlayersOnline": "keine Spieler online",
-    "bridgeOffline": "Brücke offline"
+    "bridgeOffline": "Brücke offline",
+    "collapseAria": "Liste einklappen",
+    "expandAria": "Liste ausklappen"
   },
   "hud": {
     "hoverForCoords": "Für Koordinaten hovern"

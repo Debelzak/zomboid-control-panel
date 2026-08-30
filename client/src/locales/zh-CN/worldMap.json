@@ -71,7 +71,9 @@
     "panToAriaWithHealth": "平移至 {{name}}，生命值 {{health}}%",
     "loading": "加载中……",
     "noPlayersOnline": "没有玩家在线",
-    "bridgeOffline": "桥接离线"
+    "bridgeOffline": "桥接离线",
+    "collapseAria": "收起花名册",
+    "expandAria": "展开花名册"
   },
   "hud": {
     "hoverForCoords": "悬停查看坐标"

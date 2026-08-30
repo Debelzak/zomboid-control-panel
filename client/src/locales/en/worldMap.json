@@ -71,7 +71,9 @@
     "panToAriaWithHealth": "Pan to {{name}}, health {{health}}%",
     "loading": "loading…",
     "noPlayersOnline": "no players online",
-    "bridgeOffline": "bridge offline"
+    "bridgeOffline": "bridge offline",
+    "collapseAria": "Collapse roster",
+    "expandAria": "Expand roster"
   },
   "hud": {
     "hoverForCoords": "hover for coords"

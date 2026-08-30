@@ -71,7 +71,9 @@
     "panToAriaWithHealth": "Desplazar a {{name}}, salud {{health}}%",
     "loading": "cargando…",
     "noPlayersOnline": "no hay jugadores en línea",
-    "bridgeOffline": "PanelBridge sin conexión"
+    "bridgeOffline": "PanelBridge sin conexión",
+    "collapseAria": "Contraer lista",
+    "expandAria": "Expandir lista"
   },
   "hud": {
     "hoverForCoords": "pasar el cursor para ver coordenadas"

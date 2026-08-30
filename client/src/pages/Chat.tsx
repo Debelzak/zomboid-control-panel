@@ -488,7 +488,7 @@ export default function Chat() {
                     onKeyDown={handleKeyDown}
                     disabled={sending}
                     maxLength={500}
-                    className="h-10 flex-1 bg-card/70 border-border/55 focus-visible:border-primary/60"
+                    className="h-10 flex-1 bg-card/70 border-border/55 focus-visible:border-primary/60 placeholder:text-sm"
                   />
                   <DisabledReason reason={!canSendChat ? t('input.noPermission') : null}>
                     <Button

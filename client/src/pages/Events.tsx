@@ -133,7 +133,7 @@ function SectionHeader({
   isBridgeOffline?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 select-none">
+    <div className="flex flex-col gap-1.5 border-b border-border/60 px-4 py-3 select-none sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <span className="flex min-w-0 items-center gap-2">
         {Icon && <Icon className={cn('h-4 w-4 shrink-0', toneText(tone))} />}
         <span className="truncate text-sm font-semibold text-foreground">{label}</span>
@@ -147,7 +147,7 @@ function SectionHeader({
           </span>
         )}
       </span>
-      {action && <div className="flex items-center gap-1.5 shrink-0">{action}</div>}
+      {action && <div className="flex items-center gap-1.5 sm:shrink-0">{action}</div>}
     </div>
   )
 }
@@ -2054,7 +2054,7 @@ export default function Events() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-4 lg:self-start">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -2062,7 +2062,7 @@ export default function Events() {
               onChange={(e) => setSectionQuery(e.target.value)}
               placeholder={t('sidebar.searchPlaceholder')}
               aria-label={t('sidebar.searchAria')}
-              className="h-9 pl-8 text-sm"
+              className="h-9 min-w-0 pl-8 text-sm"
             />
           </div>
 
@@ -2131,7 +2131,7 @@ export default function Events() {
           </div>
         </aside>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">{activeMeta.label}</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">{activeMeta.hint}</p>

@@ -2442,7 +2442,7 @@ export default function ServerConfig() {
                     <div className="grid gap-0 md:grid-cols-[252px_minmax(0,1fr)]">
                       <nav
                         aria-label={t('categoriesNav.iniAria')}
-                        className="-mx-2 flex gap-0.5 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
+                        className="-mx-2 flex flex-col gap-0.5 px-2 pb-2 md:mx-0 md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px] md:overflow-y-auto"
                       >
                         <div className="hidden md:flex items-center justify-between px-3 pb-1">
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
@@ -2470,7 +2470,7 @@ export default function ServerConfig() {
                           const isCollapsed = !!collapsedGroups[groupKey]
                           const groupModCount = cats.reduce((acc, c) => acc + (iniModifiedByCategory[c.id] || 0), 0)
                           return (
-                            <div key={group.id} className={gIdx > 0 ? 'mt-2 md:mt-3' : ''}>
+                            <div key={group.id} className={`shrink-0 md:shrink ${gIdx > 0 ? 'mt-2 md:mt-3' : ''}`}>
                               <button
                                 type="button"
                                 onClick={() => toggleGroup(groupKey)}
@@ -2848,7 +2848,7 @@ export default function ServerConfig() {
                     <div className="grid gap-0 md:grid-cols-[252px_minmax(0,1fr)]">
                       <nav
                         aria-label={t('categoriesNav.sandboxAria')}
-                        className="-mx-2 flex gap-0.5 overflow-x-auto px-2 pb-2 md:mx-0 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px]"
+                        className="-mx-2 flex flex-col gap-0.5 px-2 pb-2 md:mx-0 md:border-r md:border-border/50 md:pb-0 md:pr-3 md:pt-1 md:max-h-[calc(100vh-420px)] md:min-h-[360px] md:overflow-y-auto"
                       >
                         <div className="hidden md:flex items-center justify-between px-3 pb-1">
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
@@ -2875,7 +2875,7 @@ export default function ServerConfig() {
                           const isCollapsed = !!collapsedGroups[groupKey]
                           const groupModCount = cats.reduce((acc, c) => acc + (sandboxModifiedByCategory[c.id] || 0), 0)
                           return (
-                            <div key={group.id} className={gIdx > 0 ? 'mt-2 md:mt-3' : ''}>
+                            <div key={group.id} className={`shrink-0 md:shrink ${gIdx > 0 ? 'mt-2 md:mt-3' : ''}`}>
                               <button
                                 type="button"
                                 onClick={() => toggleGroup(groupKey)}

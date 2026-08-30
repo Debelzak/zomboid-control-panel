@@ -71,7 +71,9 @@
     "panToAriaWithHealth": "Se centrer sur {{name}}, santé {{health}} %",
     "loading": "chargement…",
     "noPlayersOnline": "aucun joueur en ligne",
-    "bridgeOffline": "bridge hors ligne"
+    "bridgeOffline": "bridge hors ligne",
+    "collapseAria": "Réduire l'effectif",
+    "expandAria": "Développer l'effectif"
   },
   "hud": {
     "hoverForCoords": "survolez pour les coordonnées"

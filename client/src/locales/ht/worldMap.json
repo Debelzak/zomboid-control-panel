@@ -71,7 +71,9 @@
     "panToAriaWithHealth": "Deplase kat la sou {{name}}, sante {{health}}%",
     "loading": "n ap chaje…",
     "noPlayersOnline": "pa gen jwè anliy",
-    "bridgeOffline": "pon òfliy"
+    "bridgeOffline": "pon òfliy",
+    "collapseAria": "Fèmen lis jwè a",
+    "expandAria": "Louvri lis jwè a"
   },
   "hud": {
     "hoverForCoords": "pase sou li pou wè kowòdone"

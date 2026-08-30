@@ -635,6 +635,7 @@ export default function WorldMap() {
   const canvasColorsRef = useRef<CanvasColors>(resolveCanvasColors())
 
   const [players, setPlayers] = useState<MapPlayer[]>([])
+  const [rosterCollapsed, setRosterCollapsed] = useState(false)
   const [mapCfg, setMapCfg] = useState<MapConfig>(MAP_B42)
   const mapCfgRef = useRef<MapConfig>(MAP_B42)
   const [scale, setScale] = useState(MAP_B42.defaultScale)
@@ -2952,9 +2953,15 @@ export default function WorldMap() {
         )}
 
         {/* Roster panel — top-right */}
-        <div className="absolute top-3 right-3 z-10 w-56">
+        <div className={cn('absolute top-3 right-3 z-10', rosterCollapsed ? 'w-auto' : 'w-56')}>
           <div className="rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-border/40 bg-muted/40 font-mono text-[10px] uppercase tracking-[0.22em] text-primary/70">
+            <button
+              type="button"
+              onClick={() => setRosterCollapsed((c) => !c)}
+              aria-expanded={!rosterCollapsed}
+              aria-label={rosterCollapsed ? t('roster.expandAria') : t('roster.collapseAria')}
+              className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 border-b border-border/40 bg-muted/40 font-mono text-[10px] uppercase tracking-[0.22em] text-primary/70 hover:bg-muted/60 transition-colors"
+            >
               <span className="flex items-center gap-1.5">
                 <span className="text-primary/60">//</span>
                 <span>{t('roster.label')}</span>
@@ -2964,9 +2971,12 @@ export default function WorldMap() {
                   {bridgeConnected ? t('roster.live') : t('roster.offline')}
                 </span>
               </span>
-              <span className="text-foreground tabular-nums font-semibold">{players.length}</span>
-            </div>
-            {players.length > 0 ? (
+              <span className="flex items-center gap-1.5">
+                <span className="text-foreground tabular-nums font-semibold">{players.length}</span>
+                {rosterCollapsed ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronUp className="h-3 w-3 shrink-0" />}
+              </span>
+            </button>
+            {!rosterCollapsed && (players.length > 0 ? (
               <div className="max-h-60 overflow-y-auto">
                 {players.map((p) => (
                   <button
@@ -3005,7 +3015,7 @@ export default function WorldMap() {
                   {loading ? t('roster.loading') : bridgeConnected ? t('roster.noPlayersOnline') : t('roster.bridgeOffline')}
                 </span>
               </div>
-            )}
+            ))}
           </div>
         </div>
 
