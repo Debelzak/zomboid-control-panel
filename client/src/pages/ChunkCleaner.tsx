@@ -265,7 +265,16 @@ export default function ChunkCleaner() {
     total: number;
     chunks: number;
   } | null>(null);
-  const [loadingSaves, setLoadingSaves] = useState(false);
+  // Starts true: fetchSaves() always fires from the mount effect below, so
+  // there is never a real moment where we're neither loading nor loaded --
+  // starting this false lied about that window and let saves.length === 0
+  // (the confirmed-empty case) and "haven't fetched yet" render identically
+  // (2026-08-30 visual sweep; same idiom as 3665aa20/da9bb687/a83c425a, but
+  // this one had no honest flag to fall back on even briefly, unlike those
+  // three -- the canvas below reads `false` as "checked and there are none"
+  // from the very first frame, and stays that way for the fetch's entire
+  // duration since the canvas's own condition never consulted this flag).
+  const [loadingSaves, setLoadingSaves] = useState(true);
   const [selectedChunks, setSelectedChunks] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
@@ -2653,7 +2662,21 @@ export default function ChunkCleaner() {
             <Card className="flex flex-col h-[24rem] min-h-[320px] sm:h-[30rem] lg:h-[36rem]">
               <CardContent className="flex-1 p-2 min-h-0">
                 {!selectedSave ? (
-                  hasSaves ? (
+                  loadingSaves ? (
+                    // Genuinely unknown (still fetching, or hasn't started
+                    // yet) -- must not fall through to the "no saves found"
+                    // branch below, which asserts a confirmed, investigated
+                    // fact. Same spinner treatment the chunks-loading branch
+                    // further down already uses for this same card.
+                    <div className="h-full flex items-center justify-center">
+                      <div className="text-center text-muted-foreground">
+                        <RefreshCw className="w-6 h-6 mx-auto animate-spin" />
+                        <p className="mt-3 text-xs font-medium">
+                          {t("save.placeholderLoading")}
+                        </p>
+                      </div>
+                    </div>
+                  ) : hasSaves ? (
                     <div className="h-full flex items-center justify-center text-muted-foreground">
                       <div className="text-center max-w-xs">
                         <FileBox className="w-10 h-10 mx-auto mb-3 opacity-40" />
