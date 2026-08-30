@@ -660,6 +660,40 @@ function PanelBridge.safeCall(obj, methodName, ...)
     return PanelBridge.invoke(obj, methodName, ...)
 end
 
+-- B42 gates several single-argument cheat setters (setNoClip, setGodMod,
+-- setInvisible) behind the TARGET character's own Role capability
+-- (ToggleNoclipHimself / ToggleGodModHimself / ToggleInvisibleHimself) --
+-- confirmed by reading the shipped jar's bytecode (2026-08-30, GitHub issue
+-- #129: player:setNoClip(enabled) completes with no error, but the immediate
+-- isNoClip() read-back is still false). A normal player's default Role does
+-- not carry those "toggle on myself" capabilities -- they exist for admins
+-- toggling their own debug cheats via a debug menu, not for an admin tool
+-- acting on an arbitrary target player -- so the 1-arg setter silently
+-- forces the value to false and the call reports success while doing
+-- nothing. Each of the three has a 2-arg overload (value, true) whose second
+-- argument skips that capability check entirely; its write is byte-for-byte
+-- the same getCheats():set(CheatType, value) call the 1-arg setter makes
+-- when the capability check passes -- no separate replication/network path,
+-- confirmed from the same bytecode. Try the 2-arg bypass first (uncached --
+-- a build lacking the overload just throws, which pcall catches cheaply) and
+-- fall back to the 1-arg form only for a build that lacks the overload
+-- entirely. setInvincible has the same capability gate (ToggleInvincibleHimself)
+-- but no 2-arg overload exists for it on this build -- no bypass is possible
+-- through this method.
+function PanelBridge.setCharacterCheatBypassingRoleGate(player, methodName, enabled)
+    if not player or not player[methodName] then
+        return false, methodName .. " method not available in this PZ version"
+    end
+    if pcall(function() player[methodName](player, enabled, true) end) then
+        return true
+    end
+    local ok, err = pcall(function() player[methodName](player, enabled) end)
+    if ok then
+        return true
+    end
+    return false, err
+end
+
 -- Safely get a value from a method, with default fallback
 function PanelBridge.safeGet(obj, methodName, default)
     local success, result = PanelBridge.invoke(obj, methodName)
@@ -5670,11 +5704,19 @@ handlers.killPlayer = function(args)
     -- while that mutation silently stands (2026-08-30, the same
     -- mutate-then-fail class fixed for the faction handlers above: a real
     -- change landed but the caller was never told).
-    if PanelBridge.invoke(player, "setGodMod", false) then
+    --
+    -- Uses the role-gate bypass (see setCharacterCheatBypassingRoleGate) --
+    -- the plain 1-arg setGodMod is gated by the TARGET's own Role capability,
+    -- so for a normal (non-admin) player this "force off" would silently
+    -- no-op and leave godmode standing through the kill below.
+    if PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMod", false) then
         table.insert(debugInfo, "godMod disabled")
-    elseif PanelBridge.invoke(player, "setGodMode", false) then
+    elseif PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMode", false) then
         table.insert(debugInfo, "godMode disabled")
     end
+    -- setInvincible has the same capability gate (ToggleInvincibleHimself)
+    -- but no 2-arg bypass overload exists on this build -- this call can
+    -- still silently no-op for a target whose Role lacks that capability.
     if PanelBridge.invoke(player, "setInvincible", false) then
         table.insert(debugInfo, "invincible disabled")
     end
@@ -5740,19 +5782,25 @@ handlers.setGodMode = function(args)
     end
 
     -- B42/B41: setGodMod is the actual PZ method name (not a typo)
+    --
+    -- Uses the role-gate bypass (see setCharacterCheatBypassingRoleGate) --
+    -- the plain 1-arg setter is gated by the TARGET player's own Role
+    -- capability (ToggleGodModHimself), which an ordinary player's Role
+    -- normally does not carry, so it silently no-ops for exactly the
+    -- players an admin tool needs to act on.
     local method = nil
-    local success, err = pcall(function()
-        if PanelBridge.invoke(player, "setGodMod", enabled) then
-            method = "setGodMod"
-        elseif PanelBridge.invoke(player, "setGodMode", enabled) then
-            method = "setGodMode"
-        else
-            error("No godmode method available on player object")
-        end
-    end)
+    local success, err
+    if player.setGodMod then
+        success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMod", enabled)
+        if success then method = "setGodMod" end
+    end
+    if not success and player.setGodMode then
+        success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMode", enabled)
+        if success then method = "setGodMode" end
+    end
 
     if not success then
-        return false, nil, "Failed to set godmode: " .. tostring(err)
+        return false, nil, "Failed to set godmode: " .. tostring(err or "No godmode method available on player object")
     end
 
     -- Verify it took effect. Written with an explicit if/then rather than
@@ -5793,13 +5841,12 @@ handlers.setInvisible = function(args)
         return false, nil, "Player not found: " .. username
     end
 
-    if not player.setInvisible then
-        return false, nil, "setInvisible method not available in this PZ version"
-    end
-
-    local success, err = pcall(function()
-        player:setInvisible(enabled)
-    end)
+    -- Uses the role-gate bypass (see setCharacterCheatBypassingRoleGate) --
+    -- the plain 1-arg setInvisible is gated by the TARGET player's own Role
+    -- capability (ToggleInvisibleHimself), which an ordinary player's Role
+    -- normally does not carry, so it silently no-ops for exactly the
+    -- players an admin tool needs to act on.
+    local success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setInvisible", enabled)
 
     if not success then
         return false, nil, "Failed to set invisible: " .. tostring(err)
@@ -5839,13 +5886,12 @@ handlers.setNoclip = function(args)
         return false, nil, "Player not found: " .. username
     end
 
-    if not player.setNoClip then
-        return false, nil, "setNoClip method not available in this PZ version"
-    end
-
-    local success, err = pcall(function()
-        player:setNoClip(enabled)
-    end)
+    -- Uses the role-gate bypass (see setCharacterCheatBypassingRoleGate) --
+    -- the plain 1-arg setNoClip is gated by the TARGET player's own Role
+    -- capability (ToggleNoclipHimself), which an ordinary player's Role
+    -- normally does not carry, so it silently no-ops for exactly the
+    -- players an admin tool needs to act on (GitHub issue #129).
+    local success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setNoClip", enabled)
 
     if not success then
         return false, nil, "Failed to set noclip: " .. tostring(err)
