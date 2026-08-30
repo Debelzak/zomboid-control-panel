@@ -2424,6 +2424,15 @@ export default function Debug() {
       document.body.appendChild(a);
       a.click();
       a.remove();
+
+      // Redaction (server/routes/debug.js) is a best-effort scrub for known
+      // credential shapes, not a promise the bundle is safe to hand to
+      // anyone -- surfaced here, at the moment the file actually lands, per
+      // the operator's ruling that the warning matters as much as the scrub.
+      toast({
+        title: t("logsTab.supportBundleReadyTitle"),
+        description: t("logsTab.supportBundleReadyDesc"),
+      });
     } catch (error) {
       toast({
         title: t("logsTab.downloadFailedTitle"),

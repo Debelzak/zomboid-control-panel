@@ -58,6 +58,13 @@ import {
   getLifecycleServiceName,
   isManagedLifecycleProvider,
 } from "../services/linuxServiceLifecycle.js";
+import { redactRconCommandSecrets } from "../utils/rconCommandRedaction.js";
+import {
+  collectKnownSecretValues,
+  redactKnownSecrets,
+} from "../utils/discordMessageRedaction.js";
+import { getSteamApiKey } from "../services/steamApiKey.js";
+import { Transform } from "stream";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -331,6 +338,117 @@ function sanitizeForBundle(value, depth = 0) {
     }
   }
   return out;
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Raw-log redaction (support-bundle-2026-08-30 follow-up, operator ruling):
+// sanitizeForBundle() above only ever runs on structured data this route
+// itself builds, and is a no-op on free text -- it cannot touch a RAW log
+// file's content. The operator's ruling was to redact ALL raw logs in the
+// bundle uniformly (the four pre-existing filesystem categories AND the
+// two container/service-log files added earlier tonight), biased toward
+// false positives, but never at the cost of destroying the exact kind of
+// evidence (a stack trace, a file path) this bundle exists to preserve --
+// see redactRawLogText's own header for the two-layer design and the
+// regression test built from the literal line that motivated this feature.
+// ───────────────────────────────────────────────────────────────────────
+
+// Discord bot tokens are three base64url segments joined by literal dots --
+// a shape distinctive enough that it will not collide with a file path,
+// stack trace, or ordinary log line. This is what lets it catch a ROTATED
+// token that is no longer any server's *current* configured value (and so
+// can't be caught by the known-secret-value scrub below).
+const RAW_LOG_DISCORD_TOKEN_RE =
+  /\b[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,40}\b/g;
+
+// The one place this panel ever puts a Steam Web API key on a line that
+// could end up logged: GetServerList's own request URL (serverFinder.js,
+// both call sites), built as `...?key=<key>&filter=...`. Anchored to the
+// query-param shape, not a bare hex/alnum run, so it can't collide with an
+// unrelated identifier that merely happens to be 16-64 characters long.
+const RAW_LOG_STEAM_KEY_QUERY_RE = /([?&]key=)[0-9A-Za-z]{16,64}/g;
+
+/**
+ * Support-bundle-specific superset of discordMessageRedaction.js's own
+ * known-secret list: everything that list already covers (RCON/join
+ * passwords across every server profile, the Discord bot token, the
+ * PanelBridge SFTP password, Steam session cookies) plus the Steam Web API
+ * key, which that module has no reason to know about (a Discord message
+ * could never echo it) but which serverFinder.js does put directly into a
+ * request URL -- see RAW_LOG_STEAM_KEY_QUERY_RE above for why that value is
+ * ALSO covered by shape, in case it's ever rotated out of settings.
+ */
+async function collectBundleKnownSecrets() {
+  const values = new Set(await collectKnownSecretValues().catch(() => []));
+  try {
+    const apiKey = await getSteamApiKey();
+    if (apiKey) values.add(String(apiKey));
+  } catch {
+    /* best-effort, matches collectKnownSecretValues' own precedent */
+  }
+  values.delete("");
+  return [...values];
+}
+
+/**
+ * Applied to every RAW log this bundle includes. Two independent layers,
+ * cheapest/safest first:
+ *
+ *   1. Exact known-secret-value replacement (redactKnownSecrets). Zero
+ *      false positives by construction -- it only ever matches a string
+ *      this panel currently holds as a real credential -- but structurally
+ *      blind to a secret that was never "known" to the panel (a player's
+ *      own whitelist password, chosen through the RCON console and never
+ *      persisted anywhere) or one that's since been rotated out.
+ *   2. A short list of shape-based patterns for exactly the gaps (1) can't
+ *      cover, each verified against real code in THIS repo rather than a
+ *      generic guess: the `adduser "user" "pass"` RCON command shape
+ *      (already precedented -- see rconCommandRedaction.js's own header
+ *      for why a whitelist password can never be a "known" value), a
+ *      Discord bot token's three-segment shape (covers a rotated token),
+ *      and the Steam Web API key query-param shape serverFinder.js builds.
+ *
+ * MUST NOT touch ordinary diagnostic text -- proven by the regression test
+ * built from the exact "Text file busy" .NET stack trace that motivated
+ * tonight's Docker/systemd log capture in the first place. A scrubber that
+ * mangled that line would have destroyed the one piece of evidence that
+ * made the feature useful.
+ */
+function redactRawLogText(text, knownSecrets) {
+  if (typeof text !== "string" || !text) return text;
+  let out = redactKnownSecrets(text, knownSecrets);
+  out = redactRconCommandSecrets(out);
+  out = out.replace(RAW_LOG_DISCORD_TOKEN_RE, "[REDACTED-DISCORD-TOKEN]");
+  out = out.replace(RAW_LOG_STEAM_KEY_QUERY_RE, "$1[REDACTED]");
+  return out;
+}
+
+/**
+ * Wraps a raw log file's read stream so each COMPLETE line is redacted
+ * before it reaches the zip, without ever holding the whole file in
+ * memory -- PZ's own server-console.txt is not rotated and can grow large
+ * over a long uptime, unlike the panel's own winston-rotated combined.log/
+ * error.log (10-25MB, capped). Buffers only the current (possibly partial)
+ * line across chunk boundaries; every secret shape redactRawLogText
+ * matches is expected to appear on a single line.
+ */
+function createRedactingLogStream(knownSecrets) {
+  let carry = "";
+  return new Transform({
+    transform(chunk, _enc, callback) {
+      carry += chunk.toString("utf-8");
+      const lines = carry.split("\n");
+      carry = lines.pop() ?? "";
+      for (const line of lines) {
+        this.push(redactRawLogText(line, knownSecrets) + "\n");
+      }
+      callback();
+    },
+    flush(callback) {
+      if (carry) this.push(redactRawLogText(carry, knownSecrets));
+      callback();
+    },
+  });
 }
 
 async function readPanelVersion() {
@@ -1201,7 +1319,9 @@ function buildBundleReadme() {
     "- `docker-container-logs.txt` — last 500 lines of the mapped Docker container's own stdout/stderr (only if the active server is Docker-managed and Docker control is on). This is the ONLY place an early startup crash from a container's own entrypoint script, or a JVM that died before writing its own log file, ever shows up -- none of the filesystem-scanning logs above can see it. Says why it's missing when it is (not mapped, Docker control off, socket unavailable, fetch failed).",
     "- `managed-service-logs.txt` — last 500 lines from `journalctl --user` for a systemd-managed server (same reasoning as the Docker file, for a systemd `--user` unit instead of a container). OpenRC-managed servers are a known, reported gap here -- supervise-daemon's log destination is not currently tracked by this panel.",
     "",
-    "**None of the raw logs above are content-scanned for secrets** -- they are exactly what the panel, the game server, or (for the two files above) a container/service supervisor wrote, unmodified. This has always been true for `admin-panel/`, `zomboid-server/`, `zomboid-install/`, and `crash-logs/`; it now also applies to `docker-container-logs.txt` and `managed-service-logs.txt`, which come from a script this panel does not control the output of. Only the JSON files above (`panel-config.json`, `sftp-diagnostics.json`, `environment.txt`, etc.) go through field-based redaction. Review before forwarding a bundle to someone outside your team.",
+    "**Every raw log above is now scanned for known credential shapes before it's zipped**, uniformly -- `admin-panel/`, `zomboid-server/`, `zomboid-install/`, `crash-logs/`, `docker-container-logs.txt`, and `managed-service-logs.txt` all go through the same scrub, not a subset of them. It catches: RCON/join passwords and the PanelBridge SFTP password (exact match against this panel's own current values), the Discord bot token (exact match, plus a shape check that also catches a token that's since been rotated), and the Steam Web API key (exact match, plus the one query-string shape this panel's own code ever puts it in).",
+    "",
+    "**REDACTION IS NOT A PROMISE OF SAFETY.** These are still real, mostly-unstructured logs written by the panel, the game server, or (for the two files above) a container/service supervisor this panel doesn't control the output of. The scrub above only catches secrets that are exact-known-current-values or match one of a short, verified list of shapes -- it cannot catch every way a credential, a player's real name, an IP address, or anything else sensitive might show up in free text. **Review this bundle yourself before forwarding it to anyone outside your team.** Only the JSON files (`panel-config.json`, `sftp-diagnostics.json`, `environment.txt`, etc.) go through the separate field-based redaction described above, which is a stricter, schema-aware guarantee that the raw-log scrub can't offer.",
     "",
     "## What is NOT in this bundle",
     "",
@@ -1209,6 +1329,7 @@ function buildBundleReadme() {
     "- Full environment variable values (only allow-listed keys show values).",
     "- MAC addresses (network interfaces list IPs only).",
     "- The LowDB file itself (`db.json`) — only sanitized excerpts.",
+    "- A guarantee that the raw logs contain nothing sensitive beyond the credential shapes described above — see the warning in that section.",
     "- Whether a config edit is still waiting on a restart to take effect. The panel computes that live per-request and never stores it — `system-info.json`'s `serverProcess` (was the server running right now) is the closest fact actually available.",
     "- A record of the OIDC \"Test connection\" button's last result, or a live check against the identity provider run while building this bundle — `oidc-status.json` reports configuration only.",
     "- Failed backup attempts as structured data (only successful runs are recorded) — check `admin-panel/error.log` for those.",
@@ -1220,7 +1341,7 @@ function buildBundleReadme() {
   ].join("\n");
 }
 
-async function buildBundleDiagnostics(activeServer, req) {
+async function buildBundleDiagnostics(activeServer, req, knownSecrets) {
   // Run all collectors in parallel — each one is wrapped so a single failure
   // doesn't kill the whole bundle.
   const wrap = async (name, fn) => {
@@ -1269,14 +1390,20 @@ async function buildBundleDiagnostics(activeServer, req) {
     },
     {
       name: "docker-container-logs.txt",
-      content: await buildDockerContainerLogsText(activeServer).catch(
-        (e) => `# error: ${e.message}\n`,
+      content: redactRawLogText(
+        await buildDockerContainerLogsText(activeServer).catch(
+          (e) => `# error: ${e.message}\n`,
+        ),
+        knownSecrets,
       ),
     },
     {
       name: "managed-service-logs.txt",
-      content: await buildManagedServiceLogsText(activeServer).catch(
-        (e) => `# error: ${e.message}\n`,
+      content: redactRawLogText(
+        await buildManagedServiceLogsText(activeServer).catch(
+          (e) => `# error: ${e.message}\n`,
+        ),
+        knownSecrets,
       ),
     },
   ];
@@ -1432,6 +1559,8 @@ router.get("/logs/download-zip", requirePermission("diagnostics.manage"), async 
       return res.status(404).json({ error: "No support logs found" });
     }
 
+    const knownSecrets = await collectBundleKnownSecrets().catch(() => []);
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const archiveName = `pz-support-bundle-${timestamp}.zip`;
 
@@ -1469,6 +1598,12 @@ router.get("/logs/download-zip", requirePermission("diagnostics.manage"), async 
       `Install Dir: ${sources.installRoot || "n/a"}`,
       `Included Files: ${entries.length}`,
       "",
+      "WARNING: This bundle contains real logs. Known credential shapes",
+      "(RCON/join/SFTP passwords, the Discord bot token, the Steam Web API",
+      "key) are redacted, but that is not a promise of safety -- review the",
+      "contents yourself before sharing this bundle outside your team. See",
+      "README.md for exactly what is and isn't scrubbed.",
+      "",
       "Contents:",
       "- admin-panel: panel combined/error logs",
       "- zomboid-server: server-console and runtime logs",
@@ -1480,12 +1615,15 @@ router.get("/logs/download-zip", requirePermission("diagnostics.manage"), async 
     archive.append(manifest, { name: "support-bundle-info.txt" });
 
     for (const entry of entries) {
-      archive.file(entry.filePath, { name: entry.archivePath });
+      archive.append(
+        fs.createReadStream(entry.filePath).pipe(createRedactingLogStream(knownSecrets)),
+        { name: entry.archivePath },
+      );
     }
 
     // ── Diagnostic JSON files (best-effort; collectors never throw) ──
     try {
-      const diagnostics = await buildBundleDiagnostics(activeServer, req);
+      const diagnostics = await buildBundleDiagnostics(activeServer, req, knownSecrets);
       for (const f of diagnostics) {
         archive.append(f.content, { name: f.name });
       }
@@ -5991,6 +6129,14 @@ export {
   buildDiscordBotStatus,
   buildDockerContainerLogsText,
   buildManagedServiceLogsText,
+};
+// Exported for direct unit testing of the support-bundle raw-log redaction
+// (operator ruling, support-bundle-2026-08-30 follow-up) -- see
+// server/tests/supportBundleRedaction.test.js.
+export {
+  redactRawLogText,
+  collectBundleKnownSecrets,
+  createRedactingLogStream,
 };
 // Exported for direct unit testing of the GET /diagnostics thumbnail-
 // resolution check -- see server/tests/thumbnailResolutionCheck.test.js.

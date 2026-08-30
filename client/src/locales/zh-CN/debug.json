@@ -1330,6 +1330,8 @@
     "downloadFailedDesc": "下载日志失败",
     "downloadFileFailedDesc": "下载 {{name}} 失败",
     "downloadArchiveFailedDesc": "下载日志压缩包失败",
+    "supportBundleReadyTitle": "支持包已下载",
+    "supportBundleReadyDesc": "其中包含真实日志。已知形态的凭据会被打码处理，但这并非绝对安全保证——分享给团队以外的人之前请自行检查内容。",
     "logEntryCopiedDesc": "日志条目已复制到剪贴板。",
     "logsFetchFailedTitle": "无法刷新日志",
     "logsFetchFailedDesc": "日志列表未更新。请检查面板连接后重试。"

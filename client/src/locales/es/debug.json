@@ -1330,6 +1330,8 @@
     "downloadFailedDesc": "Error al descargar los registros",
     "downloadFileFailedDesc": "Error al descargar {{name}}",
     "downloadArchiveFailedDesc": "Error al descargar el archivo de registros",
+    "supportBundleReadyTitle": "Paquete de soporte descargado",
+    "supportBundleReadyDesc": "Contiene registros reales. Las credenciales con formas conocidas se ocultan, pero eso no es una garantía — revísalo antes de compartirlo fuera de tu equipo.",
     "logEntryCopiedDesc": "Entrada de registro copiada al portapapeles.",
     "logsFetchFailedTitle": "No se pudieron actualizar los registros",
     "logsFetchFailedDesc": "La lista de registros no se actualizó. Comprueba la conexión del panel e inténtalo de nuevo."

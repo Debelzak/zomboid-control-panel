@@ -1332,6 +1332,8 @@
     "downloadFailedDesc": "Failed to download logs",
     "downloadFileFailedDesc": "Failed to download {{name}}",
     "downloadArchiveFailedDesc": "Failed to download log archive",
+    "supportBundleReadyTitle": "Support bundle downloaded",
+    "supportBundleReadyDesc": "It contains real logs. Known credential shapes are redacted, but that's not a guarantee — review before sharing outside your team.",
     "logEntryCopiedDesc": "Log entry copied to clipboard."
   },
   "crashesTab": {

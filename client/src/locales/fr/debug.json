@@ -1330,6 +1330,8 @@
     "downloadFailedDesc": "Échec du téléchargement des journaux",
     "downloadFileFailedDesc": "Échec du téléchargement de {{name}}",
     "downloadArchiveFailedDesc": "Échec du téléchargement du pack de journaux",
+    "supportBundleReadyTitle": "Pack de support téléchargé",
+    "supportBundleReadyDesc": "Il contient de vrais journaux. Les identifiants aux formes connues sont masqués, mais ce n'est pas une garantie — vérifiez le contenu avant de le partager en dehors de votre équipe.",
     "logEntryCopiedDesc": "Entrée de journal copiée dans le presse-papiers.",
     "logsFetchFailedTitle": "Impossible d'actualiser les journaux",
     "logsFetchFailedDesc": "La liste des journaux n'a pas été mise à jour. Vérifiez la connexion du panneau et réessayez."

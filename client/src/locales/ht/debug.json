@@ -1332,6 +1332,8 @@
     "downloadFailedDesc": "Pa t kapab telechaje jounal yo",
     "downloadFileFailedDesc": "Pa t kapab telechaje {{name}}",
     "downloadArchiveFailedDesc": "Pa t kapab telechaje achiv jounal la",
+    "supportBundleReadyTitle": "Achiv sipò a telechaje",
+    "supportBundleReadyDesc": "Li gen jounal reyèl ladan. Fòm idantifyan yo konnen yo kache, men sa pa yon garanti — tcheke kontni an anvan ou pataje l deyò ekip ou.",
     "logEntryCopiedDesc": "Antre jounal kopye nan clipboard."
   },
   "crashesTab": {

@@ -1330,6 +1330,8 @@
     "downloadFailedDesc": "Protokolle konnten nicht heruntergeladen werden.",
     "downloadFileFailedDesc": "Herunterladen von {{name}} fehlgeschlagen",
     "downloadArchiveFailedDesc": "Herunterladen des Protokollarchivs fehlgeschlagen",
+    "supportBundleReadyTitle": "Support-Paket heruntergeladen",
+    "supportBundleReadyDesc": "Es enthält echte Protokolle. Bekannte Zugangsdaten-Formen werden geschwärzt, das ist aber keine Garantie — vor der Weitergabe außerhalb des Teams bitte prüfen.",
     "logEntryCopiedDesc": "Protokolleintrag in die Zwischenablage kopiert.",
     "logsFetchFailedTitle": "Logs konnten nicht aktualisiert werden",
     "logsFetchFailedDesc": "Die Log-Liste wurde nicht aktualisiert. Prüfe die Verbindung des Panels und versuche es erneut."
