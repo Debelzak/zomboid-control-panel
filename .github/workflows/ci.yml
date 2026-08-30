@@ -75,15 +75,33 @@ jobs:
             exit 1
           fi
 
-      # Validates every engine method call in PanelBridge.lua against
-      # scripts/engine-signatures.manifest.json, a real jar-derived record of what methods
-      # actually exist on each Java class (see scripts/gen-engine-signatures.mjs). No JDK needed
-      # here -- the manifest is committed; only regenerating it requires one, done locally and
-      # committed as its own step. FAILS only on a method the manifest confirms is definitively
-      # absent from a resolved receiver's class -- see scripts/check-engine-signatures.mjs's
-      # header for the full PASS/FAIL contract and its reported-coverage output.
+  # Deliberately a SEPARATE job from `server`, not a step tacked onto it: this check must never be
+  # able to red-gate lint/tests/tsc, and a job boundary is the only thing GitHub Actions actually
+  # enforces that with -- steps within one job all report under that job's single status, so a
+  # crash/timeout/wrong-verdict here could otherwise read as "Server (lint + tests)" failing. This
+  # job's only dependency is the repo checkout; it does not run npm install for the full
+  # client+server tree.
+  #
+  # No JDK here, and none needed: validates PanelBridge.lua's engine calls against the COMMITTED
+  # scripts/engine-signatures.manifest.json (a real jar-derived record of what methods actually
+  # exist on each Java class -- see scripts/gen-engine-signatures.mjs). Regenerating that manifest
+  # needs a local JDK and the actual game server jar, neither of which a GitHub-hosted runner has or
+  # ever will -- that is a local-only step, done before committing the refreshed manifest, never part
+  # of this job. FAILS only on a method the manifest confirms is definitively absent from a resolved
+  # receiver's class -- see scripts/check-engine-signatures.mjs's header for the full PASS/FAIL
+  # contract and its reported-coverage output.
+  engine-signatures:
+    name: Engine signature check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
       - name: Engine signature check
-        run: npm run check:engine-signatures
+        run: node scripts/check-engine-signatures.mjs
 
   client:
     name: Client (lint + types + tests)

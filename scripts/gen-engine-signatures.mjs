@@ -26,8 +26,17 @@
 // Usage: node scripts/gen-engine-signatures.mjs [--javap <path>] [--jar <path>]
 // Defaults match the toolchain the operator installed 2026-08-30:
 //   javap: C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot\bin\javap.exe
-//   jar:   D:\SteamLibrary\steamapps\common\ProjectZomboid\projectzomboid.jar
+//   jar:   D:\pz-verify\Server\java\projectzomboid.jar
 // Override with --javap/--jar or PZ_JAVAP_PATH/PZ_JAR_PATH if your checkout differs.
+//
+// WHY THE SERVER JAR, NOT THE STEAM CLIENT ONE: PanelBridge.lua runs on the dedicated SERVER, and
+// that jar's bytecode is what actually executes it -- the client jar is a different install that
+// merely happens to be identical today (verified 2026-08-30: same 5,080 zombie/* classes, same
+// 61MB, byte-for-byte). The moment the operator updates one install and not the other, a manifest
+// generated from the client jar would silently validate against a runtime that isn't the one
+// running PanelBridge.lua -- still green, and wrong, which is exactly the failure mode this whole
+// tool exists to stop repeating. Always point this at a server install's <install>/java/
+// projectzomboid.jar, never a client one, even when they currently match.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -72,10 +81,11 @@ const JAVAP_PATH =
   cli.javap ||
   process.env.PZ_JAVAP_PATH ||
   String.raw`C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot\bin\javap.exe`;
+// Server install, not the Steam client one -- see the header comment for why.
 const JAR_PATH =
   cli.jar ||
   process.env.PZ_JAR_PATH ||
-  String.raw`D:\SteamLibrary\steamapps\common\ProjectZomboid\projectzomboid.jar`;
+  String.raw`D:\pz-verify\Server\java\projectzomboid.jar`;
 
 if (!fs.existsSync(JAVAP_PATH)) {
   console.error(`javap not found at ${JAVAP_PATH} (pass --javap or set PZ_JAVAP_PATH)`);

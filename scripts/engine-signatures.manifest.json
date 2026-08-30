@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-30T13:34:33.189Z",
+  "generatedAt": "2026-08-30T13:41:56.775Z",
   "generatorNote": "Run `node scripts/gen-engine-signatures.mjs` to regenerate after PanelBridge.lua or the game jar changes.",
   "javapVersion": "21.0.12.1",
   "jarBasename": "projectzomboid.jar",
   "sourceFile": "pz-mod/PanelBridge/media/lua/server/PanelBridge.lua",
-  "sourceFileSha256": "a67a7bf70132a93365540403362cdfb3b8155454ea9fd1425125ce15b2c3fd8e",
+  "sourceFileSha256": "7ef91ab8be413a7ccd421d1db6cefdd853aaf6a99c4e34f5a695eb1e3cffa03b",
   "seedGlobals": {
     "getWorld": {
       "class": "zombie.iso.IsoWorld"
