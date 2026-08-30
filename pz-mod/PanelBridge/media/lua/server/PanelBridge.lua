@@ -766,28 +766,43 @@ function PanelBridge.detectVersion()
         features = {}
     }
 
-    -- Check for B42-specific APIs
-    local climate = getClimateManager and getClimateManager()
-    if climate then
-        -- B42 has some different climate methods
-        if PanelBridge.hasMethod(climate, "transmitTriggerBlizzard") then
-            version.features.blizzard = true
-        end
-        if PanelBridge.hasMethod(climate, "transmitTriggerTropical") then
-            version.features.tropical = true
-        end
-    end
-
-    -- Check player API differences (getOnlinePlayers may return nil at startup)
+    -- 2026-08-30 (total-audit, god's own foundation lens): this used to
+    -- gate four flags on PanelBridge.hasMethod, whose own doc comment says
+    -- "Never gate an action on this; use invoke instead." BOTH of its
+    -- branches were dead here: the field-test branch is unreliable for a
+    -- Java-bound method on these receivers (this file's own recurring
+    -- lesson -- e.g. world.saveWorld), and its capability-cache fallback is
+    -- EMPTY BY CONSTRUCTION at this point, since detectVersion runs before
+    -- any handler has ever called PanelBridge.invoke. So all four flags
+    -- were permanently false/unset, reported as if a real check had run.
+    --
+    -- transmitTriggerBlizzard/transmitTriggerTropical are NOT safe to probe
+    -- by actually calling them (PanelBridge.invoke) -- both genuinely
+    -- trigger a real weather event on the live server (see
+    -- handlers.generateWeather, which calls them for real). There is no
+    -- side-effect-free way to confirm they exist without either inventing
+    -- an unverified mechanism or triggering weather just to check, so
+    -- features.blizzard/tropical are left OUT of the response entirely
+    -- (nil omits the key) rather than reported as a false "false". Once a
+    -- real weather-trigger command has run at least once, PanelBridge.
+    -- methodCapabilities already has the true answer for anyone who wants
+    -- to read it directly.
+    --
+    -- desc:getTraitList (the old isB42 probe) was independently confirmed
+    -- ABSENT from B42's real class hierarchy by a full jar audit elsewhere
+    -- in this file (see getPlayerTraits' own comment, 2026-08-23) -- it
+    -- could never have indicated B42 even with a working detector, so it's
+    -- removed rather than "fixed". The version-string fallback below
+    -- already determines isB42/isB41 reliably from getCore():getVersion().
+    --
+    -- testPlayer:getTraits, by contrast, IS confirmed real B41 API (same
+    -- comment) and is a plain read-only getter with no side effects, so
+    -- it's safe to confirm with a real PanelBridge.invoke() call instead of
+    -- the broken hasMethod probe.
     local onlinePlayers = getOnlinePlayers and getOnlinePlayers()
     local testPlayer = onlinePlayers and onlinePlayers:size() > 0 and onlinePlayers:get(0) or nil
     if testPlayer then
-        -- B42 traits are accessed via SurvivorDesc
-        local desc = testPlayer:getDescriptor()
-        if desc and PanelBridge.hasMethod(desc, "getTraitList") then
-            version.isB42 = true
-        end
-        if PanelBridge.hasMethod(testPlayer, "getTraits") then
+        if PanelBridge.invoke(testPlayer, "getTraits") then
             version.isB41 = true
         end
     end
