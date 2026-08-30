@@ -1384,6 +1384,7 @@
   "healthTab": {
     "systemStatusTitle": "系统状态",
     "healthy": "健康",
+    "checking": "正在检查…",
     "issuesDetected": "检测到问题",
     "lastChecked": "上次检查：{{time}}",
     "neverChecked": "从未检查",

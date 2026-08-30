@@ -1384,6 +1384,7 @@
   "healthTab": {
     "systemStatusTitle": "État du système",
     "healthy": "En bonne santé",
+    "checking": "Vérification...",
     "issuesDetected": "Problèmes détectés",
     "lastChecked": "Dernière vérification {{time}}",
     "neverChecked": "Jamais vérifié",

@@ -1384,6 +1384,7 @@
   "healthTab": {
     "systemStatusTitle": "System Status",
     "healthy": "Healthy",
+    "checking": "Checking...",
     "issuesDetected": "Issues Detected",
     "lastChecked": "Last checked {{time}}",
     "neverChecked": "Never checked",

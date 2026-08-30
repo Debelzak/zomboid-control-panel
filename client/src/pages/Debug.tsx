@@ -6095,12 +6095,16 @@ export default function Debug() {
                 <div className="flex items-center gap-4">
                   <div
                     className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                      healthStatus?.status === "ok"
-                        ? "bg-primary/10"
-                        : "bg-destructive/10"
+                      !healthStatus
+                        ? "bg-muted"
+                        : healthStatus.status === "ok"
+                          ? "bg-primary/10"
+                          : "bg-destructive/10"
                     }`}
                   >
-                    {healthStatus?.status === "ok" ? (
+                    {!healthStatus ? (
+                      <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+                    ) : healthStatus.status === "ok" ? (
                       <CheckCircle className="w-8 h-8 text-primary" />
                     ) : (
                       <AlertCircle className="w-8 h-8 text-destructive" />
@@ -6108,9 +6112,17 @@ export default function Debug() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {healthStatus?.status === "ok"
-                        ? t("healthTab.healthy")
-                        : t("healthTab.issuesDetected")}
+                      {/* healthStatus is only ever null before fetchHealthStatus()'s
+                          first resolution -- once it settles, either this or
+                          healthError is always set (2026-08-30 visual sweep: this
+                          headline used to fall to "Issues Detected" for that brief
+                          pending window too, since `?.status === "ok"` is false for
+                          both "not ok" AND "not loaded yet"). */}
+                      {!healthStatus
+                        ? t("healthTab.checking")
+                        : healthStatus.status === "ok"
+                          ? t("healthTab.healthy")
+                          : t("healthTab.issuesDetected")}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {healthStatus?.timestamp ? (

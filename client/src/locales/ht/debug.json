@@ -1384,6 +1384,7 @@
   "healthTab": {
     "systemStatusTitle": "Estati Sistèm",
     "healthy": "An Bon Sante",
+    "checking": "N ap tcheke...",
     "issuesDetected": "Pwoblèm Detekte",
     "lastChecked": "Dènye verifye {{time}}",
     "neverChecked": "Pa janm verifye",
