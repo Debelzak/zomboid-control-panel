@@ -1413,6 +1413,7 @@
     "platform": "Plataforma",
     "uptime": "Tiempo de actividad",
     "memory": "Memoria",
+    "unavailable": "No disponible",
     "ofHeap": "de {{total}} de heap",
     "filePathsTitle": "Rutas de archivos",
     "filePathsDesc": "Ubicaciones de los archivos de datos y registros.",

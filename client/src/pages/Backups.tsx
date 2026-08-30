@@ -81,6 +81,15 @@ export default function Backups() {
   // State
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
   const [backups, setBackups] = useState<ServerBackupArchive[]>([])
+  // Set once fetchBackups() itself has settled (success or failure), distinct
+  // from the shared `loading` flag below which only clears once ALL THREE of
+  // refreshAll()'s concurrent fetches finish. Without this, `backups.length
+  // === 0` is ambiguous between "confirmed empty" and "not fetched yet" --
+  // exactly the gap that let the main card show an infinite spinner even
+  // after backupStatus (a DIFFERENT one of those three fetches) had already
+  // resolved to a definitive "no saves folder" answer visible in the header
+  // above it (2026-08-30 visual sweep).
+  const [backupsLoaded, setBackupsLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [creatingBackup, setCreatingBackup] = useState(false)
@@ -153,6 +162,8 @@ export default function Backups() {
       })
     } catch (error) {
       setLoadError(getUserErrorMessage(error, t('toasts.loadBackupsFailed')))
+    } finally {
+      setBackupsLoaded(true)
     }
   }, [t])
 
@@ -921,7 +932,23 @@ export default function Backups() {
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {backupStatus && !backupStatus.savesExists && backupsLoaded && backups.length === 0 ? (
+            // Known, actionable answer as soon as BOTH fetches it actually
+            // depends on have resolved -- doesn't wait on the unrelated,
+            // slower-or-not fetchHistory() call the generic `loading` flag
+            // below is also gated on. Matches the informative "what was
+            // tried, how to fix it, an action" pattern Chunks and Mods
+            // already use for this identical no-saves-folder condition,
+            // rather than inventing a fourth one (2026-08-30 visual sweep:
+            // this card used to show an infinite spinner here even after
+            // the header above had already resolved to the same fact).
+            <EmptyState
+              type="empty"
+              title={t('mainCard.noSavesFolderTitle')}
+              description={t('mainCard.noSavesFolderDesc')}
+              action={{ label: t('mainCard.noSavesFolderAction'), to: '/server-setup' }}
+            />
+          ) : loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>

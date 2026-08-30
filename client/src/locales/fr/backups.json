@@ -76,6 +76,9 @@
   "mainCard": {
     "title": "Fichiers de sauvegarde",
     "savesNotFound": "Dossier de sauvegardes de jeu introuvable",
+    "noSavesFolderTitle": "Dossier de sauvegardes de jeu introuvable",
+    "noSavesFolderDesc": "Le panneau n'a pas trouvé de dossier Saves/Multiplayer pour le serveur actif. Configurez un serveur si ce n'est pas déjà fait, ou démarrez-le au moins une fois — le dossier est créé au premier lancement.",
+    "noSavesFolderAction": "Ouvrir la configuration du serveur",
     "deleteSelected": "Supprimer ({{count}})",
     "deleteOlder": "Supprimer les anciennes",
     "emptyTitle": "Aucun filet de sécurité",

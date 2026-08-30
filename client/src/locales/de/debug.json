@@ -1413,6 +1413,7 @@
     "platform": "Plattform",
     "uptime": "Uptime",
     "memory": "Speicher",
+    "unavailable": "Nicht verfügbar",
     "ofHeap": "von {{total}} Heap",
     "filePathsTitle": "Dateipfade",
     "filePathsDesc": "Speicherorte für Daten- und Protokolldateien.",

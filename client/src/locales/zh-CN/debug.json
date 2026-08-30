@@ -1413,6 +1413,7 @@
     "platform": "平台",
     "uptime": "运行时长",
     "memory": "内存",
+    "unavailable": "不可用",
     "ofHeap": "占堆内存 {{total}}",
     "filePathsTitle": "文件路径",
     "filePathsDesc": "数据和日志文件的位置。",

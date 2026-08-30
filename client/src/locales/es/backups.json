@@ -76,6 +76,9 @@
   "mainCard": {
     "title": "Archivos de copias de seguridad",
     "savesNotFound": "No se encontró la carpeta de partidas guardadas",
+    "noSavesFolderTitle": "No se encontró la carpeta de partidas guardadas",
+    "noSavesFolderDesc": "El panel no pudo encontrar una carpeta Saves/Multiplayer para el servidor activo. Configura un servidor si aún no lo has hecho, o inícialo al menos una vez — la carpeta se crea en el primer inicio.",
+    "noSavesFolderAction": "Abrir configuración del servidor",
     "deleteSelected": "Eliminar ({{count}})",
     "deleteOlder": "Eliminar antiguas",
     "emptyTitle": "Sin red de seguridad",

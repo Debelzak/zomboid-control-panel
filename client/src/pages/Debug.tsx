@@ -863,6 +863,15 @@ export default function Debug() {
   const { t, i18n } = useTranslation("debug");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  // True once fetchSystemInfo() has settled with no usable data (a failed
+  // request, or a 200 whose body is missing memoryUsage) -- distinct from
+  // "haven't fetched yet", which is what a bare systemInfo === null
+  // otherwise means. Every field below fell back to a plain "-" for BOTH
+  // cases, so a genuine, standing failure looked identical to the brief
+  // instant before the mount-time fetch resolves (2026-08-30 visual sweep):
+  // unlike this page's health/diagnostics fetches, this one had no error
+  // state at all to tell the two apart.
+  const [systemInfoFailed, setSystemInfoFailed] = useState(false);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [logFiles, setLogFiles] = useState<LogFile[]>([]);
   const [downloadingLogArchive, setDownloadingLogArchive] = useState(false);
@@ -1061,10 +1070,13 @@ export default function Debug() {
       const data = await res.json();
       if (data?.memoryUsage) {
         setSystemInfo(data);
+        setSystemInfoFailed(false);
       } else {
         setSystemInfo(null);
+        setSystemInfoFailed(true);
       }
     } catch (error) {
+      setSystemInfoFailed(true);
       reportClientError("Failed to fetch system info.", error);
     }
   };
@@ -6370,7 +6382,7 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 <span className="text-2xl font-bold">
-                  {systemInfo?.nodeVersion || "-"}
+                  {systemInfo?.nodeVersion || (systemInfoFailed ? t("systemTab.unavailable") : "-")}
                 </span>
               </CardContent>
             </Card>
@@ -6381,7 +6393,7 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 <span className="text-2xl font-bold">
-                  {systemInfo?.platform || "-"}
+                  {systemInfo?.platform || (systemInfoFailed ? t("systemTab.unavailable") : "-")}
                 </span>
               </CardContent>
             </Card>
@@ -6392,7 +6404,7 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 <span className="text-2xl font-bold">
-                  {systemInfo ? formatUptime(systemInfo.uptime) : "-"}
+                  {systemInfo ? formatUptime(systemInfo.uptime) : systemInfoFailed ? t("systemTab.unavailable") : "-"}
                 </span>
               </CardContent>
             </Card>
@@ -6405,13 +6417,13 @@ export default function Debug() {
                 <span className="text-2xl font-bold">
                   {systemInfo?.memoryUsage
                     ? formatMemory(systemInfo.memoryUsage.heapUsed)
-                    : "-"}
+                    : systemInfoFailed ? t("systemTab.unavailable") : "-"}
                 </span>
                 <p className="text-xs text-muted-foreground mt-1">
                   {t("systemTab.ofHeap", {
                     total: systemInfo?.memoryUsage
                       ? formatMemory(systemInfo.memoryUsage.heapTotal)
-                      : "-",
+                      : systemInfoFailed ? t("systemTab.unavailable") : "-",
                   })}
                 </p>
               </CardContent>
@@ -6529,7 +6541,7 @@ export default function Debug() {
                     </span>
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className="break-all min-w-0 flex-1">
-                        {systemInfo?.dbPath || "-"}
+                        {systemInfo?.dbPath || (systemInfoFailed ? t("systemTab.unavailable") : "-")}
                       </span>
                       {systemInfo?.dbPath && (
                         <Tooltip>
@@ -6566,7 +6578,7 @@ export default function Debug() {
                     </span>
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className="break-all min-w-0 flex-1">
-                        {systemInfo?.logsPath || "-"}
+                        {systemInfo?.logsPath || (systemInfoFailed ? t("systemTab.unavailable") : "-")}
                       </span>
                       {systemInfo?.logsPath && (
                         <Tooltip>

@@ -1413,6 +1413,7 @@
     "platform": "Plateforme",
     "uptime": "Temps de fonctionnement",
     "memory": "Mémoire",
+    "unavailable": "Indisponible",
     "ofHeap": "sur {{total}} de heap",
     "filePathsTitle": "Chemins de fichiers",
     "filePathsDesc": "Emplacements des fichiers de données et de journaux.",

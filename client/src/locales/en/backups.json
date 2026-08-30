@@ -80,6 +80,9 @@
   "mainCard": {
     "title": "Backup Files",
     "savesNotFound": "Saves folder not found",
+    "noSavesFolderTitle": "No saves folder found",
+    "noSavesFolderDesc": "The panel couldn't find a Saves/Multiplayer folder for the active server. Set up a server if you haven't yet, or start it at least once — the folder is created on first launch.",
+    "noSavesFolderAction": "Open Server Setup",
     "deleteSelected": "Delete ({{count}})",
     "deleteOlder": "Delete Older",
     "emptyTitle": "No safety net",

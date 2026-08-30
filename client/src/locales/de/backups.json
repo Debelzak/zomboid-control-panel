@@ -76,6 +76,9 @@
   "mainCard": {
     "title": "Backup-Dateien",
     "savesNotFound": "Spielständeordner nicht gefunden",
+    "noSavesFolderTitle": "Kein Spielständeordner gefunden",
+    "noSavesFolderDesc": "Das Panel konnte für den aktiven Server keinen Saves/Multiplayer-Ordner finden. Richte einen Server ein, falls noch nicht geschehen, oder starte ihn mindestens einmal — der Ordner wird beim ersten Start angelegt.",
+    "noSavesFolderAction": "Server-Einrichtung öffnen",
     "deleteSelected": "Löschen ({{count}})",
     "deleteOlder": "Ältere löschen",
     "emptyTitle": "Kein Sicherheitsnetz",

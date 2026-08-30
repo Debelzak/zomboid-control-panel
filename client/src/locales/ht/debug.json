@@ -1413,6 +1413,7 @@
     "platform": "Platfòm",
     "uptime": "Tan Aktif",
     "memory": "Memwa",
+    "unavailable": "Pa Disponib",
     "ofHeap": "sou {{total}} heap",
     "filePathsTitle": "Chemen Fichye",
     "filePathsDesc": "Kote fichye done ak jounal yo ye.",

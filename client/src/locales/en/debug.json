@@ -1413,6 +1413,7 @@
     "platform": "Platform",
     "uptime": "Uptime",
     "memory": "Memory",
+    "unavailable": "Unavailable",
     "ofHeap": "of {{total}} heap",
     "filePathsTitle": "File Paths",
     "filePathsDesc": "Data and log file locations.",
