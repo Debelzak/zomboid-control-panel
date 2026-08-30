@@ -134,7 +134,14 @@
     "disableSnow": "dezaktive nèj",
     "stopAllWeather": "sispann tout move tan",
     "blizzardDurationAria": "Dire blizar",
-    "tropicalDurationAria": "Dire tanpèt twopikal"
+    "tropicalDurationAria": "Dire tanpèt twopikal",
+    "frontLabel": "fwon pèsonalize",
+    "frontStrengthAria": "Fòs fwon metewolojik la",
+    "frontTypeAria": "Kalite fwon metewolojik la",
+    "frontStationary": "estasyonè",
+    "frontCold": "fwon frèt",
+    "frontWarm": "fwon cho",
+    "triggerFront": "jenere fwon"
   },
   "climate": {
     "sublabelOnline": "bridge · ranplasman admin",
@@ -273,7 +280,13 @@
     "removeAllConfirmDescription": "Sa a retire imedyatman tout zonbi ki nan selil chaje yo, sou tout sèvè a -- ansanm ak sa yon jwè ap goumen ak li kounye a. Zonbi yo ap reparèt avèk tan, men sa fini konba a imedyatman pou moun ki te ladan l.",
     "noPlayersOnlineTitle": "Pa gen jwè anliy",
     "bridgeOfflineTitle": "Bridge òfliy",
-    "sizeAria": "Gwosè mas zonbi a"
+    "sizeAria": "Gwosè mas zonbi a",
+    "clearRadius": "reyon netwayaj",
+    "clearRadiusAria": "Reyon pou netwaye tou pre yon jwè",
+    "clearNear": "netwaye tou pre {{target}}",
+    "clearNearConfirmTitle": "Netwaye zonbi tou pre jwè sa a?",
+    "clearNearConfirmDescTargeted": "Sa a retire imedyatman tout zonbi ki nan reyon ou chwazi a otou {{player}} -- ansanm ak tout sa l ap goumen avè yo kounye a. Zonbi yo reparèt apre yon tan, men sa a fini konfwontasyon an kounye a pou li.",
+    "clearNearConfirmDescRandom": "Sa a retire imedyatman tout zonbi ki nan reyon ou chwazi a otou yon jwè an liy o aza -- ansanm ak tout sa l ap goumen avè yo kounye a. Zonbi yo reparèt apre yon tan, men sa a fini konfwontasyon an kounye a pou li."
   },
   "vehicles": {
     "sublabel": "RCON · fè parèt bò yon jwè",

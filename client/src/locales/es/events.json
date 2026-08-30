@@ -134,7 +134,14 @@
     "disableSnow": "desactivar nieve",
     "stopAllWeather": "detener todo el clima",
     "blizzardDurationAria": "Duración de la ventisca",
-    "tropicalDurationAria": "Duración de la tormenta tropical"
+    "tropicalDurationAria": "Duración de la tormenta tropical",
+    "frontLabel": "frente personalizado",
+    "frontStrengthAria": "Intensidad del frente meteorológico",
+    "frontTypeAria": "Tipo de frente meteorológico",
+    "frontStationary": "estacionario",
+    "frontCold": "frente frío",
+    "frontWarm": "frente cálido",
+    "triggerFront": "generar frente"
   },
   "climate": {
     "sublabelOnline": "puente · anulación de administrador",
@@ -273,7 +280,13 @@
     "removeAllConfirmDescription": "Esto elimina al instante todos los zombis en las celdas cargadas, en todo el servidor -- incluidos los que un jugador está combatiendo ahora mismo. Los zombis reaparecen con el tiempo, pero esto termina ese combate de inmediato para quien estuviera en él.",
     "noPlayersOnlineTitle": "No hay jugadores en línea",
     "bridgeOfflineTitle": "Puente fuera de línea",
-    "sizeAria": "Tamaño de la horda"
+    "sizeAria": "Tamaño de la horda",
+    "clearRadius": "radio de despeje",
+    "clearRadiusAria": "Radio de despeje cerca del jugador",
+    "clearNear": "despejar cerca de {{target}}",
+    "clearNearConfirmTitle": "¿Despejar zombis cerca de este jugador?",
+    "clearNearConfirmDescTargeted": "Esto elimina instantáneamente todos los zombis dentro del radio elegido de {{player}} -- incluidos los que esté combatiendo. Los zombis reaparecen con el tiempo, pero esto termina ese encuentro ahora mismo para esa persona.",
+    "clearNearConfirmDescRandom": "Esto elimina instantáneamente todos los zombis dentro del radio elegido de un jugador en línea aleatorio -- incluidos los que esté combatiendo. Los zombis reaparecen con el tiempo, pero esto termina ese encuentro ahora mismo para esa persona."
   },
   "vehicles": {
     "sublabel": "RCON · aparece junto a un jugador",

@@ -134,7 +134,14 @@
     "disableSnow": "禁用降雪",
     "stopAllWeather": "停止所有天气",
     "blizzardDurationAria": "暴风雪持续时间",
-    "tropicalDurationAria": "热带风暴持续时间"
+    "tropicalDurationAria": "热带风暴持续时间",
+    "frontLabel": "自定义锋面",
+    "frontStrengthAria": "天气锋面强度",
+    "frontTypeAria": "天气锋面类型",
+    "frontStationary": "静止锋",
+    "frontCold": "冷锋",
+    "frontWarm": "暖锋",
+    "triggerFront": "生成锋面"
   },
   "climate": {
     "sublabelOnline": "桥接 · 管理员覆盖",
@@ -273,7 +280,13 @@
     "removeAllConfirmDescription": "这会立即清除已加载区域内的所有丧尸，影响整个服务器——包括玩家正在战斗中的丧尸。丧尸会随时间重新生成，但对当时正在战斗的玩家来说，这场战斗会立刻结束。",
     "noPlayersOnlineTitle": "没有在线玩家",
     "bridgeOfflineTitle": "桥接离线",
-    "sizeAria": "尸群规模"
+    "sizeAria": "尸群规模",
+    "clearRadius": "清除半径",
+    "clearRadiusAria": "玩家附近清除半径",
+    "clearNear": "清除 {{target}} 附近",
+    "clearNearConfirmTitle": "清除该玩家附近的丧尸？",
+    "clearNearConfirmDescTargeted": "这会立即清除 {{player}} 所选半径内的所有丧尸——包括其正在战斗的丧尸。丧尸会随时间重新生成，但这会立刻结束该玩家当前的这场战斗。",
+    "clearNearConfirmDescRandom": "这会立即清除一名随机在线玩家所选半径内的所有丧尸——包括其正在战斗的丧尸。丧尸会随时间重新生成，但这会立刻结束该玩家当前的这场战斗。"
   },
   "vehicles": {
     "sublabel": "RCON · 在玩家旁生成",

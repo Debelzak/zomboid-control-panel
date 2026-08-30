@@ -51,6 +51,7 @@
     "searchAria": "Chèche jwè",
     "onlineEmptyTitle": "Pa gen jwè anliy",
     "onlineEmptyDesc": "Jwè parèt isit la lè yo konekte.",
+    "rosterHealthTooltip": "Sante: {{health}}%",
     "seePreviouslySeen_one": "Wè {{count}} jwè ki te konekte anvan",
     "seePreviouslySeen_other": "Wè {{count}} jwè ki te konekte anvan",
     "reviewBanned_one": "Egzamine {{count}} SteamID bani",

@@ -134,7 +134,14 @@
     "disableSnow": "désactiver la neige",
     "stopAllWeather": "arrêter toute la météo",
     "blizzardDurationAria": "Durée du blizzard",
-    "tropicalDurationAria": "Durée de la tempête tropicale"
+    "tropicalDurationAria": "Durée de la tempête tropicale",
+    "frontLabel": "front personnalisé",
+    "frontStrengthAria": "Intensité du front météorologique",
+    "frontTypeAria": "Type de front météorologique",
+    "frontStationary": "stationnaire",
+    "frontCold": "front froid",
+    "frontWarm": "front chaud",
+    "triggerFront": "générer le front"
   },
   "climate": {
     "sublabelOnline": "bridge · réglage admin",
@@ -273,7 +280,13 @@
     "removeAllConfirmDescription": "Cela supprime instantanément tous les zombies dans les cellules chargées, sur tout le serveur -- y compris ceux qu'un joueur est en train de combattre. Les zombies réapparaissent avec le temps, mais cela met fin à ce combat immédiatement pour la personne concernée.",
     "noPlayersOnlineTitle": "Aucun joueur en ligne",
     "bridgeOfflineTitle": "Bridge hors ligne",
-    "sizeAria": "Taille de la horde"
+    "sizeAria": "Taille de la horde",
+    "clearRadius": "rayon de nettoyage",
+    "clearRadiusAria": "Rayon de nettoyage près du joueur",
+    "clearNear": "nettoyer près de {{target}}",
+    "clearNearConfirmTitle": "Éliminer les zombies près de ce joueur ?",
+    "clearNearConfirmDescTargeted": "Ceci élimine instantanément tous les zombies dans le rayon choisi autour de {{player}} -- y compris ceux qu'il ou elle combat actuellement. Les zombies réapparaissent avec le temps, mais cela met fin à cet affrontement dès maintenant pour cette personne.",
+    "clearNearConfirmDescRandom": "Ceci élimine instantanément tous les zombies dans le rayon choisi autour d'un joueur en ligne aléatoire -- y compris ceux qu'il ou elle combat actuellement. Les zombies réapparaissent avec le temps, mais cela met fin à cet affrontement dès maintenant pour cette personne."
   },
   "vehicles": {
     "sublabel": "RCON · apparaît à côté d'un joueur",

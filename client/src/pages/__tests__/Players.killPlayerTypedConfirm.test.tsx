@@ -50,6 +50,7 @@ vi.mock('@/lib/api', async () => {
       ...actual.panelBridgeApi,
       getStatus: vi.fn(),
       killPlayer: vi.fn(),
+      getAllPlayerDetails: vi.fn(),
     },
     configApi: {
       ...actual.configApi,
@@ -70,6 +71,7 @@ const getExports = vi.mocked(playersApi.getExports)
 const getActivityLogs = vi.mocked(playersApi.getActivityLogs)
 const getStatus = vi.mocked(panelBridgeApi.getStatus)
 const killPlayer = vi.mocked(panelBridgeApi.killPlayer)
+const getAllPlayerDetails = vi.mocked(panelBridgeApi.getAllPlayerDetails)
 const getAppSettings = vi.mocked(configApi.getAppSettings)
 
 function renderPlayers() {
@@ -95,6 +97,7 @@ async function setUpFixtures(modConnected: boolean) {
   getExports.mockResolvedValue({ exports: [] })
   getActivityLogs.mockResolvedValue({ logs: [] })
   getStatus.mockResolvedValue({ modConnected, isRunning: true } as Awaited<ReturnType<typeof panelBridgeApi.getStatus>>)
+  getAllPlayerDetails.mockResolvedValue({ success: false } as Awaited<ReturnType<typeof panelBridgeApi.getAllPlayerDetails>>)
   getAppSettings.mockResolvedValue({ settings: {} } as Awaited<ReturnType<typeof configApi.getAppSettings>>)
 }
 

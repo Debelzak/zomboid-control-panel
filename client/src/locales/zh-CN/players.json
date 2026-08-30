@@ -51,6 +51,7 @@
     "searchAria": "搜索玩家",
     "onlineEmptyTitle": "暂无在线玩家",
     "onlineEmptyDesc": "玩家连接后将显示在此处。",
+    "rosterHealthTooltip": "生命值：{{health}}%",
     "seePreviouslySeen_one": "查看 {{count}} 名此前出现过的玩家",
     "seePreviouslySeen_other": "查看 {{count}} 名此前出现过的玩家",
     "reviewBanned_one": "查看 {{count}} 个已封禁的 SteamID",

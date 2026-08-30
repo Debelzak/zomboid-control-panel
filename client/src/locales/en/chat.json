@@ -22,6 +22,10 @@
     "admin": "Admin chat",
     "general": "General chat"
   },
+  "deliveryStatus": {
+    "native": "chat delivery: native",
+    "rconFallback": "chat delivery: RCON fallback (native chat API unavailable)"
+  },
   "input": {
     "aria": "Chat message",
     "placeholderAdmin": "admins only — press enter to send…",

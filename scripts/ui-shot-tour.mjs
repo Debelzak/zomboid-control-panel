@@ -388,6 +388,22 @@ const VIEWS = [
     },
   },
   {
+    name: 'events:severe',
+    path: '/events',
+    interact: async (page) => {
+      await page.getByRole('button', { name: 'Severe weather' }).click().catch(() => {})
+      await page.waitForTimeout(400)
+    },
+  },
+  {
+    name: 'events:horde',
+    path: '/events',
+    interact: async (page) => {
+      await page.getByRole('button', { name: 'Spawn horde' }).click().catch(() => {})
+      await page.waitForTimeout(400)
+    },
+  },
+  {
     name: 'events:vehicles',
     path: '/events',
     interact: async (page) => {

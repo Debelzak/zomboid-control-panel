@@ -51,6 +51,7 @@
     "searchAria": "Spieler suchen",
     "onlineEmptyTitle": "Keine Spieler online",
     "onlineEmptyDesc": "Spieler erscheinen hier, sobald sie sich verbinden.",
+    "rosterHealthTooltip": "Gesundheit: {{health}}%",
     "seePreviouslySeen_one": "{{count}} zuvor gesehenen Spieler anzeigen",
     "seePreviouslySeen_other": "{{count}} zuvor gesehene Spieler anzeigen",
     "reviewBanned_one": "{{count}} gebannte SteamID überprüfen",

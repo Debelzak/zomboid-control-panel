@@ -22,6 +22,10 @@
     "admin": "Chat admin",
     "general": "Chat jeneral"
   },
+  "deliveryStatus": {
+    "native": "livrezon chat: natif",
+    "rconFallback": "livrezon chat: repli RCON (API chat natif pa disponib)"
+  },
   "input": {
     "aria": "Mesaj chat",
     "placeholderAdmin": "sèlman pou admin yo — peze antre pou voye…",

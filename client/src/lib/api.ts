@@ -2470,6 +2470,15 @@ export const panelBridgeApi = {
   stopWeather: () => apiPost("/panel-bridge/weather/stop"),
   setSnow: (enabled: boolean) =>
     apiPost("/panel-bridge/weather/snow", { enabled }),
+  // Generates a real B42 weather front (WeatherPeriod, via
+  // ClimateManager.transmitGenerateWeather/triggerCustomWeather) -- distinct
+  // from triggerBlizzard/triggerTropicalStorm/triggerStorm, which each fire
+  // one fixed preset stage. This is the adjustable one: an operator picks
+  // strength and whether the front is cold, warm, or stationary.
+  // frontType: 0 = stationary, 1 = cold, 2 = warm (mapped to the game's own
+  // FRONT_COLD/STATIONARY/WARM constants server-side).
+  generateWeather: (strength?: number, frontType?: number) =>
+    apiPost("/panel-bridge/weather/generate", { strength, frontType }),
 
   // Rain & Lightning (v1.1.0)
   startRain: (intensity?: number) =>
@@ -2643,6 +2652,19 @@ export const panelBridgeApi = {
       message,
       author: author?.trim() || "Server",
     }),
+
+  // Whether the game's native ChatServer API is available right now, or
+  // sendToServerChat/sendToAdminChat/sendToGeneralChat above are falling
+  // back to player:Say/RCON. chatServerAvailable and rconFallback are
+  // logical opposites of the same underlying fact (Lua reports both for
+  // readability) -- only chatServerAvailable is surfaced client-side.
+  // getChatInfo's other field (availableChats, a hardcoded description
+  // list) is API documentation, not live state, and is not fetched here.
+  getChatInfo: () =>
+    apiGet("/panel-bridge/chat/info") as Promise<{
+      success: boolean;
+      data: { chatServerAvailable: boolean; rconFallback: boolean };
+    }>,
 
   // Sandbox options (v1.1.0)
   getSandboxOptions: () => apiGet("/panel-bridge/sandbox"),
@@ -2826,6 +2848,8 @@ export const panelBridgeApi = {
 
   // Clear ALL zombies from loaded cells
   clearAllZombies: () => apiPost("/panel-bridge/zombies/clear-all"),
+  clearZombiesNearPlayer: (username: string, radius?: number) =>
+    apiPost("/panel-bridge/zombies/clear-near-player", { username, radius }),
 
   // =============================================
   // ITEM & VEHICLE CATALOG

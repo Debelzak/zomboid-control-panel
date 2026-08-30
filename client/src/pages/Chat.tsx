@@ -91,6 +91,27 @@ export default function Chat() {
   const canSendChat = channel === 'server' ? canSendServerChat : canSendTargetedChat
   const canManagePresets = can('panel.settings')
 
+  // Whether the game's native ChatServer API is answering right now, or the
+  // three send paths above are silently degrading to player:Say/RCON --
+  // never observable before this (nothing else on the page or elsewhere in
+  // the panel reads getChatInfo). Fetched once on mount, not polled: this
+  // doesn't change mid-session the way bridge connection or player counts
+  // do, so a live poll would just be waste. Same capability as sending on
+  // the server channel -- read-only, but there is no dedicated read gate
+  // for this and inventing one for a single diagnostic call is not
+  // proportionate.
+  const [nativeChatAvailable, setNativeChatAvailable] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!canSendServerChat) return
+    let active = true
+    panelBridgeApi.getChatInfo()
+      .then((res) => {
+        if (active && res.success && res.data) setNativeChatAvailable(res.data.chatServerAvailable)
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [canSendServerChat])
+
   // Track whether the user is parked at (or near) the bottom of the
   // scroll viewport. We only auto-scroll on new messages when they are,
   // so reading older history isn't yanked back by every incoming line.
@@ -420,6 +441,12 @@ export default function Chat() {
 
               {/* Message Input */}
               <div className="p-3 border-t border-border/50 bg-muted/20">
+                {nativeChatAvailable !== null && (
+                  <div className="flex items-center gap-1.5 pb-2 text-[11px] text-muted-foreground/80">
+                    <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', nativeChatAvailable ? 'bg-emerald-400' : 'bg-amber-400')} />
+                    {nativeChatAvailable ? t('deliveryStatus.native') : t('deliveryStatus.rconFallback')}
+                  </div>
+                )}
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Select value={channel} onValueChange={(v) => setChannel(v as ChatChannel)} disabled={sending}>
                     <SelectTrigger className="h-10 sm:w-52 font-mono text-[11px] uppercase tracking-[0.16em] bg-card/70 border-border/55" aria-label={t('channel.aria')}>

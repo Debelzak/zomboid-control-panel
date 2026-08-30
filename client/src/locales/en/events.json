@@ -134,7 +134,14 @@
     "disableSnow": "disable snow",
     "stopAllWeather": "stop all weather",
     "blizzardDurationAria": "Blizzard duration",
-    "tropicalDurationAria": "Tropical storm duration"
+    "tropicalDurationAria": "Tropical storm duration",
+    "frontLabel": "custom front",
+    "frontStrengthAria": "Weather front strength",
+    "frontTypeAria": "Weather front type",
+    "frontStationary": "stationary",
+    "frontCold": "cold front",
+    "frontWarm": "warm front",
+    "triggerFront": "generate front"
   },
   "climate": {
     "sublabelOnline": "bridge · admin override",
@@ -273,7 +280,13 @@
     "removeAllConfirmDescription": "This instantly removes every zombie in loaded cells, server-wide -- including any a player is currently fighting. Zombies respawn over time, but this ends that encounter right now for whoever was in it.",
     "noPlayersOnlineTitle": "No players online",
     "bridgeOfflineTitle": "Bridge offline",
-    "sizeAria": "Horde size"
+    "sizeAria": "Horde size",
+    "clearRadius": "clear radius",
+    "clearRadiusAria": "Clear-near-player radius",
+    "clearNear": "clear near {{target}}",
+    "clearNearConfirmTitle": "Clear zombies near this player?",
+    "clearNearConfirmDescTargeted": "This instantly removes every zombie within the chosen radius of {{player}} -- including any they're currently fighting. Zombies respawn over time, but this ends that encounter right now for them.",
+    "clearNearConfirmDescRandom": "This instantly removes every zombie within the chosen radius of a random online player -- including any they're currently fighting. Zombies respawn over time, but this ends that encounter right now for them."
   },
   "vehicles": {
     "sublabel": "RCON · spawns next to a player",

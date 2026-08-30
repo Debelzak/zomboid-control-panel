@@ -47,7 +47,8 @@ import {
   Check,
   X,
   Info,
-  Search
+  Search,
+  Waves
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -998,6 +999,9 @@ export default function Events() {
   const [bridgeLoading, setBridgeLoading] = useState<string | null>(null)
   const [blizzardDuration, setBlizzardDuration] = useState(2)
   const [tropicalDuration, setTropicalDuration] = useState(2)
+  const [weatherFrontStrength, setWeatherFrontStrength] = useState(50)
+  const [weatherFrontType, setWeatherFrontType] = useState('0')
+  const [clearZombiesRadius, setClearZombiesRadius] = useState(50)
 
   // Climate controls
   const [fogIntensity, setFogIntensity] = useState(0)
@@ -1578,6 +1582,11 @@ export default function Events() {
 
   // Clear all zombies from loaded cells
   const removeZombies = () => panelBridgeApi.clearAllZombies()
+
+  // Clear zombies within a radius of one player -- same reversible-but-
+  // affects-someone-else tier as clearAllZombies (zombies respawn over
+  // time), just scoped to one player's fight instead of every loaded cell.
+  const removeZombiesNear = (username: string) => panelBridgeApi.clearZombiesNearPlayer(username, clearZombiesRadius)
 
   // Time commands
   // CORRECTED 2026-08-30 (panelbridge-audit): this comment used to claim the
@@ -2248,6 +2257,31 @@ export default function Events() {
                     {t('severe.stopAllWeather')}
                   </Button>
                 </div>
+
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Waves className="w-3.5 h-3.5 text-primary" />
+                      {t('severe.frontLabel')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-primary">{weatherFrontStrength}%</span>
+                  </div>
+                  <Slider aria-label={t('severe.frontStrengthAria')} value={[weatherFrontStrength]} onValueChange={([val]) => setWeatherFrontStrength(val)} min={0} max={100} step={5} disabled={!bridgeConnected} />
+                  <Select value={weatherFrontType} onValueChange={setWeatherFrontType} disabled={!bridgeConnected}>
+                    <SelectTrigger aria-label={t('severe.frontTypeAria')} className="h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">{t('severe.frontStationary')}</SelectItem>
+                      <SelectItem value="1">{t('severe.frontCold')}</SelectItem>
+                      <SelectItem value="2">{t('severe.frontWarm')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={() => handleBridgeAction('Generate Weather Front', () => panelBridgeApi.generateWeather(weatherFrontStrength / 100, Number(weatherFrontType)))} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
+                    {bridgeLoading === 'Generate Weather Front' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Waves className="w-3.5 h-3.5" />}
+                    {t('severe.triggerFront')}
+                  </Button>
+                </div>
               </div>
             </TacticalPanel>
         )}
@@ -2867,6 +2901,36 @@ export default function Events() {
                     {t('horde.spawnBehind', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
                   </Button>
                 </DisabledReason>
+                <div className="space-y-2 pt-3 border-t border-border/40">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
+                      <Skull className="w-3.5 h-3.5 text-warning" /> {t('horde.clearRadius')}
+                    </Label>
+                    <span className="font-mono text-[11px] tabular-nums text-warning">{clearZombiesRadius}</span>
+                  </div>
+                  <Slider aria-label={t('horde.clearRadiusAria')} value={[clearZombiesRadius]} onValueChange={([val]) => setClearZombiesRadius(val)} min={10} max={500} step={10} disabled={!bridgeConnected} />
+                  <DisabledReason reason={players.length === 0 ? t('horde.noPlayersOnlineTitle') : !bridgeConnected ? t('horde.bridgeOfflineTitle') : null}>
+                    <Button variant="outline" onClick={async () => {
+                      // Same reversible-but-affects-someone-else tier as
+                      // "clear all" -- warning, not destructive-red -- scoped
+                      // to one player instead of every loaded cell.
+                      const target = targetAll ? null : selectedPlayer
+                      const label = target ? t('horde.clearNearConfirmDescTargeted', { player: target }) : t('horde.clearNearConfirmDescRandom')
+                      const ok = await confirm({
+                        title: t('horde.clearNearConfirmTitle'),
+                        description: label,
+                        confirmLabel: t('horde.clearNear', { target: target || t('horde.random') }),
+                        variant: 'warning',
+                      })
+                      if (!ok) return
+                      handleAction('Clear zombies near player', () => removeZombiesNear(pickStrikeTarget()))
+                    }} disabled={loading !== null || !bridgeConnected || players.length === 0 || (!targetAll && !selectedPlayer)} className="h-9 gap-2 text-xs font-medium text-warning hover:text-warning hover:border-warning/50 hover:bg-warning/10">
+                      {loading === 'Clear zombies near player' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                      {t('horde.clearNear', { target: targetAll ? t('horde.random') : selectedPlayer || t('horde.targetFallback') })}
+                    </Button>
+                  </DisabledReason>
+                </div>
+
                 <DisabledReason reason={!bridgeConnected ? t('horde.bridgeOfflineTitle') : null}>
                   <Button variant="outline" onClick={async () => {
                     // Instant, world-wide, and every player on the server feels

@@ -510,6 +510,19 @@ export default function Players() {
   const [playerVitalsLoading, setPlayerVitalsLoading] = useState(false)
   const [playerVitalsError, setPlayerVitalsError] = useState<string | null>(null)
 
+  // At-a-glance roster health -- PanelBridge.getAllPlayerDetails (the
+  // PLURAL bulk endpoint, distinct from getPlayerDetails above, which is
+  // one player at a time and only fetched for whoever is currently
+  // selected). Nothing else on this page or elsewhere reads it: the roster
+  // list itself comes from RCON's `players` command, which reports only
+  // {name, online} -- no health, hunger, or infection status at all, so
+  // this is genuinely new data, not a second view of something already
+  // shown. Keyed by username, keyed off the SAME 15s interval fetchPlayers
+  // already uses but fired independently (own .then/.catch, not part of
+  // any awaited Promise.all) so a slow or failing bridge call can never
+  // delay the roster list itself from rendering.
+  const [rosterVitals, setRosterVitals] = useState<Record<string, { health?: number; isInfected?: boolean }>>({})
+
   const getErrorMessage = (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback
 
@@ -596,6 +609,26 @@ export default function Players() {
       setPlayersLoadError(getErrorMessage(error, t('loadErrors.players')))
     }
   }, [t])
+
+  // Gated on players.gm_tools -- the same capability GET /panel-bridge/players
+  // (the route getAllPlayerDetails lives behind) actually requires, not the
+  // players.view the base roster list itself uses. Silent no-op on failure
+  // (bridge down, permission denied): the roster still renders fine without
+  // this, it just won't show the health/infection indicator.
+  const fetchRosterVitals = useCallback(async () => {
+    try {
+      const res = await panelBridgeApi.getAllPlayerDetails()
+      if (!res.success || !res.data?.players) return
+      const next: Record<string, { health?: number; isInfected?: boolean }> = {}
+      for (const p of res.data.players) {
+        next[p.username] = { health: p.health, isInfected: p.isInfected }
+      }
+      setRosterVitals(next)
+    } catch {
+      // Bridge down or unreachable -- leave whatever was last fetched (or
+      // nothing) rather than clearing it on a single transient failure.
+    }
+  }, [])
 
   const fetchActivityLogs = useCallback(async (playerFilter?: string) => {
     setLogsLoading(true)
@@ -815,15 +848,17 @@ export default function Players() {
     playersApi.getExports().then(response => {
       if (isMounted && response?.exports) setSavedExports(response.exports)
     }).catch(() => {})
+    if (canGmTools) fetchRosterVitals()
     const interval = setInterval(() => {
       if (document.visibilityState === 'hidden') return
       fetchPlayers()
+      if (canGmTools) fetchRosterVitals()
     }, 15000)
     return () => {
       isMounted = false
       clearInterval(interval)
     }
-  }, [fetchPlayers, fetchData, fetchNotesAndStats, fetchBannedSteamIds, fetchWhitelist, fetchAccessLevels])
+  }, [fetchPlayers, fetchData, fetchNotesAndStats, fetchBannedSteamIds, fetchWhitelist, fetchAccessLevels, fetchRosterVitals, canGmTools])
 
   // Load note/tags when selected player changes
   useEffect(() => {
@@ -1492,6 +1527,7 @@ export default function Players() {
                       const hasPowers = powers && (powers.godMode || powers.invisible || powers.noclip)
                       const note = playerNotes[player.name]
                       const stat = playerStats[player.name]
+                      const vitals = rosterVitals[player.name]
 
                       return (
                         <button
@@ -1525,6 +1561,21 @@ export default function Players() {
                               )}
                             </div>
                             <div className="flex items-center gap-1">
+                              {vitals && typeof vitals.health === 'number' && (
+                                <span
+                                  className={cn(
+                                    'flex items-center gap-0.5 text-xs font-mono tabular-nums mr-1',
+                                    vitals.health >= 60 ? 'text-emerald-500' : vitals.health >= 30 ? 'text-amber-500' : 'text-destructive',
+                                  )}
+                                  title={t('roster.rosterHealthTooltip', { health: Math.round(vitals.health) })}
+                                >
+                                  <Heart className="w-3 h-3" />
+                                  {Math.round(vitals.health)}%
+                                </span>
+                              )}
+                              {vitals?.isInfected && (
+                                <Skull className="w-3 h-3 text-destructive mr-1" aria-label={t('vitals.infected')} />
+                              )}
                               {stat && (
                                 <span className="text-xs text-muted-foreground mr-1">
                                   {formatPlaytime(stat.total_playtime_seconds)}
