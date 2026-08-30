@@ -94,6 +94,10 @@
       "label": "Open Server Config",
       "note": "Configure server settings to generate or repair the .ini files."
     },
+    "serverSandboxVars": {
+      "label": "Create SandboxVars.lua",
+      "note": "Writes a fresh sandbox settings file with default values so it exists and is editable. Restart the server to apply."
+    },
     "serverSandboxCorrupt": {
       "label": "Repair SandboxVars.lua",
       "note": "Attempts an automated repair (missing block header/comma). A backup of the broken file is saved first. If the corruption doesn’t match a known pattern, nothing is written."
@@ -123,13 +127,17 @@
       "label": "Reconnect RCON",
       "note": "Tries to reconnect to RCON using the saved password. If it still fails, check that the password in Server Config matches Settings, then restart the server."
     },
+    "modCheckerStopped": {
+      "label": "Start mod checker",
+      "note": "Resumes Steam Workshop update polling using the already-configured settings."
+    },
     "servicesStuck": {
       "label": "Open Settings",
       "note": "Restarting the panel usually clears stuck services."
     },
     "discordBot": {
-      "label": "Open Discord",
-      "note": "Check the bot token and intents in Discord settings."
+      "retryLabel": "Reconnect bot",
+      "note": "Retries the connection using the saved bot token. If it still fails, check the token and intents in Discord settings."
     },
     "bridgeConfigured": {
       "label": "Auto-configure bridge",
@@ -142,6 +150,10 @@
     "dbExistsOrWritable": {
       "label": "Open Settings",
       "note": "Verify the data directory path exists and the panel can write to it."
+    },
+    "dbWritable": {
+      "label": "Clear read-only attribute",
+      "note": "Attempts to clear the read-only file attribute on db.json and re-checks. Won't help with an ownership or permissions (ACL) issue."
     },
     "dbBackup": {
       "label": "Create database backup",
@@ -277,6 +289,14 @@
     "sandboxRepairedTitle": "SandboxVars.lua repaired",
     "sandboxRepairedFallback_one": "Applied {{count}} fix.{{restartHint}}",
     "sandboxRepairedFallback_other": "Applied {{count}} fixes.{{restartHint}}",
+    "sandboxCreatedTitle": "SandboxVars.lua created",
+    "sandboxCreatedFallback": "Default sandbox settings file created.",
+    "dbWritableFixedTitle": "Database file writable",
+    "dbWritableFixedFallback": "Read-only attribute cleared.",
+    "modCheckerStartedTitle": "Mod checker started",
+    "modCheckerStartedFallback": "Workshop update polling resumed.",
+    "discordReconnectedTitle": "Discord bot reconnected",
+    "discordReconnectedFallback": "Bot connection re-established.",
     "noNumericIdsError": "No numeric Mods= entries were provided by diagnostics.",
     "noOrphanWorkshopError": "No orphan Workshop IDs were provided by diagnostics.",
     "checks": {

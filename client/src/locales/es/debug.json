@@ -94,6 +94,10 @@
       "label": "Abrir configuración del servidor",
       "note": "Configurar los ajustes del servidor para generar o reparar los archivos .ini."
     },
+    "serverSandboxVars": {
+      "label": "Crear SandboxVars.lua",
+      "note": "Escribe un nuevo archivo de ajustes de sandbox con valores predeterminados para que exista y sea editable. Reiniciar el servidor para aplicarlo."
+    },
     "serverSandboxCorrupt": {
       "label": "Reparar SandboxVars.lua",
       "note": "Intenta una reparación automática (encabezado de bloque o coma faltante). Primero se guarda una copia de seguridad del archivo dañado. Si la corrupción no coincide con un patrón conocido, no se escribe nada."
@@ -123,13 +127,17 @@
       "label": "Reconectar RCON",
       "note": "Intenta reconectar con RCON usando la contraseña guardada. Si sigue fallando, comprobar que la contraseña en la configuración del servidor coincide con la de Ajustes, y luego reiniciar el servidor."
     },
+    "modCheckerStopped": {
+      "label": "Iniciar comprobador de mods",
+      "note": "Reanuda el sondeo de actualizaciones de Steam Workshop usando los ajustes ya configurados."
+    },
     "servicesStuck": {
       "label": "Abrir ajustes",
       "note": "Reiniciar el panel normalmente soluciona los servicios bloqueados."
     },
     "discordBot": {
-      "label": "Abrir Discord",
-      "note": "Comprobar el token del bot y los Intents en los ajustes de Discord."
+      "retryLabel": "Reconectar bot",
+      "note": "Reintenta la conexión usando el token del bot guardado. Si sigue fallando, comprobar el token y los Intents en los ajustes de Discord."
     },
     "bridgeConfigured": {
       "label": "Configurar Bridge automáticamente",
@@ -142,6 +150,10 @@
     "dbExistsOrWritable": {
       "label": "Abrir ajustes",
       "note": "Comprobar que la ruta del directorio de datos existe y que el panel puede escribir en ella."
+    },
+    "dbWritable": {
+      "label": "Quitar atributo de solo lectura",
+      "note": "Intenta quitar el atributo de solo lectura de db.json y vuelve a comprobar. No ayudará con un problema de propiedad o permisos (ACL)."
     },
     "dbBackup": {
       "label": "Crear copia de seguridad de la base de datos",
@@ -277,6 +289,14 @@
     "sandboxRepairedTitle": "SandboxVars.lua reparado",
     "sandboxRepairedFallback_one": "Se aplicó {{count}} corrección.{{restartHint}}",
     "sandboxRepairedFallback_other": "Se aplicaron {{count}} correcciones.{{restartHint}}",
+    "sandboxCreatedTitle": "SandboxVars.lua creado",
+    "sandboxCreatedFallback": "Archivo de ajustes de sandbox predeterminado creado.",
+    "dbWritableFixedTitle": "Archivo de base de datos escribible",
+    "dbWritableFixedFallback": "Atributo de solo lectura eliminado.",
+    "modCheckerStartedTitle": "Comprobador de mods iniciado",
+    "modCheckerStartedFallback": "Sondeo de actualizaciones de Steam Workshop reanudado.",
+    "discordReconnectedTitle": "Bot de Discord reconectado",
+    "discordReconnectedFallback": "Conexión del bot restablecida.",
     "noNumericIdsError": "El diagnóstico no proporcionó entradas numéricas en Mods=.",
     "noOrphanWorkshopError": "El diagnóstico no proporcionó IDs de Workshop huérfanos.",
     "checks": {

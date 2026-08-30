@@ -484,5 +484,9 @@
   "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "应用模板前请先停止服务器",
   "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "无法验证该服务器的运行状态——面板只能检查当前活动的服务器。请先切换到该服务器,然后再应用模板。",
   "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "暂不支持将模板应用到远程服务器。",
-  "SIM_TEMPLATE_APPLY_INI_MISSING": "未找到服务器 INI 文件——请先启动一次服务器以生成该文件,或仅应用 Sandbox 设置。"
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "未找到服务器 INI 文件——请先启动一次服务器以生成该文件,或仅应用 Sandbox 设置。",
+  "WRITABILITY_TARGET_UNSUPPORTED": "未知或不支持的目标",
+  "WRITABILITY_TARGET_MISSING": "文件不存在",
+  "WRITABILITY_CHMOD_FAILED": "无法更改文件权限",
+  "WRITABILITY_STILL_BLOCKED": "清除只读属性后文件仍然无法写入——这看起来是所有权或权限问题"
 }

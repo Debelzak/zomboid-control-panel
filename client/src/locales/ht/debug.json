@@ -94,6 +94,10 @@
       "label": "Louvri Konfigirasyon Sèvè",
       "note": "Konfigire paramèt sèvè yo pou jenere oswa repare fichye .ini yo."
     },
+    "serverSandboxVars": {
+      "label": "Kreye SandboxVars.lua",
+      "note": "Ekri yon nouvo fichye paramèt sandbox ak valè pa defo pou li egziste epi li ka modifye. Redemare sèvè a pou aplike l."
+    },
     "serverSandboxCorrupt": {
       "label": "Repare SandboxVars.lua",
       "note": "Eseye yon repara otomatik (antèt blòk oswa vigil ki manke). Yon kopi sovgad fichye kase a sove anvan. Si koripsyon an pa koresponn ak yon modèl konnen, anyen pa ekri."
@@ -123,13 +127,17 @@
       "label": "Rekonekte RCON",
       "note": "Eseye rekonekte ak RCON lè l itilize modpas sove a. Si li kontinye echwe, verifye modpas nan Konfigirasyon Sèvè koresponn ak Paramèt, epi redemare sèvè a."
     },
+    "modCheckerStopped": {
+      "label": "Demare verifikatè mod",
+      "note": "Repran sondaj mizajou Steam Workshop lè l itilize paramèt ki deja konfigire yo."
+    },
     "servicesStuck": {
       "label": "Louvri Paramèt",
       "note": "Redemare panèl la anjeneral netwaye sèvis bloke yo."
     },
     "discordBot": {
-      "label": "Louvri Discord",
-      "note": "Verifye token bot la ak intents yo nan paramèt Discord."
+      "retryLabel": "Rekonekte bot",
+      "note": "Eseye rekonekte lè l itilize token bot ki sove a. Si li kontinye echwe, verifye token an ak intents yo nan paramèt Discord."
     },
     "bridgeConfigured": {
       "label": "Otokonfigire bridge",
@@ -142,6 +150,10 @@
     "dbExistsOrWritable": {
       "label": "Louvri Paramèt",
       "note": "Verifye chemen anyè done a egziste epi panèl la ka ekri ladan."
+    },
+    "dbWritable": {
+      "label": "Retire atribi lekti sèlman",
+      "note": "Eseye retire atribi lekti sèlman sou db.json epi tcheke ankò. Sa p ap ede si se yon pwoblèm pwopriyetè oswa pèmisyon (ACL)."
     },
     "dbBackup": {
       "label": "Kreye kopi sovgad baz done",
@@ -277,6 +289,14 @@
     "sandboxRepairedTitle": "SandboxVars.lua repare",
     "sandboxRepairedFallback_one": "Aplike {{count}} repara.{{restartHint}}",
     "sandboxRepairedFallback_other": "Aplike {{count}} repara.{{restartHint}}",
+    "sandboxCreatedTitle": "SandboxVars.lua kreye",
+    "sandboxCreatedFallback": "Fichye paramèt sandbox pa defo kreye.",
+    "dbWritableFixedTitle": "Fichye baz done a ka ekri ladan",
+    "dbWritableFixedFallback": "Atribi lekti sèlman retire.",
+    "modCheckerStartedTitle": "Verifikatè mod demare",
+    "modCheckerStartedFallback": "Sondaj mizajou Steam Workshop repran.",
+    "discordReconnectedTitle": "Bot Discord rekonekte",
+    "discordReconnectedFallback": "Koneksyon bot la retabli.",
     "noNumericIdsError": "Pa gen antre Mods= nimerik ki te bay pa dyagnostik yo.",
     "noOrphanWorkshopError": "Pa gen ID Workshop òfelen ki te bay pa dyagnostik yo.",
     "checks": {

@@ -31,6 +31,7 @@ import {
   getRoleByName,
 } from "../database/init.js";
 import { sanitizeError, sanitizeErrorParams, SENSITIVE_FIELD_RE } from "../utils/sanitize.js";
+import { ErrorCode } from "../utils/errorCodes.js";
 import { checkSandboxBraceBalance } from "./serverFiles.js";
 import panelBridgeService from "../services/panelBridge.js";
 import authService from "../services/auth.js";
@@ -5887,6 +5888,89 @@ router.get("/activity", requirePermission("diagnostics.manage"), async (req, res
     res.status(500).json({ error: sanitizeError(error.message) });
   }
 });
+
+// ============================================
+// Diagnostics: one targeted automated fix
+// ============================================
+//
+// POST /api/debug/fix-writability -- clears the read-only attribute on ONE
+// specific, server-resolved file and re-checks writability. `target` is a
+// closed enum, never a client-supplied path: accepting an arbitrary path
+// here would let any caller with diagnostics.manage chmod anything on disk
+// the panel process can reach, which is a far bigger blast radius than the
+// one check this exists to fix.
+//
+// Deliberately narrow to db.json (a single FILE). The logs DIRECTORY fails
+// the same diagnostic (logs.writable) but is NOT in scope here on purpose:
+// chmod on a directory has broader, less predictable effects than one file
+// (Windows' read-only attribute on a directory doesn't even mean what it
+// means on a file, and clearing it can touch how the whole tree is
+// enumerated), and the existing manual hint (check filesystem permissions)
+// is the safer answer there. See getDiagnosticsFixAction's own comment on
+// the "db.writable" case in Debug.tsx for the operator-facing half of this
+// same reasoning.
+//
+// fs.chmod on Windows can only toggle the read-only ATTRIBUTE, not NTFS
+// ACLs -- it fixes the common case (file extracted from a zip, copied from
+// read-only media, etc.) but a genuine ownership/ACL denial will still fail
+// the chmod call itself (usually EPERM) or leave the file unwritable even
+// after chmod succeeds. Both are reported honestly below, not swallowed.
+router.post(
+  "/fix-writability",
+  requirePermission("diagnostics.manage"),
+  async (req, res) => {
+    try {
+      const { target } = req.body || {};
+      if (target !== "db") {
+        return res.status(400).json({
+          error: "Unknown or unsupported writability target",
+          code: ErrorCode.WRITABILITY_TARGET_UNSUPPORTED,
+        });
+      }
+
+      const paths = getDataPaths();
+      const targetPath = paths.dbPath;
+      if (!(await safePathExists(targetPath))) {
+        return res.status(404).json({
+          error: "Database file does not exist",
+          code: ErrorCode.WRITABILITY_TARGET_MISSING,
+        });
+      }
+
+      try {
+        // u+w only -- this file never needs to be group/world-writable, and
+        // a permissive 0o666 would widen access beyond what's needed to fix
+        // the one thing this route is for.
+        await fs.promises.chmod(targetPath, 0o600);
+      } catch (chmodError) {
+        return res.status(400).json({
+          success: false,
+          error: `Could not change file permissions: ${chmodError.message}`,
+          code: ErrorCode.WRITABILITY_CHMOD_FAILED,
+        });
+      }
+
+      if (!(await safePathWritable(targetPath))) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "The file is still not writable after clearing the read-only attribute -- this looks like an ownership or ACL issue, which this automated fix can't resolve.",
+          code: ErrorCode.WRITABILITY_STILL_BLOCKED,
+        });
+      }
+
+      log.info(`Cleared read-only attribute on ${targetPath}`);
+      res.json({
+        success: true,
+        message: "Database file is writable again.",
+        path: targetPath,
+      });
+    } catch (error) {
+      log.error(`Failed to fix writability: ${error.message}`);
+      res.status(500).json({ error: sanitizeError(error.message) });
+    }
+  },
+);
 
 export default router;
 export { logBuffer, getDiskFree };

@@ -484,5 +484,9 @@
   "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Arrêtez le serveur avant d'appliquer un modèle",
   "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "Impossible de vérifier l'état de ce serveur -- le panneau ne peut vérifier que le serveur actuellement actif. Basculez d'abord vers ce serveur, puis appliquez le modèle.",
   "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "L'application de modèles sur des serveurs distants n'est pas encore prise en charge.",
-  "SIM_TEMPLATE_APPLY_INI_MISSING": "Fichier INI du serveur introuvable -- démarrez le serveur une fois pour le générer, ou n'appliquez que les paramètres Sandbox."
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "Fichier INI du serveur introuvable -- démarrez le serveur une fois pour le générer, ou n'appliquez que les paramètres Sandbox.",
+  "WRITABILITY_TARGET_UNSUPPORTED": "Cible inconnue ou non prise en charge",
+  "WRITABILITY_TARGET_MISSING": "Le fichier n'existe pas",
+  "WRITABILITY_CHMOD_FAILED": "Impossible de modifier les permissions du fichier",
+  "WRITABILITY_STILL_BLOCKED": "Le fichier n'est toujours pas accessible en écriture après avoir effacé l'attribut lecture seule -- cela ressemble à un problème de propriété ou de permissions"
 }

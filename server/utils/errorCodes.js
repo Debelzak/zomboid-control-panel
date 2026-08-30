@@ -1982,6 +1982,23 @@ export const ErrorCode = Object.freeze({
    * behavior change outside this registry pass's scope; flagged, not
    * fixed, here. */
   SIM_TEMPLATE_APPLY_INI_MISSING: "SIM_TEMPLATE_APPLY_INI_MISSING",
+
+  /** server/routes/debug.js -- POST /fix-writability, `target` is missing
+   * or not one of the closed enum values this route supports (currently
+   * just "db"). */
+  WRITABILITY_TARGET_UNSUPPORTED: "WRITABILITY_TARGET_UNSUPPORTED",
+  /** server/routes/debug.js -- POST /fix-writability, the resolved target
+   * file doesn't exist (nothing to chmod). */
+  WRITABILITY_TARGET_MISSING: "WRITABILITY_TARGET_MISSING",
+  /** server/routes/debug.js -- POST /fix-writability, fs.promises.chmod()
+   * itself threw (most commonly EPERM: not owned by the panel's process
+   * user). */
+  WRITABILITY_CHMOD_FAILED: "WRITABILITY_CHMOD_FAILED",
+  /** server/routes/debug.js -- POST /fix-writability, chmod succeeded but
+   * the file is still not writable afterward -- a real ACL/ownership
+   * denial this route can't resolve, not the read-only attribute it's
+   * built to clear. */
+  WRITABILITY_STILL_BLOCKED: "WRITABILITY_STILL_BLOCKED",
 });
 
 /**

@@ -484,5 +484,9 @@
   "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Stop the server before applying a template",
   "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "Can't verify this server's running state — the panel can only check the currently active server. Switch to this server first, then apply the template.",
   "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "Applying templates to remote servers is not supported yet.",
-  "SIM_TEMPLATE_APPLY_INI_MISSING": "Server INI file not found — start the server once to generate it, or apply Sandbox settings only."
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "Server INI file not found — start the server once to generate it, or apply Sandbox settings only.",
+  "WRITABILITY_TARGET_UNSUPPORTED": "Unknown or unsupported writability target",
+  "WRITABILITY_TARGET_MISSING": "The file does not exist",
+  "WRITABILITY_CHMOD_FAILED": "Could not change file permissions",
+  "WRITABILITY_STILL_BLOCKED": "The file is still not writable after clearing the read-only attribute — this looks like an ownership or permissions issue"
 }

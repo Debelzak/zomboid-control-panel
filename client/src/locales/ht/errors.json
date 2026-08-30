@@ -484,5 +484,9 @@
   "SIM_TEMPLATE_APPLY_SERVER_RUNNING": "Sispann sèvè a anvan w aplike yon modèl",
   "SIM_TEMPLATE_APPLY_INACTIVE_SERVER_UNVERIFIABLE": "Pa kapab verifye eta sèvè sa a -- panel la ka verifye sèlman sèvè ki aktif kounye a. Chanje pou sèvè sa a dabò, epi aplike modèl la apre.",
   "SIM_TEMPLATE_APPLY_REMOTE_UNSUPPORTED": "Aplike modèl sou sèvè distan poko sipòte.",
-  "SIM_TEMPLATE_APPLY_INI_MISSING": "Fichye INI sèvè a pa jwenn -- demare sèvè a yon fwa pou jenere l, oswa aplike sèlman paramèt Sandbox yo."
+  "SIM_TEMPLATE_APPLY_INI_MISSING": "Fichye INI sèvè a pa jwenn -- demare sèvè a yon fwa pou jenere l, oswa aplike sèlman paramèt Sandbox yo.",
+  "WRITABILITY_TARGET_UNSUPPORTED": "Sib enkoni oswa ki pa sipòte",
+  "WRITABILITY_TARGET_MISSING": "Fichye a pa egziste",
+  "WRITABILITY_CHMOD_FAILED": "Pa t kapab chanje pèmisyon fichye a",
+  "WRITABILITY_STILL_BLOCKED": "Fichye a toujou pa ka ekri ladan apre yo fin retire atribi lekti sèlman an -- sa sanble ak yon pwoblèm pwopriyetè oswa pèmisyon"
 }

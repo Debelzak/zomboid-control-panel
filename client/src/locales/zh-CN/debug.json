@@ -94,6 +94,10 @@
       "label": "打开服务器配置",
       "note": "配置服务器设置以生成或修复 .ini 文件。"
     },
+    "serverSandboxVars": {
+      "label": "创建 SandboxVars.lua",
+      "note": "写入一个带默认值的新沙盒设置文件，使其存在并可编辑。重启服务器以应用更改。"
+    },
     "serverSandboxCorrupt": {
       "label": "修复 SandboxVars.lua",
       "note": "尝试自动修复（缺失的代码块头/逗号）。会先保存损坏文件的备份。如果损坏情况不符合已知模式，则不会写入任何内容。"
@@ -123,13 +127,17 @@
       "label": "重新连接 RCON",
       "note": "尝试使用已保存的密码重新连接 RCON。如果仍然失败，请检查服务器配置中的密码是否与设置中一致，然后重启服务器。"
     },
+    "modCheckerStopped": {
+      "label": "启动模组检查器",
+      "note": "使用已配置的设置恢复 Steam 创意工坊更新轮询。"
+    },
     "servicesStuck": {
       "label": "打开设置",
       "note": "重启面板通常可以清除卡住的服务。"
     },
     "discordBot": {
-      "label": "打开 Discord",
-      "note": "检查 Discord 设置中的机器人令牌和 intents 权限。"
+      "retryLabel": "重新连接机器人",
+      "note": "使用已保存的机器人令牌重试连接。如果仍然失败，请检查 Discord 设置中的令牌和 intents 权限。"
     },
     "bridgeConfigured": {
       "label": "自动配置桥接",
@@ -142,6 +150,10 @@
     "dbExistsOrWritable": {
       "label": "打开设置",
       "note": "确认数据目录路径存在，且面板可以写入该目录。"
+    },
+    "dbWritable": {
+      "label": "清除只读属性",
+      "note": "尝试清除 db.json 的只读属性并重新检查。对所有权或权限（ACL）问题无效。"
     },
     "dbBackup": {
       "label": "创建数据库备份",
@@ -277,6 +289,14 @@
     "sandboxRepairedTitle": "SandboxVars.lua 已修复",
     "sandboxRepairedFallback_one": "已应用 {{count}} 项修复。{{restartHint}}",
     "sandboxRepairedFallback_other": "已应用 {{count}} 项修复。{{restartHint}}",
+    "sandboxCreatedTitle": "SandboxVars.lua 已创建",
+    "sandboxCreatedFallback": "已创建默认沙盒设置文件。",
+    "dbWritableFixedTitle": "数据库文件可写入",
+    "dbWritableFixedFallback": "已清除只读属性。",
+    "modCheckerStartedTitle": "模组检查器已启动",
+    "modCheckerStartedFallback": "已恢复 Steam 创意工坊更新轮询。",
+    "discordReconnectedTitle": "Discord 机器人已重新连接",
+    "discordReconnectedFallback": "机器人连接已恢复。",
     "noNumericIdsError": "诊断未提供任何数字 Mods= 条目。",
     "noOrphanWorkshopError": "诊断未提供任何孤立的 Workshop ID。",
     "checks": {

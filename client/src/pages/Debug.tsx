@@ -105,6 +105,7 @@ import {
   rconApi,
   backupApi,
   serverFilesApi,
+  discordApi,
 } from "@/lib/api";
 
 interface LogEntry {
@@ -468,12 +469,32 @@ export function getDiagnosticsFixAction(
         note: t("fixActions.serverStartScriptOrJre.note"),
       };
     case "server.ini":
-    case "server.sandboxVars":
+      // server.ini's own possible failures cover far more than "file
+      // missing" (invalid keys, malformed values, wrong types for a given
+      // sandbox option) -- there's no single safe rewrite that resolves an
+      // unknown subset of them without risking clobbering a value the
+      // operator set on purpose. Stays manual; Server Config is where a
+      // human reviews and fixes the specific key that's wrong.
       return {
         label: t("fixActions.serverIniOrSandboxVars.label"),
         automated: false,
         openServerConfig: true,
         note: t("fixActions.serverIniOrSandboxVars.note"),
+      };
+    case "server.sandboxVars":
+      // Unlike server.ini above, this check only ever warns for ONE
+      // condition: the file doesn't exist yet (see server/routes/debug.js's
+      // own comment above this check -- server.sandboxCorrupt, a different
+      // id, covers a malformed EXISTING file). Nothing to lose by writing a
+      // fresh one: PUT /server-files/sandbox already creates-if-missing,
+      // and an empty sandbox object produces the same VERSION-only file PZ
+      // falls back to anyway when the file is absent -- this just makes
+      // that fallback state a real, editable file instead of an implicit
+      // one, exactly what the manual hint already told the operator to do.
+      return {
+        label: t("fixActions.serverSandboxVars.label"),
+        automated: true,
+        note: t("fixActions.serverSandboxVars.note"),
       };
     case "server.sandboxCorrupt":
       return {
@@ -533,8 +554,26 @@ export function getDiagnosticsFixAction(
         note: t("fixActions.rconConnected.note"),
       };
     case "modChecker":
+      // Only warns when workshopAcfPath IS set (see the check's own
+      // if/else in server/routes/debug.js) but the checker still isn't
+      // running -- the exact condition POST /mods/start's own 400 case
+      // guards against is the ACF path being unset, so this call can't hit
+      // that failure here. A plain retry, not a reconfiguration.
+      return {
+        label: t("fixActions.modCheckerStopped.label"),
+        automated: true,
+        note: t("fixActions.modCheckerStopped.note"),
+      };
     case "scheduler":
     case "services.error":
+      // scheduler warns when the SERVICE SINGLETON itself is null/never
+      // initialized (unlike modChecker above, where the object exists and
+      // just isn't polling) -- there's no service-level "start" to retry
+      // when there's no live instance to call it on. Only a full panel
+      // restart re-runs that initialization, and this page has no
+      // self-restart action to invoke it with. services.error is the
+      // generic "the checker for this whole category threw" catch-all --
+      // by definition not a specific, safely-repeatable action.
       return {
         label: t("fixActions.servicesStuck.label"),
         automated: false,
@@ -542,9 +581,17 @@ export function getDiagnosticsFixAction(
         note: t("fixActions.servicesStuck.note"),
       };
     case "discord.bot":
+      // Only ever fails (this branch) when a token IS already configured
+      // but the bot isn't connected (see the check's own if/else) -- a
+      // plain retry with the saved token, not a request to generate or
+      // change credentials. Covers the common "never started after a
+      // config save" and "transient network blip" cases for free; a
+      // genuinely bad token just fails again with the same descriptive
+      // error POST /discord/start already returns, and the Open Discord
+      // link stays as the escape hatch for that case.
       return {
-        label: t("fixActions.discordBot.label"),
-        automated: false,
+        label: t("fixActions.discordBot.retryLabel"),
+        automated: true,
         links: [{ to: "/discord", label: L("openDiscord") }],
         note: t("fixActions.discordBot.note"),
       };
@@ -569,12 +616,33 @@ export function getDiagnosticsFixAction(
 
     // ─── Database / storage ────────────────────────────────────────────────
     case "db.exists":
-    case "db.writable":
+      // Deliberately NOT automated, and deliberately not "just touch an
+      // empty db.json" even though that would silence the check: a missing
+      // file this critical is exactly as likely to mean "the real data
+      // volume isn't mounted" or "dataDir points somewhere wrong" as
+      // "genuine first run" -- and silently creating a blank one in either
+      // of the first two cases would start writing fresh settings into the
+      // wrong place while looking like a fix. A human needs to know WHY
+      // it's missing before anything writes there again.
       return {
         label: t("fixActions.dbExistsOrWritable.label"),
         automated: false,
         links: [{ to: "/settings", label: L("openSettings") }],
         note: t("fixActions.dbExistsOrWritable.note"),
+      };
+    case "db.writable":
+      // Unlike db.exists above, the file is confirmed to exist here --
+      // "not writable" on Windows is most commonly the read-only file
+      // ATTRIBUTE (picked up from a zip extract or a copy off read-only
+      // media), which fs.chmod can safely clear. See
+      // POST /api/debug/fix-writability's own comment in
+      // server/routes/debug.js for the full safety reasoning (closed
+      // target enum, file-only, honest failure on a real ACL/ownership
+      // issue chmod can't fix).
+      return {
+        label: t("fixActions.dbWritable.label"),
+        automated: true,
+        note: t("fixActions.dbWritable.note"),
       };
     case "db.backup":
       return {
@@ -647,6 +715,57 @@ export function getDiagnosticsFixAction(
         note: t("fixActions.updateSteamApi.note"),
       };
 
+    // ─── Explicitly manual, no case-specific action possible ──────────────
+    // These 6 ids used to fall through to the generic `default` case below
+    // with no comment anywhere explaining why -- correct behavior (a
+    // fallback note built from the server's own hint text), but silent
+    // about it. Giving each its own case changes nothing about what the
+    // operator sees; it's here so the next person auditing this switch
+    // doesn't have to re-derive "why doesn't this have a real fix" from
+    // scratch, per god's ask.
+    case "mods.thumbnailResolution":
+      // Steam CDN reachability for a specific Workshop item's thumbnail
+      // image -- server/routes/debug.js's own hint already names the real
+      // causes (item deleted/private/region-locked, or this host can't
+      // reach Steam's image CDN at all) and both self-resolve: the mod
+      // checker retries every 5 minutes with no restart needed. There is
+      // no local action that fixes an external CDN or a delisted Workshop
+      // item.
+      return {
+        label: t("fixActions.fallback.label"),
+        automated: false,
+        note: check.hint || t("fixActions.fallback.noteFallback"),
+      };
+    case "rcon.commandRejections":
+      // A forensic summary of commands the GAME rejected, not something
+      // the panel did wrong -- buildRconCommandRejectionsCheck's own
+      // RCON_REJECTION_REASON_HINTS already explain the four known
+      // rejection shapes (unknown command, wrong arguments, insufficient
+      // in-game rights, in-game-only command) inline in the check's own
+      // hint text. Nothing to click; the message itself is the fix.
+      return {
+        label: t("fixActions.fallback.label"),
+        automated: false,
+        note: check.hint || t("fixActions.fallback.noteFallback"),
+      };
+    case "bridge.error":
+    case "runtime.error":
+    case "server.error":
+    case "storage.error":
+      // The *.error ids are each category's own try/catch surfacing "the
+      // check itself threw," not a failing condition in the thing being
+      // checked -- an exception while probing the bridge/runtime/server/
+      // storage state, not a bridge/runtime/server/storage problem with a
+      // known remedy. The message already carries the real exception text
+      // (see each category's own catch block in server/routes/debug.js);
+      // there's no single action that could be "the fix" for an arbitrary
+      // caught error.
+      return {
+        label: t("fixActions.fallback.label"),
+        automated: false,
+        note: check.hint || t("fixActions.fallback.noteFallback"),
+      };
+
     default: {
       // Fallback: only surface a button for warn/fail. Informational checks
       // (e.g. "panel uptime") have no actionable fix — don't show a button.
@@ -685,18 +804,22 @@ export function getDiagnosticsFixAction(
 }
 
 // Each automated fix POSTs to its own route, and those routes are gated by
-// SEVEN DIFFERENT capabilities, not one page-level concern -- read directly
+// TEN DIFFERENT capabilities, not one page-level concern -- read directly
 // from server/routes/*.js rather than assumed from the page's own admin-only
 // read endpoints:
 //   mods.numericInMods / mods.orphanWorkshop / mods.maps / mods.duplicates
 //     -> mods.manage (mods.js's router.use, whole router)
+//   modChecker -> mods.manage (mods.js POST /start, same router)
 //   server.process -> server.control (server.js POST /start)
 //   rcon.connected -> rcon.execute (rcon.js POST /connect)
 //   db.backup -> backups.manage (backup.js POST /create)
-//   server.staleLocks -> diagnostics.manage (debug.js POST /clear-stale-locks)
+//   server.staleLocks / db.writable -> diagnostics.manage
+//     (debug.js POST /clear-stale-locks and POST /fix-writability)
 //   bridge.configured / worldmap.bridge.configured -> bridge.setup
 //     (panelBridge.js POST /auto-configure)
-//   server.sandboxCorrupt -> serverfiles.manage (serverFiles.js's router.use)
+//   server.sandboxCorrupt / server.sandboxVars -> serverfiles.manage
+//     (serverFiles.js's router.use, POST /sandbox/repair and PUT /sandbox)
+//   discord.bot -> integrations.manage (discord.js's router.use, POST /start)
 // server.recentCrash makes no API call at all (it only switches tabs), so it
 // needs no capability. Every other check.id is either non-automated (manual
 // fix: a toast or a navigation, never an API call) or falls to the `default`
@@ -708,6 +831,7 @@ export function getRequiredCapabilityForCheck(checkId: string): string | null {
     case "mods.orphanWorkshop":
     case "mods.maps":
     case "mods.duplicates":
+    case "modChecker":
       return "mods.manage";
     case "server.process":
       return "server.control";
@@ -716,12 +840,16 @@ export function getRequiredCapabilityForCheck(checkId: string): string | null {
     case "db.backup":
       return "backups.manage";
     case "server.staleLocks":
+    case "db.writable":
       return "diagnostics.manage";
     case "bridge.configured":
     case "worldmap.bridge.configured":
       return "bridge.setup";
     case "server.sandboxCorrupt":
+    case "server.sandboxVars":
       return "serverfiles.manage";
+    case "discord.bot":
+      return "integrations.manage";
     default:
       return null;
   }
@@ -1278,6 +1406,86 @@ export default function Debug() {
                     })),
             });
           }
+        } else if (check.id === "server.sandboxVars") {
+          // PUT /server-files/sandbox creates the file when it doesn't
+          // exist yet (see the check's own guard in getDiagnosticsFixAction
+          // above) -- an empty-per-section sandbox object produces the same
+          // VERSION-only content PZ falls back to implicitly, just written
+          // out as a real, editable file. Always responds non-2xx on
+          // failure, so this never sees result.success === false.
+          const result = await serverFilesApi.saveSandbox({
+            VERSION: 4,
+            settings: {},
+            ZombieLore: {},
+            ZombieConfig: {},
+            MultiplierConfig: {},
+            Map: {},
+            Basement: {},
+          });
+          toast({
+            title: t("diagnostics.sandboxCreatedTitle"),
+            description:
+              (result.message || t("diagnostics.sandboxCreatedFallback")) +
+              restartHint,
+          });
+        } else if (check.id === "db.writable") {
+          // POST /api/debug/fix-writability always responds non-2xx on
+          // failure (chmod itself failed, or the file is still unwritable
+          // after chmod succeeds -- see that route's own comment in
+          // server/routes/debug.js), so this never sees a false success.
+          const res = await authFetch("/api/debug/fix-writability", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target: "db" }),
+          });
+          const data = (await res.json().catch(() => null)) as {
+            success?: boolean;
+            message?: string;
+            error?: string;
+            code?: string;
+          } | null;
+          if (!res.ok || data?.success === false) {
+            // authFetch bypasses lib/api.ts's handleResponse(), same
+            // reasoning as server.staleLocks above -- reconstruct an
+            // ApiError so the surrounding catch's getUserErrorMessage()
+            // sees the real server message and code, not just a status.
+            throw new ApiError(
+              data?.error || `HTTP ${res.status}`,
+              { status: res.status, code: data?.code },
+            );
+          }
+          toast({
+            title: t("diagnostics.dbWritableFixedTitle"),
+            description:
+              data?.message || t("diagnostics.dbWritableFixedFallback"),
+          });
+        } else if (check.id === "modChecker") {
+          // /mods/start always responds non-2xx on failure, so
+          // handleResponse() throws into this handler's surrounding catch
+          // -- this never sees a false success.
+          const result = (await modsApi.start()) as {
+            success?: boolean;
+            message?: string;
+          };
+          toast({
+            title: t("diagnostics.modCheckerStartedTitle"),
+            description:
+              result?.message || t("diagnostics.modCheckerStartedFallback"),
+          });
+        } else if (check.id === "discord.bot") {
+          // /discord/start always responds non-2xx on failure (including a
+          // still-bad token -- describeStartFailure() supplies the real
+          // reason), so handleResponse() throws into this handler's
+          // surrounding catch -- this never sees a false success.
+          const result = (await discordApi.start()) as {
+            success?: boolean;
+            message?: string;
+          };
+          toast({
+            title: t("diagnostics.discordReconnectedTitle"),
+            description:
+              result?.message || t("diagnostics.discordReconnectedFallback"),
+          });
         }
 
         await fetchDiagnostics();

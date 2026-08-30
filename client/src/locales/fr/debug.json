@@ -94,6 +94,10 @@
       "label": "Ouvrir la configuration du serveur",
       "note": "Configurez les paramètres du serveur pour générer ou réparer les fichiers .ini."
     },
+    "serverSandboxVars": {
+      "label": "Créer SandboxVars.lua",
+      "note": "Écrit un nouveau fichier de paramètres sandbox avec des valeurs par défaut afin qu'il existe et soit modifiable. Redémarrez le serveur pour appliquer."
+    },
     "serverSandboxCorrupt": {
       "label": "Réparer SandboxVars.lua",
       "note": "Tente une réparation automatique (en-tête de bloc ou virgule manquante). Une sauvegarde du fichier corrompu est d'abord enregistrée. Si la corruption ne correspond à aucun schéma connu, rien n'est écrit."
@@ -123,13 +127,17 @@
       "label": "Reconnecter RCON",
       "note": "Tente de se reconnecter à RCON avec le mot de passe enregistré. Si ça échoue encore, vérifiez que le mot de passe dans la configuration du serveur correspond aux paramètres, puis redémarrez le serveur."
     },
+    "modCheckerStopped": {
+      "label": "Démarrer le vérificateur de mods",
+      "note": "Reprend le sondage des mises à jour du Workshop Steam avec les paramètres déjà configurés."
+    },
     "servicesStuck": {
       "label": "Ouvrir les paramètres",
       "note": "Redémarrer le panneau débloque généralement les services bloqués."
     },
     "discordBot": {
-      "label": "Ouvrir Discord",
-      "note": "Vérifiez le jeton du bot et les intents dans les paramètres Discord."
+      "retryLabel": "Reconnecter le bot",
+      "note": "Retente la connexion avec le jeton du bot enregistré. Si ça échoue encore, vérifiez le jeton et les intents dans les paramètres Discord."
     },
     "bridgeConfigured": {
       "label": "Configurer automatiquement le bridge",
@@ -142,6 +150,10 @@
     "dbExistsOrWritable": {
       "label": "Ouvrir les paramètres",
       "note": "Vérifiez que le chemin du dossier de données existe et que le panneau peut y écrire."
+    },
+    "dbWritable": {
+      "label": "Effacer l'attribut lecture seule",
+      "note": "Tente d'effacer l'attribut lecture seule sur db.json et revérifie. N'aidera pas en cas de problème de propriété ou de permissions (ACL)."
     },
     "dbBackup": {
       "label": "Créer une sauvegarde de la base de données",
@@ -277,6 +289,14 @@
     "sandboxRepairedTitle": "SandboxVars.lua réparé",
     "sandboxRepairedFallback_one": "{{count}} correction appliquée.{{restartHint}}",
     "sandboxRepairedFallback_other": "{{count}} corrections appliquées.{{restartHint}}",
+    "sandboxCreatedTitle": "SandboxVars.lua créé",
+    "sandboxCreatedFallback": "Fichier de paramètres sandbox par défaut créé.",
+    "dbWritableFixedTitle": "Fichier de base de données accessible en écriture",
+    "dbWritableFixedFallback": "Attribut lecture seule effacé.",
+    "modCheckerStartedTitle": "Vérificateur de mods démarré",
+    "modCheckerStartedFallback": "Sondage des mises à jour du Workshop Steam repris.",
+    "discordReconnectedTitle": "Bot Discord reconnecté",
+    "discordReconnectedFallback": "Connexion du bot rétablie.",
     "noNumericIdsError": "Aucune entrée Mods= numérique n'a été fournie par les diagnostics.",
     "noOrphanWorkshopError": "Aucun ID Workshop orphelin n'a été fourni par les diagnostics.",
     "checks": {

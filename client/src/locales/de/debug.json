@@ -94,6 +94,10 @@
       "label": "Serverkonfiguration öffnen",
       "note": "Konfiguriere die Servereinstellungen, um die .ini-Dateien zu erzeugen oder zu reparieren."
     },
+    "serverSandboxVars": {
+      "label": "SandboxVars.lua erstellen",
+      "note": "Schreibt eine neue Sandbox-Einstellungsdatei mit Standardwerten, damit sie existiert und bearbeitbar ist. Starte den Server neu, um sie anzuwenden."
+    },
     "serverSandboxCorrupt": {
       "label": "SandboxVars.lua reparieren",
       "note": "Versucht eine automatische Reparatur (fehlender Blockkopf/fehlendes Komma). Zuerst wird ein Backup der beschädigten Datei gespeichert. Entspricht die Beschädigung keinem bekannten Muster, wird nichts geschrieben."
@@ -123,13 +127,17 @@
       "label": "RCON erneut verbinden",
       "note": "Versucht, sich mit dem gespeicherten Passwort erneut mit RCON zu verbinden. Schlägt dies weiterhin fehl, überprüfe, ob das Passwort in der Serverkonfiguration mit den Einstellungen übereinstimmt, und starte den Server neu."
     },
+    "modCheckerStopped": {
+      "label": "Mod-Prüfung starten",
+      "note": "Nimmt die Steam-Workshop-Update-Abfrage mit den bereits konfigurierten Einstellungen wieder auf."
+    },
     "servicesStuck": {
       "label": "Einstellungen öffnen",
       "note": "Ein Neustart des Panels behebt meist hängende Dienste."
     },
     "discordBot": {
-      "label": "Discord öffnen",
-      "note": "Überprüfe das Bot-Token und die Intents in den Discord-Einstellungen."
+      "retryLabel": "Bot erneut verbinden",
+      "note": "Versucht die Verbindung erneut mit dem gespeicherten Bot-Token. Schlägt dies weiterhin fehl, überprüfe das Token und die Intents in den Discord-Einstellungen."
     },
     "bridgeConfigured": {
       "label": "Brücke automatisch konfigurieren",
@@ -142,6 +150,10 @@
     "dbExistsOrWritable": {
       "label": "Einstellungen öffnen",
       "note": "Überprüfe, ob der Datenverzeichnispfad existiert und das Panel darauf schreiben kann."
+    },
+    "dbWritable": {
+      "label": "Schreibschutz aufheben",
+      "note": "Versucht, das Nur-Lesen-Attribut von db.json aufzuheben, und prüft erneut. Hilft nicht bei einem Besitz- oder Berechtigungsproblem (ACL)."
     },
     "dbBackup": {
       "label": "Datenbank-Backup erstellen",
@@ -277,6 +289,14 @@
     "sandboxRepairedTitle": "SandboxVars.lua repariert",
     "sandboxRepairedFallback_one": "{{count}} Korrektur angewendet.{{restartHint}}",
     "sandboxRepairedFallback_other": "{{count}} Korrekturen angewendet.{{restartHint}}",
+    "sandboxCreatedTitle": "SandboxVars.lua erstellt",
+    "sandboxCreatedFallback": "Standard-Sandbox-Einstellungsdatei erstellt.",
+    "dbWritableFixedTitle": "Datenbankdatei beschreibbar",
+    "dbWritableFixedFallback": "Nur-Lesen-Attribut aufgehoben.",
+    "modCheckerStartedTitle": "Mod-Prüfung gestartet",
+    "modCheckerStartedFallback": "Steam-Workshop-Update-Abfrage wieder aufgenommen.",
+    "discordReconnectedTitle": "Discord-Bot erneut verbunden",
+    "discordReconnectedFallback": "Bot-Verbindung wiederhergestellt.",
     "noNumericIdsError": "Die Diagnose hat keine numerischen Mods=-Einträge geliefert.",
     "noOrphanWorkshopError": "Die Diagnose hat keine verwaisten Workshop-IDs geliefert.",
     "checks": {
