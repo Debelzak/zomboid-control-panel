@@ -1116,16 +1116,16 @@ export default function Console() {
               ) : (
                 liveLog.map((entry, idx) => (
                   <div key={(entry as RconResponse & { _id?: number })._id ?? `${entry.timestamp}-${idx}`} className="mb-3 font-mono text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="text-primary">$</span>
-                      <span className="text-foreground/90">{entry.command}</span>
-                      <span className="text-muted-foreground/60 text-[10px] ml-auto tabular-nums font-mono">
+                    <div className="flex items-start gap-2">
+                      <span className="text-primary shrink-0">$</span>
+                      <span className="text-foreground/90 break-all min-w-0 grow">{entry.command}</span>
+                      <span className="text-muted-foreground/60 text-[10px] ml-auto shrink-0 tabular-nums font-mono">
                         {new Date(entry.timestamp).toLocaleTimeString(i18n.language)}
                       </span>
                     </div>
-                    <div className={cn('ml-4 mt-0.5 text-xs border-l-2 pl-2', entry.success ? 'border-primary/30 text-foreground/85' : 'border-destructive/50 text-destructive')}>
+                    <div className={cn('ml-4 mt-0.5 text-xs border-l-2 pl-2 break-words', entry.success ? 'border-primary/30 text-foreground/85' : 'border-destructive/50 text-destructive')}>
                       {entry.response.split('\n').map((line, i) => (
-                        <div key={`line-${i}`}>{line || '\u00A0'}</div>
+                        <div key={`line-${i}`} className="break-words">{line || '\u00A0'}</div>
                       ))}
                     </div>
                   </div>
@@ -1329,9 +1329,9 @@ export default function Console() {
                             inputRef.current?.focus()
                           }}
                         >
-                          <div className="flex items-center justify-between">
-                            <code className="text-sm font-mono text-primary truncate">{entry.command}</code>
-                            <span className="text-xs text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2">
+                            <code className="text-sm font-mono text-primary truncate min-w-0 flex-1">{entry.command}</code>
+                            <span className="text-xs text-muted-foreground shrink-0">
                               {new Date(entry.executed_at).toLocaleString(i18n.language)}
                             </span>
                           </div>

@@ -4458,7 +4458,7 @@ export default function Debug() {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <div className="relative">
+                  <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                     <Input
                       placeholder={t("activityTab.searchPlaceholder")}
@@ -4470,7 +4470,7 @@ export default function Debug() {
                           e.currentTarget.blur();
                         }
                       }}
-                      className="w-[200px] h-8 pl-7 pr-7"
+                      className="w-full sm:w-[200px] h-8 pl-7 pr-7"
                       maxLength={200}
                       aria-label={t("activityTab.searchAria")}
                     />
@@ -4748,7 +4748,7 @@ export default function Debug() {
                               </span>
                             )}
                             <span
-                              className="text-muted-foreground truncate flex-1"
+                              className="text-muted-foreground truncate min-w-0 flex-1"
                               title={entry.detail}
                             >
                               {entry.detail.length > 120
@@ -5167,7 +5167,7 @@ export default function Debug() {
                       return (
                         <div
                           key={log.id}
-                          className="group flex cursor-pointer items-start gap-2 rounded px-2 py-1 hover:bg-muted/35"
+                          className="group flex flex-wrap sm:flex-nowrap cursor-pointer items-start gap-x-2 gap-y-1 rounded px-2 py-1 hover:bg-muted/35"
                           onClick={() =>
                             isLongMessage && toggleLogExpanded(log.id)
                           }
@@ -5198,20 +5198,20 @@ export default function Debug() {
                               {log.source}
                             </Badge>
                           )}
-                          <span
-                            className={`${getLevelColor(log.level)} break-all`}
-                          >
-                            {displayMessage}
-                          </span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               copyLogEntry(log);
                             }}
-                            className="ml-auto shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted/50 group-hover:opacity-100"
+                            className="sm:order-last ml-auto shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted/50 group-hover:opacity-100"
                           >
                             <Copy className="w-3 h-3 text-muted-foreground" />
                           </button>
+                          <span
+                            className={`${getLevelColor(log.level)} break-words min-w-0 grow basis-full sm:basis-0`}
+                          >
+                            {displayMessage}
+                          </span>
                         </div>
                       );
                     })
@@ -5385,7 +5385,7 @@ export default function Debug() {
                     description={t("crashesTab.noCrashLogsDesc")}
                   />
                 ) : (
-                  <ScrollArea className="h-[calc(100vh-360px)] min-h-[300px]">
+                  <ScrollArea className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px]">
                     <div className="space-y-2 pr-2">
                       {[...crashLogs]
                         .sort(
@@ -5510,15 +5510,15 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 {!selectedCrashLog ? (
-                  <div className="h-[calc(100vh-360px)] min-h-[300px] flex items-center justify-center text-muted-foreground">
+                  <div className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px] flex items-center justify-center text-muted-foreground">
                     {t("crashesTab.selectToView")}
                   </div>
                 ) : loadingCrashLog ? (
-                  <div className="h-[calc(100vh-360px)] min-h-[300px] flex items-center justify-center">
+                  <div className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px] flex items-center justify-center">
                     <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                   </div>
                 ) : (
-                  <ScrollArea className="h-[calc(100vh-360px)] min-h-[300px]">
+                  <ScrollArea className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px]">
                     <pre className="text-xs font-mono whitespace-pre-wrap break-all p-2 bg-muted/30 rounded">
                       {crashLogContent}
                     </pre>
@@ -6306,75 +6306,79 @@ export default function Debug() {
                 </div>
               ) : (
                 <div className="space-y-3 font-mono text-sm">
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                    <span className="text-muted-foreground w-32 shrink-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 rounded-lg bg-muted/50">
+                    <span className="text-muted-foreground sm:w-32 sm:shrink-0">
                       {t("systemTab.databaseLabel")}
                     </span>
-                    <span className="break-all flex-1">
-                      {systemInfo?.dbPath || "-"}
-                    </span>
-                    {systemInfo?.dbPath && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 shrink-0"
-                            aria-label={t("systemTab.copyDbPathAria")}
-                            onClick={async () => {
-                              const ok = await copyText(systemInfo.dbPath);
-                              toast({
-                                title: ok ? t("common.copied") : t("common.copyFailed"),
-                                description: ok
-                                  ? systemInfo.dbPath
-                                  : t("crashesTab.couldNotAccessClipboard"),
-                                variant: ok
-                                  ? ("success" as const)
-                                  : "destructive",
-                              });
-                            }}
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t("systemTab.copyPathTooltip")}</TooltipContent>
-                      </Tooltip>
-                    )}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="break-all min-w-0 flex-1">
+                        {systemInfo?.dbPath || "-"}
+                      </span>
+                      {systemInfo?.dbPath && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 shrink-0"
+                              aria-label={t("systemTab.copyDbPathAria")}
+                              onClick={async () => {
+                                const ok = await copyText(systemInfo.dbPath);
+                                toast({
+                                  title: ok ? t("common.copied") : t("common.copyFailed"),
+                                  description: ok
+                                    ? systemInfo.dbPath
+                                    : t("crashesTab.couldNotAccessClipboard"),
+                                  variant: ok
+                                    ? ("success" as const)
+                                    : "destructive",
+                                });
+                              }}
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("systemTab.copyPathTooltip")}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                    <span className="text-muted-foreground w-32 shrink-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 p-3 rounded-lg bg-muted/50">
+                    <span className="text-muted-foreground sm:w-32 sm:shrink-0">
                       {t("systemTab.logsFolderLabel")}
                     </span>
-                    <span className="break-all flex-1">
-                      {systemInfo?.logsPath || "-"}
-                    </span>
-                    {systemInfo?.logsPath && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 shrink-0"
-                            aria-label={t("systemTab.copyLogsPathAria")}
-                            onClick={async () => {
-                              const ok = await copyText(systemInfo.logsPath);
-                              toast({
-                                title: ok ? t("common.copied") : t("common.copyFailed"),
-                                description: ok
-                                  ? systemInfo.logsPath
-                                  : t("crashesTab.couldNotAccessClipboard"),
-                                variant: ok
-                                  ? ("success" as const)
-                                  : "destructive",
-                              });
-                            }}
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t("systemTab.copyPathTooltip")}</TooltipContent>
-                      </Tooltip>
-                    )}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="break-all min-w-0 flex-1">
+                        {systemInfo?.logsPath || "-"}
+                      </span>
+                      {systemInfo?.logsPath && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 shrink-0"
+                              aria-label={t("systemTab.copyLogsPathAria")}
+                              onClick={async () => {
+                                const ok = await copyText(systemInfo.logsPath);
+                                toast({
+                                  title: ok ? t("common.copied") : t("common.copyFailed"),
+                                  description: ok
+                                    ? systemInfo.logsPath
+                                    : t("crashesTab.couldNotAccessClipboard"),
+                                  variant: ok
+                                    ? ("success" as const)
+                                    : "destructive",
+                                });
+                              }}
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("systemTab.copyPathTooltip")}</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
