@@ -1,10 +1,26 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.40
+    Version: 1.7.41
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.41 Changes:
+                - Fix: the v1.7.12 inbox-desync resync (tryResyncInboxCursor)
+                    trusted the panel's declared write position
+                    (.queue-state-node.json) unconditionally, including moving
+                    lastCommandSeq BACKWARD if that file's value was ever
+                    lower than what this process had already processed -- a
+                    real hazard demonstrated the same day by four zombie
+                    nodemon-wrapped panel processes independently writing
+                    that file. The resync is now forward-only, matching the
+                    equivalent guard already shipped in panelBridge.js for
+                    the opposite (results) direction. Also shortened the
+                    stuck-detection window from 20s to 10s, comfortably under
+                    Node's own 15s local-transport command timeout, so a real
+                    desync always resolves before Node gives up on the
+                    caller's request rather than 5s after.
 
                 v1.7.40 Changes:
                 - Fixed horde spawning to use the coordinate-aware
@@ -1653,8 +1669,26 @@ end
 
 -- How long the inbox reader tolerates a missing next-sequence file before
 -- suspecting a genuine counter desync (rather than the panel simply not
--- having sent a new command yet).
-local INBOX_RESYNC_STUCK_MS = 20000
+-- having sent a new command yet). Kept comfortably under Node's own
+-- local-transport commandTimeoutMs (15000, server/services/panelBridge.js
+-- config.commandTimeoutMs) so a real desync always resolves before Node
+-- gives up on the caller's request, never 5s after (2026-08-30
+-- bridge-resync-threshold-transport-aware: at the old 20000 value, ANY
+-- command landing in the first 5s of a divergence was guaranteed to time
+-- out Node-side before this stuck-detector even fired).
+--
+-- Deliberately ONE constant, not per-transport, despite commandTimeoutMs
+-- itself being 60000 over SFTP: .queue-state-node.json is panel-owned and,
+-- as of this writing, panelBridgeSftp.js's syncNow() never uploads it to
+-- the remote host (it uploads inbox/cmd-*.json and downloads status.json /
+-- queue-state-lua.json / outbox, but this file isn't in either list) -- so
+-- PanelBridge.readJSON(".queue-state-node.json") below always returns nil
+-- over SFTP today, and this whole function is a guaranteed no-op there
+-- regardless of this constant's value. Tuning it per-transport would only
+-- ever change behavior for the local/direct case in practice. Flagged
+-- separately as its own gap (inbox self-heal is currently inert for
+-- SFTP-connected bridges) rather than folded into this change.
+local INBOX_RESYNC_STUCK_MS = 10000
 -- Once stuck, how often to re-probe the panel's state file (avoids reading
 -- it every tick while legitimately idle waiting for the next real command).
 local INBOX_RESYNC_CHECK_INTERVAL_MS = 5000
@@ -1687,6 +1721,21 @@ local function tryResyncInboxCursor(nextSeq)
     local panelHighWater = panelNextSeq - 1
     if panelHighWater == PanelBridge.queueState.lastCommandSeq then
         -- Genuinely idle and in sync — nothing to resync.
+        return false
+    end
+
+    -- Forward-only, mirroring tryResyncInboxCommandCursor's guard in
+    -- panelBridge.js for the same hazard on the opposite (results) side
+    -- (2026-08-30). A read of .queue-state-node.json that's stale or racing
+    -- a second writer -- e.g. the four zombie nodemon-wrapped panel
+    -- processes that shared one bridge folder and drifted apart earlier
+    -- this same day -- can only ever show a LOWER panelHighWater than the
+    -- truth, never a fabricated higher one. Refusing to move lastCommandSeq
+    -- backward makes rewinding into already-processed commands structurally
+    -- impossible instead of merely unlikely, regardless of why the read was
+    -- stale (multiple writers, or -- if the SFTP upload gap above is ever
+    -- closed -- ordinary transport lag).
+    if panelHighWater < PanelBridge.queueState.lastCommandSeq then
         return false
     end
 
