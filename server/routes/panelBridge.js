@@ -253,6 +253,18 @@ export const VALID_ACTIONS = new Set([
 // unrelated 641-line UI-overhaul release commit, with no comment anywhere in
 // that diff acknowledging the capability implication.
 //
+// hunt-wave12-2026-08-30 UI-reachability audit, extending the above: THIS
+// FILE also has its own dedicated /players/:username/godmode and
+// /players/:username/invisible routes (below), separate from players.js's
+// /godmode and /invisible -- the original 2026-08-27 comment named only the
+// players.js pair and didn't mention this file has a second, independent
+// implementation. Checked both: players.js's /godmode, /invisible AND this
+// file's /players/:username/godmode, /players/:username/invisible are ALL
+// dead (playersApi.setGodMode/setInvisible, the client wrappers for the
+// players.js pair, are never called either). The only live path for
+// setGodMode/setInvisible is this route's own bridge.command passthrough,
+// same as healPlayer.
+//
 // The two buckets below use DIFFERENT gating shapes, not the same one:
 //  - The moderation four have no dedicated route of their own, so the
 //    capability named here is ADDITIONAL, on top of this route's own
@@ -1923,7 +1935,17 @@ router.post("/climate/reset", requirePermission("server.world_events"), async (r
   }
 });
 
-// Individual climate shortcuts
+// Individual climate shortcuts (setTemperature/setWind/setFog/setClouds).
+// hunt-wave12-2026-08-30 UI-reachability audit: all four are dead routes --
+// nothing in client/src calls any of them. The feature is not missing:
+// Events.tsx's climate panel (temperature/wind/fog/clouds/humidity/
+// precipitation sliders) applies through the generic setClimateFloat
+// action instead, with hardcoded float ids (temperature=4, wind=6, fog=5,
+// clouds=8; humidity=12 and precipitation=3 have no single-purpose route
+// at all) -- these single-purpose routes were superseded and never wired
+// or removed. Documented rather than deleted per the operator's own
+// standard for this class of shadowed route (see healPlayer/setGodMode/
+// setInvisible below, and getSandboxOptions/saveWorld further down).
 router.post("/climate/temperature", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
@@ -1954,6 +1976,7 @@ router.post("/climate/temperature", requirePermission("server.world_events"), as
   }
 });
 
+// Dead route, live path setClimateFloat(6, ...) -- see comment above /climate/temperature.
 router.post("/climate/wind", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
@@ -1984,6 +2007,7 @@ router.post("/climate/wind", requirePermission("server.world_events"), async (re
   }
 });
 
+// Dead route, live path setClimateFloat(5, ...) -- see comment above /climate/temperature.
 router.post("/climate/fog", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
@@ -2014,6 +2038,7 @@ router.post("/climate/fog", requirePermission("server.world_events"), async (req
   }
 });
 
+// Dead route, live path setClimateFloat(8, ...) -- see comment above /climate/temperature.
 router.post("/climate/clouds", requirePermission("server.world_events"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
@@ -2145,6 +2170,14 @@ router.get("/world/stats", requirePermission("server.world_events"), async (req,
 
 // Save world. admin+technician, matching /api/server/save -- an operational
 // action, not player-facing GM authority.
+// hunt-wave12-2026-08-30 UI-reachability audit: this dedicated route itself
+// is dead -- nothing in client/src calls POST /panel-bridge/world/save
+// directly. Two separate live paths exist instead: Scheduler.tsx's
+// schedulable 'bridge:saveWorld' preset (still this same action, via the
+// /panel-bridge/command passthrough, not this route); and Dashboard.tsx's
+// "Save world" button, which goes through serverApi.save (server.js's own
+// /servers/:id/save-world, over RCON) -- a completely different code path
+// for a similarly-named but independent feature, not a shadow of this one.
 router.post("/world/save", requirePermission("server.control"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
@@ -2294,6 +2327,10 @@ router.post("/message", requirePermission("server.world_events"), async (req, re
 });
 
 // Sandbox options (read-only)
+// hunt-wave12-2026-08-30 UI-reachability audit: dead route -- nothing in
+// client/src calls GET /panel-bridge/sandbox. ServerConfig.tsx reads
+// sandbox options through the passthrough action getAllSandboxOptions
+// instead (a different, broader action, not this route's getSandboxOptions).
 router.get("/sandbox", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res
@@ -3618,6 +3655,10 @@ router.post("/character/import", requirePermission("players.gm_tools"), async (r
 // ============================================
 
 // Give item to player
+// hunt-wave12-2026-08-30 UI-reachability audit: dead route -- nothing in
+// client/src calls it. Players.tsx's "Give items" flow (SpawnBrowser
+// dialog) calls playersApi.addItem instead -- a different API family
+// entirely (players.js's own route, not this file's giveItem action).
 router.post("/players/:username/give-item", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
@@ -3661,6 +3702,8 @@ router.post("/players/:username/give-item", requirePermission("players.gm_tools"
 });
 
 // Heal player
+// Dead route, live path is the bridge.command passthrough -- see the
+// 2026-08-27/2026-08-30 comment above BRIDGE_ACTION_CAPABILITY.
 router.post("/players/:username/heal", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
@@ -3707,6 +3750,9 @@ router.post("/players/:username/kill", requirePermission("players.gm_tools"), as
 });
 
 // Set god mode for player
+// Dead route (as is players.js's own /godmode), live path is the
+// bridge.command passthrough -- see the 2026-08-27/2026-08-30 comment
+// above BRIDGE_ACTION_CAPABILITY.
 router.post("/players/:username/godmode", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
@@ -3737,6 +3783,9 @@ router.post("/players/:username/godmode", requirePermission("players.gm_tools"),
 });
 
 // Set invisible for player
+// Dead route (as is players.js's own /invisible), live path is the
+// bridge.command passthrough -- see the 2026-08-27/2026-08-30 comment
+// above BRIDGE_ACTION_CAPABILITY.
 router.post("/players/:username/invisible", requirePermission("players.gm_tools"), async (req, res) => {
   if (!bridge.isRunning) {
     return res.status(400).json({
