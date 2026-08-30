@@ -6584,6 +6584,18 @@ local function vehicleGet(v, methodName)
     return nil
 end
 
+-- getPartCount/getPartByIndex/getPartById/getBattery/getBatteryCharge live on
+-- zombie.vehicles.VehicleParts, reachable ONLY via vehicle:getParts() -- they
+-- are NOT on the vehicle object itself (zombie.vehicles.BaseVehicle). Every
+-- call to one of those five methods must go through this, or it silently
+-- returns nil despite the method genuinely existing (2026-08-30, Kevin's jar
+-- audit: it just doesn't exist on the object being asked). getParts() can
+-- itself return nil (no parts container), so every caller must still treat
+-- the result as optional.
+local function vehicleParts(vehicle)
+    return PanelBridge.tryGet(vehicle, "getParts")
+end
+
 local function findVehicleById(vehicleId)
     local vehicles = getVehiclesList()
     if not vehicles then return nil end
@@ -6653,6 +6665,10 @@ handlers.getVehiclesDetailed = function(args)
             -- intermediate object a first call returns.
             local sirenModeObj = PanelBridge.tryGet(v, "getLightbarSirenModeObject")
             local sirenLevel = tonumber(PanelBridge.tryGet(sirenModeObj, "get")) or 0
+            -- getBatteryCharge is a VehicleParts method, not a vehicle
+            -- method -- see vehicleParts(). Every other get() call here
+            -- targets a real BaseVehicle method and is unaffected.
+            local parts = vehicleParts(v)
             return {
                 id = get("getId"),
                 x = get("getX"),
@@ -6661,7 +6677,7 @@ handlers.getVehiclesDetailed = function(args)
                 scriptName = get("getScriptName"),
                 type = get("getVehicleType"),
                 speedKmh = get("getCurrentSpeedKmHour") or 0,
-                batteryCharge = get("getBatteryCharge"),
+                batteryCharge = parts and PanelBridge.tryGet(parts, "getBatteryCharge") or nil,
                 fuelPct = get("getRemainingFuelPercentage"),
                 alarmed = get("isAlarmed") == true,
                 sirening = sirenLevel > 0,
@@ -6683,10 +6699,19 @@ handlers.vehicleRepair = function(args)
     if not vehicle then return false, nil, "Vehicle not found" end
 
     local ok, repairedOrErr = pcall(function()
-        local partCount = tonumber(PanelBridge.tryGet(vehicle, "getPartCount")) or 0
+        -- getPartCount/getPartByIndex are VehicleParts methods, not vehicle
+        -- methods -- see vehicleParts(). Before this fix they were called
+        -- directly on `vehicle`, always returned nil, and this handler could
+        -- never repair anything on ANY vehicle regardless of real part
+        -- condition (2026-08-30, Kevin's jar audit).
+        local parts = vehicleParts(vehicle)
+        if not parts then
+            error("Vehicle has no accessible parts container (getParts() returned nothing on this build)")
+        end
+        local partCount = tonumber(PanelBridge.tryGet(parts, "getPartCount")) or 0
         local repaired = 0
         for i = 0, partCount - 1 do
-            local part = PanelBridge.tryGet(vehicle, "getPartByIndex", i)
+            local part = PanelBridge.tryGet(parts, "getPartByIndex", i)
             if part then
                 local item = PanelBridge.tryGet(part, "getInventoryItem")
                 local condition = (item and tonumber(PanelBridge.tryGet(item, "getConditionMax"))) or 100
@@ -6704,7 +6729,17 @@ handlers.vehicleRepair = function(args)
                 end
             end
         end
-        if repaired == 0 then error("No repairable vehicle parts available") end
+        if repaired == 0 then
+            -- Name the REAL reason instead of the old blanket "No repairable
+            -- vehicle parts available", which used to fire on every single
+            -- call (wrong receiver, not an actual absence of parts) and sent
+            -- the operator looking for a vehicle problem that didn't exist.
+            if partCount == 0 then
+                error("This vehicle reports 0 parts -- nothing to repair")
+            else
+                error("Found " .. partCount .. " part(s) but none accepted a repaired condition (setCondition failed on all of them)")
+            end
+        end
         PanelBridge.invoke(vehicle, "updatePartStats")
         PanelBridge.invoke(vehicle, "updateBulletStats")
         return repaired
@@ -6812,8 +6847,12 @@ handlers.vehicleSetFuel = function(args)
 
     local ok, err = pcall(function()
         -- B42: fuel is stored as container content amount on the GasTank part
-        -- Pattern from Vehicles.Create.GasTank / Vehicles.Update.GasTank
-        local part = PanelBridge.tryGet(vehicle, "getPartById", "GasTank")
+        -- Pattern from Vehicles.Create.GasTank / Vehicles.Update.GasTank.
+        -- getPartById is a VehicleParts method, not a vehicle method -- see
+        -- vehicleParts() (2026-08-30, Kevin's jar audit: wrong receiver meant
+        -- this always fell through to the B41 fallback below, silently).
+        local parts = vehicleParts(vehicle)
+        local part = parts and PanelBridge.tryGet(parts, "getPartById", "GasTank")
         local capacity = part and tonumber(PanelBridge.tryGet(part, "getContainerCapacity"))
         if capacity and capacity > 0 then
             local amount = capacity * pct / 100
@@ -6855,17 +6894,31 @@ handlers.vehicleSetBattery = function(args)
     if not charge then return false, nil, "charge required (0-100)" end
     charge = math.min(math.max(charge, 0), 100)
 
+    -- getBattery is a VehicleParts method, not a vehicle method -- see
+    -- vehicleParts() (2026-08-30, Kevin's jar audit). Before this fix
+    -- getBattery was called directly on `vehicle`, always returned nil, so
+    -- the primary VehicleUtils.chargeBattery path below could never even be
+    -- attempted -- every call fell straight to the B41 fallback.
+    local parts = vehicleParts(vehicle)
+
     local ok, err = pcall(function()
-        local battery = PanelBridge.tryGet(vehicle, "getBattery")
+        local battery = parts and PanelBridge.tryGet(parts, "getBattery")
         local item = battery and PanelBridge.tryGet(battery, "getInventoryItem")
         local currentUses = item and tonumber(PanelBridge.tryGet(item, "getCurrentUsesFloat"))
         if currentUses and VehicleUtils and VehicleUtils.chargeBattery then
             VehicleUtils.chargeBattery(vehicle, charge / 100 - currentUses)
             return
         end
-        -- B41 fallback (also used if B42 battery has no inventory item)
+        -- setBatteryCharge does NOT exist anywhere in the B42 vehicle API
+        -- (BaseVehicle, VehicleParts, VehiclePart -- no near-miss at all,
+        -- 2026-08-30 jar audit). This is not a wrong-receiver bug like the
+        -- others in this handler; rerouting the receiver cannot fix it. This
+        -- call is kept only as a last-ditch attempt in case a future PZ
+        -- build re-adds an equivalent method under this name; on every
+        -- current build it is expected to fail, and the error below says so
+        -- honestly instead of implying a real setter merely misfired.
         if not PanelBridge.invoke(vehicle, "setBatteryCharge", charge) then
-            error("No battery setter available")
+            error("No working battery setter on this build: the battery item route needs a battery with an inventory item (none found), and setBatteryCharge does not exist in the B42 vehicle API")
         end
     end)
     if not ok then return false, nil, "Failed to set battery: " .. tostring(err) end
@@ -6876,7 +6929,10 @@ handlers.vehicleSetBattery = function(args)
     -- scale (the B42 path applies a computed DELTA via VehicleUtils, so
     -- exact-equality would be brittle), not a guess about game mechanics.
     local BATTERY_TOLERANCE = 1.0
-    local okGet, actualCharge = PanelBridge.invoke(vehicle, "getBatteryCharge")
+    local okGet, actualCharge = false, nil
+    if parts then
+        okGet, actualCharge = PanelBridge.invoke(parts, "getBatteryCharge")
+    end
     local verified
     if not okGet or tonumber(actualCharge) == nil then
         verified = nil
@@ -6993,10 +7049,17 @@ handlers.vehicleHotwire = function(args)
             table.insert(actions, "keysInIgnition")
         end
 
+        -- getPartCount/getPartByIndex/getPartById are VehicleParts methods,
+        -- not vehicle methods -- see vehicleParts() (2026-08-30, Kevin's jar
+        -- audit: wrong receiver meant doors never unlocked and the engine
+        -- condition was never actually checked, though "unlocked" was still
+        -- reported since setTrunkLocked below is genuinely a vehicle method).
+        local parts = vehicleParts(vehicle)
+
         -- 2. Unlock all doors
-        local partCount = tonumber(PanelBridge.tryGet(vehicle, "getPartCount")) or 0
+        local partCount = parts and tonumber(PanelBridge.tryGet(parts, "getPartCount")) or 0
         for i = 0, partCount - 1 do
-            local part = PanelBridge.tryGet(vehicle, "getPartByIndex", i)
+            local part = PanelBridge.tryGet(parts, "getPartByIndex", i)
             if part then
                 local door = PanelBridge.tryGet(part, "getDoor")
                 if door then
@@ -7008,7 +7071,7 @@ handlers.vehicleHotwire = function(args)
         table.insert(actions, "unlocked")
 
         -- 3. Ensure engine part has enough condition to start
-        local enginePart = PanelBridge.tryGet(vehicle, "getPartById", "Engine")
+        local enginePart = parts and PanelBridge.tryGet(parts, "getPartById", "Engine")
         local engineCond = enginePart and tonumber(PanelBridge.tryGet(enginePart, "getCondition"))
         if engineCond and engineCond < 10 then
             if PanelBridge.invoke(enginePart, "setCondition", 20) then

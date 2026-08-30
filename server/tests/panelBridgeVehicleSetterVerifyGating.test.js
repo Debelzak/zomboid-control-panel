@@ -24,6 +24,23 @@ import { loadPanelBridge } from './helpers/panelBridgeLua.js';
 // siren stub no longer defines getLightbarSirenMode at all; a stub for a
 // method the real game doesn't have would just reintroduce the same false
 // assumption this correction exists to close.
+//
+// CORRECTED AGAIN 2026-08-30 (bridge-vehicle-parts-wrong-receiver, same night):
+// getPartById/getBattery/getBatteryCharge moved to a separate FakeVehicleParts
+// table (see below) since they live on VehicleParts, not the vehicle -- and a
+// THIRD instance of this file's own pattern (a stub built from what the code
+// believed rather than what the jar declares) surfaced while checking for it:
+// Kevin's Pass 2 audit already found setRemainingFuelPercentage absent from
+// the entire B42 vehicle API too, dead-but-harmless only because the real
+// GasTank-container path (routed through getPartById, now fixed) works. This
+// stub's old FakeVehicleParts.getPartById returned nil unconditionally, so
+// "vehicleSetFuel reports verified=true" only ever exercised the DEAD
+// fallback -- a scenario that cannot happen on a real B42 server -- and never
+// once touched the real primary path. FakeGasTank below fixes that: the
+// success case now goes through getContainerCapacity/setContainerContentAmount
+// like the genuine B42 write does, and getRemainingFuelPercentage reads back
+// its actual state instead of an independent field, so a real regression in
+// the primary path would show up here.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LUA_PATH = path.join(
@@ -62,12 +79,45 @@ function FakeVehicle:getLightbarSirenModeObject()
 end
 function FakeVehicle:setTrunkLocked(v) if self.sticks then self.trunkLocked = v end end
 function FakeVehicle:isTrunkLocked() return self.trunkLocked end
-function FakeVehicle:getPartById(id) return nil end
+-- setRemainingFuelPercentage does not exist anywhere in the real B42 vehicle
+-- API (Kevin's Pass 2 jar audit) -- kept here only because
+-- handlers.vehicleSetFuel still attempts it as a B41 fallback when the
+-- GasTank path is unavailable; this stub models the (unrealistic) case where
+-- it happens to work, same as it always implicitly did before that finding.
+-- The real, working path is FakeGasTank below -- getRemainingFuelPercentage
+-- reads FakeGasTank's actual state, not this field, so a test relying on
+-- this fallback alone would fail to prove anything real.
 function FakeVehicle:setRemainingFuelPercentage(v) if self.sticks then self.fuelPct = v end end
-function FakeVehicle:getRemainingFuelPercentage() return self.fuelPct end
-function FakeVehicle:getBattery() return nil end
+function FakeVehicle:getRemainingFuelPercentage() return (FakeGasTank.amount / FakeGasTank.capacity) * 100 end
+-- setBatteryCharge does not exist anywhere in the real B42 vehicle API
+-- (2026-08-30 jar audit) -- kept here only because handlers.vehicleSetBattery
+-- still attempts it as a last-ditch call before giving an honest error; this
+-- stub models the (unrealistic) case where it happens to work, same as it
+-- always implicitly did before that finding.
 function FakeVehicle:setBatteryCharge(v) if self.sticks then self.batteryCharge = v end end
-function FakeVehicle:getBatteryCharge() return self.batteryCharge end
+
+-- getPartById/getBattery/getBatteryCharge live on VehicleParts, reached only
+-- via vehicle:getParts() -- NOT on the vehicle object itself. getBatteryCharge
+-- reads back FakeVehicle.batteryCharge directly since setBatteryCharge (the
+-- only thing that can change it in this stub) still writes there.
+-- FakeGasTank models the real B42 fuel path (container capacity/content
+-- amount) so vehicleSetFuel's success case exercises the actual working
+-- mechanism instead of the dead setRemainingFuelPercentage fallback.
+FakeGasTank = {
+  capacity = 60,
+  amount = ${fuelPct} / 100 * 60,
+}
+function FakeGasTank:getContainerCapacity() return self.capacity end
+function FakeGasTank:setContainerContentAmount(v) if FakeVehicle.sticks then self.amount = v end end
+
+FakeVehicleParts = {}
+function FakeVehicleParts:getPartById(id)
+  if id == "GasTank" then return FakeGasTank end
+  return nil
+end
+function FakeVehicleParts:getBattery() return nil end
+function FakeVehicleParts:getBatteryCharge() return FakeVehicle.batteryCharge end
+function FakeVehicle:getParts() return FakeVehicleParts end
 
 FakeVehicleList = { FakeVehicle }
 function FakeVehicleList:size() return 1 end
