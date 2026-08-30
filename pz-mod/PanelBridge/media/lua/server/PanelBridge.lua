@@ -6115,32 +6115,37 @@ handlers.spawnHordeBehindPlayer = function(args)
     -- Get player facing direction and compute "behind" offset. getDir()
     -- returns the real IsoDirections Java enum, not a string -- vanilla Lua
     -- (client AND server: e.g. server/Animal/ISScytheGrassCursor.lua,
-    -- ISPickDungCursor.lua) always keys/compares it by IDENTITY
-    -- (`dir == IsoDirections.N`), never via tostring(). This map used to be
-    -- string-keyed off `tostring(dir)`, which never matched any of these
-    -- keys -- `facing` silently defaulted to N every time regardless of the
-    -- player's real facing, so "behind" was always S. Identity-keyed here
-    -- instead, matching the confirmed vanilla convention.
+    -- ISPickDungCursor.lua) always COMPARES it by identity (`dir ==
+    -- IsoDirections.N`), never via tostring(). The previous version of this
+    -- fix replaced a string-keyed `dirMap[tostring(dir)]` lookup with an
+    -- identity-keyed `dirMap[dir]` one -- but a TABLE LOOKUP is a different
+    -- runtime operation from an `==` COMPARISON: it requires Kahlua to hash
+    -- a Java object consistently as a Lua table key, which no vanilla site
+    -- was ever found doing (every citation above is a comparison, not a
+    -- key). If that assumption were wrong, `dirMap[dir]` would return nil
+    -- for every direction and reproduce the EXACT original bug (silent
+    -- fallback to facing=N, horde always spawns due south) -- indistinguishable
+    -- from working, since nothing here could tell the two failure modes
+    -- apart. Rewritten as an if/elseif chain on `==` instead: this uses only
+    -- the exact operation the vanilla citations above demonstrate, with no
+    -- table-keying assumption at all. Offsets below are the "behind" vector
+    -- directly (facing negated), one branch per IsoDirections member.
     local dir = player:getDir()
-    -- Direction offsets: the vector the player is FACING
-    local dirMap = {
-        [IsoDirections.N]  = { dx =  0, dy = -1 },
-        [IsoDirections.NE] = { dx =  1, dy = -1 },
-        [IsoDirections.E]  = { dx =  1, dy =  0 },
-        [IsoDirections.SE] = { dx =  1, dy =  1 },
-        [IsoDirections.S]  = { dx =  0, dy =  1 },
-        [IsoDirections.SW] = { dx = -1, dy =  1 },
-        [IsoDirections.W]  = { dx = -1, dy =  0 },
-        [IsoDirections.NW] = { dx = -1, dy = -1 },
-    }
-    -- "Behind" is the opposite of the facing direction
-    local facing = (dir and dirMap[dir]) or { dx = 0, dy = -1 }
-    local behindX = -facing.dx
-    local behindY = -facing.dy
+    local behindX, behindY
+    if     dir == IsoDirections.N  then behindX, behindY =  0,  1
+    elseif dir == IsoDirections.NE then behindX, behindY = -1,  1
+    elseif dir == IsoDirections.E  then behindX, behindY = -1,  0
+    elseif dir == IsoDirections.SE then behindX, behindY = -1, -1
+    elseif dir == IsoDirections.S  then behindX, behindY =  0, -1
+    elseif dir == IsoDirections.SW then behindX, behindY =  1, -1
+    elseif dir == IsoDirections.W  then behindX, behindY =  1,  0
+    elseif dir == IsoDirections.NW then behindX, behindY =  1,  1
+    else   behindX, behindY =  0,  1 -- unknown/nil facing: default as if facing N (matches original intent)
+    end
     -- Human-readable direction for the response/logs only -- never fed back
-    -- into the dirMap lookup above. Vanilla always calls :toString()
-    -- explicitly for this (never bare tostring()); pcall-guarded the same
-    -- way this file treats any not-yet-vanilla-confirmed probe.
+    -- into the branch above. Vanilla always calls :toString() explicitly
+    -- for this (never bare tostring()); pcall-guarded the same way this
+    -- file treats any not-yet-vanilla-confirmed probe.
     local dirName = "unknown"
     if dir then
         local ok, name = pcall(function() return dir:toString() end)
