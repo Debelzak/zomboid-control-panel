@@ -141,6 +141,7 @@ const PINNED_UNTEMPLATED_ACTIONS = [
   "spawnHordeNearPlayer",
   "spawnVehicleAt",
   "startRain",
+  "stopHelicopterEvent",
   "stopRain",
   "stopWeather",
   "teleportPlayer",

@@ -124,6 +124,7 @@ const PINNED_VALID_ACTIONS = [
   "getTimeSpeed",
   "setTimeSpeed",
   "triggerHelicopterEvent",
+  "stopHelicopterEvent",
   "triggerSwarmEvent",
   "runEventSequence",
   "getInfrastructureSnapshot",

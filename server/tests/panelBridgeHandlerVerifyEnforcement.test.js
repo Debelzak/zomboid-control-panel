@@ -139,6 +139,7 @@ const CANNOT_VERIFY_OR_EQUIVALENT = {
   sendToAdminChat: 'Same ceiling as sendToServerChat.',
   sendToGeneralChat: 'Same ceiling as sendToServerChat.',
   triggerHelicopterEvent: 'No observable state confirms a helicopter spawned; pcall-not-throwing on the single real API (testHelicopter(), zero-arg, void return -- the four prior fallback tiers were all fabricated and removed 2026-08-30) is the ceiling.',
+  stopHelicopterEvent: 'Same ceiling as triggerHelicopterEvent, same reason: no exposed query for helicopter-event state exists anywhere in the confirmed jar, so pcall-not-throwing on the single real API (endHelicopter(), zero-arg, void return, confirmed 2026-08-30 via javap against the real B42 jar) is the ceiling.',
 
   // PROVISIONAL -- not yet re-audited against the getFinalValue()/
   // isEnableAdmin() read-back pattern that handlers.getClimateFloats
