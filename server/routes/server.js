@@ -1258,6 +1258,114 @@ export async function refreshLaunchTargetBeforeStart(
   return { scriptBackupWarnings };
 }
 
+// Once the process/container is confirmed running, wait for RCON to come up
+// (PZ takes 60-180s to fully start) by polling for the port rather than
+// blindly waiting, and clear serverStarting when done either way. Shared by
+// both the native/managed-lifecycle path (called once the 1s scan-poll below
+// confirms isRunning) and the Docker path (called immediately, since Docker's
+// own start action already confirms the container is up -- see the /start
+// handler's own comment).
+async function waitForRconAfterStart({ rconService, discordBot }) {
+  log.info("Waiting for RCON to be ready - starting port polling...");
+
+  await rconService.loadConfig(); // Ensure clean config
+  const rconHost = rconService.config.host || "127.0.0.1";
+  const rconPort = rconService.config.port || 27015;
+  log.info(`Monitoring TCP port ${rconHost}:${rconPort} for activity...`);
+
+  let rconConnected = false;
+  let rconConfigured = false;
+  let portOpen = false;
+
+  // Poll port for up to 5 minutes (300 seconds) - checking every 5 seconds
+  const maxPollAttempts = 60;
+
+  for (let i = 0; i < maxPollAttempts; i++) {
+    // 1. Check if port is open (if not already found)
+    if (!portOpen) {
+      portOpen = await rconService.checkPortOpen(rconHost, rconPort);
+
+      if (!portOpen) {
+        log.debug(
+          `RCON startup: Port ${rconHost}:${rconPort} not yet open (poll ${i + 1}/${maxPollAttempts})...`,
+        );
+        // Wait 5 seconds before next check
+        await new Promise((r) => setTimeout(r, 5000));
+
+        // Periodically try to configure RCON (Wait for .ini to appear)
+        if (!rconConfigured && i % 3 === 0) {
+          // Every 15s (3 * 5s)
+          rconConfigured = await ensureRconConfigured();
+          if (rconConfigured) {
+            log.info(
+              "RCON settings auto-configured in server .ini file during startup wait",
+            );
+          }
+        }
+        continue;
+      }
+      log.info(
+        `RCON port ${rconHost}:${rconPort} is now open! Initiating connection...`,
+      );
+    }
+
+    // 2. Port is open, try to connect
+    // Reset connection state before attempt to clear any stalled state
+    if (rconService.forceResetConnectionState) {
+      rconService.forceResetConnectionState();
+    }
+
+    try {
+      // Attempt connection with a 15s timeout
+      const connectPromise = rconService.connect();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Connection attempt timed out after 15s")),
+          15000,
+        ),
+      );
+
+      await Promise.race([connectPromise, timeoutPromise]);
+
+      if (rconService.connected) {
+        log.info("RCON connected successfully after server startup");
+        rconConnected = true;
+        break;
+      } else {
+        log.warn(
+          `RCON connected to port but authentication/handshake failed. Retrying...`,
+        );
+        // Wait a bit before retry if port is open but auth fails (service might be starting up)
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    } catch (e) {
+      log.warn(`RCON connection attempt failed: ${e.message}`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+
+  // Log completion status
+  if (rconConnected) {
+    log.info("RCON startup sequence completed - connected");
+    discordBot
+      ?.sendEventNotification("serverStart", {})
+      .catch((err) =>
+        log.debug(`Discord serverStart notification failed: ${err.message}`),
+      );
+  } else {
+    log.warn(
+      "RCON startup sequence completed - NOT connected (auto-reconnect will keep trying every 30s)",
+    );
+  }
+
+  // Clear the flag when done - now auto-reconnect can take over
+  if (rconService.setServerStarting) {
+    rconService.setServerStarting(false);
+  } else {
+    rconService.serverStarting = false;
+  }
+}
+
 // Start server
 router.post("/start", requirePermission("server.control"), async (req, res) => {
   try {
@@ -1335,6 +1443,29 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
       rconService.serverStarting = true;
     }
 
+    // Docker's own start action already confirms the container is up before
+    // runManagedLifecycle() returns (dockerClient.js's lifecycleTimeoutMs
+    // comment: "Docker answers only once the action completes") -- unlike
+    // the native path below, there is nothing further to poll for. The
+    // scan-poll below is ALSO a local host process scan, which for a
+    // container-managed server can never see PZ running as PID 1 of a
+    // *different* container (GH#114) -- polling it here would just run 30
+    // times and always time out, exactly the gap this fix closes. Emit
+    // immediately and go straight to waiting for RCON, skipping the poll
+    // entirely for this path.
+    if (managed.handled) {
+      if (io) io.emit("server:status", { running: true });
+      log.info("Container start confirmed by Docker; skipping local process poll");
+      waitForRconAfterStart({
+        rconService,
+        discordBot: req.app.get("discordBot"),
+      }).catch((err) =>
+        log.error(`Post-start RCON wait failed: ${err.message}`),
+      );
+      res.json(result);
+      return;
+    }
+
     // Poll for server to actually be running (takes a few seconds to start)
     let attempts = 0;
     const maxAttempts = 30; // 30 seconds max
@@ -1384,114 +1515,7 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
           clearInterval(pollInterval);
           if (io) io.emit("server:status", { running: true });
           log.info("Server detected as running");
-
-          // Wait for RCON to be ready (PZ takes 60-180s to fully start)
-          // Look for open port instead of blindly waiting
-          // Keep serverStarting=true the whole time to block auto-reconnect
-          log.info("Waiting for RCON to be ready - starting port polling...");
-
-          await rconService.loadConfig(); // Ensure clean config
-          const rconHost = rconService.config.host || "127.0.0.1";
-          const rconPort = rconService.config.port || 27015;
-          log.info(
-            `Monitoring TCP port ${rconHost}:${rconPort} for activity...`,
-          );
-
-          let rconConnected = false;
-          let rconConfigured = false;
-          let portOpen = false;
-
-          // Poll port for up to 5 minutes (300 seconds) - checking every 5 seconds
-          const maxPollAttempts = 60;
-
-          for (let i = 0; i < maxPollAttempts; i++) {
-            // 1. Check if port is open (if not already found)
-            if (!portOpen) {
-              portOpen = await rconService.checkPortOpen(rconHost, rconPort);
-
-              if (!portOpen) {
-                log.debug(
-                  `RCON startup: Port ${rconHost}:${rconPort} not yet open (poll ${i + 1}/${maxPollAttempts})...`,
-                );
-                // Wait 5 seconds before next check
-                await new Promise((r) => setTimeout(r, 5000));
-
-                // Periodically try to configure RCON (Wait for .ini to appear)
-                if (!rconConfigured && i % 3 === 0) {
-                  // Every 15s (3 * 5s)
-                  rconConfigured = await ensureRconConfigured();
-                  if (rconConfigured) {
-                    log.info(
-                      "RCON settings auto-configured in server .ini file during startup wait",
-                    );
-                  }
-                }
-                continue;
-              }
-              log.info(
-                `RCON port ${rconHost}:${rconPort} is now open! Initiating connection...`,
-              );
-            }
-
-            // 2. Port is open, try to connect
-            // Reset connection state before attempt to clear any stalled state
-            if (rconService.forceResetConnectionState) {
-              rconService.forceResetConnectionState();
-            }
-
-            try {
-              // Attempt connection with a 15s timeout
-              const connectPromise = rconService.connect();
-              const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(
-                  () =>
-                    reject(new Error("Connection attempt timed out after 15s")),
-                  15000,
-                ),
-              );
-
-              await Promise.race([connectPromise, timeoutPromise]);
-
-              if (rconService.connected) {
-                log.info("RCON connected successfully after server startup");
-                rconConnected = true;
-                break;
-              } else {
-                log.warn(
-                  `RCON connected to port but authentication/handshake failed. Retrying...`,
-                );
-                // Wait a bit before retry if port is open but auth fails (service might be starting up)
-                await new Promise((r) => setTimeout(r, 5000));
-              }
-            } catch (e) {
-              log.warn(`RCON connection attempt failed: ${e.message}`);
-              await new Promise((r) => setTimeout(r, 5000));
-            }
-          }
-
-          // Log completion status
-          if (rconConnected) {
-            log.info("RCON startup sequence completed - connected");
-            req.app
-              .get("discordBot")
-              ?.sendEventNotification("serverStart", {})
-              .catch((err) =>
-                log.debug(
-                  `Discord serverStart notification failed: ${err.message}`,
-                ),
-              );
-          } else {
-            log.warn(
-              "RCON startup sequence completed - NOT connected (auto-reconnect will keep trying every 30s)",
-            );
-          }
-
-          // Clear the flag when done - now auto-reconnect can take over
-          if (rconService.setServerStarting) {
-            rconService.setServerStarting(false);
-          } else {
-            rconService.serverStarting = false;
-          }
+          await waitForRconAfterStart({ rconService, discordBot: req.app.get("discordBot") });
         } else if (attempts >= maxAttempts) {
           pollCleared = true;
           clearInterval(pollInterval);
