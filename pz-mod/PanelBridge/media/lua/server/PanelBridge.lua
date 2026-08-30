@@ -2560,11 +2560,21 @@ handlers.getClimateFloats = function(args)
         { id = 12, name = "FLOAT_HUMIDITY" }
     }
 
+    -- Each float is read inside its own pcall -- this loop previously had NO
+    -- pcall protection at all (not merely a wide boundary shared across all
+    -- 13 floats, an absent catch entirely), so a single float object's
+    -- accessor throwing crashed this whole handler uncaught, straight past
+    -- to the dispatcher's outer pcall as a generic "Handler crashed: ..."
+    -- instead of a clean ok=false, and took every OTHER float down with it.
+    -- Events.tsx polls this handler every 10s, making it the most-invoked
+    -- one this fix touches.
     local floats = {}
+    local skipped = 0
     for _, info in ipairs(floatIds) do
-        local cf = climate:getClimateFloat(info.id)
-        if cf then
-            table.insert(floats, {
+        local ok, entry = pcall(function()
+            local cf = climate:getClimateFloat(info.id)
+            if not cf then return nil end
+            return {
                 id = info.id,
                 name = info.name,
                 actualName = cf:getName(),
@@ -2572,11 +2582,16 @@ handlers.getClimateFloats = function(args)
                 min = cf:getMin(),
                 max = cf:getMax(),
                 isAdminEnabled = PanelBridge.safeGet(cf, "isEnableAdmin", false)
-            })
+            }
+        end)
+        if ok and entry then
+            table.insert(floats, entry)
+        else
+            skipped = skipped + 1
         end
     end
 
-    return true, { floats = floats }
+    return true, { floats = floats, skipped = skipped }
 end
 
 -- ============================================
