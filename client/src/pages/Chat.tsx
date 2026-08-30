@@ -498,7 +498,7 @@ export default function Chat() {
                     <Button
                       onClick={sendMessage}
                       disabled={sending || !message.trim() || !canSendChat}
-                      className="h-10 min-w-20 sm:min-w-24 gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em]"
+                      className="h-10 min-w-20 sm:min-w-24 gap-1.5 font-mono text-[11px] uppercase tracking-[0.18em] disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
                     >
                       {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Send className="w-3.5 h-3.5" />{t('input.sendButton')}</>}
                     </Button>

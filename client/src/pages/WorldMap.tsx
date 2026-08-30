@@ -3044,9 +3044,12 @@ export default function WorldMap() {
           </div>
         </div>
 
-        {/* Dossier — bottom-right (selected player) */}
+        {/* Dossier — bottom-right (selected player). Raised above the HUD
+            coordinate bar on narrow viewports so the two fixed-position
+            overlays stack instead of colliding; side-by-side once there's
+            room (>= sm). */}
         {selectedPlayer && (
-          <div className="absolute bottom-3 right-3 z-10 w-60">
+          <div className="absolute right-3 z-10 w-60 bottom-14 sm:bottom-3">
             <div className="relative rounded-md border border-border/55 bg-card/90 backdrop-blur-md shadow-lg overflow-hidden">
               <span aria-hidden className="pointer-events-none absolute top-0 left-0 h-2 w-2 border-l-2 border-t-2 border-primary/50" />
               <span aria-hidden className="pointer-events-none absolute top-0 right-0 h-2 w-2 border-r-2 border-t-2 border-primary/50" />

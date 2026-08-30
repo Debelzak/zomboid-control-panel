@@ -607,8 +607,8 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
           </div>
           <span className="text-xs text-muted-foreground">{timestamp}</span>
         </div>
-        <div className="overflow-x-auto -mx-1">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto -mx-1 pb-1 [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)]">
+          <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b border-border/60 text-left">
                 <th className="pb-2 pr-3 text-xs font-medium text-muted-foreground">{t('resultDisplay.idHeader')}</th>
