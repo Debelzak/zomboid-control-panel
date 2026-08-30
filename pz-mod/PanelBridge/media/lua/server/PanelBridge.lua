@@ -3096,13 +3096,44 @@ handlers.getPlayerDetails = function(args)
 
         -- Get health if available
         if bodyDamage then
+            -- getIsBleeding does not exist anywhere on BodyDamage (Kevin's
+            -- jar audit, 2026-08-30) -- there is no boolean bleeding getter
+            -- at all. The real method is getNumPartsBleeding() -> int; this
+            -- is a SEMANTIC REINTERPRETATION (a count becoming a boolean),
+            -- not a rename, so it's named explicitly rather than silently
+            -- swapping method names under the same field.
+            local numPartsBleeding = get(bodyDamage, "getNumPartsBleeding")
+
+            -- getTemperature does not exist directly on BodyDamage either --
+            -- it is two hops: bodyDamage:getThermoregulator():getCoreTemperature().
+            -- getCoreTemperatureUI() also exists on the same object, but
+            -- Kevin could not confirm from the descriptor alone whether it
+            -- rounds or clamps the value, so this uses the raw getter for
+            -- an API response rather than a UI-display one.
+            local thermoregulator = PanelBridge.tryGet(bodyDamage, "getThermoregulator")
+
+            -- NOT the `a and b or c` idiom: when numPartsBleeding is 0, that
+            -- idiom's `b` (numPartsBleeding > 0) evaluates to `false`, which
+            -- is itself falsy in Lua, so the whole expression would fall
+            -- through to `c` and silently produce nil instead of the real
+            -- `false` -- this file's own recurring lesson about that idiom,
+            -- applied here before it could bite a THIRD time tonight.
+            local isBleeding = nil
+            if numPartsBleeding ~= nil then
+                isBleeding = numPartsBleeding > 0
+            end
+
             pd.health = {
                 overallBodyHealth = get(bodyDamage, "getOverallBodyHealth"),
                 isInfected = get(bodyDamage, "IsInfected"),
-                isBleeding = get(bodyDamage, "getIsBleeding"),
+                isBleeding = isBleeding,
                 health = get(bodyDamage, "getHealth"),
-                temperature = get(bodyDamage, "getTemperature"),
-                wetness = get(bodyDamage, "getWetness")
+                temperature = thermoregulator and get(thermoregulator, "getCoreTemperature") or nil
+                -- wetness deliberately removed: no whole-body wetness
+                -- concept exists anywhere on BodyDamage under any name at
+                -- any hop (Kevin's jar audit) -- only mutators, zero
+                -- getters. Not substituted with a near-miss from a
+                -- different object; the field is simply gone.
             }
         end
 
