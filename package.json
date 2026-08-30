@@ -19,7 +19,8 @@
     "test:watch": "vitest server/tests",
     "test:server": "vitest run server/tests",
     "test:client": "cd client && npx vitest run",
-    "lint:server": "eslint server eslint-rules --max-warnings=0"
+    "lint:server": "eslint server eslint-rules --max-warnings=0",
+    "ui:shot-tour": "node scripts/ui-shot-tour.mjs"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -54,6 +55,7 @@
     "globals": "^14.0.0",
     "jose": "^6.2.10",
     "nodemon": "^3.1.14",
+    "playwright": "^1.62.1",
     "vitest": "^4.1.11"
   },
   "overrides": {

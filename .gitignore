@@ -77,3 +77,7 @@ data/server-secrets/
 .agents/
 .claude/
 skills-lock.json
+
+# scripts/ui-shot-tour.mjs output (regenerable; Screenshots/ is the tracked,
+# hand-curated README gallery -- this is a disposable full-app baseline).
+.ui-tour/
