@@ -3595,7 +3595,21 @@ handlers.exportPlayerData = function(args)
                                     if subContainer then
                                         local subItems = serializeInventory(subContainer)
                                         if #subItems > 0 then
-                                            bagItems[worn.location or worn.fullType] = subItems
+                                            -- 2026-08-30, total-audit batch 3, item 3:
+                                            -- worn.location is item:getLocation()'s raw
+                                            -- return value (a Java object), used here
+                                            -- un-normalized as a Lua table key. Lua table
+                                            -- keys compare by reference for non-primitive
+                                            -- values, and json.encode's tostring(key) only
+                                            -- runs at final serialization -- AFTER this
+                                            -- grouping decision has already been made -- so
+                                            -- it can't fix a key that never merged/compared
+                                            -- the way a stable string would have.
+                                            -- tostring() here, before the key is used, so
+                                            -- the same conceptual location always produces
+                                            -- the same key.
+                                            local locationKey = worn.location and tostring(worn.location) or worn.fullType
+                                            bagItems[locationKey] = subItems
                                             bagCount = bagCount + #subItems
                                         end
                                     end
