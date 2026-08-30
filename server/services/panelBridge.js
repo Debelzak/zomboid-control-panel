@@ -69,6 +69,7 @@ class PanelBridge extends EventEmitter {
       lastConsumedResultSeq: 0
     };
     this.outboxStuckState = { seq: null, since: 0, nextCheckAt: 0 };
+    this.inboxResyncNextCheckAt = 0;
     this.lastQueueCleanupAt = 0;
     this.modStatus = null;
     this.previousPlayers = new Set(); // Track previous player list for connect/disconnect detection
@@ -783,6 +784,7 @@ class PanelBridge extends EventEmitter {
    */
   pollResults() {
     this.pollQueueResults();
+    this.tryResyncInboxCommandCursor();
     this.pollLegacyResults();
     this.cleanupResultTracking();
     this.cleanupQueueFilesIfNeeded();
@@ -838,6 +840,68 @@ class PanelBridge extends EventEmitter {
     this.queueState.lastConsumedResultSeq = luaHighWater;
     this.persistQueueState();
     this.outboxStuckState.seq = null;
+    return true;
+  }
+
+  /**
+   * Catches this process's nextCommandSeq up to Lua's actual lastCommandSeq
+   * when the mod has processed further than this process ever wrote --
+   * which happens when a DIFFERENT process (another panel instance pointed
+   * at the same bridge folder) wrote some of those commands. Without this,
+   * ensureQueueProtocol()'s own Math.max reconciliation against Lua's state
+   * only ever runs ONCE per process lifetime (gated by queueState.initialized,
+   * checked at bridge start) -- after that, nextCommandSeq lives purely in
+   * memory, incremented one command at a time, with nothing to notice if
+   * Lua's cursor moves past it from elsewhere. Four such processes sharing
+   * one bridge folder is exactly how commandTimeoutMs-length hangs against an
+   * idle server with zero players turned out to be a live queue desync, not
+   * contention (2026-08-30 bridge-queue-timing investigation).
+   *
+   * Mirrors tryResyncOutboxCursor's shape for the opposite (results)
+   * direction, but there's no "stuck waiting on a missing file" signal to
+   * gate on here -- Node writes commands, it doesn't wait for them to be
+   * written -- so this just re-checks on a plain interval instead of a
+   * stuck-then-recheck one. Forward-only: it only ever raises nextCommandSeq,
+   * never lowers it, so it can't undo real in-flight work even if this read
+   * races a moment where Lua's file is stale.
+   */
+  tryResyncInboxCommandCursor() {
+    const now = Date.now();
+    if (now < this.inboxResyncNextCheckAt) {
+      return false;
+    }
+    this.inboxResyncNextCheckAt = now + this.queue.resyncCheckIntervalMs;
+
+    const luaStateFile = this.resolveModFile('queue-state-lua.json');
+    // codeql[js/path-injection] this.bridgePath is set only by configure()/autoDetect(), both of which validate their input before assignment (route-layer isAbsolute+blocklist guard, or autoDetect's regex on serverName) -- this line only re-reads the already-validated field.
+    if (!luaStateFile || !fs.existsSync(luaStateFile)) {
+      return false;
+    }
+
+    let luaState;
+    try {
+      // codeql[js/path-injection] this.bridgePath is set only by configure()/autoDetect(), both of which validate their input before assignment (route-layer isAbsolute+blocklist guard, or autoDetect's regex on serverName) -- this line only re-reads the already-validated field.
+      luaState = JSON.parse(fs.readFileSync(luaStateFile, 'utf-8') || '{}');
+    } catch (error) {
+      log.debug(`Could not parse mod queue state during inbox resync check: ${error.message}`);
+      return false;
+    }
+
+    const luaLastCommandSeq = Number(luaState.lastCommandSeq);
+    if (!Number.isFinite(luaLastCommandSeq) || luaLastCommandSeq < 0) {
+      return false;
+    }
+
+    const luaNextExpected = luaLastCommandSeq + 1;
+    if (luaNextExpected <= this.queueState.nextCommandSeq) {
+      // Lua hasn't gotten ahead of what this process expects -- normal case,
+      // nothing to catch up.
+      return false;
+    }
+
+    log.warn(`Command sequence desync detected: mod has processed through ${luaLastCommandSeq} but this process only expected to reach ${this.queueState.nextCommandSeq - 1}; advancing to avoid reusing already-consumed sequence numbers`);
+    this.queueState.nextCommandSeq = luaNextExpected;
+    this.persistQueueState();
     return true;
   }
 
