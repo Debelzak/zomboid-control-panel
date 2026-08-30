@@ -2975,6 +2975,28 @@ handlers.triggerHelicopterEvent = function(args)
     }
 end
 
+-- zombie.characters.Stats has no getHunger/getThirst/getFatigue/etc -- it
+-- works through ONE generic enum-parameterized getter, stats:get(CharacterStat.X),
+-- confirmed against the real jar (get(Lzombie/characters/CharacterStat;)F)
+-- and against real vanilla SERVER-side Lua that already calls it this exact
+-- way (media/lua/server/ClientCommands.lua, XpSystem/XpUpdate.lua,
+-- Farming/SFarmingSystem.lua -- none of them import/require CharacterStat,
+-- it is a bare global in PZ's shared Lua environment the same way getWorld()
+-- or Events is, reachable from any server-side file including this one).
+-- 2026-08-30, Kevin's jar audit + follow-up.
+--
+-- Guards the ENUM FIELD LOOKUP itself in its own pcall, not just the method
+-- call after it -- CharacterStat[enumName] is a plain Lua table index, not
+-- something PanelBridge.invoke's pcall would catch if CharacterStat or one
+-- of its fields were ever absent on some future build. Returns nil (never a
+-- plausible-looking 0) on any failure at either step.
+local function statGet(stats, enumName)
+    if not stats then return nil end
+    local ok, enumValue = pcall(function() return CharacterStat[enumName] end)
+    if not ok or enumValue == nil then return nil end
+    return PanelBridge.tryGet(stats, "get", enumValue)
+end
+
 -- Get detailed player info
 handlers.getPlayerDetails = function(args)
     local username = args.username
@@ -3021,17 +3043,18 @@ handlers.getPlayerDetails = function(args)
             health = {}
         }
 
-        -- Get stats if available
+        -- Get stats if available -- stats:get(CharacterStat.X), not named
+        -- getters. See statGet() above for why.
         if stats then
             pd.stats = {
-                hunger = get(stats, "getHunger"),
-                thirst = get(stats, "getThirst"),
-                fatigue = get(stats, "getFatigue"),
-                stress = get(stats, "getStress"),
-                boredom = get(stats, "getBoredom"),
-                unhappiness = get(stats, "getUnhappyness"),
-                pain = get(stats, "getPain"),
-                endurance = get(stats, "getEndurance")
+                hunger = statGet(stats, "HUNGER"),
+                thirst = statGet(stats, "THIRST"),
+                fatigue = statGet(stats, "FATIGUE"),
+                stress = statGet(stats, "STRESS"),
+                boredom = statGet(stats, "BOREDOM"),
+                unhappiness = statGet(stats, "UNHAPPINESS"),
+                pain = statGet(stats, "PAIN"),
+                endurance = statGet(stats, "ENDURANCE")
             }
         end
 
@@ -3095,10 +3118,12 @@ handlers.getAllPlayerDetails = function(args)
                     isAlive = get(player, "isAlive")
                 }
 
+                -- stats:get(CharacterStat.X), not named getters. See
+                -- statGet() above getPlayerDetails for why.
                 if stats then
-                    pd.hunger = get(stats, "getHunger")
-                    pd.thirst = get(stats, "getThirst")
-                    pd.fatigue = get(stats, "getFatigue")
+                    pd.hunger = statGet(stats, "HUNGER")
+                    pd.thirst = statGet(stats, "THIRST")
+                    pd.fatigue = statGet(stats, "FATIGUE")
                 end
 
                 if bodyDamage then
