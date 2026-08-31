@@ -152,6 +152,40 @@
 //     error handling, unrelated to this tool and out of scope to fix here
 //     -- see the comment on its VIEWS entry below. It's kept LAST in the
 //     sweep so a crash there costs only that one view.
+//   - Setup.tsx (the first-run "create an admin account" screen) is
+//     structurally unreachable, not just unaddressed. It isn't a route --
+//     App.tsx renders it as a full-screen conditional gated on `needsSetup`,
+//     resolved once at boot and permanently false the instant an admin
+//     account exists. bootstrapAccount() below creates that account as the
+//     very first thing main() does after the server comes up, before any
+//     view's interact() ever runs -- so under this script's current single-
+//     shared-authenticated-session architecture, no page.goto or click
+//     sequence can ever reach it again. Reaching it would need a genuinely
+//     different execution mode: a separate browser context opened and
+//     captured BEFORE bootstrapAccount() runs (scoped, not built, as
+//     ui-tour-never-drives-interactive-state).
+//
+// BEFORE YOU SHIP A UI FIX (ui-tour-never-drives-interactive-state,
+// 2026-08-31): this hunt found three real states -- a permission-denied
+// EmptyState, a failed-load EmptyState, an RCON mid-command drop -- that
+// sat unphotographed for the app's entire history, because nothing ever
+// forced the question "does an existing view actually show this." Four
+// checks, cheap enough to run every time:
+//   1. Does an existing view already exercise the state your fix changes?
+//      Open the actual PNG and look -- don't assume from the view's name.
+//   2. If not, and the state needs an error/permission/failure response the
+//      real server won't give you on demand: `beforeGoto` (see its own
+//      comment in the capture loop) mocks a route before that view's one
+//      navigation, for exactly this. Cheap to add; see the `settings:*` and
+//      `console:rcon-*` views below for the pattern.
+//   3. If the state is genuinely unreachable under this script's current
+//      architecture (Setup.tsx is the one confirmed case so far -- see
+//      above), that's a real boundary, not a missing interact() step --
+//      document it here rather than silently dropping it or forcing a
+//      workaround that doesn't actually capture the thing.
+//   4. After adding or changing a view, RUN it (`node scripts/ui-shot-
+//      tour.mjs -- <name>`) and open the PNG. A view that captures without
+//      failing is not proof it captured the right thing.
 
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
@@ -369,6 +403,27 @@ const FIXTURES = {
   players: { players: [{ name: 'Kate', online: true }] },
   mapResolve: { root: '/tiles', b42Dir: 'b42', b41Path: '/tiles/b41', tileSize: 1024, width: 1157312, height: 509520, maxLevel: 21, renderedMaxLevel: 10 },
   mapVehicles: { vehicles: [{ id: 7, x: 100, y: 200 }] },
+  // ui-tour-never-drives-interactive-state (2026-08-31): SystemHealthBanner
+  // (components/SystemHealthBanner.tsx) renders unconditionally above every
+  // route and fetches GET /api/system/storage-health on mount, UNmocked
+  // until now -- a real filesystem check against this run's own throwaway
+  // dataRoot, not a canned instant response. Because this script does a
+  // full page.goto per view, Layout (and this banner) remounts and
+  // re-fetches on EVERY single shot, so whether that real disk check has
+  // resolved by capture time was genuine, variable timing, not app state --
+  // the banner's presence in any given screenshot was a coin flip
+  // independent of whatever the view itself was testing. A fixed, healthy
+  // payload (deriveBanner's own logic: no banner renders unless
+  // circuitBreaker.open or diskSpace.saveVolume.{warning,critical}) closes
+  // the race by construction, same pattern as every other endpoint already
+  // mocked here.
+  storageHealth: {
+    diskSpace: {
+      saveVolume: { path: '/data/saves', totalBytes: 500_000_000_000, freeBytes: 400_000_000_000, usedPercent: 20, warning: false, critical: false },
+      panelData: { path: '/data', totalBytes: 500_000_000_000, freeBytes: 400_000_000_000, usedPercent: 20, warning: false, critical: false },
+    },
+    circuitBreaker: { open: false, lastError: null, failCount: 0, cooldownEndsAt: null },
+  },
 }
 
 function json(body) {
@@ -403,6 +458,7 @@ async function installFixtureRoutes(context) {
   })
   await context.route('**/api/map/resolve', (route) => route.fulfill(json(FIXTURES.mapResolve)))
   await context.route('**/api/map/vehicles', (route) => route.fulfill(json(FIXTURES.mapVehicles)))
+  await context.route('**/api/system/storage-health', (route) => route.fulfill(json(FIXTURES.storageHealth)))
   await context.route('**/api/panel-bridge/command', async (route) => {
     const req = route.request()
     let action = null
