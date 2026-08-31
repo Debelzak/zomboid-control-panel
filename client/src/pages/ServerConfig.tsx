@@ -1060,11 +1060,20 @@ export default function ServerConfig() {
         ? i18n.t('REMOTE_CONFIG_NOT_CONFIGURED', { ns: 'errors' })
         : getUserErrorMessage(error, t('toasts.loadConfigFailed'))
       setLoadError(message)
-      toast({
-        title: t('toasts.error'),
-        description: message,
-        variant: 'destructive'
-      })
+      // The remote case renders as a persistent warning banner below (no
+      // Retry button -- this is a setup step, not a failure), deliberately
+      // not the destructive framing a toast titled "Error" would give it.
+      // Firing that toast anyway said the opposite of what the banner right
+      // under it says, and duplicated the same sentence a second time on
+      // screen for a standing fact that isn't going away on its own, unlike
+      // a genuine one-off fetch failure below, which still gets the toast.
+      if (!isRemote) {
+        toast({
+          title: t('toasts.error'),
+          description: message,
+          variant: 'destructive'
+        })
+      }
     } finally {
       setLoading(false)
     }

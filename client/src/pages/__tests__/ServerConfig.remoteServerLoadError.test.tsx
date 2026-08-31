@@ -31,6 +31,11 @@ vi.mock('@/contexts/AuthContext', () => ({
   }),
 }))
 
+const toastSpy = vi.hoisted(() => vi.fn())
+vi.mock('@/components/ui/use-toast', () => ({
+  useToast: () => ({ toast: toastSpy, dismiss: vi.fn(), toasts: [] }),
+}))
+
 const getPaths = vi.spyOn(serverFilesApi, 'getPaths')
 const getResolvedActive = vi.spyOn(serversApi, 'getResolvedActive')
 
@@ -88,6 +93,25 @@ describe('ServerConfig.tsx: active-server-is-remote load-error messaging', () =>
     expect(screen.queryByLabelText('file missing')).not.toBeInTheDocument()
   })
 
+  // impeccable-2026-08-31: the banner above renders with warning styling and
+  // no Retry button specifically because this is a setup step, not a
+  // failure -- a destructive-styled "Error" toast firing alongside it said
+  // the opposite of what the banner deliberately chose not to say, and
+  // repeated the exact same sentence a second time on screen.
+  it('does not also fire a destructive "Error" toast for the same remote-no-SFTP condition the banner already explains', async () => {
+    getResolvedActive.mockResolvedValue({
+      server: { id: 1, name: 'Tour Remote Server', serverName: 'servertest', isRemote: true } as never,
+    })
+    getPaths.mockRejectedValue(
+      new ApiError('No active server configured', { status: 404, code: 'SERVER_NOT_CONFIGURED' }),
+    )
+
+    renderServerConfig()
+
+    await screen.findByText(/This server is remote\. Add its SFTP details/)
+    expect(toastSpy).not.toHaveBeenCalled()
+  })
+
   it('still shows the generic load-error copy with a Retry button for a real, non-remote failure', async () => {
     getResolvedActive.mockResolvedValue({
       server: { id: 2, name: 'Ashenwood', serverName: 'Ashenwood', isRemote: false } as never,
@@ -98,6 +122,10 @@ describe('ServerConfig.tsx: active-server-is-remote load-error messaging', () =>
 
     expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
     expect(screen.queryByText(/This server is remote\. Add its SFTP details/)).not.toBeInTheDocument()
+    // Positive control for the test above: a genuine, non-remote failure is
+    // still a one-off worth an immediate toast, not just the retry-able
+    // banner -- confirms the new guard is scoped to the remote case only.
+    expect(toastSpy).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' }))
   })
 
   it('leaves the page exactly as before when there is genuinely no active server at all', async () => {
