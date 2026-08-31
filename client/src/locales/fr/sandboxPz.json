@@ -1893,7 +1893,7 @@
       }
     },
     "Strength": {
-      "label": "Multiplicateur de force",
+      "label": "Force",
       "options": {
         "1": {
           "label": "Hors norme"
