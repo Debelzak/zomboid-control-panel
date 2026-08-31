@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A local user on the same machine could read fragments of files the panel can read**, by
+  planting a symlink where the update log is looked up - symlinked entries are now skipped.
+- **An over-long path in a remote-config or SFTP request could stall the panel for everyone**,
+  not just the sender - those paths are now length-capped before being parsed.
+
 ### Fixed
 
 - **Saving RCON, port or UPnP settings could rewrite an unrelated line of the server config** if
