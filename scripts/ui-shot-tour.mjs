@@ -375,6 +375,19 @@ function json(body) {
   return { status: 200, contentType: 'application/json', body: JSON.stringify(body) }
 }
 
+// Bug-hunt-2026-08-31 ("error, validation and failure states"): the base
+// fixtures above only ever answer 200. Error/permission-denied/failed-save
+// states are real, reachable UI (see e.g. Users.tsx's permissionDenied vs.
+// loadError EmptyState branches, both gated on ApiError.status === 403 vs.
+// anything else) but were structurally invisible to every prior sweep
+// because nothing ever made the server answer that way. `errorJson` builds
+// a fulfill() body for exactly that: a real HTTP status + the same
+// `{success:false, error}`-ish envelope handleResponse()/ApiError expect, so
+// the page's own real error-handling branch (not this tool's) runs.
+function errorJson(status, message) {
+  return { status, contentType: 'application/json', body: JSON.stringify({ error: message }) }
+}
+
 async function installFixtureRoutes(context) {
   await context.route('**/api/panel-bridge/status', (route) => route.fulfill(json(FIXTURES.bridgeStatus)))
   await context.route('**/api/panel-bridge/zombies/count', (route) => route.fulfill(json(FIXTURES.zombieCount)))
@@ -535,6 +548,39 @@ const VIEWS = [
     name: 'console:rcon',
     path: '/console',
     interact: async (page) => { await clickTabByRole(page, 'rcon console') },
+  },
+  // bug-hunt-2026-08-31 ("error, validation and failure states"): a server
+  // that stops DURING an operation is a materially different situation from
+  // one that was never reachable (this tour's own demo server profile is
+  // always the latter -- see bootstrapAccount()'s own comment -- so every
+  // capture ever taken of this page's disconnected banner has been the
+  // "never worked" case, never the "was working, then dropped" one).
+  // Console.tsx's own executeCommand() (~line 607) has a distinct code path
+  // for exactly this -- a transport-level drop mid-command
+  // (RCON_EXECUTE_DISCONNECTED) resets rconFailureReason to null "so the
+  // banner falls back to its unreachable copy rather than showing a stale
+  // auth_failed reason" -- but never checked against what that fallback
+  // copy actually SAYS for this specific case. Mocks the mount-time probe
+  // as a real success (rconConnected starts true, no banner) then the
+  // execute call as a disconnect, so interact() drives the exact transition
+  // this page has never been asked to render: connected -> mid-command drop.
+  {
+    name: 'console:rcon-drop-mid-session',
+    path: '/console',
+    beforeGoto: async (page) => {
+      await page.route('**/api/config/test-rcon', (route) => route.fulfill(json({ success: true, connected: true })))
+      await page.route('**/api/rcon/execute', (route) => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Lost connection to the RCON server mid-command.', code: 'RCON_EXECUTE_DISCONNECTED' }),
+      }))
+    },
+    interact: async (page) => {
+      await clickTabByRole(page, 'rcon console')
+      await page.getByPlaceholder('type a command…').fill('players')
+      await page.getByRole('button', { name: 'Execute command' }).click()
+      await page.waitForTimeout(600)
+    },
   },
   { name: 'chat', path: '/chat' },
   { name: 'events', path: '/events' },
@@ -705,10 +751,82 @@ const VIEWS = [
       await page.waitForTimeout(400)
     },
   },
+  // bug-hunt-2026-08-31 ("error, validation and failure states"): the real
+  // client-side required-field validation on this dialog (Servers.tsx
+  // handleAddExistingServer, ~line 1396, toasts.serverNameRequired etc.) has
+  // never been photographed -- every existing servers: view fills every
+  // field before submitting. Submitting fully blank was the first attempt
+  // here and it FAILED this tool's own click (Playwright timed out retrying
+  // -- "element is not enabled"): the submit button's own `disabled` prop
+  // (Servers.tsx ~2557) already blocks the click on a truthy check
+  // (`!newServer.name`) for the exact same three fields the handler's own
+  // toasts guard, so a fully-blank submit can never reach the handler at
+  // all -- that toast path is unreachable from an empty dialog, whatever
+  // the handler's own code implies. The one gap between the two checks:
+  // `disabled` only tests truthiness (a single space is truthy, button
+  // stays enabled) while the handler's own checks call `.trim()` first
+  // (a single space fails that). A whitespace-only value is the ONLY way a
+  // real user reaches this toast -- so that's what this view now types,
+  // rather than leaving the fields empty.
+  {
+    name: 'servers:add-remote-invalid',
+    path: '/servers',
+    dialogExpected: true,
+    interact: async (page) => {
+      await page.getByRole('button', { name: 'Add Remote Server' }).first().click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByPlaceholder('My Remote PZ Server').fill(' ')
+      await dialog.getByPlaceholder('192.168.1.100 or myserver.com').fill(' ')
+      await dialog.getByPlaceholder("Enter the RCON password set in the server's INI file").fill(' ')
+      await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
+      await page.waitForTimeout(400)
+    },
+  },
   { name: 'server-setup', path: '/server-setup' },
   { name: 'discord', path: '/discord' },
   { name: 'settings', path: '/settings' },
   ...SETTINGS_TABS.map((tab) => ({ name: `settings:${tab}`, path: `/settings?tab=${tab}` })),
+  // bug-hunt-2026-08-31 ("error, validation and failure states"): the base
+  // fixture's bridgeStatus (installFixtureRoutes) always answers
+  // isRunning:true -- so Settings.tsx's own "Not running - setup flow"
+  // block (~line 3859, gated on `!bridgeStatus?.isRunning`) has never been
+  // exercised by any sweep, ever. It's a real, substantial branch: an Auto
+  // Setup button, a manual bridge-path input, and a numbered getting-
+  // started list for a local server -- never photographed. Overrides the
+  // real route for this one view's one navigation only (see beforeGoto's
+  // own comment above).
+  {
+    name: 'settings:bridge-not-running',
+    path: '/settings?tab=bridge',
+    beforeGoto: async (page) => {
+      await page.route('**/api/panel-bridge/status', (route) => route.fulfill(json({ configured: false, isRunning: false, modConnected: false })))
+    },
+  },
+  // bug-hunt-2026-08-31 ("error, validation and failure states"): Users.tsx
+  // (rendered embedded on this tab) has two distinct, real, never-
+  // photographed empty states -- permissionDenied (ApiError.status===403)
+  // and loadError (anything else) -- both gated on GET /api/auth/users'
+  // outcome at mount time (Users.tsx fetchAll(), same real precedent as
+  // RolesPermissions.tsx and OidcSettings.tsx: check the actual status the
+  // server sent, not a client-side capability guess). Neither branch has
+  // ever been exercised by any sweep because the fixture route always
+  // answers 200. beforeGoto overrides the real route for this ONE view's
+  // ONE navigation (see its own comment in the capture loop above) so
+  // Users.tsx's own real error-handling code runs, not this tool's.
+  {
+    name: 'settings:users-denied',
+    path: '/settings?tab=users',
+    beforeGoto: async (page) => {
+      await page.route('**/api/auth/users', (route) => route.fulfill(errorJson(403, 'Missing required permission: users.manage')))
+    },
+  },
+  {
+    name: 'settings:users-load-error',
+    path: '/settings?tab=users',
+    beforeGoto: async (page) => {
+      await page.route('**/api/auth/users', (route) => route.fulfill(errorJson(500, 'Internal server error')))
+    },
+  },
   // impeccable-critique-2026-08-31: closes a coverage gap god flagged --
   // 76ef3753's About-tab "Up to date" status badge only renders once
   // panelUpdateStatus.latestVersion is populated, and nothing populates it
@@ -1229,6 +1347,21 @@ async function main() {
         }
         for (const view of targetViews) {
           try {
+            // Bug-hunt-2026-08-31: page-level route overrides a view sets up
+            // via beforeGoto (see its own comment below) are scoped to ONE
+            // page.goto -- Playwright's page.route persists across
+            // navigations otherwise, and this same `page` object is reused
+            // for every remaining view in the sweep. Cleared unconditionally
+            // at the TOP of every iteration (not just the one that set them)
+            // so a view that throws mid-capture still can't leak its error
+            // fixture forward into the next view's otherwise-normal load.
+            await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {})
+            // A handful of views need the server to answer an error BEFORE
+            // the page's own mount-time fetch fires (permission-denied,
+            // failed-load empty states) -- too late to arrange from
+            // `interact()`, which only runs after page.goto has already
+            // resolved and the component has already mounted and fetched.
+            if (view.beforeGoto) await view.beforeGoto(page)
             // NOT waitUntil:'networkidle' -- this app holds a live
             // Socket.IO connection open from the moment it authenticates,
             // so "0 network connections for 500ms" never happens and every
