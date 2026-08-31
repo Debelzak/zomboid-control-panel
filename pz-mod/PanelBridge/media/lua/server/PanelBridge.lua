@@ -1,10 +1,24 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.42
+    Version: 1.7.43
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.43 Changes:
+                - Fix: triggerBlizzard/triggerTropicalStorm/triggerStorm all
+                    discarded the real boolean triggerCustomWeatherStage
+                    returns, so triggering a second storm while one was
+                    already running reported success and did nothing.
+                - Fix: generateWeather tried a CLIENT->SERVER-only request
+                    packet FIRST (never throws, so the real method was never
+                    reached), meaning it very likely did nothing at all on
+                    every real call. Now tries the real, verifiable method
+                    first whenever the front type supports it.
+                - All four now report ok=false with an actionable message
+                    when a weather period is already running, instead of a
+                    false success.
 
                 v1.7.42 Changes:
                 - Fix: stopWeather never cleared a lingering rain
@@ -413,7 +427,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.42",
+    VERSION = "1.7.43",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
