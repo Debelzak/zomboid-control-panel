@@ -388,21 +388,15 @@ export default function Chat() {
         {/* Chat Window */}
         <div className="lg:col-span-2">
           <div className="relative h-[calc(100vh-260px)] min-h-[420px] flex flex-col rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
-            {/* corner brackets */}
-            <div aria-hidden className="absolute top-1 left-1 w-2.5 h-2.5 border-l-2 border-t-2 border-primary/45 pointer-events-none z-10" />
-            <div aria-hidden className="absolute top-1 right-1 w-2.5 h-2.5 border-r-2 border-t-2 border-primary/45 pointer-events-none z-10" />
-            <div aria-hidden className="absolute bottom-1 left-1 w-2.5 h-2.5 border-l-2 border-b-2 border-primary/45 pointer-events-none z-10" />
-            <div aria-hidden className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-primary/45 pointer-events-none z-10" />
-
             {/* header strip */}
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none shrink-0">
-              <span className="flex items-center gap-1.5 text-primary/70">
-                <MessagesSquare className="w-3 h-3" />
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 bg-muted/30 select-none shrink-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <MessagesSquare className="w-3.5 h-3.5" />
                 <span>{t('chatWindow.streamLabel')}</span>
-                <span className="text-muted-foreground/40 normal-case tracking-normal">·</span>
-                <span className="text-muted-foreground/80 normal-case tracking-normal tabular-nums">{t('chatWindow.msgCount', { count: chatHistory.length })}</span>
+                <span className="text-muted-foreground/50 normal-case tracking-normal font-normal">·</span>
+                <span className="text-muted-foreground/70 normal-case tracking-normal font-normal tabular-nums">{t('chatWindow.msgCount', { count: chatHistory.length })}</span>
               </span>
-              <span className="flex items-center gap-1.5 text-muted-foreground/60">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground normal-case tracking-normal font-normal">
                 <span className={cn('w-1.5 h-1.5 rounded-full', socket?.connected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40')} />
                 <span>{socket?.connected ? t('chatWindow.live') : t('chatWindow.offline')}</span>
               </span>
@@ -525,14 +519,12 @@ export default function Chat() {
         <div className="space-y-4">
           {/* Online Players */}
           <div className="relative rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-md overflow-hidden">
-            <div aria-hidden className="absolute top-1 left-1 w-2 h-2 border-l-2 border-t-2 border-primary/40 pointer-events-none" />
-            <div aria-hidden className="absolute top-1 right-1 w-2 h-2 border-r-2 border-t-2 border-primary/40 pointer-events-none" />
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
-              <span className="flex items-center gap-1.5 text-primary/70">
-                <Users className="w-3 h-3" />
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 bg-muted/30 select-none">
+              <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Users className="w-3.5 h-3.5" />
                 <span>{t('playersPanel.label')}</span>
               </span>
-              <span className="text-muted-foreground/70 tabular-nums normal-case tracking-normal">{t('playersPanel.onlineCount', { count: players.length })}</span>
+              <span className="text-xs text-muted-foreground tabular-nums normal-case tracking-normal font-normal">{t('playersPanel.onlineCount', { count: players.length })}</span>
             </div>
             <div className="p-2">
               {players.length === 0 ? (
@@ -554,17 +546,15 @@ export default function Chat() {
 
           {/* Quick Messages */}
           <div className="relative rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-md overflow-hidden">
-            <div aria-hidden className="absolute top-1 left-1 w-2 h-2 border-l-2 border-t-2 border-amber-400/40 pointer-events-none" />
-            <div aria-hidden className="absolute top-1 right-1 w-2 h-2 border-r-2 border-t-2 border-amber-400/40 pointer-events-none" />
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/50 bg-muted/30 font-mono text-[9px] uppercase tracking-[0.24em] select-none">
-              <span className="flex items-center gap-1.5 text-amber-400/80">
-                <Megaphone className="w-3 h-3" />
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 bg-muted/30 select-none">
+              <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Megaphone className="w-3.5 h-3.5" />
                 <span>{t('quickBroadcasts.label')}</span>
               </span>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-1.5 -my-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                className="h-6 px-1.5 -my-1 text-xs"
                 onClick={() => {
                   setPresetsEditing((v) => !v)
                   setEditingIdx(null)
