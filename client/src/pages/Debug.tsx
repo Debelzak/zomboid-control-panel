@@ -2869,16 +2869,20 @@ export default function Debug() {
             where this page switches to a vertical sidebar -- the strip stays
             horizontal (and can still overflow) at every width, so the scroll
             cue below is never lg:hidden.
-            justify-start overrides TabsList's own justify-center: centering
-            an overflowing row overflows symmetrically on both sides, and
-            scrollLeft can't go negative, so whatever hangs off the left edge
-            (including the default-active first tab) is permanently
-            unreachable. justify-[safe_center] would disarm this app-wide,
-            but this Tailwind's justifyContent corePlugin is a fixed
-            addUtilities set (start/end/center/between/around/evenly/normal),
-            not matchUtilities -- arbitrary values are silently inert for it,
-            confirmed by building the CSS and finding no rule emitted for
-            .justify-\[safe_center\]. Narrow, working override here instead. */}
+            justify-start overrides TabsList's base: centering an overflowing
+            row overflows symmetrically on both sides, and scrollLeft can't
+            go negative, so whatever hangs off the left edge (including the
+            default-active first tab) is permanently unreachable.
+            DELIBERATELY KEPT even though the base TabsList now ships its own
+            overflow-safe .justify-safe-center (justify-content: safe center,
+            with a plain `center` fallback line for browsers that don't
+            understand the `safe` keyword) -- `safe` support is not
+            universal, and on a browser without it the base's fallback IS
+            plain center, which reproduces the original shipped bug. This is
+            the one page known to overflow, so this override is unconditional
+            protection independent of browser support, not leftover
+            redundancy from a workaround. Do not delete it as "the base
+            handles this now" -- it doesn't, for every browser. */}
         <div className="relative">
         <TabsList className="flex h-auto flex-nowrap items-center justify-start gap-1 overflow-x-auto rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
           {/* Zone: Now */}
