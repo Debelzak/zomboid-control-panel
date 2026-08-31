@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ConfirmProvider } from '@/contexts/ConfirmContext'
@@ -83,18 +83,57 @@ describe('Events -- time speed slider reflects the server\'s real multiplier ins
     await waitFor(() => expect(screen.getByText('10x')).toBeTruthy())
   })
 
+  // bughunt-2026-08-31-c ("tests whose assertion contradicts their own
+  // title"): this used to click 24x and check the display immediately,
+  // synchronously, in the same tick -- which only proves the click itself
+  // updates local state, something no amount of missing/broken
+  // markTimeSpeedDirty() guard could ever break (onClick sets local state
+  // directly; the guard only gates the SEPARATE 10s poll's overwrite). The
+  // title's actual claim -- that a poll tick landing mid-"drag" doesn't
+  // clobber it -- was never exercised. Fixed by installing fake timers
+  // BEFORE mount (so the component's own `setInterval(checkBridgeStatus,
+  // 10000)`, created inside its mount effect, is the fake, controllable
+  // one -- a real interval created before switching timer systems stays on
+  // the real clock and can't be advanced this way) and driving a full poll
+  // tick across the 2500ms dirty window markTimeSpeedDirty() opens on
+  // click, then asserting the display survived it.
   it('does not clobber an in-progress drag with a poll tick', async () => {
     getGameTime.mockResolvedValue({
       success: true,
       data: { hour: 12, day: 5, month: 3, multiplier: 10 },
     } as never)
 
-    renderEvents()
-    await openTimeSpeedSection()
-    await waitFor(() => expect(screen.getByText('10x')).toBeTruthy())
+    vi.useFakeTimers()
+    try {
+      renderEvents()
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
 
-    fireEvent.click(screen.getByRole('button', { name: '24×' }))
-    expect(screen.getByText('24x')).toBeTruthy()
+      act(() => { fireEvent.click(screen.getByText('Time speed')) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByText('10x')).toBeTruthy()
+
+      // Advance to 8000ms of the interval's 10000ms period (set at mount)
+      // BEFORE clicking, so the 2500ms dirty window the click is about to
+      // open (8000 + 2500 = 10500) still covers the poll scheduled for
+      // exactly 10000 -- clicking at t=0 instead would let the window
+      // expire at 2500, long before the 10000 poll, and prove nothing.
+      await act(async () => { await vi.advanceTimersByTimeAsync(8000) })
+      act(() => { fireEvent.click(screen.getByRole('button', { name: '24×' })) })
+      expect(screen.getByText('24x')).toBeTruthy()
+
+      // Cross the next scheduled 10s bridge poll (fires at t=10000) --
+      // still inside the dirty window (open until t=10500). The poll's own
+      // getGameTime resolves with multiplier: 10 again (same mock), so if
+      // Events.tsx:1339's `Date.now() >= timeSpeedDirtyUntilRef.current`
+      // guard were missing or broken, this is exactly where it would show:
+      // the display would revert to 10x under our own feet mid-interaction.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+
+      expect(screen.getByText('24x')).toBeTruthy()
+      expect(screen.queryByText('10x')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // 2026-08-31 impeccable pass: "apply speed" was the only one of three

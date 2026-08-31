@@ -1162,12 +1162,18 @@ async function buildBackupsSummary(req) {
 // only diagnosable because of one decisive line -- a "Text file busy"
 // .NET stack trace from DepotDownloader -- that a user happened to paste
 // by hand from `docker logs`. None of the collectors above would have
-// caught it: every one of them scans the FILESYSTEM (this panel's own
-// logs, the game server's own log files), and a container's stdout/stderr
-// is not a file anywhere on disk -- it is owned by Docker's log driver
-// (or, for a systemd/OpenRC managed lifecycle, by journald or whatever the
-// service supervisor does with it). A bundle generated at the moment of
-// that report would not have contained the line that solved the case.
+// caught it -- not because every one of them scans the filesystem
+// (bug hunt 2026-08-31: buildProcessSnapshot() is pure process-API,
+// buildBridgeStatus()'s core comes from an in-memory getStatus(), and
+// buildNetworkInterfaces() is an OS call, none of those touch disk --
+// the false claim didn't change the conclusion below, only the reasoning
+// for it) -- but because a container's stdout/stderr is not a file
+// anywhere on disk regardless of source: it is owned by Docker's log
+// driver (or, for a systemd/OpenRC managed lifecycle, by journald or
+// whatever the service supervisor does with it), and none of this
+// bundle's collectors -- file-based, in-memory, or OS-API -- reach it.
+// A bundle generated at the moment of that report would not have
+// contained the line that solved the case.
 //
 // Bounded the same way as every other raw-log collector in this bundle:
 // last N lines, not the full history, so one chatty deployment can't
