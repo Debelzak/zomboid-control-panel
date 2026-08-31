@@ -82,6 +82,7 @@ import { loadOrCreateCerts } from "./utils/certs.js";
 import { sanitizeError, sanitizeErrorParams } from "./utils/sanitize.js";
 import { ErrorCode } from "./utils/errorCodes.js";
 import { getSftpCachePath } from "./services/panelBridgeSftp.js";
+import { resolveInstallDir } from "./services/panelBridgeInstaller.js";
 import {
   getEmbeddedPanelBridgeLua,
   compareModVersions,
@@ -1132,15 +1133,8 @@ async function tryStartPanelBridge(trigger = "unknown") {
   if (autoUpdateEnabled)
     try {
       const activeServer = await getActiveServer();
-      const serverInstallDir =
-        activeServer?.serverPath || activeServer?.installPath;
-      if (serverInstallDir) {
-        const installDir =
-          serverInstallDir.endsWith(".bat") ||
-          serverInstallDir.endsWith(".sh") ||
-          serverInstallDir.endsWith(".exe")
-            ? path.dirname(serverInstallDir)
-            : serverInstallDir;
+      const installDir = resolveInstallDir(activeServer);
+      if (installDir) {
         const destLuaFile = path.join(
           installDir,
           "media",

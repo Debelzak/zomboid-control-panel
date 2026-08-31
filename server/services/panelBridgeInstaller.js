@@ -40,7 +40,11 @@ export function resolveSourcePath() {
 // The server's install directory, resolved the same way serverManager does:
 // prefer serverPath, fall back to installPath, and if that names a launch
 // script (.bat/.sh/.exe) rather than a directory, use its parent folder.
-function resolveInstallDir(server) {
+// Exported so index.js's and routes/panelBridge.js's own auto-update/
+// auto-install code paths can share this one implementation instead of
+// each reimplementing the extension check without the lowercasing below
+// (bughunt-2026-08-31-c, launcher-extension-case-sensitivity).
+export function resolveInstallDir(server) {
   let dir = server?.serverPath || server?.installPath;
   if (!dir) return null;
   const lower = dir.toLowerCase();

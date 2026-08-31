@@ -34,6 +34,7 @@ import {
   canAutoInstall,
   checkBridgeInstalled,
   installBridge,
+  resolveInstallDir,
 } from "../services/panelBridgeInstaller.js";
 import { createLogger } from "../utils/logger.js";
 import {
@@ -674,16 +675,8 @@ router.post("/auto-configure", requirePermission("bridge.setup"), async (req, re
     let modInstalled = false;
     let modUpdated = false;
     try {
-      const serverInstallDir =
-        targetServer.serverPath || targetServer.installPath;
-      if (serverInstallDir) {
-        const installDir =
-          serverInstallDir.endsWith(".bat") ||
-          serverInstallDir.endsWith(".sh") ||
-          serverInstallDir.endsWith(".exe")
-            ? path.dirname(serverInstallDir)
-            : serverInstallDir;
-
+      const installDir = resolveInstallDir(targetServer);
+      if (installDir) {
         const destLuaFile = path.join(
           installDir,
           "media",

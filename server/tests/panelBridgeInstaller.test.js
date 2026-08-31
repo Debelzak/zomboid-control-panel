@@ -6,6 +6,7 @@ import {
   canAutoInstall,
   checkBridgeInstalled,
   installBridge,
+  resolveInstallDir,
   resolveSourcePath,
 } from '../services/panelBridgeInstaller.js';
 
@@ -151,5 +152,39 @@ describe('installBridge', () => {
     expect(result.success).toBe(true);
     expect(result.updated).toBe(false);
     expect(fs.readFileSync(targetPath, 'utf8')).toContain('99.0.0');
+  });
+});
+
+// bughunt-2026-08-31-c, launcher-extension-case-sensitivity: index.js's
+// PanelBridge auto-update and routes/panelBridge.js's mod auto-install both
+// used to reimplement this same launcher-extension check inline, without the
+// lowercasing below -- a launcher saved as e.g. "Launch.BAT" resolved its
+// install dir as the literal launcher file's own (nonexistent as a
+// directory) path instead of its parent folder, silently breaking both
+// features for any launcher whose extension wasn't already lowercase. Both
+// call sites now share this one implementation instead of each carrying
+// their own copy.
+describe('resolveInstallDir', () => {
+  it('is case-insensitive for the launch-script extension (.BAT/.Sh/.EXE)', () => {
+    for (const ext of ['.bat', '.BAT', '.Bat', '.sh', '.SH', '.Sh', '.exe', '.EXE', '.Exe']) {
+      const scriptPath = path.join(tmpDir, `Launch${ext}`);
+      expect(resolveInstallDir({ installPath: scriptPath })).toBe(tmpDir);
+    }
+  });
+
+  it('returns a directory-shaped installPath unchanged', () => {
+    expect(resolveInstallDir({ installPath: tmpDir })).toBe(tmpDir);
+  });
+
+  it('prefers serverPath over installPath, same as resolveLaunchMode', () => {
+    const scriptPath = path.join(tmpDir, 'custom.SH');
+    expect(
+      resolveInstallDir({ installPath: tmpDir, serverPath: scriptPath }),
+    ).toBe(tmpDir);
+  });
+
+  it('returns null when neither field is set', () => {
+    expect(resolveInstallDir({})).toBeNull();
+    expect(resolveInstallDir(null)).toBeNull();
   });
 });
