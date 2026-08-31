@@ -155,7 +155,7 @@
 
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -744,27 +744,114 @@ async function login(page) {
 // reflects true 390px-wide wrapping -- 3236, MORE accurate than the old
 // buggy capture's 2546, which undercounted height too because reflowing
 // text into a false 1280px-wide box also shortens it).
+// quality-pass-2026-08-31 round 3: expanding only #main-content itself left
+// an adjacent, structurally identical gap one level deeper -- the same
+// shape of miss as the two animation fixes right above this function (each
+// closed one specific scope/timing gap while a sibling gap of the same
+// class survived). Confirmed on chunks__desktop__survival.png: ChunkCleaner
+// .tsx's "canvas" Card has its own fixed Tailwind height (`h-[24rem]
+// min-h-[320px] sm:h-[30rem] lg:h-[36rem]` -- 36rem/576px at desktop width)
+// wrapping an inner `h-full overflow-y-auto` content div for the "no saves
+// found" panel. #main-content's own overflow/height were already
+// 'visible'/'auto' -- nothing left to fix there -- but fullPage:true only
+// ever grows the OUTER document; it has no way to reach into a nested
+// element that is ITSELF still clipping its own content via a real
+// scrollbar. Survival theme's real "no saves found" copy is long enough
+// (an extra "TRY A COMMON LOCATION" section the shorter remote-disabled
+// message in light theme never shows) to overflow that fixed-height Card,
+// so it got clipped at exactly 576px + padding, not the 900px viewport --
+// coincidentally close enough to the viewport height in this one case that
+// the truncation read as "hit the viewport edge" until measured.
+//
+// Generalized rather than special-cased to this one Card: walk every
+// descendant of #main-content and expand ANY element that is currently
+// clipping its own content (scrollHeight meaningfully taller than
+// clientHeight) the same way #main-content itself is expanded, marking
+// each one via a data attribute so restoreMainAfterCapture can revert
+// exactly the set this run actually touched. Trade-off, accepted
+// deliberately: a page with a live, intentionally-bounded scroll region
+// (a console/log panel, a long activity table) will now render its FULL
+// content in the capture instead of a clipped viewport-sized window onto
+// it. For a tool whose entire purpose is a human quality-review screenshot,
+// showing more real content is strictly better than silently clipping some
+// of it -- which is the exact failure mode this whole function exists to
+// close, not a new one to reintroduce by special-casing only the one Card
+// that happened to get caught this time.
 async function expandMainForCapture(page) {
-  return page.evaluate(() => {
-    const el = document.getElementById('main-content')
-    if (!el) return null
-    const prevStyle = el.getAttribute('style')
-    const width = el.getBoundingClientRect().width
-    el.style.setProperty('width', `${width}px`, 'important')
-    el.style.setProperty('overflow', 'visible', 'important')
-    el.style.setProperty('height', 'auto', 'important')
-    el.style.setProperty('max-height', 'none', 'important')
-    return prevStyle
+  await page.evaluate(() => {
+    const expand = (el) => {
+      if (el.hasAttribute('data-tour-expanded')) return // already handled, e.g. as another clipping element's ancestor
+      if (el.hasAttribute('style')) el.setAttribute('data-tour-prev-style', el.getAttribute('style'))
+      else el.setAttribute('data-tour-no-prev-style', '1')
+      const width = el.getBoundingClientRect().width
+      el.style.setProperty('width', `${width}px`, 'important')
+      el.style.setProperty('overflow', 'visible', 'important')
+      el.style.setProperty('height', 'auto', 'important')
+      el.style.setProperty('max-height', 'none', 'important')
+      el.setAttribute('data-tour-expanded', '1')
+    }
+    const root = document.getElementById('main-content')
+    if (!root) return
+    expand(root)
+    for (const el of root.querySelectorAll('*')) {
+      if (el.scrollHeight > el.clientHeight + 2) {
+        // Expand the clipping element AND every ancestor up to
+        // #main-content, not just the element itself: found by direct code
+        // reading after the desktop fix alone produced a NEW mobile defect
+        // one level up -- ChunkCleaner's "no saves found" panel sits inside
+        // `<div class="h-full overflow-y-auto">` (the clipping element, now
+        // correctly unclipped) which itself sits inside a `<Card
+        // class="... h-[24rem] ... lg:h-[36rem]">` (a plain, non-scrolling,
+        // explicit-height wrapper -- its own scrollHeight already equals its
+        // clientHeight, so it never trips the check above on its own).
+        // Expanding only the inner div left the Card's box unchanged; the
+        // div's newly-tall content then overflowed OUT of that still-fixed
+        // box instead of growing it, visually bleeding into the sibling
+        // "Save" panel below it in normal flow -- confirmed by reasoning
+        // through the CSS (Card's own height stays an explicit Tailwind
+        // class untouched by any inline style), not observed live, because
+        // this exact repro state could not be reproduced twice in a row
+        // under tonight's shared-machine load (see the fix's own commit
+        // message for the honest caveat). Walking every ancestor up to
+        // #main-content closes this the same way #main-content's own
+        // expansion already does for the outermost case.
+        for (let node = el; node && node !== root.parentElement; node = node.parentElement) {
+          expand(node)
+        }
+      }
+    }
   })
 }
 
-async function restoreMainAfterCapture(page, prevStyle) {
-  await page.evaluate((saved) => {
-    const el = document.getElementById('main-content')
-    if (!el) return
-    if (saved === null || saved === undefined) el.removeAttribute('style')
-    else el.setAttribute('style', saved)
-  }, prevStyle)
+async function restoreMainAfterCapture(page) {
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('[data-tour-expanded]')) {
+      if (el.hasAttribute('data-tour-no-prev-style')) el.removeAttribute('style')
+      else el.setAttribute('style', el.getAttribute('data-tour-prev-style'))
+      el.removeAttribute('data-tour-expanded')
+      el.removeAttribute('data-tour-prev-style')
+      el.removeAttribute('data-tour-no-prev-style')
+    }
+  })
+}
+
+// The manifest's own `settled`/`strayOverlay` flags say whether the PAGE
+// was ready -- neither has ever recorded whether the CAPTURE itself came
+// out complete. chunks__desktop__survival.png shipped with settled:true,
+// no stray overlay, and was still truncated: a manifest schema with no
+// field for "did the screenshot's actual height match what the page really
+// needed" cannot fail on that defect class by construction, no matter how
+// correct the settle/overlay checks are. Reads the PNG's real pixel height
+// straight from its IHDR chunk (bytes 16-20, big-endian -- same
+// browser-free technique used to diagnose this exact bug by hand before
+// this fix existed) and compares it against the page's own
+// document.documentElement.scrollHeight at the moment of capture, so a
+// future regression of this class -- in ANY view, not just the one caught
+// this time -- shows up as a named, greppable manifest flag instead of a
+// silent gap someone has to notice by eye again.
+function readPngHeight(filePath) {
+  const buf = readFileSync(filePath)
+  return buf.readUInt32BE(20)
 }
 
 // quality-pass-2026-08-31: expandMainForCapture's own forced overflow/
@@ -1078,7 +1165,7 @@ async function main() {
             // filename now deliberately differ.
             const fileName = `${view.name.replace(/:/g, '-')}__${viewport.key}__${theme}.png`
             const filePath = path.join(args.out, fileName)
-            const prevMainStyle = await expandMainForCapture(page)
+            await expandMainForCapture(page)
             await finishRunningAnimations(page)
             // quality-pass-2026-08-31, round 2: finishRunningAnimations
             // above -- called as late as possible, right before this line
@@ -1102,18 +1189,35 @@ async function main() {
             // one step later each round. Kept finishRunningAnimations too:
             // cheap, still correct, and narrows what this option has to
             // paper over.
+            // Measured immediately before the shot, while #main-content and
+            // every clipping descendant are still forced open by
+            // expandMainForCapture -- this is "how tall the page really is"
+            // for the height check right below.
+            const expectedHeight = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => null)
             await page.screenshot({ path: filePath, fullPage: true, animations: 'disabled' })
-            await restoreMainAfterCapture(page, prevMainStyle)
+            await restoreMainAfterCapture(page)
+            // See readPngHeight's own header: a manifest field that can
+            // fail on a short capture, not just an unsettled or overlaid
+            // one. `+4` tolerance for the same reason readPngHeight reads
+            // whole pixels off the IHDR -- sub-pixel layout rounding is
+            // real and not a truncation.
+            const capturedHeight = readPngHeight(filePath)
+            const heightTruncated = expectedHeight !== null && capturedHeight < expectedHeight - 4
             // Unconditional cleanup, even for a `dialogExpected` view whose
             // own dialog was deliberately left open for the shot just taken
             // -- this is the half of the fix that actually stops a leak
             // reaching the NEXT view, as opposed to the check above, which
             // only asserts one didn't already leak in from the last one.
             await dismissOpenDialogs(page)
-            manifest.push({ file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme, width: viewport.width, height: viewport.height, settled, strayOverlay })
+            manifest.push({
+              file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme,
+              width: viewport.width, height: viewport.height, settled, strayOverlay,
+              heightTruncated, capturedHeight, expectedHeight,
+            })
             const flags = [
               settled ? '' : ' -- NOT SETTLED (spinner/skeleton still present after timeout)',
               strayOverlay ? ` -- STRAY OVERLAY LEAKED IN ("${strayOverlay}")` : '',
+              heightTruncated ? ` -- HEIGHT TRUNCATED (captured ${capturedHeight}px, page needed ${expectedHeight}px)` : '',
             ].join('')
             console.log(`[ui-shot-tour] captured ${fileName}${flags}`)
           } catch (err) {
@@ -1159,23 +1263,30 @@ async function main() {
   // ordinary case (leaked in, one Escape closed it, capture is clean) which
   // never reaches here at all.
   const strayOverlays = manifest.filter((m) => m.file && m.strayOverlay)
+  // See readPngHeight's own header: a captured file that is settled, has no
+  // stray overlay, and is STILL wrong -- the actual PNG is shorter than the
+  // page needed at capture time. chunks__desktop__survival.png was exactly
+  // this: settled:true, strayOverlay:null, and truncated anyway.
+  const truncated = manifest.filter((m) => m.file && m.heightTruncated)
   const md = [
     '# UI shot tour manifest',
     '',
-    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay) from \`${args.root}\` against \`${BASE_URL}\`.`,
+    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay, ${truncated.length} height-truncated) from \`${args.root}\` against \`${BASE_URL}\`.`,
     ...(unsettled.length ? ['', '**Not settled means the capture may show a mid-load spinner or skeleton, not the real page -- verify before treating it as a finding.**'] : []),
     ...(strayOverlays.length ? ['', '**Stray overlay means a leaked dialog from an earlier view survived three Escape presses -- the capture may be dimmed by its backdrop with the dialog itself off-screen or unrendered. Verify before treating it as a finding.**'] : []),
+    ...(truncated.length ? ['', '**Height-truncated means the captured PNG is shorter than the page actually needed -- content below the cutoff is missing from the image entirely. Verify before treating it as a finding.**'] : []),
     '',
-    '| File | View | Route | Viewport | Theme | Settled | Stray overlay |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
-    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${m.settled === false ? '⚠️ NO' : 'yes'} | ${m.strayOverlay ? `⚠️ ${m.strayOverlay}` : '--'} |`),
+    '| File | View | Route | Viewport | Theme | Settled | Stray overlay | Height |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${m.settled === false ? '⚠️ NO' : 'yes'} | ${m.strayOverlay ? `⚠️ ${m.strayOverlay}` : '--'} | ${m.heightTruncated ? `⚠️ ${m.capturedHeight}px < ${m.expectedHeight}px` : 'ok'} |`),
     ...(failCount ? ['', '## Failed captures', '', ...manifest.filter((m) => !m.file).map((m) => `- **${m.view}** (${m.viewport}/${m.theme}, \`${m.path}\`): ${m.error}`)] : []),
     ...(unsettled.length ? ['', '## Captured but not settled', '', 'Spinner or skeleton (`[aria-busy="true"]` / `.animate-spin`) was still present when the timeout hit -- the file exists but may not show the real page.', '', ...unsettled.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\``)] : []),
     ...(strayOverlays.length ? ['', '## Captured with a stray overlay', '', 'A dialog leaked in from an earlier view and three Escape presses did not close it before the shot.', '', ...strayOverlays.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\` -- "${m.strayOverlay}"`)] : []),
+    ...(truncated.length ? ['', '## Height-truncated captures', '', 'The captured PNG is shorter than `document.documentElement.scrollHeight` measured at the same instant -- content below the cutoff is missing from the image entirely, not just off-screen.', '', ...truncated.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\` -- captured ${m.capturedHeight}px, page needed ${m.expectedHeight}px`)] : []),
   ].join('\n')
   writeFileSync(path.join(args.out, 'MANIFEST.md'), md)
 
-  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay. Output: ${args.out}`)
+  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay, ${truncated.length} height-truncated. Output: ${args.out}`)
   if (failCount) process.exitCode = 1
 }
 
