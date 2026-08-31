@@ -526,7 +526,14 @@
     "emptyResponse": "Empty response.",
     "infrastructureSnapshotTitle": "Infrastructure Snapshot",
     "hideDetails": "Hide details",
-    "showDetails": "Show details"
+    "showDetails": "Show details",
+    "sequenceAllSucceededTitle": "Event sequence completed",
+    "sequencePartialTitle": "{{failed}} of {{executed}} step(s) failed",
+    "sequenceAllFailedTitle": "Event sequence failed",
+    "sequenceExecutedCount_one": "{{executed}} step ran",
+    "sequenceExecutedCount_other": "{{executed}} steps ran",
+    "sequenceFailedStepsTitle": "Failed steps",
+    "sequenceStepIndex": "Step {{index}}"
   },
   "successCopy": {
     "rainStarted": { "title": "Rain Started", "description": "Rain is now active on the server." },

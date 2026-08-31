@@ -61,7 +61,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
-import { rconApi, serverApi, playersApi, panelBridgeApi } from '@/lib/api'
+import { rconApi, serverApi, playersApi, panelBridgeApi, ApiError } from '@/lib/api'
 import { getBridgeVerifiedState } from '@/lib/bridgeVerify'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
@@ -576,6 +576,90 @@ interface BridgeResultDisplayProps {
   players: Player[]
 }
 
+// runEventSequence's own response shape (PanelBridge.lua handlers.runEventSequence),
+// present on BOTH the success branch (failedCount: 0) and the failure branch
+// (failedCount > 0) -- Lua returns the same `data` table either way so a
+// caller can always tell 9-of-10 from 0-of-10 without parsing `results`
+// itself. See server/routes/panelBridge.js's POST /command catch handler for
+// why this can currently be absent on a failed sequence (a separate,
+// server-side gap -- reported, not fixed here, since it's outside this file):
+// when present, render the three real states below; when absent (e.g. an
+// infra-level failure, or the pre-Kevin's-fix bridge mod), fall through to
+// the generic failure card unchanged.
+interface EventSequenceStepResult {
+  index: number
+  kind: string
+  success: boolean
+  data?: unknown
+  error?: string
+}
+interface EventSequenceResultData {
+  message: string
+  executed: number
+  maxSteps: number
+  failedCount: number
+  results: EventSequenceStepResult[]
+}
+function isEventSequenceResultData(data: unknown): data is EventSequenceResultData {
+  if (!data || typeof data !== 'object') return false
+  const d = data as Record<string, unknown>
+  return typeof d.executed === 'number' && typeof d.failedCount === 'number' && Array.isArray(d.results)
+}
+
+function EventSequenceResult({ data, timestamp }: { data: EventSequenceResultData; timestamp: string }) {
+  const { t } = useTranslation('events')
+  const { executed, failedCount, results } = data
+  const allSucceeded = failedCount === 0
+  const allFailed = executed > 0 && failedCount === executed
+  const tone = allSucceeded ? 'success' : allFailed ? 'destructive' : 'warning'
+  const toneClasses = {
+    success: { border: 'border-success/40', bg: 'bg-success/5', text: 'text-success' },
+    warning: { border: 'border-warning/40', bg: 'bg-warning/5', text: 'text-warning' },
+    destructive: { border: 'border-destructive/40', bg: 'bg-destructive/5', text: 'text-destructive' },
+  }[tone]
+  const Icon = allSucceeded ? Check : allFailed ? X : AlertTriangle
+  const title = allSucceeded
+    ? t('resultDisplay.sequenceAllSucceededTitle')
+    : allFailed
+      ? t('resultDisplay.sequenceAllFailedTitle')
+      : t('resultDisplay.sequencePartialTitle', { failed: failedCount, executed })
+  const failedSteps = results.filter((r) => !r.success)
+
+  return (
+    <div className={cn('rounded-lg border p-4 space-y-3', toneClasses.border, toneClasses.bg)}>
+      <div className="flex items-center justify-between">
+        <div className={cn('flex items-center gap-2 text-sm font-medium', toneClasses.text)}>
+          <Icon className="h-4 w-4" />
+          {title}
+        </div>
+        <span className="text-xs text-muted-foreground">{timestamp}</span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t('resultDisplay.sequenceExecutedCount', { executed })}
+      </p>
+      {failedSteps.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t('resultDisplay.sequenceFailedStepsTitle')}
+          </p>
+          <ul className="space-y-1">
+            {failedSteps.map((step) => (
+              <li key={step.index} className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-1.5 text-xs">
+                <X className="h-3.5 w-3.5 shrink-0 mt-0.5 text-destructive" />
+                <span className="min-w-0">
+                  <span className="font-mono text-muted-foreground">{t('resultDisplay.sequenceStepIndex', { index: step.index })}</span>{' '}
+                  <span className="font-medium">{step.kind}</span>
+                  {step.error && <span className="text-muted-foreground"> — {step.error}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BridgeResultDisplay({ result, loading, onInlineAction, players }: BridgeResultDisplayProps) {
   const { t } = useTranslation('events')
   const bridgeOperationTemplates = useMemo(() => getBridgeOperationTemplates(t), [t])
@@ -583,6 +667,18 @@ function BridgeResultDisplay({ result, loading, onInlineAction, players }: Bridg
   const [safehouseAddSelection, setSafehouseAddSelection] = useState<Record<string, string>>({})
   const { operation, success, data, error, timestamp } = result
   const isLoading = loading !== null
+
+  // Checked before the generic !success gate below: a partial failure is
+  // real information (9 of 10 steps genuinely ran), not just "not success" --
+  // showing the plain red card for it is the exact bug this exists to fix
+  // (green-on-total-failure is worse, but red-on-partial was never right
+  // either, and per-step results being reachable only via raw JSON is what
+  // let both hide). Runs for the success branch too (failedCount: 0 reads as
+  // "all succeeded" here rather than falling through to whatever a generic
+  // success renderer would otherwise show for this operation.
+  if (operation === 'runEventSequence' && isEventSequenceResultData(data)) {
+    return <EventSequenceResult data={data} timestamp={timestamp} />
+  }
 
   if (!success) {
     return (
@@ -1933,10 +2029,17 @@ export default function Events() {
       pushActivity(operationLabel, true)
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.bridgeOperationFailedFallback'))
+      // A "failed" bridge command can still carry a rich diagnostic table --
+      // e.g. runEventSequence's per-step results/failedCount/executed on a
+      // partial failure -- attached to ApiError.data when the server sends
+      // one. Hardcoding null here (as this used to) discarded it even when
+      // present, leaving BridgeResultDisplay with nothing to build a partial
+      // state from regardless of its own rendering logic.
+      const data = error instanceof ApiError ? (error.data ?? null) : null
       setBridgeResultData({
         operation: bridgeOperation,
         success: false,
-        data: null,
+        data,
         error: message,
         timestamp: formatPanelTimestamp(new Date(), i18n.language),
       })

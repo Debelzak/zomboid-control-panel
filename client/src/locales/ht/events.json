@@ -526,7 +526,14 @@
     "emptyResponse": "Repons vid.",
     "infrastructureSnapshotTitle": "Enstantane Enfrastrikti",
     "hideDetails": "Kache detay",
-    "showDetails": "Montre detay"
+    "showDetails": "Montre detay",
+    "sequenceAllSucceededTitle": "Sekans evènman fini",
+    "sequencePartialTitle": "{{failed}} nan {{executed}} etap echwe",
+    "sequenceAllFailedTitle": "Sekans evènman echwe",
+    "sequenceExecutedCount_one": "{{executed}} etap fèt",
+    "sequenceExecutedCount_other": "{{executed}} etap fèt",
+    "sequenceFailedStepsTitle": "Etap ki echwe",
+    "sequenceStepIndex": "Etap {{index}}"
   },
   "successCopy": {
     "rainStarted": { "title": "Lapli Kòmanse", "description": "Lapli aktif kounye a sou sèvè a." },

@@ -526,7 +526,14 @@
     "emptyResponse": "Leere Antwort.",
     "infrastructureSnapshotTitle": "Infrastruktur-Snapshot",
     "hideDetails": "Details ausblenden",
-    "showDetails": "Details anzeigen"
+    "showDetails": "Details anzeigen",
+    "sequenceAllSucceededTitle": "Ereignisfolge abgeschlossen",
+    "sequencePartialTitle": "{{failed}} von {{executed}} Schritt(en) fehlgeschlagen",
+    "sequenceAllFailedTitle": "Ereignisfolge fehlgeschlagen",
+    "sequenceExecutedCount_one": "{{executed}} Schritt ausgeführt",
+    "sequenceExecutedCount_other": "{{executed}} Schritte ausgeführt",
+    "sequenceFailedStepsTitle": "Fehlgeschlagene Schritte",
+    "sequenceStepIndex": "Schritt {{index}}"
   },
   "successCopy": {
     "rainStarted": { "title": "Regen gestartet", "description": "Regen ist jetzt auf dem Server aktiv." },

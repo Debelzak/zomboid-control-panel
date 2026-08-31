@@ -526,7 +526,14 @@
     "emptyResponse": "空响应。",
     "infrastructureSnapshotTitle": "基础设施快照",
     "hideDetails": "隐藏详情",
-    "showDetails": "显示详情"
+    "showDetails": "显示详情",
+    "sequenceAllSucceededTitle": "事件序列已完成",
+    "sequencePartialTitle": "{{executed}} 个步骤中有 {{failed}} 个失败",
+    "sequenceAllFailedTitle": "事件序列失败",
+    "sequenceExecutedCount_one": "已执行 {{executed}} 个步骤",
+    "sequenceExecutedCount_other": "已执行 {{executed}} 个步骤",
+    "sequenceFailedStepsTitle": "失败的步骤",
+    "sequenceStepIndex": "步骤 {{index}}"
   },
   "successCopy": {
     "rainStarted": { "title": "降雨已开始", "description": "服务器上的降雨现已生效。" },

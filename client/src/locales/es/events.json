@@ -595,7 +595,14 @@
     "emptyResponse": "Respuesta vacía.",
     "infrastructureSnapshotTitle": "Instantánea de infraestructura",
     "hideDetails": "Ocultar detalles",
-    "showDetails": "Mostrar detalles"
+    "showDetails": "Mostrar detalles",
+    "sequenceAllSucceededTitle": "Secuencia de eventos completada",
+    "sequencePartialTitle": "{{failed}} de {{executed}} paso(s) fallaron",
+    "sequenceAllFailedTitle": "Secuencia de eventos fallida",
+    "sequenceExecutedCount_one": "{{executed}} paso ejecutado",
+    "sequenceExecutedCount_other": "{{executed}} pasos ejecutados",
+    "sequenceFailedStepsTitle": "Pasos fallidos",
+    "sequenceStepIndex": "Paso {{index}}"
   },
   "successCopy": {
     "rainStarted": {
