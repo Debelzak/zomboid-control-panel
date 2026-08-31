@@ -16,7 +16,11 @@
     "exportFailedFallback": "Ekspòtasyon modèl la echwe",
     "deleteTemplateTitle": "Efase modèl",
     "deleteTemplateDesc": "Efase \"{{name}}\"? Aksyon sa a pa ka anile.",
+    "hideBuiltinTemplateTitle": "Kache modèl entegre",
+    "hideBuiltinTemplateDesc": "Kache \"{{name}}\" nan lis ou a? Li entegre, kidonk pa gen anyen ki efase -- li jis kache isit la.",
+    "hideBuiltinTemplateConfirm": "Kache",
     "templateDeletedTitle": "Modèl Efase",
+    "templateHiddenTitle": "Modèl Kache",
     "deleteFailedTitle": "Efasman echwe",
     "deleteFailedFallback": "Efase modèl la echwe",
     "loadFailedFallback": "Chaje modèl yo echwe."

@@ -67,16 +67,31 @@ export default function Templates() {
   }
 
   const handleDelete = async (template: SimTemplate) => {
-    const ok = await confirm({
-      title: t('toasts.deleteTemplateTitle'),
-      description: t('toasts.deleteTemplateDesc', { name: template.meta.name }),
-      destructive: true,
-    })
+    // Built-in templates aren't deleted server-side -- deleteTemplate()
+    // (templateService.js) just adds the id to a hidden-ids setting, no
+    // data loss. "This can't be undone" is false for that case, and there's
+    // no restore control anywhere in the app to make it true, so the confirm
+    // copy has to say what actually happens instead of the destructive
+    // boilerplate the custom-template path still legitimately needs.
+    const ok = await confirm(
+      template.isBuiltin
+        ? {
+            title: t('toasts.hideBuiltinTemplateTitle'),
+            description: t('toasts.hideBuiltinTemplateDesc', { name: template.meta.name }),
+            confirmLabel: t('toasts.hideBuiltinTemplateConfirm'),
+            destructive: false,
+          }
+        : {
+            title: t('toasts.deleteTemplateTitle'),
+            description: t('toasts.deleteTemplateDesc', { name: template.meta.name }),
+            destructive: true,
+          }
+    )
     if (!ok) return
     try {
       const result = await templatesApi.delete(template.meta.id)
       if (!result.success) throw new Error(result.error || t('toasts.deleteFailedFallback'))
-      toast({ title: t('toasts.templateDeletedTitle'), variant: 'success' as const })
+      toast({ title: template.isBuiltin ? t('toasts.templateHiddenTitle') : t('toasts.templateDeletedTitle'), variant: 'success' as const })
       fetchTemplates()
     } catch (error) {
       toast({

@@ -16,7 +16,11 @@
     "exportFailedFallback": "Vorlage konnte nicht exportiert werden",
     "deleteTemplateTitle": "Vorlage löschen",
     "deleteTemplateDesc": "„{{name}}“ löschen? Das kann nicht rückgängig gemacht werden.",
+    "hideBuiltinTemplateTitle": "Integrierte Vorlage ausblenden",
+    "hideBuiltinTemplateDesc": "„{{name}}“ aus deiner Liste ausblenden? Sie ist integriert, es wird nichts gelöscht, sondern nur hier ausgeblendet.",
+    "hideBuiltinTemplateConfirm": "Ausblenden",
     "templateDeletedTitle": "Vorlage gelöscht",
+    "templateHiddenTitle": "Vorlage ausgeblendet",
     "deleteFailedTitle": "Löschen fehlgeschlagen",
     "deleteFailedFallback": "Vorlage konnte nicht gelöscht werden",
     "loadFailedFallback": "Vorlagen konnten nicht geladen werden."

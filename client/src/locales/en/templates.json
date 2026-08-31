@@ -16,7 +16,11 @@
     "exportFailedFallback": "Failed to export template",
     "deleteTemplateTitle": "Delete Template",
     "deleteTemplateDesc": "Delete \"{{name}}\"? This can't be undone.",
+    "hideBuiltinTemplateTitle": "Hide Built-in Template",
+    "hideBuiltinTemplateDesc": "Hide \"{{name}}\" from your list? It's built-in, so nothing is deleted -- just hidden here.",
+    "hideBuiltinTemplateConfirm": "Hide",
     "templateDeletedTitle": "Template Deleted",
+    "templateHiddenTitle": "Template Hidden",
     "deleteFailedTitle": "Delete Failed",
     "deleteFailedFallback": "Failed to delete template",
     "loadFailedFallback": "Failed to load templates."

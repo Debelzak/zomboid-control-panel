@@ -16,7 +16,11 @@
     "exportFailedFallback": "No se pudo exportar la plantilla",
     "deleteTemplateTitle": "Eliminar plantilla",
     "deleteTemplateDesc": "¿Eliminar \"{{name}}\"? Esta acción no se puede deshacer.",
+    "hideBuiltinTemplateTitle": "Ocultar plantilla integrada",
+    "hideBuiltinTemplateDesc": "¿Ocultar \"{{name}}\" de tu lista? Es una plantilla integrada, así que no se elimina nada, solo se oculta aquí.",
+    "hideBuiltinTemplateConfirm": "Ocultar",
     "templateDeletedTitle": "Plantilla eliminada",
+    "templateHiddenTitle": "Plantilla oculta",
     "deleteFailedTitle": "Error al eliminar",
     "deleteFailedFallback": "No se pudo eliminar la plantilla",
     "loadFailedFallback": "No se pudieron cargar las plantillas."

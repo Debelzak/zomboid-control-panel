@@ -16,7 +16,11 @@
     "exportFailedFallback": "Échec de l'export du modèle",
     "deleteTemplateTitle": "Supprimer le modèle",
     "deleteTemplateDesc": "Supprimer « {{name}} » ? Cette action est irréversible.",
+    "hideBuiltinTemplateTitle": "Masquer le modèle intégré",
+    "hideBuiltinTemplateDesc": "Masquer « {{name}} » de votre liste ? Il est intégré, rien n'est supprimé, il est seulement masqué ici.",
+    "hideBuiltinTemplateConfirm": "Masquer",
     "templateDeletedTitle": "Modèle supprimé",
+    "templateHiddenTitle": "Modèle masqué",
     "deleteFailedTitle": "Échec de la suppression",
     "deleteFailedFallback": "Échec de la suppression du modèle",
     "loadFailedFallback": "Échec du chargement des modèles."

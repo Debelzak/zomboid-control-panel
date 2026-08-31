@@ -16,7 +16,11 @@
     "exportFailedFallback": "导出模板失败",
     "deleteTemplateTitle": "删除模板",
     "deleteTemplateDesc": "删除「{{name}}」？此操作无法撤销。",
+    "hideBuiltinTemplateTitle": "隐藏内置模板",
+    "hideBuiltinTemplateDesc": "从列表中隐藏「{{name}}」？它是内置模板，不会被删除，只是在此隐藏。",
+    "hideBuiltinTemplateConfirm": "隐藏",
     "templateDeletedTitle": "模板已删除",
+    "templateHiddenTitle": "模板已隐藏",
     "deleteFailedTitle": "删除失败",
     "deleteFailedFallback": "删除模板失败",
     "loadFailedFallback": "加载模板失败。"
