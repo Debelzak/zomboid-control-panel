@@ -381,6 +381,7 @@
     "rconPasswordRequired": "RCON 密码为必填项",
     "detectFirst": "请先检测服务器",
     "rconPasswordRequiredIni": "RCON 密码为必填项，请先在服务器 INI 文件中进行配置。",
+    "duplicateRemoteServer": "列表中已存在名为「{{name}}」、RCON 主机和端口相同的远程服务器。",
     "serverAddedTitle": "服务器已添加",
     "serverAddedDesc": "「{{name}}」已添加到面板",
     "addServerFailed": "添加服务器失败",

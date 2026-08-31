@@ -381,6 +381,7 @@
     "rconPasswordRequired": "RCON password is required",
     "detectFirst": "Please detect a server first",
     "rconPasswordRequiredIni": "RCON password is required. Configure it in your server INI file first.",
+    "duplicateRemoteServer": "A remote server named \"{{name}}\" with this RCON host and port is already on the list.",
     "serverAddedTitle": "Server Added",
     "serverAddedDesc": "\"{{name}}\" added to panel",
     "addServerFailed": "Failed to add server",

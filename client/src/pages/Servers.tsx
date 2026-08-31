@@ -1403,6 +1403,34 @@ export default function Servers() {
       return
     }
 
+    // 2026-08-31 quality-pass finding: Add Remote Server had no duplicate
+    // detection at all -- resubmitting the identical name+host+port (a
+    // double-click, or retrying after a page that looked unresponsive)
+    // silently added another card indistinguishable from the first except
+    // by an Inactive/Selected badge. Scoped to remote servers specifically
+    // (where the finding was observed and where "same name, same host+port"
+    // unambiguously means "the same server, registered twice") -- local
+    // servers already validate against real install paths on the server
+    // side and aren't part of this finding.
+    if (addMode === 'remote') {
+      const normalizedName = newServer.name.trim().toLowerCase()
+      const normalizedHost = newServer.rconHost.trim().toLowerCase()
+      const isDuplicate = (servers || []).some(s =>
+        s.isRemote &&
+        (s.name || s.serverName || '').trim().toLowerCase() === normalizedName &&
+        (s.rconHost || '').trim().toLowerCase() === normalizedHost &&
+        s.rconPort === newServer.rconPort
+      )
+      if (isDuplicate) {
+        toast({
+          title: t('toasts.error'),
+          description: t('toasts.duplicateRemoteServer', { name: newServer.name.trim() }),
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     setAddingServer(true)
     try {
       // Local mode with a detected config that has an ini password and no

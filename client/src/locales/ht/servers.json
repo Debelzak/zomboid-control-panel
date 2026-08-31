@@ -381,6 +381,7 @@
     "rconPasswordRequired": "Modpas RCON obligatwa",
     "detectFirst": "Tanpri detekte yon sèvè dabò",
     "rconPasswordRequiredIni": "Modpas RCON obligatwa. Konfigire l nan fichye INI sèvè ou a dabò.",
+    "duplicateRemoteServer": "Gen yon sèvè distan ki rele \"{{name}}\" ak menm ost ak pò RCON sa a ki deja nan lis la.",
     "serverAddedTitle": "Sèvè Ajoute",
     "serverAddedDesc": "\"{{name}}\" ajoute nan panèl la",
     "addServerFailed": "Ajoute sèvè a echwe",
