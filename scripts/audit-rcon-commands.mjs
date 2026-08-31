@@ -74,6 +74,29 @@ for (const file of files) {
   }
 }
 
+// Pattern 2: a command built into a local variable first, then handed to
+// execute() by NAME rather than as a literal -- e.g. rcon.js's banPlayer():
+// `let cmd = \`banuser "${safeUser}"\`; ... return this.execute(cmd);`.
+// Pattern 1 can't see this: the literal isn't the direct execute() argument,
+// the variable is. Found via Pam's ground-truth count (43 real vs 42 here) --
+// banuser was the missing one, and it's a call-shape gap, not a file this
+// walk never reads (rcon.js was already included). Two-step, no AST needed:
+// find `word` = a template/string literal starting with a lowercase command
+// word, then check that SAME variable name is later passed to execute() in
+// the same file.
+const varPattern = /(?:let|const)\s+(\w+)\s*=\s*[`"']([a-zA-Z]+)/g;
+for (const file of files) {
+  const text = fs.readFileSync(file, "utf8");
+  for (const m of text.matchAll(varPattern)) {
+    const [, varName, word] = m;
+    if (found.has(word)) continue;
+    if (new RegExp(`execute\\w*\\(\\s*${varName}\\b`).test(text)) {
+      const rel = path.relative(root, file).replace(/\\/g, "/");
+      found.set(word, rel);
+    }
+  }
+}
+
 // Same "fail loudly rather than silently narrow" rule the sibling scripts
 // were just fixed to follow: an implausibly small count here means the
 // pattern or the directory walk broke, not that the panel genuinely only
