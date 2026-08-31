@@ -68,6 +68,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   down. A regenerated TLS certificate could also keep a stale, looser mode from before the
   regeneration. All of these now get an explicit, owner-only mode on every write.
 
+- **Live RCON command output was visible to any role that could view diagnostics, not just roles
+  that could actually run RCON commands.** The console's live command/response stream was
+  broadcast over the same channel as general log and performance data, gated on the broader
+  permission that covers those. A role granted only diagnostics access - a legitimate, narrower
+  grant on its own - could watch every admin's live RCON console output as it happened. It now has
+  its own channel, gated on the same permission required to run an RCON command in the first
+  place.
+
+- **Activating a server broadcast its RCON password, in plain text, to every connected browser.**
+  The server list already stripped credentials before sending a server's details to whoever
+  requested them, but the real-time notification sent the moment a server was activated skipped
+  that step - so any signed-in account, regardless of role, received the RCON password of
+  whichever server anyone activated.
+
+- **Eight actions that can target or impersonate a specific player - dropping up to 500 zombies on
+  them, spawning gunfire or noise near them, or sending a chat message that reads as coming from an
+  admin - were reachable by any role holding only the broad automation permission**, bypassing the
+  narrower player-targeting permission those same actions require everywhere else they're exposed.
+  Closed to match.
+
+- **A join password with a space around its `=` in the server config could reach Discord in plain
+  text.** Redacting secrets from outgoing Discord messages depends on reading each secret's current
+  value out of the config file first, and a hand-edited or manually-saved "Key = value" line (with
+  spaces) was invisible to the reader used for that - so the real password was never added to the
+  set of text to scrub, and an RCON response echoing it back would post to Discord unredacted.
+  Fixed at the source: config values with this spacing are now read correctly everywhere, closing
+  the same gap in every other place that reads them too.
+
+- **Clearing a server's RCON password didn't actually delete it - it came back on the next
+  restart.** The code that deletes a saved password's file only ran when a *new* password was
+  written; explicitly clearing the field to empty skipped that step entirely, so the old password's
+  file was left on disk and silently reloaded the next time the panel started, undoing what looked
+  like a successful clear.
+
 ### Added
 
 - **A live Vitals tab for players**, backed by PanelBridge's real player-detail data (health,
@@ -259,6 +293,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A handful of error messages and update-related notices were still showing in English regardless
   of your language setting.** The last of the untranslated raw-error sites, and the game-server
   preservation messaging introduced this cycle, are now translated in every supported language.
+
+- **A French admin choosing "Normal" for a vehicle's spawn rate was actually saving what the
+  English list calls "High" - a real, silent misconfiguration, not a display glitch.** Two French
+  sandbox-option scales (vehicle spawn rate and animal age) had their option labels shifted out of
+  order relative to the values they save, so the label read did not match the setting actually
+  applied. Both are corrected to match their real values; every other French option scale was
+  checked and no further instances were found.
+
+- **Several other French setting labels described the wrong setting entirely** - a stats-decay-
+  speed setting labeled "food expiration," an endurance-recovery setting carrying the same wrong
+  label, a farming-XP multiplier labeled as a generic agriculture multiplier, a house-locking-
+  frequency setting labeled "house alarm frequency," and a wildlife/fish abundance setting labeled
+  "agriculture abundance." Each came from the same label being reused across settings it didn't
+  actually describe. All are corrected to describe the setting they're actually attached to.
+
+- **The RCON console's main command box stayed active and clickable even when the connection
+  banner said the host was unreachable, and if the connection dropped mid-session it gave the same
+  "check host and port" advice as a connection that was never established at all.** The primary
+  command field and its Run button were missing the same disabled-when-disconnected check every
+  other control on the page already had, and a mid-session drop reused a generic message that made
+  no sense right after a command had just worked. The input now disables along with everything
+  else, and a drop mid-session gets its own, accurate message pointing at Recheck.
+
+- **Eight pages that should have shown "Access Denied" for a role without permission instead showed
+  the same "No Data" message as an empty, allowed page.** The icon next to the message correctly
+  showed a lock; the text underneath it didn't match. All eight now show the correct message.
+
+- **The mods conflict panel's "Fix All" button could mark a missing dependency as fixed even when
+  it wasn't.** Adding a dependency is a two-step process - subscribing to the Steam Workshop item,
+  then resolving it to a real mod ID - and the second step can fail on its own even when the first
+  succeeds, leaving the dependency subscribed but never actually loading. "Fix All" and the
+  single-item "Add" button both used to report success the moment the request itself didn't error,
+  without checking whether resolution had actually worked. Both now check the real per-item result
+  before marking anything fixed.
+
+- **When editing a remote server's details produced a name/host/port collision with another saved
+  server, the warning was a toast that faded away, leaving no lasting sign of which two fields
+  actually collided.** The Display Name and RCON host fields now get a persistent red outline and
+  inline hint for as long as the collision exists, clearing automatically the moment it's resolved.
+
+- **Running a sequence of world events could report complete success even when some steps failed -
+  and once that was fixed at the source, the detail of which steps failed still never reached the
+  screen.** The event sequence handler now reports which steps failed and how many, instead of
+  reporting success unconditionally. Separately, that kind of failure detail was being discarded
+  before it ever reached the browser at three different points along the way - an event sequence's
+  result, a teleport's failed position check, and a kill command's failure diagnostics all now show
+  what actually went wrong instead of a bare failure card, and the Events page shows a real
+  partial-success view naming which steps failed instead of treating any failure as total.
+
+- **A PanelBridge command response containing certain special characters could come back with
+  garbled text** - the decoder didn't handle one of the ways those characters are encoded in
+  transit, and dropped literal placeholder characters into the result instead of the real ones.
+  Fixed.
+
+- **Over an SFTP-based PanelBridge connection, a command could occasionally fail with "no response
+  from mod" even though the mod had already answered, or the connection could stall silently for a
+  long stretch after briefly losing sync.** Both came from the same underlying resync logic: it
+  could move its read position backward on a stale signal, triggering a long silent stall while it
+  re-processed already-handled data, and separately could jump forward past a result that had
+  genuinely already arrived without ever reading it. Both are fixed - the position can no longer
+  move backward, and a forward jump now recovers anything real that was sitting in the gap it
+  skips.
+
+- **Deleting a built-in template hid it with no way to bring it back, despite nothing suggesting
+  that was permanent.** The panel now shows any hidden built-in templates and lets you restore one
+  with a click.
+
+- **An unexpected server error could show as one run-on sentence with no punctuation between the
+  error detail and the panel's own explanation.** A separator is now added when the error detail
+  doesn't already end in punctuation of its own.
+
+- **A rare, inconclusive result from the panel's own startup safety check could let two copies of
+  the panel run against the same server at once** - the exact conflict (a locked port, a corrupted
+  database file) the check exists to prevent. An unclear result now makes the panel refuse to start
+  rather than assume it's safe to proceed; the failure is visible and easy to recover from (delete
+  the lock file and restart), unlike the silent conflict it used to risk.
+
+- **Importing a Steam Workshop collection reported a mod count that could be higher than what you
+  actually got**, with no indication that some individual items in the collection - deleted or made
+  private since the collection was created - failed to resolve at all. The response now reports
+  which requested items were skipped, alongside the existing notice for skipped sub-collections.
+
+- **A scheduled task using a comma-separated list of hours (rather than "every hour") could bypass
+  the panel's own 5-minute minimum spacing between runs.** The check meant to catch a task
+  configured to run too frequently only recognized the "every hour" case; a task set to fire at,
+  say, 5:58 and 6:00 - two minutes apart - was never flagged. It's now caught the same way
+  regardless of how the hours are listed.
+
+- **A scheduled backup's skip note in Schedule History said a file "vanished during archiving" even
+  when it was a symbolic link deliberately excluded on purpose, not a real disappearance.** The
+  note now describes the actual cause instead of assuming the file went missing.
+
+- **Wiping player or world data could report "nothing found to delete" even when the delete itself
+  had actually failed** - a locked or in-use file (for example, still held by antivirus or backup
+  software right after the server stopped) was silently logged and treated the same as a folder
+  that was genuinely already empty. A real deletion failure is now reported as a failure, with the
+  affected files named, instead of being reported as if there was nothing there to begin with.
 
 
 
