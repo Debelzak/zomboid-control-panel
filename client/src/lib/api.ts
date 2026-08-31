@@ -2202,6 +2202,15 @@ export const templatesApi = {
       success: boolean;
       error?: string;
     }>,
+  // A hidden built-in never appears in list() -- it's not deleted, just
+  // filtered out server-side (server/services/templateService.js) -- so
+  // these two are the only way to see one again and bring it back.
+  listHidden: () => apiGet("/templates/hidden") as Promise<{ templates: SimTemplate[] }>,
+  unhide: (id: string) =>
+    apiPost(`/templates/${encodeURIComponent(id)}/unhide`, {}) as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
 };
 
 // Wire shape of every response from POST /panel-bridge/command. `data.verified`
