@@ -998,7 +998,7 @@
       }
     },
     "LockedHouses": {
-      "label": "Fréquence des alarmes de maison",
+      "label": "Fréquence de verrouillage des maisons",
       "options": {
         "1": {
           "label": "Jamais"
@@ -1066,7 +1066,7 @@
       }
     },
     "NatureAbundance": {
-      "label": "Abondance de l'agriculture",
+      "label": "Abondance de la nature",
       "options": {
         "1": {
           "label": "Très pauvre"
@@ -1086,7 +1086,7 @@
       }
     },
     "FishAbundance": {
-      "label": "Abondance de l'agriculture",
+      "label": "Abondance de poissons",
       "options": {
         "1": {
           "label": "Très pauvre"
