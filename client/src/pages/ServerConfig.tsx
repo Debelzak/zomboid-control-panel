@@ -2322,22 +2322,20 @@ export default function ServerConfig() {
           <Alert className="mt-3 border-warning/40 bg-warning/10">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertTitle className="text-warning">{t('unresolvedReview.title')}</AlertTitle>
-            <AlertDescription className="mt-2 space-y-2">
+            <AlertDescription className="mt-2 space-y-3">
               {initialDeepLink.unresolved.map((modId) => {
                 const triage = initialDeepLink.unresolvedTriage.get(modId)
+                // Chip + action button share one line (both short, never wrap
+                // badly); the explanation is its own line below so a long
+                // sentence (workshopNotOnDisk especially) can wrap freely
+                // without dragging the button out of line with the chip.
                 return (
-                  <div key={modId} className="flex flex-wrap items-center gap-2">
-                    <code className="rounded border border-warning/30 bg-background/50 px-1.5 py-0.5 text-xs text-foreground">
-                      {modId}
-                    </code>
-                    {!triage && (
-                      <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeUnknown')}</span>
-                    )}
-                    {triage?.cause === 'typo' && triage.suggestion && (
-                      <>
-                        <span className="text-xs text-muted-foreground">
-                          {t('unresolvedReview.causeTypo', { suggestion: triage.suggestion })}
-                        </span>
+                  <div key={modId}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <code className="rounded border border-warning/30 bg-background/50 px-1.5 py-0.5 text-xs text-foreground">
+                        {modId}
+                      </code>
+                      {triage?.cause === 'typo' && triage.suggestion && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -2346,27 +2344,13 @@ export default function ServerConfig() {
                         >
                           {t('unresolvedReview.correctAction', { suggestion: triage.suggestion })}
                         </Button>
-                      </>
-                    )}
-                    {triage?.cause === 'stillDownloading' && (
-                      <>
-                        <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeStillDownloading')}</span>
+                      )}
+                      {(triage?.cause === 'stillDownloading' || triage?.cause === 'workshopNotOnDisk') && (
                         <Button asChild size="sm" variant="ghost" className="h-6 px-2 text-xs">
                           <Link to="/debug">{t('unresolvedReview.rerunDiagnostics')}</Link>
                         </Button>
-                      </>
-                    )}
-                    {triage?.cause === 'workshopNotOnDisk' && (
-                      <>
-                        <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeWorkshopNotOnDisk')}</span>
-                        <Button asChild size="sm" variant="ghost" className="h-6 px-2 text-xs">
-                          <Link to="/debug">{t('unresolvedReview.rerunDiagnostics')}</Link>
-                        </Button>
-                      </>
-                    )}
-                    {triage?.cause === 'absent' && (
-                      <>
-                        <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeAbsent')}</span>
+                      )}
+                      {triage?.cause === 'absent' && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -2375,8 +2359,15 @@ export default function ServerConfig() {
                         >
                           {t('unresolvedReview.removeAction')}
                         </Button>
-                      </>
-                    )}
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {!triage && t('unresolvedReview.causeUnknown')}
+                      {triage?.cause === 'typo' && triage.suggestion && t('unresolvedReview.causeTypo', { suggestion: triage.suggestion })}
+                      {triage?.cause === 'stillDownloading' && t('unresolvedReview.causeStillDownloading')}
+                      {triage?.cause === 'workshopNotOnDisk' && t('unresolvedReview.causeWorkshopNotOnDisk')}
+                      {triage?.cause === 'absent' && t('unresolvedReview.causeAbsent')}
+                    </p>
                   </div>
                 )
               })}
