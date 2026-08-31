@@ -35,7 +35,7 @@ export function isSupportedFiveFieldCron(expression) {
   );
 }
 
-function expandMinuteField(field) {
+function expandCronField(field, max) {
   const values = new Set();
 
   for (const part of field.split(",")) {
@@ -44,7 +44,7 @@ function expandMinuteField(field) {
 
     const start = match[1] === "*" ? 0 : Number(match[1]);
     const end = match[2] === undefined
-      ? (match[1] === "*" ? 59 : start)
+      ? (match[1] === "*" ? max : start)
       : Number(match[2]);
     const step = match[3] === undefined ? 1 : Number(match[3]);
     if (
@@ -52,7 +52,7 @@ function expandMinuteField(field) {
       !Number.isInteger(end) ||
       !Number.isInteger(step) ||
       start < 0 ||
-      end > 59 ||
+      end > max ||
       start > end ||
       step < 1
     ) {
@@ -67,18 +67,39 @@ function expandMinuteField(field) {
   return values.size > 0 ? values : null;
 }
 
+// bughunt-2026-08-31-c (server/utils sweep): the wrap-around check used to
+// fire only when `hour === "*"` literally -- so "0,58 5,6 * * *" (fires at
+// 5:58 and 6:00, 2 minutes apart) sailed through the 5-minute floor this
+// function exists to enforce, because the hour field is the discrete list
+// "5,6", not the wildcard string this checked for, even though it means
+// exactly the same "every listed hour" thing the wrap logic was written to
+// catch. Verified live: isCronTooFrequent("0,58 5,6 * * *") returned false
+// before this fix. Generalized by expanding BOTH fields into absolute
+// minutes-since-midnight and checking every consecutive gap, including the
+// day-wrap from the last firing back to the first -- this subsumes the old
+// hour==="*" special case rather than sitting alongside it, so there is
+// only one place left that can drift out of sync with the actual rule.
 export function isCronTooFrequent(expression) {
   if (hasUnsupportedCronFieldCount(expression)) return true;
   const [minute, hour] = expression.trim().split(/\s+/);
 
-  const values = expandMinuteField(minute);
-  if (!values) return true;
-  const sorted = [...values].sort((left, right) => left - right);
+  const minutes = expandCronField(minute, 59);
+  if (!minutes) return true;
+  const hours = expandCronField(hour, 23);
+  if (!hours) return true;
+
+  const dayMinutes = new Set();
+  for (const h of hours) {
+    for (const m of minutes) {
+      dayMinutes.add(h * 60 + m);
+    }
+  }
+  const sorted = [...dayMinutes].sort((left, right) => left - right);
   for (let index = 1; index < sorted.length; index += 1) {
     if (sorted[index] - sorted[index - 1] < 5) return true;
   }
-  if (hour === "*" && sorted.length >= 2) {
-    const wrap = 60 - sorted[sorted.length - 1] + sorted[0];
+  if (sorted.length >= 2) {
+    const wrap = 24 * 60 - sorted[sorted.length - 1] + sorted[0];
     if (wrap < 5) return true;
   }
 
