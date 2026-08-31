@@ -2253,6 +2253,43 @@ handlers.triggerStorm = function(args)
 end
 
 -- Stop weather
+--
+-- 2026-08-31 live bug (operator: "the stop weather only worked in game and
+-- not in the panel. i tried all buttons to remove the rain and it didnt
+-- work"). Root cause proven against the real jar's bytecode (javap -c,
+-- zombie.iso.weather.ClimateManager / ClimateManager$ClimateFloat), NOT
+-- guessed from method names -- two separate findings, and the obvious
+-- hypothesis (wrong method picked by the exists-first cascade below) turned
+-- out to be a dead end:
+--
+--   1. stopWeatherAndThunder() -- the method this cascade already picks
+--      FIRST, since it exists -- is the CORRECT server-side call, not a
+--      wrong one. Its own bytecode: no-ops if GameClient.client is true,
+--      otherwise stops weatherPeriod + thunderstorm and, if
+--      GameServer.server is true, ALSO transmits a ServerOnly climate
+--      packet to sync connected clients. And the in-game "Stop current
+--      weather" debug button's own server-side packet handler
+--      (serverReceiveClientChangeWeather, reached via transmitStopWeather's
+--      ClientOnly request) calls this EXACT SAME method -- there is no
+--      hidden extra step on the working path. transmitStopWeather itself is
+--      a CLIENT->SERVER request packet (ClimateNetAuth.ClientOnly) -- the
+--      wrong one to call FROM the server, not the missing piece.
+--   2. The REAL gap: precipitationIntensity is a ClimateFloat with its own
+--      admin-override mechanism (used by handlers.startRain /
+--      handlers.setSnow, via setAdminValue+setEnableAdmin). ClimateFloat's
+--      calculate() (decompiled) pins finalValue = adminValue UNCONDITIONALLY
+--      whenever isAdminOverride is true, completely bypassing weatherPeriod
+--      -- and isRaining() is defined as getPrecipitationIntensity() > 0 AND
+--      NOT snow. stopWeatherAndThunder never touches this override; only
+--      transmitServerStopRain (what handlers.stopRain already calls) does.
+--      So once rain had EVER been admin-forced via the panel, "Stop All
+--      Weather" stopped the weather PERIOD but the admin-pinned rain kept
+--      falling forever -- exactly the reported symptom. The panel's "Stop
+--      All Weather" button (Events.tsx) only ever called this handler, not
+--      the separate "Reset Climate" button (handlers.resetClimateOverrides)
+--      that WOULD have cleared it -- an easy thing for an operator to not
+--      think to also press, and a much bigger hammer (resets every climate
+--      float, not just rain) than "stop weather" should require anyway.
 handlers.stopWeather = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2270,6 +2307,12 @@ handlers.stopWeather = function(args)
         else
             error("No stop weather method available")
         end
+        -- Clear a lingering rain admin-override regardless of which stop
+        -- variant above ran -- same call handlers.stopRain already uses.
+        -- Best-effort: stopping the weather period is still real progress
+        -- even if this particular call fails, so don't let it fail the
+        -- whole handler; the verify step below is the actual honesty check.
+        PanelBridge.invoke(climate, "transmitServerStopRain")
         PanelBridge.debug("Weather stopped", { method = used })
     end)
 
@@ -2277,7 +2320,24 @@ handlers.stopWeather = function(args)
         return false, nil, "Failed to stop weather: " .. tostring(err)
     end
 
-    return true, { message = "Weather stopped" }
+    -- Verify against the same ground truth the operator actually sees --
+    -- isRaining() -- rather than trusting that neither invoke() call threw.
+    -- House convention (see PanelBridge.verifiedResult / setGodMode's
+    -- comment for why this needs an explicit if/then, not `a and b or c`).
+    local stillRaining = PanelBridge.tryGet(climate, "isRaining")
+    local verified
+    if stillRaining == nil then
+        verified = nil
+    elseif stillRaining == false then
+        verified = true
+    else
+        verified = false
+    end
+
+    PanelBridge.info("Stop weather", { verified = verified })
+
+    return PanelBridge.verifiedResult(verified, { message = "Weather stopped" },
+        "Stop weather call succeeded but it is still raining")
 end
 
 -- Generate custom weather period
