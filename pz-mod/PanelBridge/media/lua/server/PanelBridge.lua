@@ -8550,9 +8550,11 @@ Events.OnTickEvenPaused.Add(PanelBridge.onTick)
 -- separate `handlers` local and is unaffected by this field.
 PanelBridge.handlers = handlers
 
--- Same additive-only exposure as PanelBridge.handlers above, for the same
--- reason: the JS test harness (fengari) has no other way to reach a
--- file-local like `json` to exercise json.encode/json.decode directly.
+-- TEST-ONLY EXPOSURE, same additive-only precedent as PanelBridge.handlers
+-- above and for the same reason: the JS test harness (fengari) has no other
+-- way to reach a file-local like `json` to exercise json.encode/json.decode
+-- directly. This is not a public API for other mods to depend on -- it
+-- exists solely so vitest can call into this file's own JSON parser.
 -- Nothing in this file or on the panel side enumerates PanelBridge's own
 -- fields (verified by the same grep as the handlers exposure above).
 PanelBridge.json = json
