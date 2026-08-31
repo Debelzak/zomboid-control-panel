@@ -18,6 +18,7 @@
   },
   "matrix": {
     "capabilityColumnHeader": "Recht",
+    "scrollHint": "Nach rechts scrollen, um alle Rollen zu sehen →",
     "seededBadge": "Integriert",
     "memberCount_one": "{{count}} Mitglied",
     "memberCount_other": "{{count}} Mitglieder",

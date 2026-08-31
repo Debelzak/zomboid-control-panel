@@ -528,6 +528,11 @@ export default function RolesPermissions({ embedded = false }: { embedded?: bool
         <>
           <Card>
             <CardContent className="p-0">
+              {roles.length > 1 && (
+                <p className="border-b border-border/60 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground sm:hidden">
+                  {t('matrix.scrollHint')}
+                </p>
+              )}
               <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full min-w-[720px] border-collapse text-sm">
                   <thead>
