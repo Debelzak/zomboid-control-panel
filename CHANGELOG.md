@@ -10,8 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **A crafted install path could run shell commands on a Linux server managed as an OpenRC
-  service** - service-script values are now escaped against OpenRC's own second, unquoted read of
-  the file, not just the first.
+  service** - service-script values are now escaped against OpenRC's own second, unquoted read.
 - **Deleting or checking the size of a save could reach outside the intended save folder** using
   `.` or `..` as the save name - both are now explicitly rejected everywhere a save name is
   accepted.
@@ -35,11 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Activating a server broadcast its RCON password, in plain text, to every connected browser** -
   the notification is now sanitized like every other server-detail response.
 - **Eight actions that can target or impersonate a player were reachable by any role holding only
-  the broad automation permission** - now correctly gated behind the narrower player-targeting
-  permission.
+  the broad automation permission** - now gated behind the narrower player-targeting permission.
 - **A join password with a space around its `=` in the server config could reach Discord in plain
-  text** - spaced config values are now read correctly everywhere secrets are scrubbed from
-  outgoing messages.
+  text** - spaced config values are now read correctly wherever secrets get scrubbed.
 - **Clearing a server's RCON password didn't actually delete it - it came back on the next
   restart.**
 - **Restoring a backup from a specially-crafted filename could write outside the intended config
@@ -47,9 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A diagnostic mod action could be triggered by any role holding only the general automation
   permission, without the stricter diagnostics permission it should require** - now correctly
   requires both.
-- **Several Linux secret and config files (TLS certificates, mirrored remote-server configs, and
-  files rewritten in place) could end up more permissive than intended, especially after being
-  regenerated** - all now keep a locked-down, owner-only mode.
+- **Several Linux secret and config files could end up more permissive than intended**, especially
+  after being regenerated - all now keep a locked-down, owner-only mode.
 
 ### Added
 
@@ -93,17 +89,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A panel-initiated restart could leave a server unable to start again** if the previous process
-  was still shutting down outside the panel's own container - the restart now checks whether the
-  specific binary file is still busy, not just the local process table.
+  was still shutting down - now checks the actual binary file, not just the process table.
 - **PanelBridge command round-trips could intermittently hang for the full 15-second timeout** if
-  more than one panel process ever pointed at the same bridge folder - the sequence counter now
-  resynchronizes continuously instead of once.
+  more than one panel process shared a bridge folder - the sequence counter now resyncs
+  continuously.
 - **Several PanelBridge-backed actions (killing/healing a player, utility restore/shut-off) could
   report success on a mutation that had already failed** - each now reports what actually
   happened.
-- **Weather, sandbox options, and per-player detail reads could lose everything to one bad
-  field** - each field is now read and guarded independently, and several previously-empty fields
-  (bleeding state, temperature, sandbox options) now return real values.
+- **Weather, sandbox options, and per-player reads could lose everything to one bad field** - each
+  field is now read independently, and several previously-empty fields now return real values.
 - **Vehicle actions reported "Vehicle not found" for problems that had nothing to do with the
   vehicle** - a failed vehicle-list read and a genuinely missing vehicle are now reported
   distinctly.
@@ -111,31 +105,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pick the wrong direction or the wrong API entirely** - both now use the one API each actually
   supports.
 - **RCON commands like ban, unban, and whitelist add/remove could report success on a command the
-  game server had actually rejected** - the classifier now recognizes every relevant rejection
-  class and can no longer be fooled by a player's name.
+  server had rejected** - the classifier now catches every rejection, unfoolable by a player's
+  name.
 - **A dropped RCON connection could go undetected until the next command was sent** - the panel
   now recognizes the drop by its real error code.
 - **The Add Remote Server dialog claimed weather and world-event controls would work over RCON
-  alone** - they don't, and the banner now says so and points at the SFTP bridge setup that
-  actually enables them.
-- **A batch of real mobile-layout defects across Settings, Events, Players, Debug, Console, World
-  Map, and Chat** - truncated text, horizontal overflow, an uncollapsible roster panel, a section
-  pick that left you scrolled above its own content, and a hidden Activity Log column - fixed
-  without changing desktop layouts.
+  alone** - they don't, and the banner now points at the SFTP bridge setup that actually enables
+  them.
+- **A batch of real mobile-layout defects were fixed across Settings, Events, Players, Debug,
+  Console, World Map, and Chat** - truncated text, overflow, other layout breaks - desktop
+  untouched.
+- **An uncollapsible roster panel, a section pick that left you scrolled above its own content, and
+  a hidden Activity Log column** were part of the same mobile-layout sweep - all fixed on mobile
+  only.
 - **Chat broadcast placeholder text was clipping mid-word**, worse in French and Spanish than
   English - fixed by trimming a redundant clause instead of shrinking the text further.
 - **A failed scheduled backup, or a scheduler running against the wrong timezone, gave no visible
-  signal anywhere in the panel** - failures now surface on the Auto-Backup status card, and every
-  schedule reports its real timezone.
+  signal** - failures now surface on the Auto-Backup card, with the real timezone shown.
 - **Backup listing and pruning could pick the wrong file when two backups were created within the
   same instant** - both now sort by the timestamp embedded in the backup's own filename.
 - **Restoring a backup no longer trusts a corrupted archive, and a restore in progress can no
   longer be interrupted by a second restore or a new backup starting.**
 - **The panel could report having regenerated a start script, or saved a mod ID, when neither was
   actually true** - both now reflect what actually happened.
-- **Mods, workshop items, and map entries with unusual whitespace in the server's `.ini` file
-  could be missed or duplicated on save** - all affected sites are now whitespace-tolerant, and
-  structured saves preserve the file's original formatting.
+- **Mods, workshop items, and map entries with unusual whitespace in the server's `.ini` file could
+  be missed or duplicated on save** - all affected sites are now whitespace-tolerant.
 - **Dashboard status could lag well behind what the server was actually doing**, and the
   Stop/Force Stop/Restart buttons could stay stuck disabled even when the server was
   controllable - both closed.
@@ -143,12 +137,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recover** - the dashboard's live connection now recovers on its own.
 - **A single bad reply from the game-server discovery scan could crash the entire panel
   process** - it's now caught where it occurs.
-- **Several Linux-specific installation and discovery gaps** - bare-metal SteamCMD, Flatpak
-  Steam's workshop folder, an extensionless launcher script, a root-owned first run, and a bare
-  `EACCES` - all fixed with real detection or a clear diagnostic.
-- **The updater could lose recent database changes, corrupt a Windows path, or fail to notice a
-  supervisor-level recovery had actually failed** - all fixed, and frontend/backend bundles now
-  activate together as one unit.
+- **Several Linux-specific installation and discovery gaps** - bare-metal SteamCMD, Flatpak's
+  workshop folder, an extensionless launcher, a root-owned first run, and a bare `EACCES` - all
+  fixed.
+- **The updater could lose recent database changes, corrupt a Windows path, or miss a failed
+  supervisor recovery** - all fixed, and frontend/backend bundles now activate together as one
+  unit.
 - **A sustained Discord rate limit could hang the notification path indefinitely** - sending a
   Discord message is now bounded.
 - **The spawn browser's "recent" rail could overflow the dialog and had no way to clear it** -
@@ -158,6 +152,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker containers reported the panel's version as `v0.0.0`, which blocked the panel from
   loading entirely** - both backend and frontend build identifiers now resolve correctly in a
   container.
+- **A blocked automatic update showed a generic "Unknown" reason when a Steam install or update
+  was already running** - it now explains that clearly, in your own language.
 - **A handful of error messages and update-related notices were still showing in English
   regardless of your language setting** - now translated in every supported language.
 - **A French admin choosing "Normal" for a vehicle's spawn rate was actually saving what the
@@ -172,9 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it wasn't** - it now checks the real per-item result before marking anything fixed.
 - **A name/host/port collision when editing a remote server was only shown as a toast that faded
   away** - the colliding fields now stay marked until the collision is resolved.
-- **Running a sequence of world events could report complete success even when some steps failed,
-  and the failure detail never reached the screen** - it's now reported accurately, with a real
-  partial-success view.
+- **Running a sequence of world events could report complete success even when some steps failed**
+  - it's now reported accurately, with a real partial-success view.
 - **A PanelBridge command response containing certain special characters could come back with
   garbled text** - fixed.
 - **Over an SFTP-based PanelBridge connection, a command could fail with "no response from mod"
@@ -184,8 +179,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An unexpected server error could show as one run-on sentence with no punctuation** - a
   separator is now added automatically.
 - **A rare, inconclusive result from the panel's startup safety check could let two copies of the
-  panel run against the same server at once** - an unclear result now makes the panel refuse to
-  start instead of assuming it's safe.
+  panel run against the same server at once** - it now refuses to start instead of assuming it's
+  safe.
 - **Importing a Steam Workshop collection reported a mod count that could be higher than what you
   actually got** - the response now reports which items were skipped.
 - **A scheduled task using a comma-separated list of hours could bypass the panel's 5-minute
@@ -196,9 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   itself had actually failed** - a real deletion failure is now reported as one.
 - **"Stop All Weather" now clears rain that was forced on from the panel** - previously it stopped
   storms but left that rain falling indefinitely.
-- **Triggering a storm while one was already running silently did nothing but reported success,
-  and "Generate Weather" never worked at all** - both now work correctly, and a busy trigger
-  explains why it didn't fire.
+- **Triggering a storm while one was already running silently did nothing but reported success, and
+  "Generate Weather" never worked at all** - both now work, and a busy trigger explains why.
 - **14 weather and climate controls could report success on a change that silently failed to
   apply** - they now confirm the change actually took effect.
 - **A PanelBridge mod fix could sit undelivered on a server indefinitely** - the updater now
@@ -213,9 +207,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed.**
 - **On Windows, a real, running dedicated server launched in an unusual way could be confidently
   reported as not running** - now treated the same cautiously as the Linux side already is.
-- **A failed disk or process scan could be silently read as "the server is confirmed stopped"**,
-  which could suppress the "stop the server first" warning or show the wrong Dashboard status - a
-  failed scan now reads as "unknown."
+- **A failed disk or process scan could be silently read as "the server is confirmed stopped"** - a
+  failed scan now reads as "unknown" instead, so real warnings aren't suppressed.
 - **Uploading a backup after being idle for a while could fail outright with a session error**
   instead of quietly refreshing your session, unlike every other action.
 - **The template preview screen could show the wrong label for a setting about to change**, since
@@ -229,21 +222,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auto-sort by dependencies could wrongly mark an installed mod as missing** if its ID only
   differed from its requirement by letter case - both now match the same way.
 - **A launcher script saved with an uppercase file extension could silently break PanelBridge
-  auto-update and automatic mod installation** - the install folder is now found correctly
-  regardless of extension case.
-- **Starting a server (including via a managed systemd/OpenRC service), restarting it, or applying
-  an update could all run at the same time as an in-progress Steam install/update** - concurrent
-  operations against the same install now refuse instead of racing each other.
+  auto-update and mod installation** - the install folder is now found regardless of extension
+  case.
+- **Starting, restarting, or updating a server could run at the same time as an in-progress Steam
+  install/update** - concurrent operations against the same install now refuse instead of racing.
 - **A critical disk-health alert could silently clear itself the moment the disk became
-  unreachable, and a config-edit safety warning could be skipped when the server's path was only
-  briefly unreachable** - both now fail safely instead of silently.
-- **Enabling, reordering, or reapplying a preset for a mod whose ID happens to look like a Steam
-  Workshop ID could silently drop it**, even when it's the mod's real ID - the panel now checks the
-  mod's actual files on disk first.
-- **Numerous small visual and interaction inconsistencies were fixed across Players, Events,
-  Debug, Settings, and Chat** - mismatched button styling, a touch-only tooltip gap, a
-  chunk-selection action affecting the wrong area, moderation buttons that looked enabled when
-  blocked, and decorative header chrome that didn't match the rest of the panel.
+  unreachable** - it now fails safely instead of silently, along with a related config-edit safety
+  warning.
+- **Enabling, reordering, or reapplying a preset for a mod whose ID looks like a Steam Workshop ID
+  could silently drop it** - the panel now checks the mod's actual files on disk first.
+- **Several small visual inconsistencies were fixed across Players, Events, Debug, Settings, and
+  Chat** - mismatched button styling, a touch-only tooltip gap, mismatched header chrome.
+- **A chunk-selection action affecting the wrong area, and moderation buttons that looked enabled
+  when blocked**, were part of the same visual-consistency pass - both fixed.
 - **The Dashboard could label stale performance numbers as "live" even when the server's status
   couldn't be confirmed** - it now shows an honest "unconfirmed" label instead.
 - **The Dashboard's list of items needing attention wasn't sorted by severity** - the most urgent
@@ -252,14 +243,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error toast saying the same thing** - the duplicate toast is now skipped.
 - **A long template description could overflow its card, and deleting a built-in template warned
   "this can't be undone" even though it's always reversible** - both fixed.
-- **The Debug page showed duplicate buttons where only one actually worked across 17 diagnostic
-  checks, and its Health/PanelBridge headlines (along with the World Map's "mod connected"
-  status) could contradict their own detail or claim an issue before the first check had even
-  run** - all now show one working action and headlines that match reality.
-- **Several Settings tabs had confusing or wrong states** - the Updates and About tabs could claim
-  "Up to date" before ever actually checking, Backups' empty message didn't explain why Backup Now
-  was disabled, the PanelBridge card had a layout gap, and Workshop cookie fields showed before
-  they were relevant.
+- **The Debug page showed duplicate buttons where only one actually worked, across 17 diagnostic
+  checks** - it now shows one working action for each check.
+- **The Debug page's Health/PanelBridge headlines, and the World Map's "mod connected" status,
+  could contradict their own detail or claim an issue before the first check ran** - both now match
+  reality.
+- **Several Settings tabs had confusing or wrong states** - Updates and About could claim "Up to
+  date" before ever checking, and Backups' empty message didn't explain why Backup Now was
+  disabled.
+- **The PanelBridge card had a layout gap, and Workshop cookie fields showed before they were
+  relevant** - both part of the same Settings cleanup, both fixed.
 - **The initial Setup screen's Submit button stayed clickable with an invalid panel port** - it's
   now disabled until the port is valid, matching every other field.
 - **A technician-level role running RCON commands saw nothing in the Console Output panel**, and a
@@ -267,8 +260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings and Sandbox tabs showed a false "file missing" warning for a remote server that
   simply had no SFTP bridge configured** - the badge is now suppressed for that case.
 - **Clicking Install twice during server setup could wipe the in-flight install log and start a
-  second install underneath the first, and the Max RAM slider was capped below the field next to
-  it** - both fixed.
+  second install underneath the first** - fixed, along with a Max RAM slider capped below its own
+  field.
 - **Starting a new backup shortly after a previous one finished could make its progress display
   revert to a generic "Creating backup..." message** instead of the new backup's real progress -
   fixed.
@@ -276,42 +269,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status kept showing a stale reading after the bridge disconnected** - both fixed.
 - **The Settings page's PanelBridge badge could say "Connected" with an enabled Ping button even
   when the panel couldn't actually send commands** - both now reflect the real connection state.
-- **Panning the world map to certain areas could show hard-edged black rectangles over otherwise-
-  loaded terrain on some map versions** - the map viewer now compares every field of the server's
-  map info before deciding nothing changed.
+- **Panning the world map could show hard-edged black rectangles over otherwise-loaded terrain**,
+  on some map versions - the viewer now compares every field before deciding nothing changed.
 - **A fully configured remote server could be told "No server configured" on the Dashboard, Server
   Config, or Live Activity** - all views now recognize a configured remote server correctly.
 - **Submitting Add Remote Server twice could silently create two identical remote server
   entries** - a duplicate with the same name, RCON host, and RCON port is now blocked.
-- **Several pages (Chunk Cleaner, Servers, Backups, and the sidebar) could flash a false "none
-  found" message while data was still loading, or hang with no error after a failed fetch** - each
-  now distinguishes "still loading" from "confirmed empty" and shows a real, retry-able error.
+- **Several pages could flash a false "none found" message while data was still loading, or hang
+  with no error after a failed fetch** - each now shows a real, retry-able error instead.
 - **Over an SFTP-based PanelBridge connection, the panel's automatic recovery from a stuck command
-  queue never actually worked** - the panel now uploads what that recovery check depends on, in
-  the correct order.
+  queue never actually worked** - it now uploads what that recovery depends on, in the correct
+  order.
 - **Raw log files in a downloaded support bundle were never scanned for passwords, tokens, or
-  session cookies, unlike the diagnostics summary in the same bundle** - all raw log sources are
-  now redacted for known secret shapes.
+  session cookies**, unlike the diagnostics summary in the same bundle - now redacted the same way.
 - **No-clip, God Mode, and invisibility could report success on a player without the change
-  actually taking effect** - the panel now uses a bypass that makes the change apply regardless of
-  the player's own in-game permissions.
+  actually taking effect** - the panel now bypasses the player's own in-game permissions to apply
+  it.
 - **A manually configured PanelBridge bridge path could be lost after a panel restart** - it's now
   saved with your settings and restored automatically.
 - **The PanelBridge diagnostics tab could describe your game version's build capabilities
-  inaccurately**, including reporting an unverifiable capability as a confirmed failure - wording
-  and detection both corrected.
+  inaccurately**, including reporting an unverifiable capability as a failure - wording and
+  detection corrected.
 - **Exporting a player's data could silently merge two different worn containers that only looked
   identical to the panel, losing items in the process** - each is now kept separate correctly.
 - **A sandbox option change could appear not to have taken effect for up to 5 minutes after
   saving it** - the panel was serving a stale cached copy, now correctly refreshed after a change.
-- **Exporting or importing a player's data could crash entirely, losing traits, worn items, and
-  inventory too, if a single perk couldn't be read** - an unreadable perk is now skipped instead of
-  failing the whole operation.
+- **Exporting or importing a player's data could crash entirely if a single perk couldn't be read**
+  - losing traits, worn items, and inventory too - an unreadable perk is now just skipped.
 - **Importing player data could report a level restoration as failed even though the level change
   had actually landed** - the reported result now matches what was actually restored.
-- **Changing a sandbox option could show a false "World not available" error even though the
-  change saved successfully, and a manual world save could never succeed at all** - both now use
-  the correct save call.
+- **Changing a sandbox option could show a false "World not available" error even though it
+  saved**, and a manual world save could never succeed at all - both now use the correct save call.
 - **A server alert could silently degrade to an ordinary chat message with no banner, without
   falling back to RCON like other broadcasts already do** - alerts now fall back to RCON the same
   way.
@@ -319,12 +307,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   more specific reason** - the actual error and diagnostic detail now reach the screen.
 - **The safehouse "Add Player" button could silently add whichever player happened to be first in
   the server's online list, not the one you meant** - you must now pick a player before it works.
-- **A player, item, or vehicle action could be wrongly reported as unsupported on your game
-  version even though it actually works** - a caching bug that could confuse two different objects
-  together is fixed.
-- **Adding or removing a player from a faction, or changing a faction's tag, could report success
-  even though the change wasn't actually synced to already-connected players** - the response now
-  says plainly when it only applied locally.
+- **A player, item, or vehicle action could be wrongly reported as unsupported on your game version
+  even though it works** - a caching bug confusing two different objects is fixed.
+- **Adding/removing a player from a faction, or changing a faction's tag, could report success even
+  when it wasn't synced to connected players** - the response now says when it only applied
+  locally.
 - **The World Map's player dossier could show blank hunger, thirst, and fatigue** for a selected
   player - it now displays their real, live values.
 - **The Events page's time-speed slider could show a stale multiplier** after a change made via
@@ -334,8 +321,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A vehicle's siren had no toggle on the Events page, and the World Map's siren indicator never
   lit up** - both fixed, with a new Siren button added.
 - **Map tiles cached in your browser could keep showing an old game build's imagery** for up to a
-  week after an update - tile addresses now include the exact build, so a browser can no longer
-  mix stale and fresh tiles.
+  week after an update - tile addresses now include the build, so tiles can't go stale.
 - **A configuration change saved right as the panel was shutting down could be silently lost** -
   shutdown now waits for the save to finish first.
 - **The live chat and admin log view could silently freeze on an old session's log file** when two
@@ -343,22 +329,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A crash or failed save could leave stray temporary files behind indefinitely**, slowly
   consuming disk space - failed saves now clean up after themselves.
 - **Saving server settings through the structured config editor could silently convert a
-  Windows-style file's line endings**, rewriting the entire file even when only one setting
-  changed - the original line-ending style is now preserved.
-- **After a Linux in-place update, the page's own anti-flicker startup script could be blocked by
-  the browser's security policy for a few seconds before the panel restarts** - the security policy
-  is now kept in sync with the newly-installed files.
+  Windows-style file's line endings** - the original line-ending style is now preserved.
+- **After a Linux in-place update, the anti-flicker startup script could be blocked by the
+  browser's security policy for a few seconds** - the policy now stays in sync with newly-installed
+  files.
 - **Toggling "Start server automatically" could fail to actually save the change** - the setting
   is now sent as a real on/off value instead of text that could be misread.
 - **A Docker/container install that couldn't self-update was told to run `git pull`, which does
   nothing in a container** - it now gives the correct container-update instructions instead.
-- **PanelBridge.lua could be installed with permissions too strict for the account actually
-  running the game server**, so the mod silently never loaded when the panel and game server run
-  as different Linux users - it's now installed with permissions that account can always read.
-- **Restarting or updating the panel on a bare-metal Linux install could also stop any running
-  Project Zomboid server**, since both shared the same process group - the Linux launcher now
-  isolates panel restarts from the game server, and warns plainly if your install isn't using the
-  protected launcher.
+- **PanelBridge.lua could be installed with permissions too strict for the account running the game
+  server**, so the mod silently never loaded - now installed with permissions that account can
+  read.
+- **Restarting or updating the panel on a bare-metal Linux install could also stop the running
+  Zomboid server**, since both shared a process group - panel restarts are now isolated from it.
+- **The Linux launcher now warns plainly if your install isn't using the protected launcher**, so
+  this failure mode is visible instead of silent.
 - Horde spawning now uses the coordinate-aware Build 42 API and reports zero-result failures honestly.
 - Workshop cookie extraction now ignores expired cookies and pairs fresh credentials from the correct browser profile and domain.
 - Vehicle and player map actions now work on click/tap, guard against stale or offline state, and prevent overlapping commands.
