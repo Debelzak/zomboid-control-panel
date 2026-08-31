@@ -211,6 +211,7 @@
     "remoteTitle": "Serveur distant",
     "remoteDesc": "La gestion RCON uniquement est disponible pour ce serveur.",
     "displayNameLabel": "Nom d'affichage",
+    "duplicateRemoteServerHint": "Correspond au nom, à l'hôte et au port d'un autre serveur distant.",
     "serverNameLabel": "Nom du serveur",
     "serverNameTip": "Cela doit correspondre au vrai nom interne de votre serveur — le nom du fichier .ini et du dossier de sauvegarde qu'il utilise (ex. servertest.ini → Saves/Multiplayer/servertest). Le modifier ici ne renomme aucun fichier ; cela indique simplement au panneau de pointer vers une autre configuration et un autre dossier de sauvegarde, qui peuvent ne pas exister.",
     "dockerContainerLabel": "Conteneur Docker géré",

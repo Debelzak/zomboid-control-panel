@@ -346,6 +346,26 @@ export default function Servers() {
     return found
   }, [addMode, servers, newServer.serverName, newServer.serverPort, newServer.rconPort, newServer.zomboidDataPath, newServer.installPath, t])
 
+  // Same name+host+port collision handleSaveEdit already blocks Save on
+  // (see its own comment for why -- bug-hunt-2026-08-31, f557c795) --
+  // computed live here too so the two fields that actually collided keep a
+  // persistent invalid marker after the save-time toast fades, instead of
+  // only surfacing at the moment Save is clicked. Derived from current field
+  // values every render, so it clears itself the instant either field no
+  // longer collides -- no separate state to remember to reset.
+  const editDuplicateRemoteConflict = useMemo(() => {
+    if (!editingServer || !editingServer.isRemote) return false
+    const normalizedName = (editingServer.name || '').trim().toLowerCase()
+    const normalizedHost = (editingServer.rconHost || '').trim().toLowerCase()
+    return (servers || []).some(s =>
+      s.id !== editingServer.id &&
+      s.isRemote &&
+      (s.name || s.serverName || '').trim().toLowerCase() === normalizedName &&
+      (s.rconHost || '').trim().toLowerCase() === normalizedHost &&
+      s.rconPort === editingServer.rconPort
+    )
+  }, [editingServer, servers])
+
   // Detection state
   const [detecting, setDetecting] = useState(false)
   const [detectResult, setDetectResult] = useState<DetectResult | null>(null)
@@ -1159,24 +1179,17 @@ export default function Servers() {
     // name/host/port to collide with another server reproduces the exact
     // same two-indistinguishable-cards outcome the Add-path fix exists to
     // prevent. Excludes the server being edited from its own comparison.
-    if (editingServer.isRemote) {
-      const normalizedName = (editingServer.name || '').trim().toLowerCase()
-      const normalizedHost = (editingServer.rconHost || '').trim().toLowerCase()
-      const isDuplicate = (servers || []).some(s =>
-        s.id !== editingServer.id &&
-        s.isRemote &&
-        (s.name || s.serverName || '').trim().toLowerCase() === normalizedName &&
-        (s.rconHost || '').trim().toLowerCase() === normalizedHost &&
-        s.rconPort === editingServer.rconPort
-      )
-      if (isDuplicate) {
-        toast({
-          title: t('toasts.error'),
-          description: t('toasts.duplicateRemoteServer', { name: (editingServer.name || '').trim() }),
-          variant: 'destructive',
-        })
-        return
-      }
+    // Shares editDuplicateRemoteConflict's own logic (defined above with the
+    // other hooks) rather than re-deriving it here, so the persistent
+    // field-level styling below can never drift from what actually blocks
+    // Save.
+    if (editDuplicateRemoteConflict) {
+      toast({
+        title: t('toasts.error'),
+        description: t('toasts.duplicateRemoteServer', { name: (editingServer.name || '').trim() }),
+        variant: 'destructive',
+      })
+      return
     }
 
     setSavingEdit(true)
@@ -2595,7 +2608,12 @@ export default function Servers() {
                     value={editingServer.name}
                     onChange={e => setEditingServer({ ...editingServer, name: e.target.value })}
                     maxLength={100}
+                    aria-invalid={editDuplicateRemoteConflict}
+                    className={editDuplicateRemoteConflict ? 'border-destructive/70' : ''}
                   />
+                  {editDuplicateRemoteConflict && (
+                    <p className="text-xs text-destructive">{t('editDialog.duplicateRemoteServerHint')}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5">
@@ -2769,11 +2787,15 @@ export default function Servers() {
                     value={editingServer.rconHost}
                     onChange={e => setEditingServer({ ...editingServer, rconHost: e.target.value })}
                     placeholder={editingServer.isRemote ? t('editDialog.rconHostPlaceholderRemote') : t('editDialog.rconHostPlaceholderLocal')}
+                    aria-invalid={editDuplicateRemoteConflict}
+                    className={editDuplicateRemoteConflict ? 'border-destructive/70' : ''}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {editingServer.isRemote
-                      ? t('editDialog.rconHostHintRemote')
-                      : t('editDialog.rconHostHintLocal')}
+                  <p className={editDuplicateRemoteConflict ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+                    {editDuplicateRemoteConflict
+                      ? t('editDialog.duplicateRemoteServerHint')
+                      : editingServer.isRemote
+                        ? t('editDialog.rconHostHintRemote')
+                        : t('editDialog.rconHostHintLocal')}
                   </p>
                 </div>
                 <div className="space-y-2">

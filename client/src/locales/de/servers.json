@@ -211,6 +211,7 @@
     "remoteTitle": "Remote-Server",
     "remoteDesc": "Für diesen Server ist nur die RCON-Verwaltung verfügbar.",
     "displayNameLabel": "Anzeigename",
+    "duplicateRemoteServerHint": "Stimmt mit Name, Host und Port eines anderen Remote-Servers überein.",
     "serverNameLabel": "Servername",
     "serverNameTip": "Das muss mit dem tatsächlichen internen Namen deines Servers übereinstimmen — dem Namen der .ini-Datei und des Speicherordners, die er verwendet (z. B. servertest.ini → Saves/Multiplayer/servertest). Das Ändern hier benennt keine Dateien um; es weist das Panel nur an, auf eine andere Konfiguration und einen anderen Speicherordner zu zeigen, die möglicherweise nicht existieren.",
     "dockerContainerLabel": "Verwalteter Docker-Container",

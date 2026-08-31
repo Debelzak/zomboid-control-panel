@@ -171,6 +171,37 @@ describe('Servers -- Edit Server duplicate detection (extends f557c795 to the up
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('keeps a persistent invalid marker on the two colliding fields after the blocked-save toast fades (Angela\'s servers:duplicate-edit finding)', async () => {
+    renderServers()
+    await openEditDialogFor('Server Two')
+
+    const nameInput = screen.getByDisplayValue('Server Two')
+    fireEvent.change(nameInput, { target: { value: 'Server One' } })
+    const hostInput = screen.getByPlaceholderText(en.editDialog.rconHostPlaceholderRemote)
+    fireEvent.change(hostInput, { target: { value: '192.168.1.50' } })
+    const portInput = screen.getByDisplayValue('27016')
+    fireEvent.change(portInput, { target: { value: '27015' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }))
+    await waitFor(() => expect(toastSpy).toHaveBeenCalled())
+
+    // The toast is a transient side effect that a test can only assert was
+    // called, not that it's still rendered -- the real bug was that nothing
+    // ELSE marked the collision, so simulate the toast having already faded
+    // by not asserting on it again here and checking the fields directly.
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(hostInput).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getAllByText(en.editDialog.duplicateRemoteServerHint)).toHaveLength(2)
+
+    // And it must be genuinely LIVE, not a one-shot flag stuck on: changing
+    // either field back out of collision clears the marker immediately,
+    // with no second Save click needed.
+    fireEvent.change(hostInput, { target: { value: '192.168.1.99' } })
+    expect(nameInput).not.toHaveAttribute('aria-invalid', 'true')
+    expect(hostInput).not.toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByText(en.editDialog.duplicateRemoteServerHint)).not.toBeInTheDocument()
+  })
+
   it('does not block saving a server unchanged (excludes the server being edited from its own comparison)', async () => {
     renderServers()
     await openEditDialogFor('Server Two')
