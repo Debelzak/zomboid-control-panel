@@ -54,6 +54,14 @@ beforeEach(() => {
 
 async function confirmDelete(username: string) {
   const trigger = await screen.findByRole('button', { name: `Remove ${username}` })
+  // A real mouse click focuses the clicked element before firing the click
+  // event -- fireEvent.click alone does NOT simulate that (a well-known
+  // jsdom/testing-library gap; @testing-library/user-event isn't a
+  // dependency of this project). Radix's AlertDialog restores focus to
+  // whatever was focused when it opened, so without this, the trigger is
+  // never actually focused and there is nothing real for Radix to restore
+  // TO on close -- not a reflection of real-browser behaviour.
+  trigger.focus()
   fireEvent.click(trigger)
   const dialog = await screen.findByRole('alertdialog')
   fireEvent.click(within(dialog).getByRole('button', { name: 'Remove account' }))
@@ -149,5 +157,20 @@ describe('Users -- focus after a confirmed delete', () => {
     // focus target that later fires against a row that never actually left.
     const aliceButtonStillThere = await screen.findByRole('button', { name: 'Remove alice' })
     expect(aliceButtonStillThere).toBeInTheDocument()
+    // 2026-08-31 bug hunt (Dwight's under-coverage sweep): a direct
+    // document.activeElement assertion against Radix's own close-restore
+    // target was attempted here (even with confirmDelete's trigger.focus()
+    // fix above) and does NOT hold in this suite's jsdom environment --
+    // confirmed by direct instrumentation, activeElement lands on
+    // document.body after the dialog closes every time, not flaky, no
+    // waitFor duration changes it (a Radix AlertDialog onCloseAutoFocus +
+    // jsdom timing gap; this project has no @testing-library/user-event).
+    // Separately: the effect that would actually misuse a left-armed
+    // pendingFocusTargetRef only fires on a LATER, unrelated `users` state
+    // change (the effect's own dependency array) -- a failed delete alone
+    // never triggers one, so even a working activeElement assertion placed
+    // immediately here wouldn't exercise the described regression. Both
+    // findings reported to god rather than forced into a passing assertion
+    // that wouldn't mean what it claims.
   })
 })
