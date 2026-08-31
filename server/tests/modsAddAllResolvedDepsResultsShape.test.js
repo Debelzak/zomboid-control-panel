@@ -100,7 +100,7 @@ describe("POST /add-all-resolved-deps: per-item results[]", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reports resolved:true for a dep whose mod ID was supplied and resolved:false for one that couldn't be resolved", async () => {
+  it("reports a non-null modId for a dep whose mod ID was supplied and modId:null for one that couldn't be resolved", async () => {
     const res = await runRoute("/add-all-resolved-deps", "post", {
       body: {
         deps: [
@@ -120,14 +120,12 @@ describe("POST /add-all-resolved-deps: per-item results[]", () => {
       modId: "KnownGoodMod",
       wsAdded: true,
       modIdAdded: true,
-      resolved: true,
     });
     expect(body.results[1]).toEqual({
       workshopId: "2222222222",
       modId: null,
       wsAdded: true,
       modIdAdded: false,
-      resolved: false,
     });
 
     // The aggregate counts alone can't distinguish this batch from one where
@@ -149,7 +147,7 @@ describe("POST /add-all-resolved-deps: per-item results[]", () => {
     expect(modsLine.split(";").filter(Boolean)).toEqual(["KnownGoodMod"]);
   });
 
-  it("marks an already-present dep resolved:true with wsAdded/modIdAdded both false", async () => {
+  it("returns a non-null modId with wsAdded/modIdAdded both false for a dep that was already fully present", async () => {
     fs.writeFileSync(
       path.join(dataRoot, "Server", "TestServer.ini"),
       "Mods=AlreadyThereMod\nWorkshopItems=3333333333\n",
@@ -166,7 +164,6 @@ describe("POST /add-all-resolved-deps: per-item results[]", () => {
       modId: "AlreadyThereMod",
       wsAdded: false,
       modIdAdded: false,
-      resolved: true,
     });
   });
 });

@@ -4307,17 +4307,19 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       let wsAdded = 0,
         modIdsAdded = 0;
       const allMapFolders = [];
-      // Per-item outcome, one entry per requested dep -- the aggregate
-      // wsAdded/modIdsAdded counts above can't tell a caller WHICH item (if
-      // any) failed to resolve a mod ID, only how many succeeded overall.
-      // `resolved` is the field callers should gate a "fixed" UI state on:
-      // the workshop-ID side always ends up present in WorkshopItems=
-      // (either just-added or already there), so the only real per-item
-      // failure mode is modId staying null when fetchModIdFromWorkshop()'s
-      // best-effort description scrape can't find one -- without this, a
-      // caller that only checks the aggregate counts (or just "did the
-      // request throw") can't tell that one dep out of a batch was left
-      // subscribed but not enabled.
+      // Per-item outcome, one entry per requested dep, same shape as the
+      // single-add sibling POST /add-missing-dep already returns
+      // (workshopId, modId, wsAdded, modIdAdded -- see client/src/lib/
+      // api.ts's addMissingDep) -- the aggregate wsAdded/modIdsAdded counts
+      // above can't tell a caller WHICH item (if any) failed to resolve a
+      // mod ID, only how many succeeded overall. A caller should treat
+      // `modId === null` as failure: the workshop-ID side always ends up
+      // present in WorkshopItems= (either just-added or already there), so
+      // the only real per-item failure mode is modId staying null when
+      // fetchModIdFromWorkshop()'s best-effort description scrape can't
+      // find one -- without this, a caller that only checks the aggregate
+      // counts (or just "did the request throw") can't tell that one dep
+      // out of a batch was left subscribed but not enabled.
       const itemResults = [];
 
       for (const { wsId, modId, mapFolders } of resolvedDeps) {
@@ -4338,7 +4340,6 @@ router.post("/add-all-resolved-deps", async (req, res) => {
           modId,
           wsAdded: itemWsAdded,
           modIdAdded: itemModIdAdded,
-          resolved: modId !== null,
         });
         for (const f of mapFolders) {
           if (!currentMaps.includes(f)) {
@@ -4375,7 +4376,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       return { wsAdded, modIdsAdded, allMapFolders, backupWarning, itemResults };
     });
 
-    const unresolvedCount = lockResult.itemResults.filter((r) => !r.resolved).length;
+    const unresolvedCount = lockResult.itemResults.filter((r) => r.modId === null).length;
     log.info(
       `Batch added ${deps.length} missing deps: ${lockResult.wsAdded} ws IDs, ${lockResult.modIdsAdded} mod IDs` +
         (unresolvedCount > 0 ? `, ${unresolvedCount} mod ID(s) unresolved` : ""),
@@ -4388,7 +4389,7 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       modIdsAdded: lockResult.modIdsAdded,
       mapFolders: lockResult.allMapFolders,
       // Per-item outcome -- see itemResults' own comment above. Callers
-      // must use each entry's `resolved` field to decide per-row success;
+      // must check each entry's `modId` for null to decide per-row success;
       // the aggregate counts above and an absence of a thrown error are not
       // sufficient (a dep whose mod ID never resolves still leaves
       // success:true here, by design, since the other requested deps did
