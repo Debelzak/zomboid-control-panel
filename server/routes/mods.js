@@ -1778,8 +1778,9 @@ router.post("/import-collection", async (req, res) => {
     }
 
     const modsData = await modsResponse.json();
+    const allDetails = modsData.response?.publishedfiledetails || [];
 
-    const mods = (modsData.response?.publishedfiledetails || [])
+    const mods = allDetails
       .filter((m) => m.result === 1)
       .map((m) => ({
         workshopId: m.publishedfileid,
@@ -1793,10 +1794,24 @@ router.post("/import-collection", async (req, res) => {
           ) || false,
       }));
 
+    // A member whose Steam detail lookup didn't come back with result === 1
+    // (deleted, made private, or Steam omitted it from the response
+    // entirely) is silently absent from `mods` above -- this list is what
+    // lets a caller tell "3 mods were dropped" apart from "the collection
+    // only ever had 47", same notice this route already gives for skipped
+    // sub-collections (bug hunt 2026-08-31, carded low-priority: the route
+    // already knows how to say "some were dropped" for one class and didn't
+    // for this one).
+    const resolvedIds = new Set(mods.map((m) => m.workshopId));
+    const skippedModIds = modIds.filter((id) => !resolvedIds.has(id));
+
     log.info(
       `Found ${mods.length} mods in collection ${collectionId}` +
         (subCollectionIds.length > 0
           ? ` (${subCollectionIds.length} sub-collection${subCollectionIds.length === 1 ? "" : "s"} skipped)`
+          : "") +
+        (skippedModIds.length > 0
+          ? ` (${skippedModIds.length} mod lookup${skippedModIds.length === 1 ? "" : "s"} failed: ${skippedModIds.join(", ")})`
           : ""),
     );
 
@@ -1806,6 +1821,7 @@ router.post("/import-collection", async (req, res) => {
       totalMods: mods.length,
       mods,
       subCollectionIds,
+      skippedModIds,
     });
   } catch (error) {
     log.error(`Failed to import collection: ${error.message}`);
