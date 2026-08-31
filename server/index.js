@@ -1202,7 +1202,10 @@ async function tryStartPanelBridge(trigger = "unknown") {
 // Auto-start PanelBridge when RCON connects (secondary trigger)
 // An async EventEmitter listener that rejects becomes an unhandled rejection,
 // which reaches process.on("unhandledRejection") and kills the panel — so
-// this is wrapped the same way the sibling "disconnected" handler below is.
+// this is wrapped in its own try/catch. The sibling "disconnected" handler
+// below no longer needs the same treatment: it delegates entirely to
+// checkServerStatusNow(), which already catches every error internally and
+// never rejects (2026-08-31 consolidation).
 rconService.on("connected", async () => {
   try {
     log.info("RCON connected - checking PanelBridge...");
@@ -1216,35 +1219,18 @@ rconService.on("connected", async () => {
   }
 });
 
-rconService.on("disconnected", async () => {
-  // When RCON disconnects, check if server actually stopped
-  // This gives faster detection than the 10s watchdog interval
-  setTimeout(async () => {
-    try {
-      const running = await getObservedServerRunning();
-      if (running === null) {
-        log.debug("RCON disconnect status check could not determine process state");
-        return;
-      }
-      if (!running && lastKnownRunning !== false) {
-        lastKnownRunning = false;
-        log.info(
-          "RCON disconnected and server process gone — emitting stopped status",
-        );
-        io.emit("server:status", { running: false });
-        await logServerEvent(
-          "server_stop",
-          "Server process exited (detected after RCON disconnect)",
-        );
-        discordBot
-          .sendEventNotification("serverStop", {})
-          .catch((err) =>
-            log.debug(`Discord serverStop notification failed: ${err.message}`),
-          );
-      }
-    } catch (err) {
-      log.debug(`Post-RCON-disconnect check failed: ${err.message}`);
-    }
+rconService.on("disconnected", () => {
+  // When RCON disconnects, check if server actually stopped. This gives
+  // faster detection than the 10s watchdog interval. Routes through
+  // checkServerStatusNow() (2026-08-31 bug hunt consolidation -- see that
+  // function's own header comment) instead of independently reading,
+  // comparing, mutating and emitting: this handler used to be a second,
+  // independent writer of `lastKnownRunning` that would not have inherited
+  // a future fix made only in checkServerStatusNow(). checkServerStatusNow()
+  // already catches every error internally and never rejects, so this
+  // needs no try/catch of its own, unlike before.
+  setTimeout(() => {
+    checkServerStatusNow("RCON disconnect");
   }, 3000); // wait 3s for process to fully exit
 });
 
@@ -2522,17 +2508,18 @@ export async function getObservedServerRunning() {
 // had changed, while a different module had already told every client
 // something false. That specific bypass -- a route asserting a competing
 // claim without ever touching `lastKnownRunning` -- is closed now: routes
-// ask this function to re-check instead of emitting their own. It is NOT
-// the only site that reads and writes `lastKnownRunning`, though: the
-// rconService "disconnected" handler below (:1219-1244) does too,
-// independently, and predates this fix by a day. The two do not currently
-// drift -- they share this one variable, and the handler's own
-// `lastKnownRunning !== false` guard mirrors this function's
-// `running !== lastKnownRunning` one, so whichever resolves first
-// correctly suppresses the other -- but a future fix made only here will
-// not reach that handler. Consolidating it is carded, not done
-// (bughunt-2026-08-31-b).
-export async function checkServerStatusNow() {
+// ask this function to re-check instead of emitting their own.
+//
+// 2026-08-31 bug hunt (consolidation, carded by Pam's completeness-claims
+// audit and Dwight's own file): the rconService "disconnected" handler
+// below (:1219-1244) used to be a SECOND, independent reader/writer of
+// `lastKnownRunning` -- same comparison shape, same guard, so the two never
+// actually drifted, but a future fix made only here would not have reached
+// it. That handler now calls this function instead (with `detectionReason`
+// identifying itself), so there is genuinely only one place left that reads,
+// compares, mutates and emits this decision -- the property this function's
+// own name has always implied.
+export async function checkServerStatusNow(detectionReason = "watchdog") {
   try {
     const running = await getObservedServerRunning();
     if (running === null) {
@@ -2541,13 +2528,13 @@ export async function checkServerStatusNow() {
     }
     if (lastKnownRunning !== null && running !== lastKnownRunning) {
       log.info(
-        `Status watchdog: server state changed → ${running ? "running" : "stopped"}`,
+        `Server state changed → ${running ? "running" : "stopped"} (detected by ${detectionReason})`,
       );
       io.emit("server:status", { running });
       if (!running) {
         logServerEvent(
           "server_stop",
-          "Server process exited (detected by watchdog)",
+          `Server process exited (detected by ${detectionReason})`,
         );
         discordBot
           .sendEventNotification("serverStop", {})
