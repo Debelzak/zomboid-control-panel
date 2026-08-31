@@ -5667,17 +5667,20 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
 
       if (targets.includes("players")) {
         let deletedCount = 0;
-        try {
-          const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
-          for (const entry of rootEntries) {
-            if (!entry.isDirectory() && PLAYER_ROOT_FILES.test(entry.name)) {
-              log.warn(`WIPE: Deleting player file ${entry.name}`);
-              fs.unlinkSync(path.join(saveDir, entry.name));
-              deletedCount++;
-            }
+        // No inner try/catch here (bug hunt 2026-08-31): a throw must reach
+        // the outer catch below, same as map/leftovers/accounts already do,
+        // so a real unlink failure (e.g. a lingering AV/backup file lock
+        // right after the pre-wipe stop) produces an honest
+        // WIPE_PARTIAL_FAILURE instead of being swallowed into the same
+        // "not found" string a genuinely-empty directory reports -- those
+        // two outcomes must not look identical to the caller.
+        const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
+        for (const entry of rootEntries) {
+          if (!entry.isDirectory() && PLAYER_ROOT_FILES.test(entry.name)) {
+            log.warn(`WIPE: Deleting player file ${entry.name}`);
+            fs.unlinkSync(path.join(saveDir, entry.name));
+            deletedCount++;
           }
-        } catch (e) {
-          log.warn(`WIPE: Failed to clean player files: ${e.message}`);
         }
         results.players =
           deletedCount > 0 ? `deleted ${deletedCount} files` : "not found";
@@ -5694,18 +5697,15 @@ router.post("/wipe", requirePermission("server.wipe"), async (req, res) => {
             deletedCount++;
           }
         }
-        // Delete world root files
-        try {
-          const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
-          for (const entry of rootEntries) {
-            if (!entry.isDirectory() && WORLD_ROOT_FILES.test(entry.name)) {
-              log.warn(`WIPE: Deleting world file ${entry.name}`);
-              fs.unlinkSync(path.join(saveDir, entry.name));
-              deletedCount++;
-            }
+        // Delete world root files. Same no-inner-catch reasoning as the
+        // players block above.
+        const rootEntries = fs.readdirSync(saveDir, { withFileTypes: true });
+        for (const entry of rootEntries) {
+          if (!entry.isDirectory() && WORLD_ROOT_FILES.test(entry.name)) {
+            log.warn(`WIPE: Deleting world file ${entry.name}`);
+            fs.unlinkSync(path.join(saveDir, entry.name));
+            deletedCount++;
           }
-        } catch (e) {
-          log.warn(`WIPE: Failed to clean world files: ${e.message}`);
         }
         results.world =
           deletedCount > 0 ? `deleted ${deletedCount} items` : "not found";
