@@ -150,6 +150,17 @@ describe('Dashboard.tsx: a remote server is never told it is unconfigured by the
     expect(screen.getByText('Not configured')).toBeInTheDocument()
   })
 
+  it('remote server, offline, status.configured false: Live Activity\'s empty state reads "not running", not "not configured" (third consumer of the same signal, caught in review after the verdict/banner fix)', async () => {
+    const remote = makeServer({ isRemote: true })
+    await setUpCommon(remote)
+
+    renderDashboard()
+
+    await screen.findByText('servertest')
+    expect(await screen.findByText('Start the server to begin tracking player activity.')).toBeInTheDocument()
+    expect(screen.queryByText('Configure a server to start tracking activity.')).not.toBeInTheDocument()
+  })
+
   it('local server, status.configured true: no "not configured" state at all (baseline)', async () => {
     const local = makeServer({ isRemote: false, installPath: 'C:/servers/ashenwood', serverName: 'Ashenwood', name: 'Ashenwood' })
     await setUpCommon(local)

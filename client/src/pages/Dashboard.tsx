@@ -1565,9 +1565,18 @@ export default function Dashboard() {
             {playerActivity.length === 0 ? (
               <div className="flex items-center px-3 py-3">
                 <p className="text-xs text-muted-foreground/75">
+                  {/* Third consumer of the same status.configured signal
+                      gated at :869/:1477 -- same !activeServer?.isRemote
+                      fix, or an offline remote server with no recent
+                      activity would still read "not configured" here after
+                      the verdict and banner above it were already
+                      corrected (2026-08-31, caught in review: a fix that
+                      covers only the consumers a screenshot showed leaves
+                      the others disagreeing with the ones that got fixed,
+                      which reads worse than being uniformly wrong). */}
                   {online
                     ? t('liveActivity.emptyOnline')
-                    : status?.configured
+                    : status?.configured || activeServer?.isRemote
                       ? t('liveActivity.emptyConfiguredNotRunning')
                       : t('liveActivity.emptyNotConfigured')}
                 </p>
