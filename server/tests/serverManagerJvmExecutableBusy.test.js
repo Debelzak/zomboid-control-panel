@@ -231,16 +231,39 @@ async function waitUntil(predicate, { timeoutMs = 3000, intervalMs = 50 } = {}) 
       });
 
       const manager = new ServerManager();
-      const start = Date.now();
+      // gate-blocking-flaky-2026-08-31: this used to assert a wall-clock
+      // bound (elapsedMs < 2500), which measured 3946ms on a busy machine
+      // and failed the gate on a commit that never touched serverManager.js
+      // -- a slow machine stretches EVERY component of this measurement
+      // (spawning the child, each sleep(300) timer firing late under event
+      // loop pressure), not just the thing the test is actually trying to
+      // prove. Wall-clock elapsed can't distinguish "polled and exited
+      // early, just slowly" from "always slept the full bound" once the
+      // machine is slow enough.
+      //
+      // Assert the RELATIONSHIP the poll loop guarantees instead, via a
+      // call-count on manager.sleep() -- immune to how fast or slow the
+      // machine runs, because it counts loop iterations, not duration:
+      //   - called MORE than once: proves this genuinely polled, not one
+      //     single fixed-duration sleep standing in for the loop (a
+      //     regression to "sleep the full bound instead of polling" calls
+      //     sleep() exactly once).
+      //   - called FEWER than the 10-attempt cap: proves it stopped as
+      //     soon as the binary freed, instead of exhausting the full
+      //     bound regardless of when the binary actually cleared.
+      //   - every call used the real poll interval (300ms), not some
+      //     other duration standing in for the loop.
+      const sleepSpy = vi.spyOn(manager, "sleep");
       await expect(
         manager.startServer({ skipRunningCheck: false }),
       ).rejects.not.toThrow(/Text file busy/);
-      const elapsedMs = Date.now() - start;
 
-      // The full bound (10 x 300ms = 3000ms) would fire if this were a
-      // fixed sleep instead of a poll -- the binary frees after ~1s, so a
-      // real poll loop should return well before the bound expires.
-      expect(elapsedMs).toBeLessThan(2500);
+      const sleepCalls = sleepSpy.mock.calls;
+      expect(sleepCalls.length).toBeGreaterThan(1);
+      expect(sleepCalls.length).toBeLessThan(10);
+      for (const call of sleepCalls) {
+        expect(call[0]).toBe(300);
+      }
     }, 10000);
   },
 );
