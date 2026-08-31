@@ -102,6 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file was left on disk and silently reloaded the next time the panel started, undoing what looked
   like a successful clear.
 
+- **Restoring a backup from a carefully-crafted (but real) filename could write outside the
+  intended config folder.** The restore's own backup filename was already safely checked, but a
+  second, derived filename recovered from it was never independently re-validated before being
+  used as the write target - a filename shaped a specific way could make that derived value resolve
+  to a parent directory instead of the file it was supposed to name. Explicitly rejected now,
+  regardless of what any particular platform happens to do with that kind of path on its own.
+
 ### Added
 
 - **A live Vitals tab for players**, backed by PanelBridge's real player-detail data (health,
@@ -119,8 +126,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection to Discord itself is down, not just whether a message failed to send.
 - **Steam Workshop health on the Mods page** - mods that Steam no longer recognizes, or that the
   panel can no longer identify at all, are now called out instead of silently listed as normal.
-- **A timezone picker for the scheduler**, so scheduled tasks run against the timezone you actually
-  intend rather than the server host's own clock.
+- **A searchable timezone picker for the scheduler**, so scheduled tasks run against the timezone
+  you actually intend rather than the server host's own clock - type to filter instead of typing a
+  full zone name from memory.
 - **A quiet, dismissible indicator when the panel's own update check fails**, instead of that
   failure being invisible.
 - **The support bundle now captures Docker container and systemd/journald service logs**, not just
@@ -131,6 +139,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bare background process, the panel can generate and register a real service unit so the server
   starts on boot and is supervised by the OS like any other service - including installs where the
   game server runs as a different Linux user than the panel itself.
+- **Unresolved `Mods=` entries are now triaged, not just listed.** Each one is classified as a
+  likely typo, still downloading, present on disk but not registered, or genuinely missing - with a
+  one-click fix offered for a typo, a confirm-gated removal for something genuinely gone, and
+  guidance for the other two cases, right where the review already happens.
 
 ### Changed
 
@@ -139,6 +151,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that was wrong in both directions - it offered "overseer," which no default server has, and was
   missing "priority," which every default server does. It now reads your server's real roles
   directly when it can, and the fallback list matches the actual game.
+- **Every enable/disable button pair on the Events page - snow, rain, and the utilities' power/water
+  controls - is now a single toggle that shows the real current state and responds the instant you
+  click it**, instead of two separate buttons and a several-second wait to see whether anything
+  actually happened. A toggle whose state genuinely isn't known yet (the reading hasn't arrived, or
+  failed) shows a distinct, clearly-unconfirmed appearance rather than guessing.
 
 ### Fixed
 
@@ -391,9 +408,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that was genuinely already empty. A real deletion failure is now reported as a failure, with the
   affected files named, instead of being reported as if there was nothing there to begin with.
 
+- **"Stop All Weather" could leave rain falling forever once rain had ever been forced on from the
+  panel.** It correctly stopped an active storm or blizzard, but never cleared the separate override
+  that had been pinning rain on - so a server where rain had been manually started stayed rainy no
+  matter how many times "Stop All Weather" was pressed. It now clears that override too, and
+  confirms the rain actually stopped.
 
+- **Triggering a blizzard, tropical storm, or generic storm while one was already running silently
+  did nothing but still reported success - and "Generate Weather" never worked at all, on any
+  call.** Both now report what actually happened: a second trigger while one is already active says
+  so and explains what to do, and Generate Weather now uses the correct game-side call instead of
+  one that was silently ignored server-side every time.
 
-### Fixed
+- **Several weather and climate controls (snow, rain, fog, wind, temperature, cloud cover, and
+  more) could report success on a change that silently failed to apply.** 14 of them now read the
+  game's own confirmation back after making the change, instead of only checking that the request
+  itself didn't error.
+
+- **A PanelBridge mod fix could sit undelivered on a server indefinitely.** The updater only
+  redeployed the bundled mod file when its version label had changed - three real fixes shipped in
+  a row without a version bump, so none of them actually reached any server until this was
+  corrected to compare the file's real content instead of just its label.
+
+- **A successful mod-update auto-restart wasn't always recorded as handled, so the same update
+  could trigger a second, unnecessary restart on the next check.**
+
+- **Collecting a support bundle, or viewing container logs, could hang indefinitely if Docker
+  itself was slow or unresponsive**, instead of timing out and reporting the problem.
+
+- **A backup that deleted successfully could be reported as a failure** if the panel's own
+  follow-up activity-log entry for that deletion happened to fail to write - the file was already
+  gone either way, but the response said otherwise.
+
+- **The Server Console's "RCON disconnected" banner didn't always appear when a reconnect attempt
+  failed**, silently leaving the console looking connected when it wasn't.
+
+- **On Windows, a real, running dedicated server launched in an unusual way could be confidently
+  reported as not running.** A launch that didn't match the panel's usual process signature was
+  read as "definitely not this server" instead of "can't tell" - now treated the same cautious way
+  the Linux side already handles it.
+
+- **A disk or process scan that failed to complete could be silently read as "the server is
+  confirmed stopped"** - which could let a config edit through without its "stop the server first"
+  warning while the server was actually still running, and could show the wrong status on the
+  Dashboard. A failed scan now reads as "unknown," not "stopped."
+
+- **Uploading a backup after being idle for a while could fail outright with a session error**,
+  instead of quietly refreshing your session and continuing the upload the way every other action
+  in the panel already does.
+
+- **The template preview screen could show the wrong label for a setting that was about to
+  change**, because two unrelated real game settings happen to share the same internal name - a
+  preview that should have named a large-range XP multiplier instead named the unrelated 1-5
+  skill-growth setting it collides with. Both are now labeled correctly.
+
+- **The safeguard against restarting into a game process that hadn't finished shutting down yet
+  ("Text file busy") was accidentally skipped on every real restart** - exactly the failure it was
+  built to prevent.
+
+- **Failing to delete a user account could silently drop keyboard focus with no indication of
+  where it went.** Focus now returns to a sensible, visible place after a failed delete, the same
+  as it already did after a successful one.
+
+- **The French UI's error message for a failed custom item drop misnamed it as a failed airdrop** -
+  a different, unrelated feature. Corrected to name the actual feature that failed.
 
 - Horde spawning now uses the coordinate-aware Build 42 API and reports zero-result failures honestly.
 - Workshop cookie extraction now ignores expired cookies and pairs fresh credentials from the correct browser profile and domain.
