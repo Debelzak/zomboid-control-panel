@@ -2336,7 +2336,17 @@ export class ServerManager {
             continue;
           }
           const escapedKey = escapeRegExp(key);
-          const regex = new RegExp(`^${escapedKey}=.*$`, "m");
+          // [ \t]* tolerance around "=" matches the convention routes/mods.js
+          // settled on 2026-08-27 and server/utils/templateFiles.js's
+          // readIniValues/mergeIniValues were just brought in line with
+          // (bughunt-2026-08-31-b): a bare `^key=` regex doesn't match a
+          // hand-edited "Key = value" line, so this would have replaced
+          // nothing and appended a duplicate key instead. saveServerConfig()
+          // is not called from anywhere today (verified via a full grep of
+          // every call site) -- this is aligned to the settled convention on
+          // principle, not because it was observed to fire live, so a future
+          // reader doesn't mistake this for a confirmed live bug.
+          const regex = new RegExp(`^[ \\t]*${escapedKey}[ \\t]*=.*$`, "m");
           // Strip newlines from values to prevent INI injection
           const safeValue = String(value).replace(/[\r\n]/g, "");
           if (content.match(regex)) {
