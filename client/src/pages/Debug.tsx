@@ -320,6 +320,48 @@ function getDiagMetaStringList(check: DiagCheck, key: string): string[] {
   );
 }
 
+// mods.resolved's per-ID triage (server/routes/debug.js's triageUnresolvedMods) --
+// the causes this reads are a closed enum matching the server's own switch;
+// an unrecognized cause is dropped rather than trusted, same defensive stance
+// as every other server-controlled value this file renders.
+const UNRESOLVED_MOD_CAUSES = new Set([
+  "typo",
+  "stillDownloading",
+  "workshopNotOnDisk",
+  "absent",
+]);
+
+interface UnresolvedModTriageEntry {
+  modId: string;
+  cause: "typo" | "stillDownloading" | "workshopNotOnDisk" | "absent";
+  suggestion?: string;
+}
+
+function getDiagMetaTriageList(
+  check: DiagCheck,
+  key: string,
+): UnresolvedModTriageEntry[] {
+  const raw = check.meta?.[key];
+  if (!Array.isArray(raw)) return [];
+  const out: UnresolvedModTriageEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const modId = (item as Record<string, unknown>).modId;
+    const cause = (item as Record<string, unknown>).cause;
+    const suggestion = (item as Record<string, unknown>).suggestion;
+    if (typeof modId !== "string" || !modId.trim()) continue;
+    if (typeof cause !== "string" || !UNRESOLVED_MOD_CAUSES.has(cause)) continue;
+    out.push({
+      modId,
+      cause: cause as UnresolvedModTriageEntry["cause"],
+      ...(typeof suggestion === "string" && suggestion
+        ? { suggestion }
+        : {}),
+    });
+  }
+  return out;
+}
+
 // MUST be called with the RAW check straight from the API response, never
 // the output of translateDiagnosticCheck() -- `note` below falls back to
 // the literal `check.hint` verbatim, which should stay the server's own
@@ -369,6 +411,18 @@ export function getDiagnosticsFixAction(
       const reviewParams = new URLSearchParams({ tab: "ini", search: "Mods" });
       for (const modId of getDiagMetaStringList(check, "unresolvedMods")) {
         reviewParams.append("unresolved", modId);
+      }
+      // Ride the same querystring transport as `unresolved` above -- one
+      // `modId|cause|suggestion` entry per triaged ID (suggestion left empty
+      // when the cause doesn't have one). Server Config parses and validates
+      // this itself; an untriaged or newly-added ID (this diagnostics fetch
+      // predates the fix, or the server truly had nothing to say) just
+      // renders with no cause, same as before this existed.
+      for (const entry of getDiagMetaTriageList(check, "unresolvedTriage")) {
+        reviewParams.append(
+          "unresolvedCause",
+          `${entry.modId}|${entry.cause}|${entry.suggestion || ""}`,
+        );
       }
       return {
         label:

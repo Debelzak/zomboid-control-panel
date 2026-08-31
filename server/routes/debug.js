@@ -64,6 +64,7 @@ import {
   redactKnownSecrets,
 } from "../utils/discordMessageRedaction.js";
 import { getSteamApiKey } from "../services/steamApiKey.js";
+import { hasActiveSteamOperation } from "../services/activeSteamOperations.js";
 import { Transform } from "stream";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1855,6 +1856,76 @@ function diagSkip(id, label, message, extras = {}) {
   return { id, label, status: "skip", message, severity: "info", ...extras };
 }
 
+// Per-ID triage for the mods.resolved check below -- classifies WHY a single
+// Mods= entry doesn't resolve instead of leaving the operator with a bare
+// list. Levenshtein distance, standard DP over two rolling rows (no need to
+// keep the full matrix -- only ever compare against the previous row).
+export function levenshteinDistance(a, b) {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  let curr = new Array(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length];
+}
+
+// A near-miss typo of a mod ID that's already resolving (installed via
+// Workshop or local). Threshold scales gently with length so a single
+// character slip in a long ID like RepairAnyClothesSearchModeAPI41 still
+// counts as "near" without a short ID like "Ok" matching half the mod list.
+// A pure case difference is treated as distance 1 regardless of length --
+// PZ mod IDs are case-sensitive on Linux, but a pasted ID that only differs
+// by case is still almost certainly meant to be the same mod.
+export function findNearMissTypo(modId, candidateNames) {
+  let best = null;
+  let bestDistance = Infinity;
+  const threshold = Math.max(2, Math.floor(modId.length * 0.1));
+  for (const candidate of candidateNames) {
+    if (candidate === modId) continue;
+    const distance =
+      candidate.toLowerCase() === modId.toLowerCase()
+        ? 1
+        : levenshteinDistance(modId, candidate);
+    if (distance <= threshold && distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+// Classifies each unresolved Mods= entry into exactly one cause. Order
+// matters: a typo match is checked first because it's the most specific,
+// actionable signal -- an entry that's ALSO true (loosely) because a
+// download happens to be running elsewhere shouldn't hide a clean typo fix.
+// "stillDownloading" and "workshopNotOnDisk" are deliberately coarse (whole-
+// batch signals, not per-ID): there is no on-disk data that ties an
+// unresolved mod ID to a specific not-yet-downloaded Workshop item before
+// that item's mod.info actually exists on disk, so this doesn't pretend to
+// know more than it does.
+export function triageUnresolvedMods(
+  unresolvedMods,
+  installedModNames,
+  { steamOperationActive, anyWorkshopMissingFromDisk },
+) {
+  return unresolvedMods.map((modId) => {
+    const suggestion = findNearMissTypo(modId, installedModNames);
+    if (suggestion) return { modId, cause: "typo", suggestion };
+    if (steamOperationActive) return { modId, cause: "stillDownloading" };
+    if (anyWorkshopMissingFromDisk)
+      return { modId, cause: "workshopNotOnDisk" };
+    return { modId, cause: "absent" };
+  });
+}
+
 async function pathExistsAsync(p) {
   if (!p) return false;
   try {
@@ -3561,6 +3632,25 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
               unresolvedMods.length > 5
                 ? `${shown}, +${unresolvedMods.length - 5} more`
                 : shown;
+            // Per-ID triage so the Server Config deep-link can say WHY each
+            // entry failed instead of just listing it -- see
+            // triageUnresolvedMods's own comment above for what each cause
+            // does and doesn't claim to know.
+            const normalizedInstallPathForOp = path
+              .normalize(installPath)
+              .toLowerCase();
+            const steamOperationActive = hasActiveSteamOperation(
+              normalizedInstallPathForOp,
+            );
+            const anyWorkshopMissingFromDisk = ini.WorkshopItems.some(
+              (id) => /^\d{1,15}$/.test(id) && !wsScan.has(id),
+            );
+            const installedModNames = [...wsModNames, ...localScan.mods];
+            const unresolvedTriage = triageUnresolvedMods(
+              unresolvedMods,
+              installedModNames,
+              { steamOperationActive, anyWorkshopMissingFromDisk },
+            );
             checks.push(
               diagFail(
                 "mods.resolved",
@@ -3569,7 +3659,7 @@ router.get("/diagnostics", requirePermission("diagnostics.manage"), async (req, 
                 {
                   category: "server",
                   hint: "Usually a typo, missing WorkshopItems= ID, or the mod hasn't finished downloading. Fix in Server Config.",
-                  meta: { unresolvedMods },
+                  meta: { unresolvedMods, unresolvedTriage },
                   params: { count: unresolvedMods.length, total: ini.Mods.length, list },
                 },
               ),

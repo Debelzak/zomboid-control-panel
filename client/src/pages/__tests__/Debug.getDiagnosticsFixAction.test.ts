@@ -11,7 +11,10 @@ function fallbackCheck(overrides: Partial<{
   status: 'ok' | 'warn' | 'fail' | 'info' | 'skip'
   category: string
   hint: string
-  meta: { unresolvedMods?: string[] }
+  meta: {
+    unresolvedMods?: string[]
+    unresolvedTriage?: Array<{ modId: string; cause: string; suggestion?: string }>
+  }
 }>) {
   return {
     id: 'some.unregistered.check',
@@ -40,6 +43,46 @@ describe('getDiagnosticsFixAction fallback branch (uncovered check ids)', () => 
     })
     expect(action?.openServerConfig).toBeUndefined()
     expect(action?.links).toBeUndefined()
+  })
+
+  // mods-unresolved-2026-08-31: the per-ID triage rides the same querystring
+  // transport as `unresolved` -- one `unresolvedCause=modId|cause|suggestion`
+  // entry per triaged ID, so Server Config's banner can say WHY without a
+  // second network round trip.
+  it('carries the server-computed per-ID triage into the deep-link querystring', () => {
+    const action = getDiagnosticsFixAction(
+      fallbackCheck({
+        id: 'mods.resolved',
+        hint: 'Fix in server.ini.',
+        meta: {
+          unresolvedMods: ['Footprnt', 'Quartermaster'],
+          unresolvedTriage: [
+            { modId: 'Footprnt', cause: 'typo', suggestion: 'Footprint' },
+            { modId: 'Quartermaster', cause: 'stillDownloading' },
+          ],
+        },
+      }),
+      t,
+    )
+    expect(action?.manualRoute).toBe(
+      '/server-config?tab=ini&search=Mods&unresolved=Footprnt&unresolved=Quartermaster'
+        + '&unresolvedCause=Footprnt%7Ctypo%7CFootprint&unresolvedCause=Quartermaster%7CstillDownloading%7C',
+    )
+  })
+
+  it('drops an unrecognized triage cause instead of forwarding it verbatim', () => {
+    const action = getDiagnosticsFixAction(
+      fallbackCheck({
+        id: 'mods.resolved',
+        hint: 'Fix in server.ini.',
+        meta: {
+          unresolvedMods: ['SomeMod'],
+          unresolvedTriage: [{ modId: 'SomeMod', cause: 'somethingNewTheServerAdded' }],
+        },
+      }),
+      t,
+    )
+    expect(action?.manualRoute).toBe('/server-config?tab=ini&search=Mods&unresolved=SomeMod')
   })
 
   // impeccable-critique-2026-08-31, finding #2: the primary button's own

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, memo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { copyText, cn } from '@/lib/utils'
 import {
   Settings,
@@ -737,15 +737,42 @@ export function SectionHeader({
 
 const SERVER_CONFIG_TABS = new Set(['ini', 'sandbox', 'spawnpoints', 'spawnregions', 'modsettings'])
 
+// Closed enum matching server/routes/debug.js's triageUnresolvedMods -- an
+// unrecognized cause (an older diagnostics fetch predating this, or a value
+// this build doesn't know yet) is dropped rather than trusted, same
+// defensive stance Debug.tsx takes reading the same querystring value.
+export type UnresolvedModCause = 'typo' | 'stillDownloading' | 'workshopNotOnDisk' | 'absent'
+const UNRESOLVED_MOD_CAUSES = new Set<UnresolvedModCause>(['typo', 'stillDownloading', 'workshopNotOnDisk', 'absent'])
+
 export function resolveServerConfigDeepLink(searchParams: URLSearchParams) {
   const requestedTab = searchParams.get('tab')
+  const unresolved = searchParams.getAll('unresolved')
+    .map((modId) => modId.trim().slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 20)
+  const unresolvedIds = new Set(unresolved)
+  // One `modId|cause|suggestion` entry per triaged ID (Debug.tsx's own
+  // transport, see getDiagnosticsFixAction's mods.resolved case) -- only
+  // trust an entry whose modId is actually in `unresolved` above, so a
+  // hand-edited URL can't attach an arbitrary cause to an ID the diagnostics
+  // check never flagged.
+  // `Map` above 20 lines up is lucide-react's icon component, not the
+  // built-in collection -- globalThis.Map dodges that shadowing.
+  const unresolvedTriage = new globalThis.Map<string, { cause: UnresolvedModCause; suggestion?: string }>()
+  for (const raw of searchParams.getAll('unresolvedCause').slice(0, 20)) {
+    const [modId, cause, suggestion] = raw.split('|')
+    if (!modId || !unresolvedIds.has(modId)) continue
+    if (!UNRESOLVED_MOD_CAUSES.has(cause as UnresolvedModCause)) continue
+    unresolvedTriage.set(modId, {
+      cause: cause as UnresolvedModCause,
+      ...(suggestion ? { suggestion: suggestion.trim().slice(0, 120) } : {}),
+    })
+  }
   return {
     tab: requestedTab && SERVER_CONFIG_TABS.has(requestedTab) ? requestedTab : 'ini',
     search: (searchParams.get('search') || '').trim().slice(0, 100),
-    unresolved: searchParams.getAll('unresolved')
-      .map((modId) => modId.trim().slice(0, 120))
-      .filter(Boolean)
-      .slice(0, 20),
+    unresolved,
+    unresolvedTriage,
   }
 }
 
@@ -1909,6 +1936,42 @@ export default function ServerConfig() {
     setIniSettings(prev => ({ ...prev, [key]: value }))
   }, [])
 
+  // Unresolved Mods= triage actions (mods-unresolved-2026-08-31) -- both
+  // stage an edit into the SAME unsaved iniSettings state as manually typing
+  // in the field below would; nothing reaches disk until the operator hits
+  // Save, same as every other edit on this page. That's what makes these
+  // safe to offer without the bulk-disable the mods.resolved check's own
+  // comment (Debug.tsx) deliberately avoids.
+  const applyUnresolvedModCorrection = useCallback((modId: string, suggestion: string) => {
+    setIniSettings(prev => {
+      const tokens = (prev.Mods || '').split(';').map(v => v.trim()).filter(Boolean)
+      const next = tokens.map(v => (v === modId ? suggestion : v))
+      return { ...prev, Mods: next.join(';') }
+    })
+    toast({
+      title: t('unresolvedReview.correctedTitle'),
+      description: t('unresolvedReview.correctedToast', { modId, suggestion }),
+    })
+  }, [toast, t])
+
+  const removeUnresolvedModEntry = useCallback(async (modId: string) => {
+    const ok = await confirm({
+      title: t('unresolvedReview.removeConfirmTitle'),
+      description: t('unresolvedReview.removeConfirm', { modId }),
+      confirmLabel: t('unresolvedReview.removeConfirmButton'),
+      destructive: true,
+    })
+    if (!ok) return
+    setIniSettings(prev => {
+      const tokens = (prev.Mods || '').split(';').map(v => v.trim()).filter(Boolean)
+      return { ...prev, Mods: tokens.filter(v => v !== modId).join(';') }
+    })
+    toast({
+      title: t('unresolvedReview.removedTitle'),
+      description: t('unresolvedReview.removedToast', { modId }),
+    })
+  }, [confirm, toast, t])
+
   const updateSandboxValue = useCallback((setting: SandboxSetting, value: SandboxScalar) => {
     setSandboxData(prev => {
       if (!prev) return prev
@@ -2259,12 +2322,64 @@ export default function ServerConfig() {
           <Alert className="mt-3 border-warning/40 bg-warning/10">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertTitle className="text-warning">{t('unresolvedReview.title')}</AlertTitle>
-            <AlertDescription className="mt-2 flex flex-wrap gap-1.5">
-              {initialDeepLink.unresolved.map((modId) => (
-                <code key={modId} className="rounded border border-warning/30 bg-background/50 px-1.5 py-0.5 text-xs text-foreground">
-                  {modId}
-                </code>
-              ))}
+            <AlertDescription className="mt-2 space-y-2">
+              {initialDeepLink.unresolved.map((modId) => {
+                const triage = initialDeepLink.unresolvedTriage.get(modId)
+                return (
+                  <div key={modId} className="flex flex-wrap items-center gap-2">
+                    <code className="rounded border border-warning/30 bg-background/50 px-1.5 py-0.5 text-xs text-foreground">
+                      {modId}
+                    </code>
+                    {!triage && (
+                      <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeUnknown')}</span>
+                    )}
+                    {triage?.cause === 'typo' && triage.suggestion && (
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          {t('unresolvedReview.causeTypo', { suggestion: triage.suggestion })}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => applyUnresolvedModCorrection(modId, triage.suggestion as string)}
+                        >
+                          {t('unresolvedReview.correctAction', { suggestion: triage.suggestion })}
+                        </Button>
+                      </>
+                    )}
+                    {triage?.cause === 'stillDownloading' && (
+                      <>
+                        <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeStillDownloading')}</span>
+                        <Button asChild size="sm" variant="ghost" className="h-6 px-2 text-xs">
+                          <Link to="/debug">{t('unresolvedReview.rerunDiagnostics')}</Link>
+                        </Button>
+                      </>
+                    )}
+                    {triage?.cause === 'workshopNotOnDisk' && (
+                      <>
+                        <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeWorkshopNotOnDisk')}</span>
+                        <Button asChild size="sm" variant="ghost" className="h-6 px-2 text-xs">
+                          <Link to="/debug">{t('unresolvedReview.rerunDiagnostics')}</Link>
+                        </Button>
+                      </>
+                    )}
+                    {triage?.cause === 'absent' && (
+                      <>
+                        <span className="text-xs text-muted-foreground">{t('unresolvedReview.causeAbsent')}</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+                          onClick={() => removeUnresolvedModEntry(modId)}
+                        >
+                          {t('unresolvedReview.removeAction')}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
             </AlertDescription>
           </Alert>
         )}
