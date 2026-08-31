@@ -45,6 +45,7 @@ import {
   Search,
   Bookmark,
   BookmarkPlus,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { reportClientError } from "@/lib/client-errors";
@@ -2347,40 +2348,52 @@ export default function Settings() {
         onValueChange={handleTabChange}
         className="mt-6 lg:grid lg:grid-cols-[14.5rem_minmax(0,1fr)] lg:items-start lg:gap-7"
       >
-        <TabsList
-          aria-label={t("ariaLabel")}
-          className="mb-4 flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto rounded-md border border-border/50 bg-muted/30 p-1 lg:sticky lg:top-4 lg:mb-0 lg:flex-col lg:items-stretch lg:gap-px lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
-        >
-          {settingsGroups.map((group) => (
-            <React.Fragment key={group.name}>
-              <p
-                role="presentation"
-                className="hidden lg:block px-2 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60 lg:first:pt-0"
-              >
-                {group.name}
-              </p>
-              {group.sections.map((section) => {
-                const Icon = section.icon;
-                return (
-                  <Tooltip key={section.id}>
-                    <TooltipTrigger asChild>
-                      <TabsTrigger
-                        value={section.id}
-                        className="settings-tab-trigger shrink-0 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none lg:w-full lg:justify-start lg:px-2.5"
-                      >
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{section.label}</span>
-                      </TabsTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-[220px]">
-                      <p className="text-xs">{section.tip}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-            </React.Fragment>
-          ))}
-        </TabsList>
+        <div className="relative lg:contents">
+          <TabsList
+            aria-label={t("ariaLabel")}
+            className="mb-4 flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto rounded-md border border-border/50 bg-muted/30 p-1 lg:sticky lg:top-4 lg:mb-0 lg:flex-col lg:items-stretch lg:gap-px lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
+          >
+            {settingsGroups.map((group) => (
+              <React.Fragment key={group.name}>
+                <p
+                  role="presentation"
+                  className="hidden lg:block px-2 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60 lg:first:pt-0"
+                >
+                  {group.name}
+                </p>
+                {group.sections.map((section) => {
+                  const Icon = section.icon;
+                  return (
+                    <Tooltip key={section.id}>
+                      <TooltipTrigger asChild>
+                        <TabsTrigger
+                          value={section.id}
+                          className="settings-tab-trigger shrink-0 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none lg:w-full lg:justify-start lg:px-2.5"
+                        >
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span className="truncate">{section.label}</span>
+                        </TabsTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[220px]">
+                        <p className="text-xs">{section.tip}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+          </TabsList>
+          {/* Static scroll-continuation cue for the horizontal strip on mobile/tablet --
+              the strip always has more sections than fit, so this isn't scroll-position-tracked,
+              just a constant "there's more this way" edge like the sticky sidebar gets for free
+              on lg: via the group labels being visibly cut off at the viewport bottom instead. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end rounded-r-md bg-gradient-to-l from-muted to-transparent pr-1.5 lg:hidden"
+          >
+            <ChevronRight className="h-4 w-4 text-muted-foreground/80" />
+          </div>
+        </div>
 
         {/* Tab Content */}
         <div className="space-y-5">
@@ -4123,7 +4136,7 @@ export default function Settings() {
                     </p>
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
                     <div id="sftp-panelbridge" className="rounded-md border border-border/60 p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
