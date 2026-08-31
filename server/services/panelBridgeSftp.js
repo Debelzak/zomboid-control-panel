@@ -8,8 +8,12 @@ import { ErrorCode } from '../utils/errorCodes.js';
 
 const log = createLogger('Bridge:SFTP');
 
+// A trailing-slash-trim regex on an unbounded string is quadratic (CodeQL
+// js/polynomial-redos #1) -- cap the length before it ever reaches the regex.
+const MAX_REMOTE_PATH_LENGTH = 500;
+
 function safeRemotePath(value) {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.includes('..') || value.includes('\\') || /[\0\r\n]/.test(value)) {
+  if (typeof value !== 'string' || value.length > MAX_REMOTE_PATH_LENGTH || !value.startsWith('/') || value.includes('..') || value.includes('\\') || /[\0\r\n]/.test(value)) {
     throw new Error('Remote bridge path must be an absolute POSIX path without traversal');
   }
   const normalized = value.replace(/\/+$/, '') || '/';

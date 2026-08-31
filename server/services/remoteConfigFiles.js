@@ -19,9 +19,14 @@ const LIST_MAX = 200;
 // A GET can reuse a mirror this recent; a write always re-pulls first.
 const MIRROR_FRESH_MS = 5000;
 
+// A trailing-slash-trim regex on an unbounded string is quadratic (CodeQL
+// js/polynomial-redos #3) -- cap the length before it ever reaches the regex.
+const MAX_REMOTE_PATH_LENGTH = 500;
+
 function safeRemoteDir(value) {
   if (
     typeof value !== "string" ||
+    value.length > MAX_REMOTE_PATH_LENGTH ||
     !value.startsWith("/") ||
     value.includes("..") ||
     value.includes("\\")

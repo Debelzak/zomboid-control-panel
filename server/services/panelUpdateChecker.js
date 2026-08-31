@@ -2266,8 +2266,15 @@ export class PanelUpdateChecker {
         .map((n) => {
           const fp = path.join(dir, n);
           try {
-            const stat = fs.statSync(fp);
-            return { fp, mtime: stat.mtimeMs, size: stat.size };
+            // lstat (not stat) so a symlink planted in the shared tmp dir by
+            // another local user can't redirect this read to an arbitrary
+            // file (CodeQL js/insecure-temporary-file #289).
+            const lstat = fs.lstatSync(fp);
+            if (lstat.isSymbolicLink()) {
+              log.debug(`Skipping symlink in update-log fallback: ${fp}`);
+              return null;
+            }
+            return { fp, mtime: lstat.mtimeMs, size: lstat.size };
           } catch (err) {
             log.debug(`Could not stat ${fp}: ${err.message}`);
             return null;
