@@ -80,6 +80,24 @@ export class ServerNotConfiguredError extends Error {
   }
 }
 
+// Thrown by getServerConfigPath() when the active server IS configured but
+// is remote and its SFTP transport isn't — distinct from ServerNotConfiguredError
+// (no server at all). Without this, getServerConfigPath() fell through to the
+// local-path fallbacks below (which don't apply to a remote server) and ended
+// up throwing ServerNotConfiguredError for a server that plainly IS configured,
+// which is what the 404 SERVER_NOT_CONFIGURED response actually said. The
+// second router.use() below already has the correct REMOTE_CONFIG_NOT_CONFIGURED
+// handling for this exact case; it just never ran, because this function's own
+// fallthrough answered first.
+export class RemoteConfigNotConfiguredError extends Error {
+  constructor() {
+    super(
+      "This server is remote. Add its SFTP details and the remote Server folder under Settings > PanelBridge to edit its configuration from here.",
+    );
+    this.code = ErrorCode.REMOTE_CONFIG_NOT_CONFIGURED;
+  }
+}
+
 // These read or write the panel host's own filesystem, so an SFTP mirror of
 // the remote Server/ folder cannot stand in for them.
 const LOCAL_ONLY_PATHS = new Set(["/browse-files", "/image-preview"]);
@@ -107,6 +125,9 @@ router.use(async (req, res, next) => {
   } catch (err) {
     if (err instanceof ServerNotConfiguredError) {
       return res.status(404).json({ error: err.message, code: err.code });
+    }
+    if (err instanceof RemoteConfigNotConfiguredError) {
+      return res.status(400).json({ error: err.message, code: err.code });
     }
     return next(err);
   }
@@ -354,6 +375,16 @@ export async function getServerConfigPath() {
   }
   if (settings.zomboidDataPath) {
     return path.join(settings.zomboidDataPath, "Server");
+  }
+
+  // A remote server with no usable path anywhere (SFTP transport unresolved
+  // above, and no local/legacy path fallback either) is a DIFFERENT
+  // situation from no server at all — it IS configured, just not reachable
+  // yet. Previously this fell all the way through to ServerNotConfiguredError
+  // below, which made the router's dedicated REMOTE_CONFIG_NOT_CONFIGURED
+  // gate further down unreachable for exactly the case it exists to catch.
+  if (activeServer?.isRemote) {
+    throw new RemoteConfigNotConfiguredError();
   }
 
   // Nothing configured anywhere — no active server row and no legacy
