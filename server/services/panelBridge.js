@@ -836,6 +836,24 @@ class PanelBridge extends EventEmitter {
       return false;
     }
 
+    // Forward-only, mirroring tryResyncInboxCommandCursor's identical guard
+    // for the opposite (commands) direction -- see that function's comment
+    // for the concrete incident this class of hazard already caused here.
+    // A stale or racing read of the mod's own state file (SFTP transport
+    // lag, a freshly-regenerated queue-state-lua.json, or a second bridge
+    // process's write) can only ever show a LOWER luaHighWater than the
+    // truth, never a fabricated higher one. Without this guard, rewinding
+    // lastConsumedResultSeq backward makes pollQueueResults() re-walk every
+    // seq between the rewound point and where it actually was -- each one
+    // either already-cleared-but-not-yet-deleted (stalls ~1.5s per file in
+    // the empty-read retry path) or already deleted (stalls resyncStuckMs
+    // per file re-triggering this same check) -- silently stalling every
+    // pending command's response for as long as that backlog takes to
+    // re-drain, while the bridge still reports itself connected.
+    if (luaHighWater < this.queueState.lastConsumedResultSeq) {
+      return false;
+    }
+
     log.warn(`Outbox sequence desync detected, resyncing to mod position (expected seq ${seq}, mod high-water ${luaHighWater})`);
     this.queueState.lastConsumedResultSeq = luaHighWater;
     this.persistQueueState();
