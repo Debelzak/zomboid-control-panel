@@ -855,10 +855,82 @@ class PanelBridge extends EventEmitter {
     }
 
     log.warn(`Outbox sequence desync detected, resyncing to mod position (expected seq ${seq}, mod high-water ${luaHighWater})`);
+    // Jumping lastConsumedResultSeq straight to luaHighWater would silently
+    // throw away any result file that DOES physically exist in the gap
+    // being skipped -- and over SFTP, commandTimeoutMs (60000ms) is longer
+    // than resyncStuckMs (20000ms), so a still-pending command's real,
+    // already-written response can be sitting in that gap when this fires.
+    // Recover what's actually there before moving past it: a command whose
+    // result gets skipped this way doesn't hang forever (its own timeout
+    // still fires), but it fails with "no response from mod" when the mod
+    // in fact responded successfully -- a misleading failure, not a
+    // dropped one, but still wrong. A seq with no file in the gap (already
+    // cleaned up, or genuinely never written -- the real desync case this
+    // resync exists to heal) costs one cheap existsSync and is skipped.
+    this.recoverSkippedResults(this.queueState.lastConsumedResultSeq, luaHighWater);
     this.queueState.lastConsumedResultSeq = luaHighWater;
     this.persistQueueState();
     this.outboxStuckState.seq = null;
     return true;
+  }
+
+  /**
+   * Scans (fromSeqExclusive, toSeqInclusive] for result files that still
+   * physically exist and processes each one exactly like the normal poll
+   * loop would, before tryResyncOutboxCursor jumps the cursor past them.
+   * Bounded to the last retainRecentFiles entries of the gap -- anything
+   * older than the retention window is already outside what
+   * cleanupOutboxFiles guarantees keeping around, so scanning further back
+   * than that cannot recover anything real and would only cost I/O on a
+   * gap that can otherwise be arbitrarily large (e.g. a long-idle server
+   * restarting after weeks).
+   */
+  recoverSkippedResults(fromSeqExclusive, toSeqInclusive) {
+    const scanFrom = (toSeqInclusive - fromSeqExclusive) > this.queue.retainRecentFiles
+      ? (toSeqInclusive - this.queue.retainRecentFiles + 1)
+      : (fromSeqExclusive + 1);
+
+    let recovered = 0;
+    for (let seq = scanFrom; seq <= toSeqInclusive; seq++) {
+      const resultFile = this.getResultFileBySeq(seq);
+      // codeql[js/path-injection] this.bridgePath is set only by configure()/autoDetect(), both of which validate their input before assignment (route-layer isAbsolute+blocklist guard, or autoDetect's regex on serverName) -- this line only re-reads the already-validated field.
+      if (!resultFile || !fs.existsSync(resultFile)) continue;
+
+      let raw;
+      try {
+        // codeql[js/path-injection] this.bridgePath is set only by configure()/autoDetect(), both of which validate their input before assignment (route-layer isAbsolute+blocklist guard, or autoDetect's regex on serverName) -- this line only re-reads the already-validated field.
+        raw = fs.readFileSync(resultFile, 'utf-8');
+      } catch (error) {
+        log.debug(`Resync recovery: could not read result seq ${seq}: ${error.message}`);
+        continue;
+      }
+      if (!raw.trim()) continue;
+
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        log.debug(`Resync recovery: could not parse result seq ${seq}: ${error.message}`);
+        continue;
+      }
+
+      const result = parsed && parsed.result ? parsed.result : parsed;
+      if (result) {
+        this.processResult(result);
+        recovered++;
+      }
+
+      try {
+        // codeql[js/path-injection] this.bridgePath is set only by configure()/autoDetect(), both of which validate their input before assignment (route-layer isAbsolute+blocklist guard, or autoDetect's regex on serverName) -- this line only re-reads the already-validated field.
+        fs.writeFileSync(resultFile, '', { mode: 0o600 });
+      } catch (cleanupErr) {
+        log.debug(`Resync recovery: failed to clear result file seq ${seq}: ${cleanupErr.message}`);
+      }
+    }
+
+    if (recovered > 0) {
+      log.warn(`Resync recovery: recovered ${recovered} result(s) that the missing-file check would otherwise have skipped past`);
+    }
   }
 
   /**
@@ -1355,7 +1427,9 @@ class PanelBridge extends EventEmitter {
    * Track player connect/disconnect events
    */
   trackPlayerActivity(currentPlayers) {
-    // Normalize players: Lua encodes empty arrays as {} (object), so handle both arrays and objects
+    // Normalize players: PanelBridge.lua's own JSON encoder (kind_of()) defaults an empty table to
+    // [] on the wire, not {} -- but handle both shapes defensively anyway, since nothing here
+    // depends on which one actually arrives and a future encoder change shouldn't be able to break this.
     const playerList = Array.isArray(currentPlayers) ? currentPlayers : Object.keys(currentPlayers || {});
     const current = new Set(playerList);
     const previous = this.previousPlayers;
