@@ -70,4 +70,11 @@ describe("mapConfigsEqual", () => {
     expect(mapConfigsEqual(BASE, { ...BASE, isoX0: 1 })).toBe(false);
     expect(mapConfigsEqual(BASE, { ...BASE, isoY0: 1 })).toBe(false);
   });
+
+  it("is false when a key is present on b but absent from a -- Object.keys(a) alone would never examine it and silently report equal (simulates a future optional MapConfig field)", () => {
+    const a = { ...BASE } as Record<string, unknown>;
+    delete a.fullHeight;
+    const b = { ...BASE, fullHeight: 990400 } as Record<string, unknown>;
+    expect(mapConfigsEqual(a as unknown as MapConfig, b as unknown as MapConfig)).toBe(false);
+  });
 });

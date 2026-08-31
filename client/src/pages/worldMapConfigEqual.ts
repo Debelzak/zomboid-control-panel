@@ -22,15 +22,23 @@ import type { MapConfig } from './WorldMap'
 // Fixed by comparing every own key MapConfig has, read generically via
 // Object.keys rather than named one at a time, so a field added to the
 // interface later is included automatically instead of needing whoever
-// adds it to also remember this comparison exists. defaultCenter is the
-// only non-primitive field (an {x,y} point), compared by value. Pulled out
-// of WorldMap.tsx as a pure function so this comparison is unit-testable
+// adds it to also remember this comparison exists. Keys are read from BOTH
+// a and b (union, not just a's keys): with only a's keys, a key present on
+// b and absent on a would never be examined, so an optional field added to
+// MapConfig later could compare absent-vs-present as equal -- the exact
+// hole this file exists to close, one level up. defaultCenter is the only
+// non-primitive field (an {x,y} point), compared by value. Pulled out of
+// WorldMap.tsx as a pure function so this comparison is unit-testable
 // without mounting the canvas -- same reasoning as worldMapTileFallback.ts
 // and worldMapTileUrl.ts.
 export function mapConfigsEqual(a: MapConfig, b: MapConfig): boolean {
-  return (Object.keys(a) as (keyof MapConfig)[]).every((key) => {
+  const keys = new Set<keyof MapConfig>([
+    ...(Object.keys(a) as (keyof MapConfig)[]),
+    ...(Object.keys(b) as (keyof MapConfig)[]),
+  ])
+  return Array.from(keys).every((key) => {
     if (key === 'defaultCenter') {
-      return a.defaultCenter.x === b.defaultCenter.x && a.defaultCenter.y === b.defaultCenter.y
+      return a.defaultCenter?.x === b.defaultCenter?.x && a.defaultCenter?.y === b.defaultCenter?.y
     }
     return a[key] === b[key]
   })
