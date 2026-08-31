@@ -52,6 +52,12 @@ interface BridgeStatus {
 }
 interface ServerStatus {
   running: boolean
+  // See server/services/serverManager.js's getServerStatus() comment: true
+  // when the OS process scan itself failed (AV interference, WMI timeout,
+  // ps/pgrep unavailable), distinct from a confirmed stop. deriveDashboardStatus
+  // (lib/serverStatus.ts) reads this to avoid treating a scan hiccup as a
+  // confident "server is down."
+  scanFailed?: boolean
   startTime: string | null
   uptime: number
   serverPath: string
@@ -562,7 +568,19 @@ export default function Dashboard() {
     const onStatus = (data: Partial<ServerStatus>) => {
       setStatus(prev => {
         if (prev) return { ...prev, ...data }
-        if ('running' in data && 'configured' in data) return data as ServerStatus
+        // Every real server:status emit (server/index.js, routes/server.js,
+        // services/scheduler.js) sends only { running } -- never enough
+        // fields to safely stand in for a full ServerStatus (rcon/startTime/
+        // uptime/serverPath/serverPathConfigured all missing). Before prev
+        // exists there is nothing to merge onto, so an early push here is
+        // dropped; fetchStatus()'s REST call populates the first real
+        // snapshot instead. (This used to check for a `configured` field
+        // that would have made a full-snapshot payload acceptable, but no
+        // server:status emission has ever sent one, under either that name
+        // or its 2026-08-31 rename to serverPathConfigured -- removed
+        // rather than "fixed" to the new name, since accepting a partial
+        // payload here would cast it to ServerStatus and crash the first
+        // render that reads e.g. status.rcon.connected.)
         return prev
       })
       setLastUpdated(new Date())

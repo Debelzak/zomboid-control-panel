@@ -3083,38 +3083,57 @@ export const backupApi = {
     size: number;
     message: string;
   }> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${API_BASE}/backup/upload`, true);
-      const token = getAuthToken();
-      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-      xhr.setRequestHeader("Content-Type", "application/zip");
-      xhr.setRequestHeader("X-Backup-Filename", file.name);
-      if (onProgress) {
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable)
-            onProgress(Math.round((e.loaded / e.total) * 100));
+    // Raw XHR (not fetchWithRetry) because it needs upload progress events,
+    // which the fetch API cannot report. That means it does NOT get
+    // fetchWithRetry's automatic "refresh once on TOKEN_EXPIRED, then
+    // replay" behaviour for free -- every other mutating call in this file
+    // gets that for free through handleResponse/fetchWithRetry, so this one
+    // reimplements it by hand rather than silently doing without: a large
+    // backup upload can easily outlast the 15m access token TTL (see
+    // server/services/auth.js's own comment on why 15m), and a user
+    // returning after being idle that long would otherwise see a raw 401
+    // instead of a transparent refresh-and-retry like everywhere else.
+    const sendOnce = (
+      token: string | null,
+    ): Promise<{ status: number; payload: any }> =>
+      new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_BASE}/backup/upload`, true);
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.setRequestHeader("Content-Type", "application/zip");
+        xhr.setRequestHeader("X-Backup-Filename", file.name);
+        if (onProgress) {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable)
+              onProgress(Math.round((e.loaded / e.total) * 100));
+          };
+        }
+        xhr.onload = () => {
+          let payload: any = null;
+          try {
+            payload = JSON.parse(xhr.responseText);
+          } catch {
+            /* non-JSON */
+          }
+          resolve({ status: xhr.status, payload });
         };
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.onabort = () => reject(new Error("Upload aborted"));
+        xhr.send(file);
+      });
+
+    let { status, payload } = await sendOnce(getAuthToken());
+    if (status === 401 && payload?.code === "TOKEN_EXPIRED") {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        ({ status, payload } = await sendOnce(getAuthToken()));
       }
-      xhr.onload = () => {
-        let payload: any = null;
-        try {
-          payload = JSON.parse(xhr.responseText);
-        } catch {
-          /* non-JSON */
-        }
-        if (xhr.status >= 200 && xhr.status < 300 && payload?.success) {
-          resolve(payload);
-        } else {
-          const message =
-            payload?.error || `Upload failed (HTTP ${xhr.status})`;
-          reject(new Error(message));
-        }
-      };
-      xhr.onerror = () => reject(new Error("Network error during upload"));
-      xhr.onabort = () => reject(new Error("Upload aborted"));
-      xhr.send(file);
-    });
+    }
+
+    if (status >= 200 && status < 300 && payload?.success) {
+      return payload;
+    }
+    throw new Error(payload?.error || `Upload failed (HTTP ${status})`);
   },
 
   // Download a backup file with authentication

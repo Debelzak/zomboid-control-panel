@@ -60,6 +60,19 @@ describe('resolveServerRunning', () => {
     await expect(resolveServerRunning({ isRemote: false }, fetchNativeStatus, vi.fn())).resolves.toBeNull()
   })
 
+  it('native: a scanFailed status is unknown (null), never demoted to confirmed-stopped', async () => {
+    // server/services/serverManager.js's getServerStatus() explicitly
+    // returns { running: false, scanFailed: true } on a hung/erroring OS
+    // scan (AV interference, WMI timeout, ps/pgrep unavailable) -- the
+    // fetch itself succeeds, so this is NOT the same case as the rejected-
+    // promise test above. A caller (ServerConfig.tsx) treats false as
+    // "safe to let a config edit through unwarned," so demoting a scan
+    // failure to false would suppress the "stop the server before editing"
+    // guard while the server might genuinely still be running.
+    const fetchNativeStatus = vi.fn().mockResolvedValue({ running: false, scanFailed: true })
+    await expect(resolveServerRunning({ isRemote: false }, fetchNativeStatus, vi.fn())).resolves.toBeNull()
+  })
+
   it('docker-managed: a running container is detected via the composed status even though the local scan cannot see it', async () => {
     const fetchNativeStatus = vi.fn().mockResolvedValue({ running: false }) // must NOT be consulted
     const fetchComposedStatus = vi.fn().mockResolvedValue(composed('running', 'disconnected', 'offline'))
@@ -228,6 +241,34 @@ describe('deriveDashboardStatus', () => {
       provider: 'native',
       status: { running: true, rcon: { connected: true } },
       composedStatus: composed('running', 'connected', 'active'),
+    })
+    expect(result.hostRunning).toBe(false)
+    expect(result.online).toBe(false)
+  })
+
+  it('native provider, plain scan failed (scanFailed:true) but RCON connected -- hostRunning falls back to composedStatus instead of trusting the failed scan\'s running:false', () => {
+    // server/services/serverManager.js's getServerStatus() explicitly
+    // returns { running: false, scanFailed: true } on a hung/erroring OS
+    // scan. Before this field was consulted here, that shape would win the
+    // `??` chain (false is not null/undefined) and silently discard the
+    // composedStatus fallback -- the exact JS gotcha this file's own header
+    // comment already documents fixing for a different trigger.
+    const result = deriveDashboardStatus({
+      hasServer: true,
+      provider: 'native',
+      status: { running: false, scanFailed: true, rcon: { connected: true } },
+      composedStatus: composed('running', 'connected', 'offline'),
+    })
+    expect(result.hostRunning).toBe(true)
+    expect(result.online).toBe(true)
+  })
+
+  it('native provider, plain scan failed and composedStatus also says stopped -- hostRunning correctly falls through to composedStatus\'s answer, not the failed scan', () => {
+    const result = deriveDashboardStatus({
+      hasServer: true,
+      provider: 'native',
+      status: { running: false, scanFailed: true, rcon: { connected: false } },
+      composedStatus: composed('stopped', 'disconnected', 'offline'),
     })
     expect(result.hostRunning).toBe(false)
     expect(result.online).toBe(false)

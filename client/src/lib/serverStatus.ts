@@ -35,7 +35,7 @@ export interface DashboardStatusInput {
   // typed as a plain string on ComposedServerStatus in lib/api.ts) over the
   // client-side resolveClientProvider() guess whenever it's available.
   provider: string | null
-  status: { running?: boolean; rcon?: { connected?: boolean } } | null | undefined
+  status: { running?: boolean; scanFailed?: boolean; rcon?: { connected?: boolean } } | null | undefined
   composedStatus: ComposedStatusSignals | null | undefined
 }
 
@@ -86,8 +86,17 @@ export function deriveDashboardStatus({
   status,
   composedStatus,
 }: DashboardStatusInput): DashboardStatusOutput {
+  // scanFailed excluded from the "trust the local scan" gate below for the
+  // same reason resolveServerRunning's native branch checks it (see that
+  // function's own comment): server/services/serverManager.js's
+  // getServerStatus() explicitly returns { running: false, scanFailed: true }
+  // on a hung/erroring OS scan, and treating that as a confirmed `false`
+  // here would win the `??` chain over composedStatus/RCON, hiding a
+  // genuinely-running server behind a scan hiccup.
   const localProcessStatus =
-    provider === 'native' && typeof status?.running === 'boolean' ? status.running : null
+    provider === 'native' && typeof status?.running === 'boolean' && !status?.scanFailed
+      ? status.running
+      : null
   const hostRunning =
     hasServer &&
     (localProcessStatus ?? (composedStatus ? composedStatus.host.status === 'running' : !!status?.running))
@@ -125,7 +134,7 @@ export function deriveDashboardStatus({
  */
 export async function resolveServerRunning(
   server: { isRemote?: boolean; dockerContainerName?: string | null } | null | undefined,
-  fetchNativeStatus: () => Promise<{ running?: boolean }>,
+  fetchNativeStatus: () => Promise<{ running?: boolean; scanFailed?: boolean }>,
   fetchComposedStatus: () => Promise<ComposedStatusSignals>,
 ): Promise<boolean | null> {
   const provider = resolveClientProvider(server)
@@ -133,6 +142,15 @@ export async function resolveServerRunning(
   if (provider === 'native') {
     try {
       const status = await fetchNativeStatus()
+      // server/services/serverManager.js's getServerStatus() explicitly
+      // returns { running: false, scanFailed: true } on a hung/erroring OS
+      // scan (AV interference, WMI timeout, ps/pgrep unavailable) -- its own
+      // comment there says a reader that only checks `running` cannot tell
+      // that apart from a real stop. This function's whole contract is
+      // never confidently reporting false on an indeterminate signal, so a
+      // scan failure must resolve to null (unknown), the same as the catch
+      // block below, not fall through as a confident "stopped."
+      if (status.scanFailed) return null
       return Boolean(status.running)
     } catch {
       return null
