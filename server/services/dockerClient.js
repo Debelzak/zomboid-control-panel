@@ -295,7 +295,15 @@ export class DockerClient {
       request.on("timeout", () => {
         if (settled) return;
         settled = true;
-        request.destroy(new Error("Docker API timed out"));
+        // reject() directly rather than relying on the 'error' event
+        // destroy(err) triggers -- that event fires asynchronously, by
+        // which point `settled` is already true, so the error handler's
+        // own guard below silently swallowed it and this promise never
+        // settled at all. destroy() is still called, only for socket
+        // cleanup now, not as the rejection path.
+        const timeoutError = new Error("Docker API timed out");
+        request.destroy(timeoutError);
+        reject(timeoutError);
       });
       request.on("error", (error) => {
         if (settled) return;

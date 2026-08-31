@@ -836,6 +836,28 @@ export class ServerManager {
               return;
             }
 
+            // Same three-bucket classification the Linux branch below uses
+            // (CONFIRMED / AMBIGUOUS / noise), and for the same reason: the
+            // WMI filter above already narrows candidates to
+            // java.exe/ProjectZomboid64.exe/ProjectZomboid32.exe, but a real
+            // dedicated server can still be launched in a shape
+            // isWindowsDedicatedServerCommandLine doesn't recognize (a
+            // generic `java -jar` invocation with no "zomboid" in the jar
+            // path and no -server/startserver flag -- plausible for a
+            // custom/shaded jar launcher). Reusing
+            // looksLikeUndeterminedJvmCandidate (java/javaw-in-its-own-
+            // command-line AND zomboid-adjacent) rather than inventing a
+            // Windows-specific check also gets the right answer for
+            // ProjectZomboid64.exe/32.exe candidates for free: that helper's
+            // java/javaw regex never matches a native .exe's own command
+            // line (no "java" substring in it), so a plain client launch
+            // with no server flags is correctly left as noise, not flagged
+            // ambiguous -- an operator playing the game locally on the same
+            // host must not flip every scan to "can't confirm stopped".
+            const ambiguous = [];
+            const pushAmbiguous = (cmd) => {
+              ambiguous.push(String(cmd || "").slice(0, 240));
+            };
             const lines = psStdout.split(/\r?\n/);
             for (let raw of lines) {
               raw = raw.trim();
@@ -851,7 +873,24 @@ export class ServerManager {
                   `getServerProcessDetails: matched PZ server process pid=${pid}: ${cmd.substring(0, 200)}`,
                 );
                 pushMatch(cmd, pid);
+              } else if (looksLikeUndeterminedJvmCandidate(cmd)) {
+                log.debug(
+                  `getServerProcessDetails: Windows candidate ignored (not a recognized dedicated-server shape, but JVM-shaped and zomboid-adjacent -- treating as ambiguous): ${cmd.substring(0, 200)}`,
+                );
+                pushAmbiguous(cmd);
               }
+            }
+
+            if (matched.length === 0 && ambiguous.length > 0) {
+              // Leave this.isRunning untouched -- same "a scan that couldn't
+              // tell must not overwrite the last known-good state" rule as
+              // every other uncertain case (see getServerProcessDetails()'s
+              // own comment).
+              log.warn(
+                `getServerProcessDetails: found ${ambiguous.length} JVM-shaped process(es) mentioning zomboid/zombie.network that don't match a known dedicated-server launch shape -- cannot confirm the server is stopped (first: ${ambiguous[0]})`,
+              );
+              resolve({ running: false, matched: [], scanFailed: true });
+              return;
             }
 
             this.isRunning = matched.length > 0;

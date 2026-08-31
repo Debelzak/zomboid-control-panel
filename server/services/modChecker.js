@@ -292,6 +292,14 @@ export class ModChecker extends EventEmitter {
                 `Mod update handling failed: ${handled?.error || handled?.message || "unknown error"}`,
               );
             }
+            // Without this, checkForUpdates()'s markProcessed dedup check
+            // always sees undefined here (a block-bodied async function
+            // resolves undefined unless it explicitly returns), so a
+            // successful immediate restart was never recorded as processed
+            // and the same update could retrigger another restart on the
+            // next check cycle. routes/config.js's bulk-save path already
+            // gets this right with an implicit-return arrow.
+            return handled;
           };
           log.info("Auto-restart on mod update restored from settings");
         }

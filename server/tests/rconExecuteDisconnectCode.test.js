@@ -106,6 +106,32 @@ describe("RconService.execute(): the code actually reaches the response object c
     });
   });
 
+  // Regression (2026-08-31 services sweep): this branch used to return
+  // {success:false, error:"RCON reconnection failed"} with no `code` at
+  // all, unlike every sibling disconnect return in this function. reconnect()
+  // resolving without throwing but genuinely failing to reestablish a
+  // connection (retries exhausted, server still offline) is an ordinary,
+  // common outcome -- not an edge case -- so Console.tsx's dropped-connection
+  // banner used to silently never appear for it.
+  it("attaches RCON_EXECUTE_DISCONNECTED when reconnect() resolves without throwing but genuinely fails to reconnect", async () => {
+    const service = new RconService();
+    service.connected = true;
+    service.serverStarting = false;
+    service.client = {
+      execute: vi.fn().mockRejectedValue(new Error("socket hang up ECONNRESET")),
+    };
+    service.reconnect = vi.fn().mockResolvedValue(false);
+
+    const result = await service.execute("players", { skipLog: true });
+
+    expect(service.reconnect).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      success: false,
+      error: "RCON reconnection failed",
+      code: ErrorCode.RCON_EXECUTE_DISCONNECTED,
+    });
+  });
+
   it("attaches null (not RCON_EXECUTE_DISCONNECTED) for a real authentication failure reaching the main catch block", async () => {
     const service = new RconService();
     service.connected = true;

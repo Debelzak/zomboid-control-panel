@@ -1341,11 +1341,24 @@ export class RconService extends EventEmitter {
               response: response || "Command executed successfully",
             };
           } else {
-            // Reconnect returned false or didn't connect
+            // Reconnect returned false or didn't connect -- an ordinary,
+            // unambiguous disconnect (the server is genuinely offline, not
+            // an unexpected error), same shape as the connectResult===false
+            // branch above, so the code is attached directly here rather
+            // than routed through getRconDisconnectCode(), which classifies
+            // an error MESSAGE and there isn't one on this path -- reconnect()
+            // resolved without throwing. Without this, Console.tsx's
+            // isRconDisconnectError() never fires for this branch and the
+            // "connection dropped" banner silently never appears for the
+            // most ordinary case it exists to cover.
             if (!skipLog) {
               logCommand(command, "Connection failed", false);
             }
-            return { success: false, error: "RCON reconnection failed" };
+            return {
+              success: false,
+              error: "RCON reconnection failed",
+              code: ErrorCode.RCON_EXECUTE_DISCONNECTED,
+            };
           }
         } catch (reconnectError) {
           const reconnectMsg = this.getUserFriendlyError(

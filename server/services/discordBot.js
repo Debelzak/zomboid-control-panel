@@ -480,7 +480,13 @@ export class DiscordBot {
   async updateConfig(token, guildId, adminRoleId, channelId, modRoleId) {
     writeUiSecretFile("discordBotToken", token);
     await setSetting("discordGuildId", guildId);
-    await setSetting("discordAdminRoleId", adminRoleId);
+    // adminRoleId normalized the same way modRoleId already is, both here
+    // and below -- without this, this.adminRoleId was stored RAW forever
+    // (never normalized, not even after this same function ran once), so
+    // once an empty adminRoleId had ever been saved, rolesChanged compared
+    // "" !== null on every subsequent unrelated config save and spuriously
+    // re-registered Discord slash commands every time.
+    await setSetting("discordAdminRoleId", adminRoleId || "");
     await setSetting("discordModRoleId", modRoleId || "");
     await setSetting("discordChannelId", channelId || "");
 
@@ -490,7 +496,7 @@ export class DiscordBot {
       this.modRoleId !== (modRoleId || null);
     this.token = token;
     this.guildId = guildId;
-    this.adminRoleId = adminRoleId;
+    this.adminRoleId = adminRoleId || null;
     this.modRoleId = modRoleId || null;
     this.channelId = channelId;
 

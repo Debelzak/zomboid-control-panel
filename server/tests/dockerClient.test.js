@@ -210,4 +210,36 @@ const MANAGED_TTY_CONTAINER = {
 
     await expect(client.getContainerLogs("c1")).resolves.toBeNull();
   });
+
+  // Regression (2026-08-31 services sweep): _requestBuffer's timeout handler
+  // used to set `settled = true` BEFORE calling request.destroy(error) --
+  // destroy() fires its 'error' event asynchronously, by which point the
+  // error handler's own `if (settled) return` guard silently swallowed it,
+  // so the promise never settled at all. A real daemon that accepts the
+  // connection but never writes a response (hung/overloaded dockerd) used
+  // to wedge getContainerLogs forever, with no failure a user could report.
+  // A genuinely non-responding real HTTP server over a real Unix socket --
+  // not a mock of the timeout event -- so this proves Node's actual
+  // destroy(err)-then-error-event ordering is handled, not just an
+  // assumption about it.
+  it("rejects instead of hanging forever when the daemon accepts the connection but never responds", async () => {
+    const hangDir = fs.mkdtempSync(path.join(os.tmpdir(), "pz-docker-hang-test-"));
+    const hangSocketPath = path.join(hangDir, "docker.sock");
+    const hangServer = http.createServer(() => {
+      // Deliberately never call res.write/res.end -- the exact "connection
+      // accepted, then silence" shape that used to make _requestBuffer's
+      // promise never settle.
+    });
+    await new Promise((resolve) => hangServer.listen(hangSocketPath, resolve));
+
+    try {
+      const hangClient = new DockerClient({ socketPath: hangSocketPath, enabled: true });
+      await expect(
+        hangClient._requestBuffer("GET", "/containers/c1/logs", 150),
+      ).rejects.toThrow(/timed out/i);
+    } finally {
+      await new Promise((resolve) => hangServer.close(resolve));
+      fs.rmSync(hangDir, { recursive: true, force: true });
+    }
+  });
 });

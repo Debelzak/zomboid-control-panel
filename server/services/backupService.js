@@ -893,7 +893,15 @@ export class BackupService {
         log.warn(`Backup record could not be removed for ${safeName}: ${error.message}`);
       }
       log.info(`Deleted backup: ${safeName}`);
-      await logServerEvent("backup_deleted", safeName);
+      try {
+        await logServerEvent("backup_deleted", safeName);
+      } catch (error) {
+        // The file is already unlinked and the record already removed --
+        // a logging failure here must not turn an actually-successful
+        // delete into a reported failure (the caller would retry and get
+        // "Backup not found" for a backup that's genuinely gone).
+        log.warn(`Could not log backup_deleted event for ${safeName}: ${error.message}`);
+      }
 
       return { success: true };
     } catch (error) {
@@ -931,8 +939,12 @@ export class BackupService {
       for (const backup of toDelete) {
         const deleted = await this.deleteBackup(backup.name);
         if (!deleted?.success) {
+          // deleteBackup() only ever sets .message on failure, never
+          // .error -- this read the wrong field, so every real cleanup
+          // failure logged "unknown error" unconditionally regardless of
+          // what actually went wrong.
           log.warn(
-            `Could not clean up old backup ${backup.name}: ${deleted?.error || "unknown error"}`,
+            `Could not clean up old backup ${backup.name}: ${deleted?.message || "unknown error"}`,
           );
           continue;
         }
