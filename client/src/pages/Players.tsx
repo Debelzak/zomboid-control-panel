@@ -295,8 +295,15 @@ function ActionTile({
       </div>
       <div className="min-w-0 flex-1">
         <p className={cn('font-medium leading-tight', compact ? 'text-[12px]' : 'text-sm', e.label)}>{label}</p>
+        {/* line-clamp-2, not truncate: truncate's single-line ellipsis cut
+            real meaning out of short phrases ("Permanent · two-step" ->
+            "Permanent · two-s...") specifically in the desktop 3/4-column
+            grid, where these cards are narrower than they are on mobile's
+            single column -- the same content read complete one viewport
+            over (2026-08-31 visual sweep). Two lines is enough headroom for
+            every description these tiles actually carry. */}
         {description && !compact ? (
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{description}</p>
+          <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{description}</p>
         ) : null}
       </div>
     </div>
@@ -2063,15 +2070,23 @@ export default function Players() {
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="moderation">
-              <div className="overflow-x-auto pb-1 [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)]">
-                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-md border border-border/55 bg-muted/30 p-1">
-                  <TabsTrigger value="vitals" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.vitals')}</TabsTrigger>
-                  <TabsTrigger value="moderation" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.moderation')}</TabsTrigger>
-                  <TabsTrigger value="spawn" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.spawn')}</TabsTrigger>
-                  <TabsTrigger value="powers" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.powers')}</TabsTrigger>
-                  <TabsTrigger value="notes" className="min-h-8 shrink-0 px-3 text-xs font-medium" onClick={() => fetchActivityLogs()}>{t('tabs.notesLog')}</TabsTrigger>
-                </TabsList>
-              </div>
+              {/* flex-wrap, not horizontal scroll: the previous overflow-x-auto
+                  strip clipped "Notes & Log" down to a bare "N" on mobile,
+                  with only a 12px edge mask as the sole cue that there was
+                  more to scroll to -- easy to miss, no arrow or shadow, and
+                  the strip starts scrolled to the clipped position by
+                  default (2026-08-31 visual sweep). These five tabs are
+                  label-only, same shape as Debug.tsx's own tab strip, which
+                  already wraps instead of scrolling -- matching that
+                  existing, already-proven convention here instead of tuning
+                  the mask/adding scroll arrows. */}
+              <TabsList className="flex h-auto flex-wrap items-center gap-1 rounded-md border border-border/55 bg-muted/30 p-1">
+                <TabsTrigger value="vitals" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.vitals')}</TabsTrigger>
+                <TabsTrigger value="moderation" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.moderation')}</TabsTrigger>
+                <TabsTrigger value="spawn" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.spawn')}</TabsTrigger>
+                <TabsTrigger value="powers" className="min-h-8 shrink-0 px-3 text-xs font-medium">{t('tabs.powers')}</TabsTrigger>
+                <TabsTrigger value="notes" className="min-h-8 shrink-0 px-3 text-xs font-medium" onClick={() => fetchActivityLogs()}>{t('tabs.notesLog')}</TabsTrigger>
+              </TabsList>
 
               {/* Vitals Tab -- live PanelBridge.getPlayerDetails read-back:
                   position, health, and the eight stats:get(CharacterStat.X)
@@ -3292,6 +3307,17 @@ export default function Players() {
                                 >
                                   {log.action}
                                 </Badge>
+                                {/* The dedicated Details column is hidden below
+                                    sm (no room for a 4th column at 390px) --
+                                    fold it in here instead of dropping it
+                                    outright, so a real entry's details are
+                                    still readable on mobile once this table
+                                    actually has data (2026-08-31 visual
+                                    sweep: empty today hid that nothing was
+                                    reachable there at all). */}
+                                <p className="mt-1 max-w-[220px] text-[11px] text-muted-foreground break-words sm:hidden">
+                                  {log.details || t('notes.detailsFallback')}
+                                </p>
                               </td>
                               <td className="max-w-[220px] p-2 text-xs text-muted-foreground break-words hidden sm:table-cell">
                                 {log.details || t('notes.detailsFallback')}

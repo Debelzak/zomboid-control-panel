@@ -855,7 +855,18 @@ export default function Dashboard() {
 
   /* One verdict at a time, highest severity wins. Calm states say nothing at all. */
   const verdict: Verdict = (() => {
-    if (!hasServer || (status && !status.configured)) {
+    // status.configured is `!!serverManager.serverPath` (server/services/
+    // serverManager.js) -- a LOCAL install-path signal. installPath is not
+    // required for remote servers (server/routes/servers.js's create
+    // validation), so a fully-configured remote server -- name, RCON host/
+    // port/password all required and present -- structurally can never set
+    // it, and this verdict permanently misread "remote" as "unconfigured"
+    // (2026-08-31 visual sweep: "NOT CONFIGURED" sitting under a named,
+    // addressed, REMOTE-badged server). Same family as Layout.tsx's
+    // servers-as-[] fix (3665aa20): a signal that cannot represent one real
+    // case was trusted for all cases instead of being scoped to the ones it
+    // actually describes.
+    if (!hasServer || (status && !status.configured && !activeServer?.isRemote)) {
       return {
         level: 'warning',
         headline: t('verdict.noServerConfigured'),
@@ -1460,7 +1471,10 @@ export default function Dashboard() {
       )}
 
       {/* ─── Not configured ──────────────────────────────────────────────── */}
-      {status && !status.configured && (
+      {/* !activeServer?.isRemote: see the verdict's own comment above -- a
+          remote server's installPath-based status.configured is always
+          false by construction, not a real "unconfigured" signal. */}
+      {status && !status.configured && !activeServer?.isRemote && (
         <Link
           to="/server-setup"
           className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-warning/40 bg-warning/[0.04] py-2 pl-3 pr-2 shadow-[inset_2px_0_0_hsl(var(--warning))] transition-colors hover:bg-warning/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
