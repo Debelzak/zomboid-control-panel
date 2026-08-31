@@ -1188,15 +1188,19 @@ export default function Console() {
                 onKeyDown={handleKeyDown}
                 placeholder={t('rcon.placeholder')}
                 className="pl-[5.5rem] font-mono bg-card/70 border-border/55 focus-visible:border-primary/60"
-                disabled={loading || !hasRconConfig || !canExecuteRcon}
+                disabled={loading || !hasRconConfig || rconConnected === false || !canExecuteRcon}
                 maxLength={2000}
                 aria-label={t('rcon.inputAria')}
               />
             </div>
-            <DisabledReason reason={!canExecuteRcon ? t('rcon.noPermission') : null}>
+            <DisabledReason reason={
+              !canExecuteRcon ? t('rcon.noPermission')
+                : rconConnected === false ? t('rcon.disconnectedUseRecheck')
+                  : null
+            }>
               <Button
                 onClick={executeCommand}
-                disabled={loading || !command.trim() || !hasRconConfig || !canExecuteRcon}
+                disabled={loading || !command.trim() || !hasRconConfig || rconConnected === false || !canExecuteRcon}
                 aria-label={t('rcon.executeAria')}
                 className="font-mono text-[11px] uppercase tracking-[0.18em]"
               >

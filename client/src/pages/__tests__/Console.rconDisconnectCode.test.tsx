@@ -144,7 +144,7 @@ describe('Console.tsx: RCON disconnect detection reacts to the code, not the pro
     expect(screen.queryByText(enConsole.rcon.offline)).not.toBeInTheDocument()
   })
 
-  it('flips the banner back online on the next successful command after a disconnect', async () => {
+  it('recovers via the Recheck button after a disconnect, and stays online on the next command', async () => {
     await setUp()
     execute.mockResolvedValueOnce({
       success: false,
@@ -157,6 +157,24 @@ describe('Console.tsx: RCON disconnect detection reacts to the code, not the pro
     await runCommand('players')
     await screen.findByText(enConsole.rcon.offline)
 
+    // 2026-08-31 (bughunt-2026-08-31-b): this used to retry by clicking Run
+    // again directly. Console.tsx's disabled-input fix now correctly
+    // disables Run (and the command input) the instant rconConnected flips
+    // false -- a page reading HOST UNREACHABLE can't also offer a live
+    // command box in the same frame -- so that retry path is no longer
+    // clickable, on purpose. What this test verifies hasn't changed (a
+    // genuinely successful outcome flips the banner back online); only the
+    // route to get there has: an explicit Recheck, the one control
+    // deliberately never gated on rconConnected itself, and exactly the
+    // recovery path DisabledReason's extended message now points the
+    // operator at (see rcon.disconnectedUseRecheck).
+    testRcon.mockResolvedValueOnce({ success: true, connected: true })
+    const recheckButton = screen.getByRole('button', { name: /recheck/i })
+    fireEvent.click(recheckButton)
+    await screen.findByText(enConsole.rcon.online)
+
+    // The command input is usable again post-recovery, and a further
+    // successful command doesn't regress the banner back to offline.
     execute.mockResolvedValueOnce({ success: true, response: '1 player online' })
     await runCommand('players')
 

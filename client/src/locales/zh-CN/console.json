@@ -97,7 +97,8 @@
     "run": "运行",
     "keyboardHint": "// enter · 运行 · ↑↓ 历史记录",
     "noResponseFallback": "无响应",
-    "noPermission": "您的角色没有执行 RCON 命令的权限。"
+    "noPermission": "您的角色没有执行 RCON 命令的权限。",
+    "disconnectedUseRecheck": "RCON 当前无法访问 -- 请先点击上方的\"重新检查\"，然后再试一次。"
   },
   "quickCommands": {
     "players": "玩家",

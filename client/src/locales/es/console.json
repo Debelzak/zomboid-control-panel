@@ -97,7 +97,8 @@
     "run": "ejecutar",
     "keyboardHint": "// intro · ejecutar · ↑↓ historial",
     "noResponseFallback": "Sin respuesta",
-    "noPermission": "Tu rol no tiene permiso para ejecutar comandos RCON."
+    "noPermission": "Tu rol no tiene permiso para ejecutar comandos RCON.",
+    "disconnectedUseRecheck": "RCON no está disponible en este momento -- selecciona \"Volver a comprobar\" arriba antes de intentarlo de nuevo."
   },
   "quickCommands": {
     "players": "Jugadores",

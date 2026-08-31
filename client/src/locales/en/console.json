@@ -97,7 +97,8 @@
     "run": "run",
     "keyboardHint": "// enter · run · ↑↓ history",
     "noResponseFallback": "No response",
-    "noPermission": "Your role doesn't have permission to run RCON commands."
+    "noPermission": "Your role doesn't have permission to run RCON commands.",
+    "disconnectedUseRecheck": "RCON is currently unreachable -- select Recheck above before trying again."
   },
   "quickCommands": {
     "players": "Players",
