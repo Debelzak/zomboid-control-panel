@@ -1,10 +1,26 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.44
+    Version: 1.7.45
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.45 Changes:
+                - Fix: triggerSwarmEvent used to go straight to the
+                    fire-and-forget horde APIs (createHordeInAreaTo/
+                    createHordeFromTo/CreateSwarm) with no count to read
+                    back. Now tries VirtualZombieManager.createRealZombieNow
+                    first, same as spawnHordeNearPlayer/BehindPlayer, and
+                    reports a real per-zombie spawned count when it does.
+                - Fix: removeVehicle reported success purely on the removal
+                    call not throwing. Now re-checks the vehicle's presence
+                    via getVehiclesList() immediately after removal and only
+                    reports success once it's genuinely gone -- confirmed
+                    safe via javap -c: BaseVehicle.permanentlyRemove()/
+                    removeFromWorld() both synchronously remove from
+                    IsoCell's live vehicle Set, no tick-loop delay like the
+                    ClimateFloat case had.
 
                 v1.7.44 Changes:
                 - Fix: setSnow/startRain/stopRain, the daylight/night/
@@ -440,7 +456,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.44",
+    VERSION = "1.7.45",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
