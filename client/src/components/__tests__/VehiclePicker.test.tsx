@@ -39,8 +39,12 @@ describe('VehiclePicker', () => {
   it('shows a manual-entry fallback when no catalog is loaded yet', async () => {
     getCatalogVehicles.mockResolvedValue({ vehicles: [], count: 0, scannedAt: null })
     render(<VehiclePicker value="" onChange={vi.fn()} />)
-    await waitFor(() => expect(getCatalogVehicles).toHaveBeenCalled())
-    expect(screen.getByPlaceholderText('e.g., Base.CarNormal')).toBeInTheDocument()
+    // waitFor(toHaveBeenCalled) only proves the API was CALLED, not that the
+    // resulting setState/re-render has committed -- see ItemPicker.test.tsx
+    // for the mechanism and the reproduction. findBy* polls until the
+    // fallback actually appears instead of assuming one microtask tick was
+    // enough.
+    expect(await screen.findByPlaceholderText('e.g., Base.CarNormal')).toBeInTheDocument()
   })
 
   it('finds a vehicle by an accented, non-ASCII search term', async () => {
@@ -94,9 +98,11 @@ describe('VehiclePicker', () => {
       scannedAt: null,
     })
     render(<VehiclePicker value="Base.NoMechanicsVan" onChange={vi.fn()} />)
-    await waitFor(() => expect(getCatalogVehicles).toHaveBeenCalled())
 
-    expect(screen.getByText('No Mechanics Van')).toBeInTheDocument()
+    // Same race as the manual-entry-fallback test above -- assert on the
+    // settled render via findBy*, not a toHaveBeenCalled() check followed
+    // by a synchronous getBy*.
+    expect(await screen.findByText('No Mechanics Van')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Select vehicle' }))
     expect(await screen.findByText('Police Cruiser')).toBeInTheDocument()
