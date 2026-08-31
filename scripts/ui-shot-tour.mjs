@@ -1056,6 +1056,27 @@ async function expandMainForCapture(page) {
     expand(root)
     for (const el of root.querySelectorAll('*')) {
       if (el.scrollHeight > el.clientHeight + 2) {
+        // tour-expandmainforcapture-defeats-intentional-clamping
+        // (2026-08-31): `-webkit-line-clamp` truncation IS overflow:hidden-
+        // based (Tailwind's `.line-clamp-N` emits `display:-webkit-box;
+        // -webkit-box-orient:vertical; -webkit-line-clamp:N;
+        // overflow:hidden` -- confirmed against the real compiled CSS, see
+        // Players.tsx's own comment on this exact defect), so a clamped
+        // element trips this SAME scrollHeight>clientHeight check by
+        // design every time there's more text than N lines allow -- the
+        // "overflow" here is the intentionally-cut text, not clipped-but-
+        // wanted content this function exists to reveal. Forcing
+        // overflow:visible on it un-clips the truncation entirely and
+        // shows the full, un-cut string no real user or browser ever
+        // renders -- which is not merely a missed check, it ACTIVELY
+        // produces a false finding (text appearing to spill/overlap into
+        // the next element) that already cost real, correct copy in six
+        // languages before it was traced back to this function and
+        // reverted. Skip: an element that is itself actively line-
+        // clamping is never a candidate to unclip, no matter how far its
+        // scrollHeight exceeds its clientHeight -- that gap is the
+        // feature, not a gap in the capture.
+        if (getComputedStyle(el).webkitLineClamp !== 'none') continue
         // Expand the clipping element AND every ancestor up to
         // #main-content, not just the element itself: found by direct code
         // reading after the desktop fix alone produced a NEW mobile defect
