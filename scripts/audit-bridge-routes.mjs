@@ -156,3 +156,14 @@ if (unverifiable.length) {
     `is technically reachable by a role holding plain bridge.command and is unverified by this tool.`,
   );
 }
+
+// wire-up-the-unrun-checkers (2026-08-31 bug hunt): this script had no
+// caller anywhere in the repo until this pass -- npm script + CI job added
+// alongside this exit code. Confirmed zero mismatches on HEAD before adding
+// this. Only real MISMATCHES fail the build -- the UNVERIFIABLE count above
+// is a permanent, honest ceiling (the generic passthrough's dynamic action
+// argument), not a regression signal, and must never gate the build on its
+// own.
+if (problems.length + capabilityMissingHandler.length > 0) {
+  process.exit(1);
+}

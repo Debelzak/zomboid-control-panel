@@ -23,7 +23,11 @@
     "ui:shot-tour": "node scripts/ui-shot-tour.mjs",
     "check:engine-signatures": "node scripts/check-engine-signatures.mjs",
     "gen:engine-signatures": "node scripts/gen-engine-signatures.mjs",
-    "check:i18n-staleness": "node scripts/i18n-staleness-check.mjs"
+    "check:i18n-staleness": "node scripts/i18n-staleness-check.mjs",
+    "check:bridge-actions": "node scripts/audit-bridge-actions.mjs .",
+    "check:bridge-routes": "node scripts/audit-bridge-routes.mjs .",
+    "check:rcon-commands": "node scripts/audit-rcon-commands.mjs .",
+    "check:i18n": "node scripts/i18n-check.mjs --all"
   },
   "dependencies": {
     "archiver": "^7.0.1",
