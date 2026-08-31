@@ -1172,24 +1172,6 @@ export class ServerManager {
       this.configLoaded = false;
       await this.loadConfig(this._serverId);
 
-      if (this.usesManagedServiceLifecycle()) {
-        const result = await this._getManagedLifecycle().run("start");
-        if (!result.success) throw new Error(result.error || result.message);
-        this.serverProcess = null;
-        this.isRunning = true;
-        this.startTime = this.startTime || new Date();
-        this._deletePidFile();
-        await logServerEvent(
-          "server_start",
-          `Server started through ${this.lifecycleProvider}`,
-        ).catch((error) => log.warn(`Failed to log event: ${error.message}`));
-        return result;
-      }
-
-      if (!this.startCommand && !this.serverPath) {
-        throw new Error("Server path not configured");
-      }
-
       // SteamCMD (POST /install, POST /steam-update -- see
       // ../services/activeSteamOperations.js) writes game files directly
       // into this same directory. Spawning the PZ JVM while that write is
@@ -1208,6 +1190,11 @@ export class ServerManager {
       // skipRunningCheck branch below: "is SteamCMD active" is orthogonal
       // to "is the OLD PZ process confirmed stopped" -- restartServer()'s
       // skipRunningCheck:true is specifically about skipping the latter.
+      // Placed ABOVE the managed-lifecycle branch below (2026-08-31 fix --
+      // it used to sit after that branch's own early return, so a
+      // systemd/openrc-managed install could get systemctl-started while
+      // SteamCMD was still writing into the exact same directory, silently
+      // bypassing the one guard this comment claims is unconditional).
       // Thrown as a plain Error with no ErrorCode, matching every OTHER
       // refusal already in this function (Server path not configured /
       // already running / RCON port in use, none of which carry one
@@ -1225,6 +1212,24 @@ export class ServerManager {
             "A Steam install or update is currently in progress for this server's install directory. Wait for it to finish before starting the server.",
           );
         }
+      }
+
+      if (this.usesManagedServiceLifecycle()) {
+        const result = await this._getManagedLifecycle().run("start");
+        if (!result.success) throw new Error(result.error || result.message);
+        this.serverProcess = null;
+        this.isRunning = true;
+        this.startTime = this.startTime || new Date();
+        this._deletePidFile();
+        await logServerEvent(
+          "server_start",
+          `Server started through ${this.lifecycleProvider}`,
+        ).catch((error) => log.warn(`Failed to log event: ${error.message}`));
+        return result;
+      }
+
+      if (!this.startCommand && !this.serverPath) {
+        throw new Error("Server path not configured");
       }
 
       if (!skipRunningCheck) {

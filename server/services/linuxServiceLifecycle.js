@@ -312,10 +312,20 @@ function defaultExecFile(command, args) {
       env.XDG_RUNTIME_DIR = `/run/user/${uid}`;
     }
     nodeExecFile(command, args, { timeout: 15000, env }, (error, stdout, stderr) => {
+      // error.code is the child's own exit code (an integer) when the
+      // command actually ran and exited non-zero. When the exec itself
+      // never produced a real exit code -- ENOENT, EACCES, a timeout kill --
+      // Node instead gives a string errno/signal or nothing, and this used
+      // to collapse indistinguishably into a synthetic `code: 1`, identical
+      // to a command that ran fine and legitimately exited 1. execFailed
+      // lets callers tell "the command answered" apart from "we don't know
+      // what the command would have said".
+      const execFailed = Boolean(error) && !Number.isInteger(error?.code);
       resolve({
         code: Number.isInteger(error?.code) ? error.code : error ? 1 : 0,
         stdout: String(stdout || ""),
         stderr: String(stderr || error?.message || ""),
+        execFailed,
       });
     });
   });
@@ -426,16 +436,28 @@ export class LinuxServiceLifecycle {
     const status = registered
       ? await this.execFile("rc-service", ["--user", this.serviceName, "status"])
       : { code: 3, stdout: "", stderr: "" };
+    // Unlike the systemd branch above (where an exec failure yields empty
+    // stdout, so LoadState never parses and `registered` itself comes back
+    // false -- routing straight to status()'s "not registered" scanFailed
+    // path), `registered` here is a filesystem check that already succeeded
+    // by this point. Without checking execFailed, a genuine rc-service exec
+    // failure (missing binary, EACCES, timeout) was indistinguishable from
+    // rc-service running fine and reporting "not running" -- both produced
+    // activeState: "inactive", so status()'s `scanFailed: activeState ===
+    // "unknown"` could never fire for OpenRC no matter what actually failed.
+    const execFailed = Boolean(status.execFailed);
     return {
       registered,
-      running: registered && status.code === 0,
+      running: registered && !execFailed && status.code === 0,
       activeState: !registered
         ? "not-found"
-        : status.code === 0
-          ? "active"
-          : "inactive",
+        : execFailed
+          ? "unknown"
+          : status.code === 0
+            ? "active"
+            : "inactive",
       markerMatches,
-      error: status.code !== 0 && status.code !== 3
+      error: execFailed || (status.code !== 0 && status.code !== 3)
         ? status.stderr.trim().slice(0, 300)
         : null,
     };

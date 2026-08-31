@@ -309,4 +309,52 @@ describe("Linux managed-service lifecycle", () => {
     expect(result.running).toBe(true);
     expect(result.error).toMatch(/already running/i);
   });
+
+  describe("OpenRC status() scanFailed (2026-08-31 services sweep regression)", () => {
+    function openrcLifecycle(execFile) {
+      return new LinuxServiceLifecycle(server, "openrc", {
+        platform: "linux",
+        containerized: false,
+        fileExists: () => true,
+        readFile: () => `X-Zomboid-Panel-Server-ID: ${server.id}`,
+        execFile,
+      });
+    }
+
+    it("reports a confirmed-stopped service without scanFailed when rc-service genuinely answers non-zero", async () => {
+      const status = await openrcLifecycle(
+        vi.fn(async () => ({ code: 3, stdout: "stopped", stderr: "" })),
+      ).status();
+
+      expect(status.scanFailed).toBe(false);
+      expect(status.running).toBe(false);
+    });
+
+    // Regression: activeState used to be derived purely from rc-service's
+    // exit code, so an exec-level failure (missing binary, EACCES, timeout)
+    // collapsed into the exact same "inactive" as a genuine "not running"
+    // answer -- scanFailed could never fire for OpenRC no matter what
+    // actually went wrong, so configMutationGuard fail-opened on a config
+    // overwrite it had no way to verify was safe.
+    it("reports scanFailed, not a confident stopped state, when the rc-service exec itself fails", async () => {
+      const status = await openrcLifecycle(
+        vi.fn(async () => ({ code: 1, stdout: "", stderr: "", execFailed: true })),
+      ).status();
+
+      expect(status.scanFailed).toBe(true);
+      expect(status.running).toBe(false);
+    });
+
+    // No execFile override -- exercises the real defaultExecFile against a
+    // command ("rc-service") that genuinely does not exist on this test
+    // host, the same ENOENT shape a deployment host missing OpenRC would
+    // hit. Proves the execFailed signal actually reaches inspect() end to
+    // end, not just through a hand-shaped mock.
+    it("reports scanFailed via the real execFile when rc-service cannot be found on this host", async () => {
+      const status = await openrcLifecycle(undefined).status();
+
+      expect(status.scanFailed).toBe(true);
+      expect(status.running).toBe(false);
+    });
+  });
 });

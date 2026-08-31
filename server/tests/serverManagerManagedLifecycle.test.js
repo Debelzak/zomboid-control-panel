@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import path from "path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getServer = vi.fn();
 const getActiveServer = vi.fn();
@@ -14,6 +15,10 @@ vi.mock("../database/init.js", () => ({
 }));
 
 const { ServerManager } = await import("../services/serverManager.js");
+const {
+  getActiveSteamOperations,
+  clearActiveSteamOperation,
+} = await import("../services/activeSteamOperations.js");
 
 const profile = {
   id: "managed-1",
@@ -67,6 +72,32 @@ describe("ServerManager managed Linux lifecycle", () => {
     expect(lifecycle.run).toHaveBeenCalledWith("start");
     expect(result.success).toBe(true);
     expect(manager.serverProcess).toBeNull();
+  });
+
+  // Regression (2026-08-31 services sweep): the SteamCMD guard used to sit
+  // AFTER the managed-lifecycle branch's own early return, so it never ran
+  // for a systemd/openrc-managed install -- systemctl would start the
+  // server while SteamCMD was still writing into the exact same
+  // installPath, exactly the "spawn against a mid-write install" crash
+  // this guard exists to prevent for the direct-launch path.
+  describe("SteamCMD guard also covers the managed-lifecycle start path", () => {
+    const normalizedInstallPath = path.normalize(profile.installPath).toLowerCase();
+
+    afterEach(() => {
+      clearActiveSteamOperation(normalizedInstallPath);
+    });
+
+    it("refuses to systemctl-start while SteamCMD is active for this install path", async () => {
+      getActiveSteamOperations().set(normalizedInstallPath, {
+        type: "update",
+        pid: process.pid,
+      });
+
+      await expect(manager.startServer()).rejects.toThrow(
+        /steam install or update is currently in progress/i,
+      );
+      expect(lifecycle.run).not.toHaveBeenCalled();
+    });
   });
 
   it("force-stops through systemd instead of killing host PIDs", async () => {
