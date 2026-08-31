@@ -5219,7 +5219,16 @@ router.get("/worldmap", requirePermission("diagnostics.manage"), async (req, res
     // ─── PanelBridge live data ────────────────────────────────────────
     const bridgeStatus = panelBridgeService?.getStatus?.() || null;
     const bridgeRunning = !!bridgeStatus?.isRunning;
-    const modConnected = !!bridgeStatus?.modStatus;
+    // Call the service's own isModConnected() rather than re-deriving it from
+    // bridgeStatus.modStatus -- this route used to check object-existence
+    // (`!!bridgeStatus?.modStatus`), which is true even for the
+    // {alive:false, waiting:true} placeholder handleStatusFailure() creates
+    // on the very first failed poll, so it read "connected" forever once a
+    // status object existed at all, no matter how many polls kept failing.
+    // isModConnected() (`.modStatus?.alive === true`) is already used
+    // correctly in five places in server/index.js; this was the one site
+    // that reimplemented the check instead of calling the helper.
+    const modConnected = panelBridgeService?.isModConnected?.() === true;
     const statusAge = bridgeStatus?.statusFile?.age ?? null;
 
     if (!bridgeStatus || !bridgeStatus.configured) {

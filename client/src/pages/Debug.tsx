@@ -3390,14 +3390,6 @@ export default function Debug() {
               wm?.bridge?.statusAgeMs !== undefined
                 ? wm.bridge.statusAgeMs + sinceFetchMs
                 : null;
-            // The server's modConnected only tells us a status object exists,
-            // not that the last poll actually succeeded -- it can keep
-            // reading "Yes" while consecutiveFailures climbs and the
-            // heartbeat never updates. Fold that same detail (already shown
-            // a few rows down) into the headline so the two can't disagree.
-            const modActuallyConnected =
-              wm?.bridge?.modConnected === true &&
-              (wm?.bridge?.consecutiveFailures ?? 0) === 0;
             // Most actionable items first so end users see what to fix.
             const STATUS_ORDER: Record<DiagCheck["status"], number> = {
               fail: 0,
@@ -3471,7 +3463,7 @@ export default function Debug() {
                 lines.push("");
                 lines.push("PanelBridge:");
                 lines.push(
-                  `  configured=${wm.bridge.configured} running=${wm.bridge.isRunning} mod=${modActuallyConnected} heartbeatAge=${fmtAge(liveHeartbeatAge)}`,
+                  `  configured=${wm.bridge.configured} running=${wm.bridge.isRunning} mod=${wm.bridge.modConnected} heartbeatAge=${fmtAge(liveHeartbeatAge)}`,
                 );
                 if (wm.bridge.bridgePath)
                   lines.push(`  path=${wm.bridge.bridgePath}`);
@@ -3952,7 +3944,7 @@ export default function Debug() {
                                 {t("worldMapTab.modConnectedLabel")}
                               </div>
                               <div className="font-medium">
-                                {modActuallyConnected ? t("common.yes") : t("common.no")}
+                                {wm.bridge.modConnected ? t("common.yes") : t("common.no")}
                               </div>
                             </div>
                             {(() => {
