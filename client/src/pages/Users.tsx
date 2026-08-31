@@ -346,6 +346,7 @@ export default function Users({ embedded = false }: { embedded?: boolean }) {
 
       {permissionDenied ? (
         <EmptyState
+          type="accessDenied"
           icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
           title={t('permissionDenied.title')}
           description={t('permissionDenied.description')}

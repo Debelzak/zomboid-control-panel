@@ -111,6 +111,21 @@ describe('ChunkCleaner.tsx: read routes gated behind chunks.manage (41fa20a3 fol
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   })
 
+  // bug-hunt-2026-08-31: this page's EmptyState (ChunkCleaner.tsx:2249) is
+  // one of 8 call sites that overrode `icon` to ShieldAlert without a
+  // matching `type`, so the eyebrow fell through to the 'noData' default --
+  // "No Data" above an icon that says the opposite. Second real-render
+  // check (alongside EmptyState.test.tsx's unit test) that the shared
+  // render path actually produces the fix on a page other than Users.tsx.
+  it('shows the Access Denied eyebrow on the real permission-denied render, not the No Data default', async () => {
+    getSaves.mockRejectedValue(new ApiError('Forbidden', { status: 403 }))
+    renderChunkCleaner()
+
+    await screen.findByText(/you can't view map cleanup/i)
+    expect(screen.getByText('Access Denied')).toBeInTheDocument()
+    expect(screen.queryByText('No Data')).not.toBeInTheDocument()
+  })
+
   it('does not fire the destructive load-failed toast on a 403 -- the denied state IS the answer, not an error to also announce', async () => {
     getSaves.mockRejectedValue(new ApiError('Forbidden', { status: 403 }))
     renderChunkCleaner()

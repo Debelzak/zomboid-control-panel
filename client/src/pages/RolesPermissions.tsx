@@ -513,6 +513,7 @@ export default function RolesPermissions({ embedded = false }: { embedded?: bool
 
       {permissionDenied ? (
         <EmptyState
+          type="accessDenied"
           icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
           title={t('permissionDenied.title')}
           description={t('permissionDenied.description')}
@@ -685,6 +686,7 @@ export default function RolesPermissions({ embedded = false }: { embedded?: bool
               {usersDenied ? (
                 <EmptyState
                   compact
+                  type="accessDenied"
                   icon={<ShieldAlert className="h-10 w-10 text-muted-foreground/40" />}
                   title={t('userAssignment.permissionDenied.title')}
                   description={t('userAssignment.permissionDenied.description')}

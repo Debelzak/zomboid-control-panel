@@ -2891,6 +2891,7 @@ export default function Debug() {
 
       {diagnosticsPermissionDenied ? (
         <EmptyState
+          type="accessDenied"
           icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
           title={t("permissionDenied.title")}
           description={t("permissionDenied.description")}
@@ -6740,6 +6741,7 @@ export default function Debug() {
         <TabsContent value="bridge" className="space-y-4">
           {bridgeDiagPermissionDenied ? (
             <EmptyState
+              type="accessDenied"
               icon={<ShieldAlert className="h-14 w-14 text-muted-foreground/40" />}
               title={t("bridgeTab.permissionDeniedTitle")}
               description={t("bridgeTab.permissionDeniedDesc")}
