@@ -526,6 +526,16 @@ const VIEWS = [
     },
   },
   { name: 'console', path: '/console' },
+  // impeccable-critique-2026-08-31: closes a coverage gap god flagged --
+  // 977225e0's connected-status badge only renders once diagnostics.manage
+  // is checked against the "logs" room, which only happens on this tab.
+  // The base `console` view above never opens it, so that fix has had zero
+  // screenshot coverage since it landed.
+  {
+    name: 'console:rcon',
+    path: '/console',
+    interact: async (page) => { await clickTabByRole(page, 'rcon console') },
+  },
   { name: 'chat', path: '/chat' },
   { name: 'events', path: '/events' },
   {
@@ -647,6 +657,52 @@ const VIEWS = [
       await dialog.getByPlaceholder("Enter the RCON password set in the server's INI file").fill('tourdemo')
       await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
       await page.waitForTimeout(3000)
+    },
+  },
+  // impeccable-critique-2026-08-31: closes a coverage gap god flagged --
+  // 0f1d6bbf's duplicate-detection-on-Edit fix (Servers.tsx ~1162) has had
+  // zero screenshot coverage since it landed; nothing in the sweep opens
+  // the Edit dialog, let alone drives it into the blocked-save state. The
+  // check returns before closing the dialog or clearing savingEdit (see its
+  // own comment), so the dialog + destructive toast are still on screen
+  // when this view's interact() returns -- dialogExpected covers both.
+  {
+    name: 'servers:duplicate-edit',
+    path: '/servers',
+    dialogExpected: true,
+    interact: async (page) => {
+      // Idempotent across this run's own per-theme/viewport reloads: server
+      // list state persists server-side across a page.goto reload (only the
+      // client remounts), so a server this already created on an earlier
+      // shot in the same sweep must be skipped, not re-added into a
+      // duplicate-of-itself the Add dialog's own check would then reject.
+      const addRemoteIfMissing = async (name, host) => {
+        if (await page.getByText(name, { exact: true }).count()) return
+        await page.getByRole('button', { name: 'Add Remote Server' }).first().click()
+        const dialog = page.getByRole('dialog')
+        await dialog.getByPlaceholder('My Remote PZ Server').fill(name)
+        await dialog.getByPlaceholder('192.168.1.100 or myserver.com').fill(host)
+        await dialog.getByPlaceholder("Enter the RCON password set in the server's INI file").fill('tourdemo')
+        await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
+        await page.waitForTimeout(1500)
+      }
+      await addRemoteIfMissing('Duplicate Check A', '192.168.1.60')
+      await addRemoteIfMissing('Duplicate Check B', '192.168.1.61')
+      await page.getByRole('button', { name: 'Options for Duplicate Check B' }).click()
+      await page.getByRole('menuitem', { name: 'Edit' }).click()
+      const editDialog = page.getByRole('dialog')
+      // No id/placeholder on these fields (getByDisplayValue is a Testing
+      // Library API, not Playwright's -- doesn't exist here) -- located by
+      // the sibling <Label> text each Input sits directly under instead.
+      // Default RCON port is the same (27015) for every server this dialog
+      // adds, so matching name + host alone reproduces the collision --
+      // port doesn't need touching. The blocked save (see its own comment
+      // in Servers.tsx) never persists the rename, so re-opening Edit on a
+      // later pass starts from "Duplicate Check B" again -- also idempotent.
+      await editDialog.locator('div:has(> label:has-text("Display Name")) input').fill('Duplicate Check A')
+      await editDialog.locator('div:has(> label:has-text("RCON host")) input').fill('192.168.1.60')
+      await editDialog.getByRole('button', { name: 'Save Changes' }).click()
+      await page.waitForTimeout(400)
     },
   },
   { name: 'server-setup', path: '/server-setup' },
