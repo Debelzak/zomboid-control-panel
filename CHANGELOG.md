@@ -344,6 +344,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Zomboid server**, since both shared a process group - panel restarts are now isolated from it.
 - **The Linux launcher now warns plainly if your install isn't using the protected launcher**, so
   this failure mode is visible instead of silent.
+
+## [1.2.9] - 2026-08-28
+
+### Fixed
+
 - Horde spawning now uses the coordinate-aware Build 42 API and reports zero-result failures honestly.
 - Workshop cookie extraction now ignores expired cookies and pairs fresh credentials from the correct browser profile and domain.
 - Vehicle and player map actions now work on click/tap, guard against stale or offline state, and prevent overlapping commands.
