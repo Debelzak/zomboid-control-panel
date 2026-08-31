@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-08-31
+
 ### Security
 
 - **A crafted install path could run shell commands on a Linux server managed as an OpenRC
