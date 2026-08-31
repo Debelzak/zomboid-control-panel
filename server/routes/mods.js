@@ -4307,16 +4307,39 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       let wsAdded = 0,
         modIdsAdded = 0;
       const allMapFolders = [];
+      // Per-item outcome, one entry per requested dep -- the aggregate
+      // wsAdded/modIdsAdded counts above can't tell a caller WHICH item (if
+      // any) failed to resolve a mod ID, only how many succeeded overall.
+      // `resolved` is the field callers should gate a "fixed" UI state on:
+      // the workshop-ID side always ends up present in WorkshopItems=
+      // (either just-added or already there), so the only real per-item
+      // failure mode is modId staying null when fetchModIdFromWorkshop()'s
+      // best-effort description scrape can't find one -- without this, a
+      // caller that only checks the aggregate counts (or just "did the
+      // request throw") can't tell that one dep out of a batch was left
+      // subscribed but not enabled.
+      const itemResults = [];
 
       for (const { wsId, modId, mapFolders } of resolvedDeps) {
+        let itemWsAdded = false;
+        let itemModIdAdded = false;
         if (!currentWs.has(wsId)) {
           currentWs.add(wsId);
           wsAdded++;
+          itemWsAdded = true;
         }
         if (modId && !currentMods.has(modId)) {
           currentMods.add(modId);
           modIdsAdded++;
+          itemModIdAdded = true;
         }
+        itemResults.push({
+          workshopId: wsId,
+          modId,
+          wsAdded: itemWsAdded,
+          modIdAdded: itemModIdAdded,
+          resolved: modId !== null,
+        });
         for (const f of mapFolders) {
           if (!currentMaps.includes(f)) {
             currentMaps.unshift(f);
@@ -4349,11 +4372,13 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       const backupWarning = backupWarningFor(
         await writeIniWithBackup(iniPath, content),
       );
-      return { wsAdded, modIdsAdded, allMapFolders, backupWarning };
+      return { wsAdded, modIdsAdded, allMapFolders, backupWarning, itemResults };
     });
 
+    const unresolvedCount = lockResult.itemResults.filter((r) => !r.resolved).length;
     log.info(
-      `Batch added ${deps.length} missing deps: ${lockResult.wsAdded} ws IDs, ${lockResult.modIdsAdded} mod IDs`,
+      `Batch added ${deps.length} missing deps: ${lockResult.wsAdded} ws IDs, ${lockResult.modIdsAdded} mod IDs` +
+        (unresolvedCount > 0 ? `, ${unresolvedCount} mod ID(s) unresolved` : ""),
     );
 
     res.json({
@@ -4362,6 +4387,13 @@ router.post("/add-all-resolved-deps", async (req, res) => {
       wsAdded: lockResult.wsAdded,
       modIdsAdded: lockResult.modIdsAdded,
       mapFolders: lockResult.allMapFolders,
+      // Per-item outcome -- see itemResults' own comment above. Callers
+      // must use each entry's `resolved` field to decide per-row success;
+      // the aggregate counts above and an absence of a thrown error are not
+      // sufficient (a dep whose mod ID never resolves still leaves
+      // success:true here, by design, since the other requested deps did
+      // apply and a hard failure would discard those too).
+      results: lockResult.itemResults,
       message: `Added ${deps.length} dependencies to server config.`,
       ...(lockResult.backupWarning ? { backupWarning: lockResult.backupWarning } : {}),
     });
