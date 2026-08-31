@@ -45,12 +45,6 @@
       "reason": "Same finding as IsoPlayer.setLx above (lz is a private IsoMovingObject field with no public setter). Guarded, always a no-op, harmless."
     },
     {
-      "class": "zombie.characters.IsoPlayer",
-      "method": "setGodMode",
-      "category": "harmless-dead-code",
-      "reason": "Documented inline in PanelBridge.lua: \"setGodMod is the actual PZ method name (not a typo)\". Only reached via `elseif` after the real setGodMod(boolean) call, which succeeds first every time -- this branch is dead but harmless."
-    },
-    {
       "class": "zombie.iso.IsoCell",
       "method": "removeVehicle",
       "category": "harmless-dead-code",
