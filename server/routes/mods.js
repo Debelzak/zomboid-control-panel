@@ -784,6 +784,15 @@ router.post("/auto-restart", async (req, res) => {
             `Mod update handling failed: ${handled?.error || handled?.message || "unknown error"}`,
           );
         }
+        // Without this, checkForUpdates()'s markProcessed dedup check always
+        // sees undefined here (a block-bodied async function resolves
+        // undefined unless it explicitly returns), so a successful restart
+        // was never recorded as processed and the same update could
+        // retrigger another restart on the next check cycle. Identical bug,
+        // same fix, as modChecker.js's init() restore-path callback
+        // (e76cade9); routes/config.js's bulk-save path already gets this
+        // right with an implicit-return arrow.
+        return handled;
       });
     } else {
       await modChecker.setUpdateCallback(null);
