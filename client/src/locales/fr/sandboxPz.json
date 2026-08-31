@@ -696,7 +696,7 @@
   },
   "survival": {
     "StatsDecrease": {
-      "label": "Péremption de la nourriture",
+      "label": "Diminution des stats",
       "options": {
         "1": {
           "label": "Très rapide"
@@ -785,7 +785,7 @@
       }
     },
     "EndRegen": {
-      "label": "Péremption de la nourriture",
+      "label": "Récupération d'endurance",
       "options": {
         "1": {
           "label": "Très rapide"
@@ -2292,7 +2292,7 @@
       "label": "Multiplicateur de cuisine"
     },
     "Farming": {
-      "label": "Multiplicateur d'agriculture"
+      "label": "Multiplicateur d'XP d'agriculture"
     },
     "Doctor": {
       "label": "Multiplicateur de premiers secours"
