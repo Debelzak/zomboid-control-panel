@@ -434,17 +434,44 @@ const PLAYER_DOSSIER_TABS = [
   { label: 'Notes & Log', slug: 'notes' },
 ]
 
+// quality-pass-2026-08-31 follow-up: Debug's TabsList went flex-wrap ->
+// flex-nowrap overflow-x-auto (d3ce7bc7) so a 9-tab strip scrolls instead of
+// orphaning a tab off the bottom of a narrow layout -- correct,
+// operator-approved app behavior, not a bug (the scroll cue is deliberately
+// visible at every width for exactly this). But Playwright's own
+// auto-scroll-before-click only reaches an ANCESTOR's ordinary block/
+// document scroll; it does not reach a sibling still off to the side inside
+// its own horizontally-overflowing container. A real user scrolls the
+// strip; this tool didn't, so `debug:worldmap` (the last of 9 tabs) sat
+// outside the mobile viewport, and a bare `.click()` retried ~13 times
+// reporting exactly "element is outside of the viewport" before timing out.
+//
+// Fixed at the HELPER, not the one call site that happened to fail first:
+// this tool's own `getByRole('tab', ...)` and player-roster-item clicks are
+// both locators that COULD live inside a horizontally- or vertically-
+// scrolling container, and the next nowrap/overflow-auto region added
+// anywhere in the app (a tab strip, a roster list, a card carousel) is
+// exactly this same silent failure mode waiting to happen again. Centralize
+// the scroll-then-click shape once so every current and future call site
+// inherits it, rather than patching `clickTabByRole` alone and leaving
+// `selectFirstPlayer` (and anything written after tonight) to rediscover
+// the same gap the hard way.
+async function clickInView(locator, { timeout = 30000 } = {}) {
+  await locator.scrollIntoViewIfNeeded().catch(() => {})
+  await locator.click({ timeout })
+}
+
 async function clickTabByRole(page, name) {
   // Short timeout: a wrong/stale label should fail this one view in a few
   // seconds, not burn the default 30s per occurrence -- especially in
   // single-view mode, where that 30s is most of the "fast path" budget.
   const tab = page.getByRole('tab', { name, exact: false })
-  await tab.first().click({ timeout: 5000 })
+  await clickInView(tab.first(), { timeout: 5000 })
   await page.waitForTimeout(200)
 }
 
 async function selectFirstPlayer(page) {
-  await page.getByText('Kate', { exact: true }).first().click().catch(() => {})
+  await clickInView(page.getByText('Kate', { exact: true }).first()).catch(() => {})
   await page.waitForTimeout(300)
 }
 
