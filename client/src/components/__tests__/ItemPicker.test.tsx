@@ -52,8 +52,13 @@ describe('ItemPicker', () => {
   it('shows a manual-entry fallback (not a crash or empty control) when no catalog is loaded yet', async () => {
     getCatalogItems.mockResolvedValue({ items: [], count: 0, scannedAt: null })
     render(<ItemPicker value="" onChange={vi.fn()} />)
-    await waitFor(() => expect(getCatalogItems).toHaveBeenCalled())
-    expect(screen.getByPlaceholderText('e.g., Base.Axe')).toBeInTheDocument()
+    // waitFor above only proves the API was CALLED, not that the resulting
+    // setState/re-render has committed -- getCatalogItems() is invoked
+    // synchronously inside the effect, so toHaveBeenCalled() can pass before
+    // its awaited promise (and the initialLoad=false it drives) resolves.
+    // findBy* polls until the fallback actually appears instead of assuming
+    // one microtask tick was enough, which under CPU contention it was not.
+    expect(await screen.findByPlaceholderText('e.g., Base.Axe')).toBeInTheDocument()
   })
 
   it('finds an item by an accented, non-ASCII search term', async () => {
@@ -114,9 +119,13 @@ describe('ItemPicker', () => {
       scannedAt: null,
     })
     render(<ItemPicker value="Base.NoWeightItem" onChange={vi.fn()} />)
-    await waitFor(() => expect(getCatalogItems).toHaveBeenCalled())
 
-    expect(screen.getByText('No Weight Item')).toBeInTheDocument()
+    // Same race as the manual-entry-fallback test above: the API call is
+    // recorded synchronously inside the effect, before its awaited promise
+    // resolves and drives initialLoad=false -- assert on the settled render
+    // via findBy*, not a toHaveBeenCalled() check followed by a synchronous
+    // getBy*.
+    expect(await screen.findByText('No Weight Item')).toBeInTheDocument()
     expect(screen.queryByText(/kg/)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Select item' }))
