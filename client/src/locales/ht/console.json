@@ -79,6 +79,8 @@
     "hostUnreachableDesc": "Demare sèvè a, epi konfime lame, pò, ak modpas RCON nan Paramèt Panèl.",
     "authFailedTitle": "otantifikasyon echwe",
     "authFailedDesc": "Lame a reyachab — konfime modpas RCON nan Sèvè m yo.",
+    "droppedTitle": "koneksyon tonbe",
+    "droppedDesc": "RCON dekonekte pandan l t ap egzekite yon kòmand. Lame a, pò a, ak modpas la fèk konfime kòrèk -- chwazi \"Tcheke ankò\" anwo a depi w kwè koneksyon an tounen.",
     "outputLabel": "rezilta rcon",
     "entries_one": "{{count}} antre",
     "entries_other": "{{count}} antre",

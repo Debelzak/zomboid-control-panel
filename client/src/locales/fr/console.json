@@ -79,6 +79,8 @@
     "hostUnreachableDesc": "Démarrez le serveur, puis vérifiez l'hôte, le port et le mot de passe RCON dans Paramètres du panneau.",
     "authFailedTitle": "échec de l'authentification",
     "authFailedDesc": "L'hôte est joignable — vérifiez le mot de passe RCON dans Mes serveurs.",
+    "droppedTitle": "connexion interrompue",
+    "droppedDesc": "RCON s'est déconnecté pendant l'exécution d'une commande. L'hôte, le port et le mot de passe viennent d'être confirmés corrects -- sélectionnez « Revérifier » ci-dessus dès que vous pensez que la connexion est rétablie.",
     "outputLabel": "sortie rcon",
     "entries_one": "{{count}} entrée",
     "entries_other": "{{count}} entrées",

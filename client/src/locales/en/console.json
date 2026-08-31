@@ -79,6 +79,8 @@
     "hostUnreachableDesc": "Start the server, then confirm RCON host, port, and password in Panel Settings.",
     "authFailedTitle": "authentication failed",
     "authFailedDesc": "The host is reachable — confirm the RCON password on My Servers.",
+    "droppedTitle": "connection dropped",
+    "droppedDesc": "RCON disconnected while running a command. Host, port, and password were just confirmed correct -- select Recheck above once you believe it's back.",
     "outputLabel": "rcon output",
     "entries_one": "{{count}} entry",
     "entries_other": "{{count}} entries",

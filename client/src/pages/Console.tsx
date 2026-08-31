@@ -248,11 +248,15 @@ export default function Console() {
   const [commandHistoryIndex, setCommandHistoryIndex] = useState(-1)
   const [commandCache, setCommandCache] = useState<string[]>([])
   const [rconConnected, setRconConnected] = useState<boolean | null>(null)
-  // Only meaningful while rconConnected === false -- distinguishes "host
-  // never reachable" from "reachable, but the saved password is wrong" so
-  // the disconnected banner below doesn't tell a stale-password user their
-  // host is unreachable (see 2026-08-26 bug hunt finding 1).
-  const [rconFailureReason, setRconFailureReason] = useState<'unreachable' | 'auth_failed' | null>(null)
+  // Only meaningful while rconConnected === false -- distinguishes three
+  // different reasons the banner below needs different words for:
+  // 'unreachable' (host never reachable), 'auth_failed' (reachable, but the
+  // saved password is wrong -- see 2026-08-26 bug hunt finding 1), and
+  // 'dropped' (a mid-session transport drop detected from a failed command,
+  // not a fresh probe -- host/port/password were just proven correct
+  // seconds ago, so telling this operator to go re-check them is
+  // confidently wrong advice; see 2026-08-31 bug hunt).
+  const [rconFailureReason, setRconFailureReason] = useState<'unreachable' | 'auth_failed' | 'dropped' | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [selectedChannel, setSelectedChannel] = useState('all')
@@ -606,12 +610,18 @@ export default function Console() {
 
       // Update connection status based on result. A mid-session drop
       // detected here is a transport-level signal, not the classified
-      // unreachable-vs-auth_failed probe testRconConnection() runs -- reset
-      // to null so the banner falls back to its unreachable copy rather
-      // than showing a stale auth_failed reason from an earlier test.
+      // unreachable-vs-auth_failed probe testRconConnection() runs -- 2026-08-31:
+      // this used to reset to null so the banner fell back to its
+      // unreachable copy rather than showing a stale auth_failed reason from
+      // an earlier test -- sound reasoning, wrong fallback. The connection
+      // just ran a command successfully seconds before it dropped, so
+      // "unreachable, check host/port/password" is confidently wrong advice
+      // for this specific case, not just an absent one. 'dropped' is its own
+      // real reason with its own copy (borrowed from the toast below, which
+      // already has the right words for this exact event).
       if (isRconDisconnectError(result.code)) {
         setRconConnected(false)
-        setRconFailureReason(null)
+        setRconFailureReason('dropped')
       } else if (result.success) {
         setRconConnected(true)
         setRconFailureReason(null)
@@ -1074,7 +1084,9 @@ export default function Console() {
 
           {/* RCON Disconnected Warning -- title/desc branch on WHY the test
               failed (see rconFailureReason above) so a reachable host with a
-              stale password isn't told to go debug its network. */}
+              stale password isn't told to go debug its network, and a
+              mid-session transport drop -- host/port/password just proven
+              correct -- isn't told to go re-check them either. */}
           {hasRconConfig && rconConnected === false && (
             <div
               role="alert"
@@ -1083,10 +1095,14 @@ export default function Console() {
               <WifiOff className="w-4 h-4 shrink-0 text-destructive" />
               <div className="min-w-0">
                 <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-destructive">
-                  {rconFailureReason === 'auth_failed' ? t('rcon.authFailedTitle') : t('rcon.hostUnreachableTitle')}
+                  {rconFailureReason === 'auth_failed' ? t('rcon.authFailedTitle')
+                    : rconFailureReason === 'dropped' ? t('rcon.droppedTitle')
+                      : t('rcon.hostUnreachableTitle')}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {rconFailureReason === 'auth_failed' ? t('rcon.authFailedDesc') : t('rcon.hostUnreachableDesc')}
+                  {rconFailureReason === 'auth_failed' ? t('rcon.authFailedDesc')
+                    : rconFailureReason === 'dropped' ? t('rcon.droppedDesc')
+                      : t('rcon.hostUnreachableDesc')}
                 </p>
               </div>
             </div>

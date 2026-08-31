@@ -125,6 +125,33 @@ describe('Console.tsx: RCON disconnect detection reacts to the code, not the pro
     await screen.findByText(enConsole.rcon.offline)
   })
 
+  // bughunt-2026-08-31-b (Angela): setUp()'s testRcon mock resolves
+  // connected:true, so rconConnected starts true here -- unlike the test
+  // above and every other Console fixture, which start from a probe that
+  // never succeeded (127.0.0.1:1 in the real tour demo profile) and so can
+  // only ever show hostUnreachable copy. This is the one shape that can
+  // actually reach 'dropped': the connection genuinely worked, then failed
+  // mid-session. The persistent banner must say so, not recycle
+  // hostUnreachable's "go check host/port/password" advice -- those were
+  // just proven correct seconds earlier.
+  it('shows the dropped-mid-session banner copy, not the generic host-unreachable copy, after a connection that was working fails', async () => {
+    await setUp()
+    execute.mockResolvedValue({
+      success: false,
+      error: 'Game server is not running.',
+      code: 'RCON_EXECUTE_DISCONNECTED',
+    })
+
+    renderConsole()
+    await openRconTab()
+    await runCommand('players')
+
+    await waitFor(() => expect(execute).toHaveBeenCalledWith('players'))
+    await screen.findByText(enConsole.rcon.droppedTitle)
+    await screen.findByText(enConsole.rcon.droppedDesc)
+    expect(screen.queryByText(enConsole.rcon.hostUnreachableTitle)).not.toBeInTheDocument()
+  })
+
   it('does NOT flip the banner to offline for a real authentication failure (no RCON_EXECUTE_DISCONNECTED code) -- a wrong password is not a disconnect', async () => {
     await setUp()
     execute.mockResolvedValue({

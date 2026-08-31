@@ -79,6 +79,8 @@
     "hostUnreachableDesc": "启动服务器，然后在面板设置中确认 RCON 主机、端口和密码。",
     "authFailedTitle": "身份验证失败",
     "authFailedDesc": "主机可达——请在「我的服务器」中确认 RCON 密码。",
+    "droppedTitle": "连接已断开",
+    "droppedDesc": "执行命令时 RCON 断开了连接。主机、端口和密码刚刚已确认无误 -- 请在确信连接已恢复后，点击上方的\"重新检查\"。",
     "outputLabel": "RCON 输出",
     "entries_one": "{{count}} 条记录",
     "entries_other": "{{count}} 条记录",

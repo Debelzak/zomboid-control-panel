@@ -79,6 +79,8 @@
     "hostUnreachableDesc": "Iniciar el servidor y luego confirmar el host, el puerto y la contraseña de RCON en Ajustes del panel.",
     "authFailedTitle": "error de autenticación",
     "authFailedDesc": "El host es accesible; confirma la contraseña de RCON en Mis servidores.",
+    "droppedTitle": "conexión interrumpida",
+    "droppedDesc": "RCON se desconectó mientras se ejecutaba un comando. El host, el puerto y la contraseña se acaban de confirmar como correctos -- selecciona \"Volver a comprobar\" arriba en cuanto creas que la conexión volvió.",
     "outputLabel": "salida de rcon",
     "entries_one": "{{count}} entrada",
     "entries_other": "{{count}} entradas",
