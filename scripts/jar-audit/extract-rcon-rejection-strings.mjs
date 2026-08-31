@@ -90,7 +90,23 @@ try {
   const manifest = fs.readFileSync(appManifestPath, "utf8");
   buildId = manifest.match(/"buildid"\s*"(\d+)"/)?.[1] ?? null;
 } catch {
-  /* manifest not found -- leave buildId null, don't fail extraction over it */
+  /* manifest not found at the assumed ../../appmanifest_108600.acf -- leave
+     buildId null, don't fail extraction over it (see loud warning below) */
+}
+// appManifestPath is derived from jarPath by a hardcoded relative offset
+// that assumes a standard Steam library layout (steamapps/common/<App>/
+// jar, manifest two levels up in steamapps/). A jar living at any other
+// path shape (e.g. a dedicated-server backup directory) silently resolves
+// to a nonexistent manifest and buildId falls back to null with nothing
+// but a terse trailing "build null" -- easy to miss and easy to commit a
+// fixture with no provenance. Fail loudly instead: a fixture is only useful
+// if a later drift can be attributed to a specific game build.
+if (!buildId) {
+  console.error(
+    `WARNING: could not determine pzBuildId (looked for ${appManifestPath}). ` +
+    "The fixture below would carry pzBuildId: null, making a future drift impossible to date. " +
+    "Pass the real Steam-library jar path, or verify appmanifest_108600.acf actually lives at that location.",
+  );
 }
 
 const fixture = {
