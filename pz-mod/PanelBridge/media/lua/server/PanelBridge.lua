@@ -979,6 +979,32 @@ function json.encode(obj, depth)
     return 'null'
 end
 
+-- Encodes a single Unicode codepoint (0-0xFFFF) as UTF-8 bytes. Lua strings
+-- here are plain byte arrays, so a decoded \uXXXX escape must be turned into
+-- the actual UTF-8 byte sequence by hand -- there is no utf8 stdlib in this
+-- Lua environment (Kahlua/5.1-shaped) to do it for us. Astral characters
+-- (codepoint > 0xFFFF) arrive as a UTF-16 surrogate PAIR of two \uXXXX
+-- escapes in real JSON; this does not combine pairs (each half would encode
+-- as its own, technically-invalid lone-surrogate 3-byte sequence) -- verified
+-- 2026-08-31 that Node's JSON.stringify (the only real producer of \uXXXX in
+-- this protocol) only ever emits it for ASCII control characters below
+-- 0x20 that lack a named escape, never for astral characters, so this gap is
+-- inert in practice rather than silently guessed away.
+local function utf8EncodeCodepoint(code)
+    if code < 0x80 then
+        return string.char(code)
+    elseif code < 0x800 then
+        return string.char(
+            0xC0 + math.floor(code / 0x40),
+            0x80 + (code % 0x40))
+    else
+        return string.char(
+            0xE0 + math.floor(code / 0x1000),
+            0x80 + (math.floor(code / 0x40) % 0x40),
+            0x80 + (code % 0x40))
+    end
+end
+
 function json.decode(str)
     if not str or str == "" then return nil end
 
@@ -1012,6 +1038,32 @@ function json.decode(str)
                     elseif escape == '"' then result = result .. '"'
                     elseif escape == '\\' then result = result .. '\\'
                     elseif escape == '/' then result = result .. '/'
+                    elseif escape == 'u' then
+                        -- \uXXXX: the ONLY escape form that isn't a single
+                        -- literal character -- everything above it just
+                        -- appends one byte. Before this fix, falling into
+                        -- the `else` branch below appended the literal
+                        -- character "u" and left the four hex digits to be
+                        -- copied as plain string content on the next four
+                        -- loop iterations, e.g. A decoded as the 5
+                        -- characters "u0041" instead of the 1 character "A"
+                        -- -- corrupting any control character (0x00-0x1F)
+                        -- that reaches Lua this way, which is exactly what
+                        -- this file's OWN encoder (escape_str, above)
+                        -- produces for any string field containing one, and
+                        -- what Node's JSON.stringify produces for the same
+                        -- (verified 2026-08-31 against both directions).
+                        local hex = str:sub(pos + 1, pos + 4)
+                        local code = hex:match('^%x%x%x%x$') and tonumber(hex, 16)
+                        if code then
+                            result = result .. utf8EncodeCodepoint(code)
+                            pos = pos + 4
+                        else
+                            -- Malformed \u (not 4 hex digits): fail safe,
+                            -- same as the pre-fix behavior for every escape
+                            -- this branch didn't recognize.
+                            result = result .. escape
+                        end
                     else result = result .. escape end
                     pos = pos + 1
                     start = pos
@@ -8497,5 +8549,12 @@ Events.OnTickEvenPaused.Add(PanelBridge.onTick)
 -- pairs(handlers) inside handlers.getAvailableHandlers, which walks the
 -- separate `handlers` local and is unaffected by this field.
 PanelBridge.handlers = handlers
+
+-- Same additive-only exposure as PanelBridge.handlers above, for the same
+-- reason: the JS test harness (fengari) has no other way to reach a
+-- file-local like `json` to exercise json.encode/json.decode directly.
+-- Nothing in this file or on the panel side enumerates PanelBridge's own
+-- fields (verified by the same grep as the handlers exposure above).
+PanelBridge.json = json
 
 return PanelBridge
