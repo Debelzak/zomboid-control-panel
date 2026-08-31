@@ -2861,9 +2861,13 @@ export default function Debug() {
             • History  — what happened
             • System   — what this panel itself is made of
         */}
-        <TabsList className="flex h-auto flex-wrap items-center gap-1 rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
+        {/* flex-nowrap + overflow-x-auto rather than flex-wrap: at 9 tabs,
+            wrapping strands the last one ("Environment") alone on its own
+            row on desktop. shrink-0 on every trigger and divider keeps the
+            strip scrolling instead of squeezing icons/labels to fit. */}
+        <TabsList className="flex h-auto flex-nowrap items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
           {/* Zone: Now */}
-          <TabsTrigger value="diagnostics" className="gap-2">
+          <TabsTrigger value="diagnostics" className="gap-2 shrink-0">
             <CheckCircle className="w-4 h-4" />
             {t("tabs.diagnostics")}
             {diagnostics &&
@@ -2879,7 +2883,7 @@ export default function Debug() {
                 </Badge>
               )}
           </TabsTrigger>
-          <TabsTrigger value="worldmap" className="gap-2">
+          <TabsTrigger value="worldmap" className="gap-2 shrink-0">
             <MapIcon className="w-4 h-4" />
             {t("tabs.worldMap")}
             {worldMapDiag &&
@@ -2895,11 +2899,11 @@ export default function Debug() {
                 </Badge>
               )}
           </TabsTrigger>
-          <TabsTrigger value="bridge" className="gap-2">
+          <TabsTrigger value="bridge" className="gap-2 shrink-0">
             <Bug className="w-4 h-4" />
             {t("tabs.bridge")}
           </TabsTrigger>
-          <TabsTrigger value="performance" className="gap-2">
+          <TabsTrigger value="performance" className="gap-2 shrink-0">
             <TrendingUp className="w-4 h-4" />
             {t("tabs.performance")}
           </TabsTrigger>
@@ -2907,19 +2911,19 @@ export default function Debug() {
           {/* Zone divider: Now → History */}
           <span
             aria-hidden
-            className="mx-1 h-5 w-px self-center bg-border/60"
+            className="mx-1 h-5 w-px shrink-0 self-center bg-border/60"
           />
 
           {/* Zone: History */}
-          <TabsTrigger value="activity" className="gap-2">
+          <TabsTrigger value="activity" className="gap-2 shrink-0">
             <Zap className="w-4 h-4" />
             {t("tabs.activity")}
           </TabsTrigger>
-          <TabsTrigger value="logs" className="gap-2">
+          <TabsTrigger value="logs" className="gap-2 shrink-0">
             <Terminal className="w-4 h-4" />
             {t("tabs.logs")}
           </TabsTrigger>
-          <TabsTrigger value="crashes" className="gap-2">
+          <TabsTrigger value="crashes" className="gap-2 shrink-0">
             <AlertCircle className="w-4 h-4" />
             {t("tabs.crashes")}
             {crashLogs.length > 0 && (
@@ -2932,15 +2936,15 @@ export default function Debug() {
           {/* Zone divider: History → System */}
           <span
             aria-hidden
-            className="mx-1 h-5 w-px self-center bg-border/60"
+            className="mx-1 h-5 w-px shrink-0 self-center bg-border/60"
           />
 
           {/* Zone: System (panel self-introspection) */}
-          <TabsTrigger value="health" className="gap-2">
+          <TabsTrigger value="health" className="gap-2 shrink-0">
             <Activity className="w-4 h-4" />
             {t("tabs.health")}
           </TabsTrigger>
-          <TabsTrigger value="system" className="gap-2">
+          <TabsTrigger value="system" className="gap-2 shrink-0">
             <Database className="w-4 h-4" />
             {t("tabs.system")}
           </TabsTrigger>
