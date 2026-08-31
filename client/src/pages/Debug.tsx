@@ -1175,8 +1175,8 @@ export default function Debug() {
       });
       try {
         if (!action.automated) {
-          if (check.id === "mods.resolved") {
-            window.location.assign("/mods?review=unresolved");
+          if (action.manualRoute) {
+            window.location.assign(action.manualRoute);
             return;
           }
           toast({
@@ -4334,7 +4334,7 @@ export default function Debug() {
                                       {t("worldMapTab.airdropMedicalOption")}
                                     </SelectItem>
                                     <SelectItem value="military">
-                                      Military
+                                      {t("worldMapTab.airdropMilitaryOption")}
                                     </SelectItem>
                                     <SelectItem value="weapons">
                                       {t("worldMapTab.airdropWeaponsOption")}
