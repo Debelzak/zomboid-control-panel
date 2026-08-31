@@ -2797,24 +2797,30 @@ export default function Players() {
                           {t('spawn.browserBadge')}
                         </span>
                       </p>
-                      {/* 2026-08-31 impeccable pass. This copy was originally the same
-                          length as the moderation ActionTile descriptions fixed earlier
-                          tonight (truncate -> line-clamp-2), but line-clamp-2 alone was NOT
-                          enough here: with copy long enough to actually need clamping (3-4
-                          natural lines compressed to 2), the ellipsis rendered correctly but
-                          the remaining, hidden-on-paper text ALSO rendered below the card in
-                          normal flow, overlapping the next card on mobile -- confirmed via
-                          real rendered screenshots, reproduced with and without <Trans>'s
-                          nested colored player-name span (ruling that out as the cause), and
-                          confirmed gone once the copy was short enough to fit its 2 lines
-                          without the clamp ever needing to cut anything. Shortened this
-                          description (and its sibling below, and both no-player variants)
-                          rather than keep chasing why line-clamp-2 alone wasn't sufficient --
-                          copy that never needs the clamp to do real work sidesteps the whole
-                          class of risk, whatever its exact mechanism. */}
+                      {/* line-clamp-2, not truncate -- same defect class as the moderation
+                          ActionTile descriptions fixed earlier tonight, found here too on the
+                          2026-08-31 impeccable pass ("...without closing the dial…" was
+                          genuinely clipping mid-word). CANNOT be verified by reshooting:
+                          scripts/ui-shot-tour.mjs's expandMainForCapture() forces
+                          overflow:visible/height:auto on any element whose scrollHeight
+                          exceeds its clientHeight before every screenshot (to keep genuinely
+                          scrollable panels from being clipped by fullPage capture) -- which
+                          also defeats -webkit-line-clamp's own overflow:hidden the moment
+                          there's real text to cut, so a reshoot of this row shows spilled
+                          text overlapping the next card even though the class is correct and
+                          the real app renders it properly clamped. (First-pass mistake here:
+                          reshot, saw the spillover, chased it as a real bug, shortened this
+                          copy and its three siblings across all 6 locales to dodge the
+                          symptom, and stripped the <Trans> nested player-name span suspecting
+                          it as the cause -- none of that was the actual defect. Reverted; the
+                          class alone is the fix.) Verified instead via the compiled CSS
+                          (.line-clamp-2 correctly emits display:-webkit-box;
+                          -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden)
+                          and the RTL test below, which never runs the tour's capture-time DOM
+                          rewrite. */}
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                         {selectedPlayer
-                          ? t('spawn.giveItemsDescWithPlayer', { player: selectedPlayer })
+                          ? <Trans i18nKey="spawn.giveItemsDescWithPlayer" t={t} values={{ player: selectedPlayer }} components={{ 1: <span className="text-primary font-medium" /> }} />
                           : t('spawn.giveItemsDescNoPlayer')}
                       </p>
                     </div>
@@ -2867,7 +2873,7 @@ export default function Players() {
                           Give Items row above. */}
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                         {selectedPlayer
-                          ? t('spawn.spawnVehiclesDescWithPlayer', { player: selectedPlayer })
+                          ? <Trans i18nKey="spawn.spawnVehiclesDescWithPlayer" t={t} values={{ player: selectedPlayer }} components={{ 1: <span className="text-primary font-medium" /> }} />
                           : t('spawn.spawnVehiclesDescNoPlayer')}
                       </p>
                     </div>
