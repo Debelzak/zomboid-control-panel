@@ -1151,6 +1151,34 @@ export default function Servers() {
       return
     }
 
+    // bug-hunt-2026-08-31: f557c795 added this same check to Add Remote
+    // Server only. server/routes/servers.js has no uniqueness enforcement
+    // of its own (confirmed by god -- grepped the whole file for
+    // duplicate/already-exists/unique, only hits are a required-fields list
+    // and rconFieldsChanged), so editing an existing remote server's
+    // name/host/port to collide with another server reproduces the exact
+    // same two-indistinguishable-cards outcome the Add-path fix exists to
+    // prevent. Excludes the server being edited from its own comparison.
+    if (editingServer.isRemote) {
+      const normalizedName = (editingServer.name || '').trim().toLowerCase()
+      const normalizedHost = (editingServer.rconHost || '').trim().toLowerCase()
+      const isDuplicate = (servers || []).some(s =>
+        s.id !== editingServer.id &&
+        s.isRemote &&
+        (s.name || s.serverName || '').trim().toLowerCase() === normalizedName &&
+        (s.rconHost || '').trim().toLowerCase() === normalizedHost &&
+        s.rconPort === editingServer.rconPort
+      )
+      if (isDuplicate) {
+        toast({
+          title: t('toasts.error'),
+          description: t('toasts.duplicateRemoteServer', { name: (editingServer.name || '').trim() }),
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     setSavingEdit(true)
     try {
       const result = await serversApi.update(editingServer.id, editingServer)
