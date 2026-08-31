@@ -197,6 +197,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Generate Weather" never worked at all** - both now work, and a busy trigger explains why.
 - **14 weather and climate controls could report success on a change that silently failed to
   apply** - they now confirm the change actually took effect.
+- **The snow and rain toggles on the Events page labeled weather as "online" or "offline"**,
+  wording meant for a connection, not a condition - now "active" and "inactive".
 - **A PanelBridge mod fix could sit undelivered on a server indefinitely** - the updater now
   compares the mod file's real content, not just its version label.
 - **A successful mod-update auto-restart wasn't always recorded as handled**, risking an
@@ -287,6 +289,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No-clip, God Mode, and invisibility could report success on a player without the change
   actually taking effect** - the panel now bypasses the player's own in-game permissions to apply
   it.
+- **The Powers tab showed God Mode, Invisible, and Noclip as a confirmed "off" even when their real
+  state had never been reported** - an unknown state now shows plainly, with both actions offered.
+- **The kill-confirmation box showed the exact name you needed to type, in placeholder gray,
+  indistinguishable from having already typed it** - the box now starts genuinely empty.
+- **Spawn tab's Give Items and Spawn Vehicles descriptions could truncate mid-word** - now clipped
+  cleanly with an ellipsis instead.
+- **A confusing Roster "seen" count, Vitals' uncolored secondary stats, and the teleport tile's "B42
+  MP" shorthand** all now explain themselves, via a help tip or plainer wording.
 - **A manually configured PanelBridge bridge path could be lost after a panel restart** - it's now
   saved with your settings and restored automatically.
 - **The PanelBridge diagnostics tab could describe your game version's build capabilities
