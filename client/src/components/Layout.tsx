@@ -262,6 +262,32 @@ function AuthFooter() {
   )
 }
 
+// Tap-to-open touch fix for a disabled nav row's reason tooltip --
+// impeccable-critique-2026-08-31: Radix's TooltipTrigger closes on its own
+// click handler by default (built for hover, where a click is a dismiss
+// gesture), which is useless for touch: there's no hover to open it in the
+// first place. HelpTip.tsx already solved this exact problem (see its own
+// comment) with a controlled `open` state + preventDefault() on click to
+// block Radix's built-in close so the same tap opens it instead. A disabled
+// nav row has no navigation for a tap to conflict with, so the same fix is
+// free here -- unlike the enabled NavLink row below it, whose tap must keep
+// navigating and is deliberately NOT wrapped in this.
+function DisabledNavTooltip({ side = 'right', reason, children }: {
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  reason: React.ReactNode
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild onClick={(event) => { event.preventDefault(); setOpen(true) }}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent side={side}>{reason}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function PanelBrand({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation('shell')
   return (
@@ -904,18 +930,15 @@ export default function Layout({ children }: LayoutProps) {
 
                     if (disabledReason || item.disabled) {
                       return (
-                        <Tooltip key={item.to}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className="flex min-h-9 items-center justify-center rounded-md px-2 py-2 opacity-45 cursor-not-allowed"
-                              aria-disabled="true"
-                              aria-label={disabledReason ? `${t(item.labelKey)} — ${disabledReason}` : t(item.labelKey)}
-                            >
-                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right">{disabledReason ?? t(item.labelKey)}</TooltipContent>
-                        </Tooltip>
+                        <DisabledNavTooltip key={item.to} reason={disabledReason ?? t(item.labelKey)}>
+                          <div
+                            className="flex min-h-9 items-center justify-center rounded-md px-2 py-2 opacity-45 cursor-not-allowed"
+                            aria-disabled="true"
+                            aria-label={disabledReason ? `${t(item.labelKey)} — ${disabledReason}` : t(item.labelKey)}
+                          >
+                            <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                          </div>
+                        </DisabledNavTooltip>
                       )
                     }
 
@@ -978,57 +1001,48 @@ export default function Layout({ children }: LayoutProps) {
 
                     if (isDisabledByNoServer) {
                       return (
-                        <Tooltip key={item.to}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
-                              aria-label={`${t(item.labelKey)} — ${t('nav.requiresServer')}`}
-                              aria-disabled="true"
-                            >
-                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
-                              <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right">{t('nav.requiresServer')}</TooltipContent>
-                        </Tooltip>
+                        <DisabledNavTooltip key={item.to} reason={t('nav.requiresServer')}>
+                          <div
+                            className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
+                            aria-label={`${t(item.labelKey)} — ${t('nav.requiresServer')}`}
+                            aria-disabled="true"
+                          >
+                            <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                            <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
+                          </div>
+                        </DisabledNavTooltip>
                       )
                     }
 
                     if (item.disabled) {
                       return (
-                        <Tooltip key={item.to}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
-                              aria-disabled="true"
-                            >
-                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
-                              <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right">{t(item.labelKey)}</TooltipContent>
-                        </Tooltip>
+                        <DisabledNavTooltip key={item.to} reason={t(item.labelKey)}>
+                          <div
+                            className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-50 cursor-not-allowed"
+                            aria-disabled="true"
+                          >
+                            <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                            <span className="truncate text-muted-foreground/70">{t(item.labelKey)}</span>
+                          </div>
+                        </DisabledNavTooltip>
                       )
                     }
 
                     if (isDisabledByRemote) {
                       return (
-                        <Tooltip key={item.to}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-55"
-                              aria-label={`${t(item.labelKey)} — ${t('nav.notAvailableRemote')}`}
-                              aria-disabled="true"
-                            >
-                              <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
-                              <span className="truncate text-muted-foreground/70 line-through decoration-muted-foreground/30">{t(item.labelKey)}</span>
-                              <Badge variant="outline" className="ml-auto px-1 py-0 text-[9px] uppercase tracking-wider">
-                                {t('nav.localBadge')}
-                              </Badge>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right">{t('nav.notAvailableRemote')}</TooltipContent>
-                        </Tooltip>
+                        <DisabledNavTooltip key={item.to} reason={t('nav.notAvailableRemote')}>
+                          <div
+                            className="flex min-h-9 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] opacity-55"
+                            aria-label={`${t(item.labelKey)} — ${t('nav.notAvailableRemote')}`}
+                            aria-disabled="true"
+                          >
+                            <item.icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/50" />
+                            <span className="truncate text-muted-foreground/70 line-through decoration-muted-foreground/30">{t(item.labelKey)}</span>
+                            <Badge variant="outline" className="ml-auto px-1 py-0 text-[9px] uppercase tracking-wider">
+                              {t('nav.localBadge')}
+                            </Badge>
+                          </div>
+                        </DisabledNavTooltip>
                       )
                     }
 
