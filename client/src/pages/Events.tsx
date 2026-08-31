@@ -153,6 +153,65 @@ function SectionHeader({
   )
 }
 
+// A single control that both shows and flips a known on/off game state --
+// replaces the enable/disable- or start/stop-shaped BUTTON PAIRS this page
+// used to have one per concept (operator complaint 2026-08-31: "if i enable
+// snow... the same button should show disable, not have 2 buttons ... valid
+// for all the buttons that there are 2 of them like that"). `state: null`
+// is a REQUIRED third value, not a loading nicety -- it means the real state
+// has not landed yet (or its fetch failed) and the switch renders disabled
+// with neutral styling rather than guessing a position. A Switch's checked
+// position IS the claim "this is definitely on/off right now"; showing one
+// confidently from a `null`/undefined value would be exactly the "faked
+// toggle" the request explicitly ruled out for state that can't be known.
+function StateToggle({
+  icon: Icon,
+  label,
+  state,
+  onLabel,
+  offLabel,
+  pendingLabel,
+  onToggle,
+  disabled,
+  ariaLabel,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  state: boolean | null
+  onLabel: string
+  offLabel: string
+  pendingLabel: string
+  onToggle: (next: boolean) => void
+  disabled: boolean
+  ariaLabel: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/15 p-3">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/85">
+        <Icon className="w-3.5 h-3.5" /> {label}
+      </span>
+      <div className="flex items-center gap-2">
+        <span className={cn(
+          'flex items-center gap-1.5 text-xs font-medium',
+          state ? 'text-emerald-400' : 'text-muted-foreground'
+        )}>
+          <span className={cn(
+            'w-1.5 h-1.5 rounded-full',
+            state === true ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40'
+          )} />
+          {state === null ? pendingLabel : state ? onLabel : offLabel}
+        </span>
+        <Switch
+          checked={state === true}
+          onCheckedChange={(checked) => onToggle(checked)}
+          disabled={disabled || state === null}
+          aria-label={ariaLabel}
+        />
+      </div>
+    </div>
+  )
+}
+
 // elecShutModifier/waterShutModifier are the day-thresholds the game's own
 // power formula (ISButtonPrompt.lua:421, replicated in PanelBridge.lua's
 // getUtilitiesStatus) compares worldAgeDays against to produce powerOn/
@@ -2317,16 +2376,40 @@ export default function Events() {
                     <span className="font-mono text-[11px] tabular-nums text-info">{rainIntensity}%</span>
                   </div>
                   <Slider aria-label={t('rain.rainIntensityAria')} value={[rainIntensity]} onValueChange={([val]) => setRainIntensity(val)} min={1} max={100} step={1} />
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => handleAction('Start rain', startRain)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
-                      {loading === 'Start rain' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudRain className="w-3.5 h-3.5" />}
-                      {t('rain.startRain')}
-                    </Button>
-                    <Button variant="outline" onClick={() => handleAction('Stop rain', stopRain)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
-                      {loading === 'Stop rain' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudOff className="w-3.5 h-3.5" />}
-                      {t('rain.stopRain')}
-                    </Button>
-                  </div>
+                  {bridgeConnected ? (
+                    // PanelBridge is connected, so liveWeather.isRaining is a real
+                    // read of game state -- a genuine toggle. Still fires the RCON
+                    // startRain/stopRain commands this section has always used
+                    // (not panelBridgeApi's), only the on/off decision changed.
+                    <StateToggle
+                      icon={CloudRain}
+                      label={t('rain.rainLabel')}
+                      state={liveWeather ? liveWeather.isRaining : null}
+                      onLabel={t('utilities.statusOnline')}
+                      offLabel={t('utilities.statusOffline')}
+                      pendingLabel={t('utilities.statusPending')}
+                      disabled={loading !== null}
+                      ariaLabel={t('rain.rainLabel')}
+                      onToggle={(next) => handleAction(next ? 'Start rain' : 'Stop rain', next ? startRain : stopRain)}
+                    />
+                  ) : (
+                    // PanelBridge is NOT connected -- this section exists specifically
+                    // so RCON rain control still works without the bridge, and there is
+                    // no RCON query for "is it currently raining" to build a real toggle
+                    // from. Two buttons is the honest design here, not a shortcut: state
+                    // is genuinely unknowable over this path, so the request's own rule
+                    // ("do NOT fake a toggle where the state is unknowable") applies.
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => handleAction('Start rain', startRain)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
+                        {loading === 'Start rain' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudRain className="w-3.5 h-3.5" />}
+                        {t('rain.startRain')}
+                      </Button>
+                      <Button variant="outline" onClick={() => handleAction('Stop rain', stopRain)} disabled={loading !== null} className="h-9 gap-2 text-xs font-medium">
+                        {loading === 'Stop rain' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudOff className="w-3.5 h-3.5" />}
+                        {t('rain.stopRain')}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3 pt-4 border-t border-border/40">
@@ -2394,20 +2477,17 @@ export default function Events() {
                 </div>
 
                 <div className="space-y-3 pt-4 border-t border-border/40">
-                  <Label className="text-xs font-medium text-foreground/85 flex items-center gap-1.5">
-                    <Snowflake className="w-3.5 h-3.5 text-info" />
-                    {t('severe.snowToggleLabel')}
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => handleBridgeAction('Enable Snow', () => panelBridgeApi.setSnow(true))} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
-                      {bridgeLoading === 'Enable Snow' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Snowflake className="w-3.5 h-3.5" />}
-                      {t('severe.enableSnow')}
-                    </Button>
-                    <Button variant="outline" onClick={() => handleBridgeAction('Disable Snow', () => panelBridgeApi.setSnow(false))} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
-                      {bridgeLoading === 'Disable Snow' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudRain className="w-3.5 h-3.5" />}
-                      {t('severe.disableSnow')}
-                    </Button>
-                  </div>
+                  <StateToggle
+                    icon={Snowflake}
+                    label={t('severe.snowToggleLabel')}
+                    state={liveWeather ? liveWeather.isSnowing : null}
+                    onLabel={t('utilities.statusOnline')}
+                    offLabel={t('utilities.statusOffline')}
+                    pendingLabel={t('utilities.statusPending')}
+                    disabled={bridgeLoading !== null || !bridgeConnected}
+                    ariaLabel={t('severe.snowToggleLabel')}
+                    onToggle={(next) => handleBridgeAction(next ? 'Enable Snow' : 'Disable Snow', () => panelBridgeApi.setSnow(next))}
+                  />
                   <Button variant="outline" onClick={() => handleBridgeAction('Stop All Weather', () => panelBridgeApi.stopWeather())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium text-destructive/85 hover:text-destructive hover:border-destructive/40">
                     {bridgeLoading === 'Stop All Weather' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
                     {t('severe.stopAllWeather')}
@@ -2595,20 +2675,18 @@ export default function Events() {
                   {bridgeLoading === 'Apply All Climate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gauge className="w-3.5 h-3.5" />}
                   {t('climate.applyAll')}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleBridgeAction('Start Rain', () => panelBridgeApi.startRain(Math.max(0.05, precipitationIntensity / 100)))}
-                  disabled={bridgeLoading !== null || !bridgeConnected}
-                  // eslint-disable-next-line local/no-dead-disabled-title -- pure hint describing what the action does (precipitation-slider intensity), unrelated to why the button disables (bridge not connected / another action in flight). This is the rule's own canonical "Start Rain" shape-3 example. Triaged 2026-08-27.
-                  title={t('climate.rainTooltip')}
-                  className="h-9 gap-2 text-xs font-medium"
-                >
-                  <CloudRain className="w-3.5 h-3.5" /> {t('climate.rainWithPercent', { percent: Math.max(5, precipitationIntensity) })}
-                </Button>
-                <Button variant="outline" onClick={() => handleBridgeAction('Stop Rain', () => panelBridgeApi.stopRain())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
-                  <CloudOff className="w-3.5 h-3.5" /> {t('climate.stopRain')}
-                </Button>
               </div>
+              <StateToggle
+                icon={CloudRain}
+                label={t('climate.rainWithPercent', { percent: Math.max(5, precipitationIntensity) })}
+                state={liveWeather ? liveWeather.isRaining : null}
+                onLabel={t('utilities.statusOnline')}
+                offLabel={t('utilities.statusOffline')}
+                pendingLabel={t('utilities.statusPending')}
+                disabled={bridgeLoading !== null || !bridgeConnected}
+                ariaLabel={t('climate.precipitation')}
+                onToggle={(next) => handleBridgeAction(next ? 'Start Rain' : 'Stop Rain', () => next ? panelBridgeApi.startRain(Math.max(0.05, precipitationIntensity / 100)) : panelBridgeApi.stopRain())}
+              />
             </div>
           </TacticalPanel>
         )}
@@ -2850,13 +2928,13 @@ export default function Events() {
                       })}
                     </p>
                   )}
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleUtilities('Restore Power', true, true, false)} className="h-8 text-xs font-medium text-emerald-400/90 hover:text-emerald-400 hover:border-emerald-400/40">
-                      {t('utilities.restore')}
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleUtilities('Shut Off Power', false, true, false)} className="h-8 text-xs font-medium text-destructive/90 hover:text-destructive hover:border-destructive/40">
-                      {t('utilities.shutOff')}
-                    </Button>
+                  <div className="flex justify-end">
+                    <Switch
+                      checked={utilitiesStatus?.powerOn === true}
+                      onCheckedChange={(checked) => handleUtilities(checked ? 'Restore Power' : 'Shut Off Power', checked, true, false)}
+                      disabled={!bridgeConnected || loading !== null || utilitiesStatus === null}
+                      aria-label={t('utilities.power')}
+                    />
                   </div>
                 </div>
 
@@ -2886,13 +2964,13 @@ export default function Events() {
                       })}
                     </p>
                   )}
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleUtilities('Restore Water', true, false, true)} className="h-8 text-xs font-medium text-emerald-400/90 hover:text-emerald-400 hover:border-emerald-400/40">
-                      {t('utilities.restore')}
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={!bridgeConnected || loading !== null} onClick={() => handleUtilities('Shut Off Water', false, false, true)} className="h-8 text-xs font-medium text-destructive/90 hover:text-destructive hover:border-destructive/40">
-                      {t('utilities.shutOff')}
-                    </Button>
+                  <div className="flex justify-end">
+                    <Switch
+                      checked={utilitiesStatus?.waterOn === true}
+                      onCheckedChange={(checked) => handleUtilities(checked ? 'Restore Water' : 'Shut Off Water', checked, false, true)}
+                      disabled={!bridgeConnected || loading !== null || utilitiesStatus === null}
+                      aria-label={t('utilities.water')}
+                    />
                   </div>
                 </div>
               </div>

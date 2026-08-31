@@ -81,7 +81,27 @@ beforeEach(() => {
   shutOffUtilities.mockReset()
   sendCommand.mockReset().mockResolvedValue({ success: false } as never)
   toastSpy.mockReset()
-  getUtilitiesStatus.mockReset().mockResolvedValue({ success: false } as never)
+  // 2026-08-31 (paired-buttons operator request): the Power/Water controls
+  // are now a single Switch reflecting utilitiesStatus.powerOn/waterOn, and
+  // the switch disables itself while that state is unknown -- so this test
+  // (which only cares about the toast on the ACTION's own response) needs a
+  // real, resolved status here to make the switch interactable at all. This
+  // was `success: false` before the toggle conversion, when the click target
+  // was a plain always-enabled Button.
+  getUtilitiesStatus.mockReset().mockResolvedValue({
+    success: true,
+    data: {
+      hydroPowerOn: true,
+      powerOn: true,
+      waterOn: true,
+      elecShut: '1',
+      waterShut: '9',
+      elecShutModifier: 15,
+      waterShutModifier: 2147483647,
+      currentWorldDay: 3.7,
+      nightsSurvived: 2,
+    },
+  } as never)
 })
 
 describe('Events -- the dead persisted/persistReason branch no longer influences the utilities toast (Finding C)', () => {
@@ -100,8 +120,12 @@ describe('Events -- the dead persisted/persistReason branch no longer influences
     renderEvents()
     await openUtilitiesSection()
 
-    const shutOffButtons = await screen.findAllByRole('button', { name: /shut off/i })
-    shutOffButtons[0].click()
+    // Power/Water are a single state-reflecting Switch each, not a
+    // Restore/Shut Off button pair (2026-08-31, paired-buttons operator
+    // request); powerOn is mocked true above, so the switch starts checked
+    // and clicking it fires a shut-off.
+    const switches = await screen.findAllByRole('switch', { name: /power|water/i })
+    switches[0].click()
 
     await waitFor(() => expect(shutOffUtilities).toHaveBeenCalledWith(true, false))
     await waitFor(() => {
