@@ -79,16 +79,17 @@ const GETTERS = new Set([
 // listed here (matched-instead-of-verified, and gate-directly-on-a-string-
 // with-no-stored-flag, respectively) -- as of the 2026-08-23 string-contract
 // migration all four now emit a literal `verified` field, so they no longer
-// need an exemption. Left this note rather than silently deleting the
-// history, since "why isn't X allowlisted anymore" is as worth answering as
-// "why is X allowlisted".
+// need an exemption. restoreUtilities/shutOffUtilities used to be listed too
+// (hydroPowerOn reported as unGated diagnostic data) -- the 2026-08-31 bug
+// hunt found `ok` was never actually gated on that read-back despite the
+// exemption's own wording implying it was, fixed both to gate ok on it for
+// real, so they no longer need an exemption either. Left this note rather
+// than silently deleting the history, since "why isn't X allowlisted
+// anymore" is as worth answering as "why is X allowlisted".
 const CANNOT_VERIFY_OR_EQUIVALENT = {
   // Verifies via a differently-named but equivalent mechanism.
-  restoreUtilities: 'hydroPowerOn IS the real read-back (world:isHydroPowerOn()), substituted directly for the field it describes -- no separate flag needed for a single-field outcome.',
-  shutOffUtilities: 'Same mechanism as restoreUtilities.',
   healPlayer: 'The one truly unverifiable path (nil bodyDamage) is gated directly to ok=false; RestoreToFullHealth has no cheap read-back the game exposes.',
   vehicleHotwire: 'No single verifiable end-state exists for a multi-step hotwire sequence -- `actions` documents what ran step by step. (Also the site of the earlier undefined-global crash fix, commit 364c56d.)',
-  runEventSequence: 'Orchestrates other handlers and returns THEIR (ok,data,err) results directly -- each sub-step\'s own verification already applies; re-wrapping it here would be redundant.',
   clearZombiesNearPlayer: 'Reports a real removed-count computed via per-zombie pcall success, not a boolean -- equivalent honesty under a differently-shaped field (`removed`).',
   clearAllZombies: 'Same mechanism as clearZombiesNearPlayer; the ForceKillAllZombies branch is pcall-ceiling by nature of being a bulk fire-and-forget API, the manual fallback counts real removals.',
   removeVehiclesInArea: 'Already counts only real per-vehicle invoke-confirmed removals (fixed from this exact defect once before, per its own comment) -- `removed` is the honest count.',

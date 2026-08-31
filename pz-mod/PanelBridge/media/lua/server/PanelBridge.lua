@@ -5507,13 +5507,34 @@ handlers.restoreUtilities = function(args, cmdId)
 
         print("[PanelBridge] restoreUtilities debug: " .. table.concat(debugInfo, " | "))
 
-        return true, {
-            message = "Utilities restored",
+        -- 2026-08-31 bug hunt: hydroPowerOn used to be reported as pure
+        -- diagnostic data with no bearing on `ok` -- this handler already
+        -- computes the real read-back (world:setHydroPowerOn can silently
+        -- not stick, per Step 3's own comment above -- exactly the failure
+        -- mode panelBridgeUtilitiesHydroPowerOnReporting.test.js already
+        -- constructs), it just never used it to gate the one field a caller
+        -- actually checks. Verified when power was requested: ok now means
+        -- the requested state is confirmed on, not merely that the mutation
+        -- attempt ran without throwing. Water has no equivalent read-back
+        -- exposed anywhere in this file, so it isn't gated here -- only the
+        -- power dimension this handler can actually confirm.
+        local actualHydroPowerOn = world:isHydroPowerOn()
+        local verified = (not restorePower) or actualHydroPowerOn
+        -- NOT `verified and nil or errMsg` -- that Lua and/or idiom always
+        -- picks errMsg, since `verified and nil` collapses to nil (falsy)
+        -- regardless of verified, so `or errMsg` would always fire. An
+        -- explicit if/else is the only safe way to conditionally produce nil.
+        local errMsg = nil
+        if not verified then
+            errMsg = "Power restore did not take effect (hydro power is still off)"
+        end
+        return verified, {
+            message = verified and "Utilities restored" or errMsg,
             power = restorePower,
             water = restoreWater,
-            hydroPowerOn = world:isHydroPowerOn(),
+            hydroPowerOn = actualHydroPowerOn,
             debug = debugInfo
-        }
+        }, errMsg
     end
 
     if not restorePower then
@@ -5654,13 +5675,23 @@ handlers.shutOffUtilities = function(args, cmdId)
 
         print("[PanelBridge] shutOffUtilities debug: " .. table.concat(debugInfo, " | "))
 
-        return true, {
-            message = "Utilities shut off",
+        -- 2026-08-31 bug hunt: same fix as restoreUtilities' finish function
+        -- -- see its comment for the full reasoning. Verified when power was
+        -- requested to shut off: ok now means hydro power is confirmed off,
+        -- not merely that the mutation attempt ran without throwing.
+        local actualHydroPowerOn = world:isHydroPowerOn()
+        local verified = (not shutPower) or (not actualHydroPowerOn)
+        local errMsg = nil
+        if not verified then
+            errMsg = "Power shutoff did not take effect (hydro power is still on)"
+        end
+        return verified, {
+            message = verified and "Utilities shut off" or errMsg,
             power = shutPower,
             water = shutWater,
-            hydroPowerOn = world:isHydroPowerOn(),
+            hydroPowerOn = actualHydroPowerOn,
             debug = debugInfo
-        }
+        }, errMsg
     end
 
     if not shutPower then
@@ -7862,6 +7893,7 @@ handlers.runEventSequence = function(args)
     local maxSteps = math.min(math.max(tonumber(args.maxSteps) or 20, 1), 50)
     local results = {}
     local executed = 0
+    local failedCount = 0
 
     for i, step in ipairs(steps) do
         if executed >= maxSteps then break end
@@ -7903,21 +7935,44 @@ handlers.runEventSequence = function(args)
 
             executed = executed + 1
             if not ok then
+                failedCount = failedCount + 1
                 table.insert(results, { index = i, kind = kind, success = false, error = tostring(handlerSuccess) })
             elseif handlerSuccess then
                 table.insert(results, { index = i, kind = kind, success = true, data = handlerData })
             else
+                failedCount = failedCount + 1
                 table.insert(results, { index = i, kind = kind, success = false, error = tostring(handlerError) })
             end
         end
     end
 
-    return true, {
-        message = "Event sequence executed",
+    -- 2026-08-31 bug hunt: this used to unconditionally `return true` here,
+    -- regardless of how many steps above actually failed -- a sequence where
+    -- every single step failed still reported success, and Events.tsx (which
+    -- gates its failure card on this top-level flag alone) showed a plain
+    -- success card with the real per-step failures visible only by manually
+    -- expanding raw JSON. ok is now verified against what actually happened:
+    -- true only when no step failed, matching this file's own convention
+    -- that ok=true must mean the thing asked for actually happened, not
+    -- merely that the loop finished running. failedCount is exposed
+    -- alongside the per-step `results` array (unchanged, always present, on
+    -- either branch) so a caller can tell 9-of-10 from 0-of-10 without
+    -- parsing that array itself.
+    local allVerified = failedCount == 0
+    local data = {
+        message = allVerified
+            and "Event sequence executed"
+            or ("Event sequence completed with " .. failedCount .. "/" .. executed .. " step(s) failed"),
         executed = executed,
         maxSteps = maxSteps,
+        failedCount = failedCount,
         results = results
     }
+
+    if allVerified then
+        return true, data
+    end
+    return false, data, data.message
 end
 
 -- ============================================
