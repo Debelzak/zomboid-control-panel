@@ -1259,13 +1259,13 @@
           "label": "Aucun"
         },
         "2": {
-          "label": "Bas"
+          "label": "Très bas"
         },
         "3": {
-          "label": "Normal"
+          "label": "Bas"
         },
         "4": {
-          "label": "Haut"
+          "label": "Normal"
         },
         "5": {
           "label": "Élevé"
@@ -1540,22 +1540,22 @@
       "label": "Vitesse de vieillissement",
       "options": {
         "1": {
-          "label": "Très rapide"
+          "label": "Super rapide"
         },
         "2": {
-          "label": "Rapide"
+          "label": "Très rapide"
         },
         "3": {
-          "label": "Normal"
+          "label": "Rapide"
         },
         "4": {
-          "label": "Normal"
+          "label": "Normale"
         },
         "5": {
-          "label": "Slow"
+          "label": "Lente"
         },
         "6": {
-          "label": "Very Slow"
+          "label": "Très lente"
         }
       }
     },
