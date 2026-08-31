@@ -1595,8 +1595,41 @@ router.post("/command", requireBridgeCommandUnlessGmToolsOnly, async (req, res) 
       () => {},
     );
 
+    // 2026-08-31 bug hunt: services/panelBridge.js's processResult() attaches
+    // a rich soft-failure diagnostic table to err.data specifically so "a
+    // caller that wants the diagnostics can get them" (see that function's
+    // own comment) -- but every branch below built its response from
+    // error.message alone, discarding it at this boundary. Conditional: a
+    // genuine transport failure (bridge not configured/running, a timeout)
+    // never sets .data, so those responses are byte-identical to before.
+    //
+    // Spread directly into the body, NOT nested under a `data` key: the
+    // client's ApiError.data (client/src/lib/api.ts's buildResponseError)
+    // is the ENTIRE parsed response body, so a top-level field here is what
+    // reaches `error.data.<field>` -- e.g. getRecoveryUrl() already reads
+    // error.data.fixUrl straight off the body on other routes. Nesting an
+    // extra `data:` key here would have put the diagnostic table at
+    // error.data.data instead, one level deeper than every existing and
+    // planned consumer expects (Events.tsx's BridgeResultDisplay reads
+    // error.data directly and feeds it straight to
+    // isEventSequenceResultData(), which checks top-level `executed`/
+    // `failedCount`/`results`). error/category are spread LAST so they
+    // cannot be clobbered by a same-named field in the diagnostic table.
+    //
+    // Checked the consumer before shipping this (client/src/lib/
+    // errorMessage.ts): neither getUserErrorMessage() nor getRecoveryUrl()
+    // read anything from this specific table (no `params`, no `fixUrl`
+    // key), so no user-visible error TEXT changes for any existing caller --
+    // only Events.tsx's BridgeResultDisplay path, which already reads
+    // error.data defensively (?? null) and was simply getting null every
+    // time until now.
+    const diagnosticFields =
+      error?.data && typeof error.data === "object" ? error.data : {};
+
     if (/timeout/i.test(message)) {
-      return res.status(504).json({ error: message, category: "timeout" });
+      return res
+        .status(504)
+        .json({ ...diagnosticFields, error: message, category: "timeout" });
     }
     if (
       /not configured|not running|unhealthy|not responding|stale|missing/i.test(
@@ -1605,13 +1638,17 @@ router.post("/command", requireBridgeCommandUnlessGmToolsOnly, async (req, res) 
     ) {
       return res
         .status(503)
-        .json({ error: message, category: "bridge-unavailable" });
+        .json({ ...diagnosticFields, error: message, category: "bridge-unavailable" });
     }
     if (/invalid|required/i.test(message)) {
-      return res.status(400).json({ error: message, category: "validation" });
+      return res
+        .status(400)
+        .json({ ...diagnosticFields, error: message, category: "validation" });
     }
 
-    return res.status(500).json({ error: message, category: "unknown" });
+    return res
+      .status(500)
+      .json({ ...diagnosticFields, error: message, category: "unknown" });
   }
 });
 
@@ -2352,7 +2389,18 @@ router.post("/players/:username/teleport", requirePermission("players.gm_tools")
     const result = await bridge.teleportPlayer(req.params.username, x, y, z);
     res.json(result);
   } catch (error) {
+    // Same drop as POST /command's catch (2026-08-31 bug hunt, see its own
+    // comment) -- teleportPlayer's verify-false soft failure attaches
+    // verifyPosition/newPosition to err.data via processResult(), and this
+    // dedicated route (a live path: client/src/lib/api.ts's
+    // teleportPlayerBridge) discarded it same as the generic passthrough
+    // did. Spread first, error/code last, so they can't be clobbered by a
+    // same-named field in the diagnostic table -- see POST /command's
+    // catch for why this is a flat spread, not nested under a `data` key.
+    const diagnosticFields =
+      error?.data && typeof error.data === "object" ? error.data : {};
     res.status(500).json({
+      ...diagnosticFields,
       error: "Teleport failed",
       code: ErrorCode.PANELBRIDGE_TELEPORT_FAILED,
     });
@@ -3808,7 +3856,17 @@ router.post("/players/:username/kill", requirePermission("players.gm_tools"), as
     const result = await bridge.sendCommand("killPlayer", { username });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: sanitizeError(error.message) });
+    // Same drop as POST /command's catch (2026-08-31 bug hunt, see its own
+    // comment) -- killPlayer's not-dead soft failure attaches its own
+    // diagnostic data to err.data via processResult(), and this dedicated
+    // route (a live path: client/src/lib/api.ts's killPlayer) discarded it
+    // same as the generic passthrough did. Spread first, error last, so it
+    // can't be clobbered by a same-named field in the diagnostic table.
+    const diagnosticFields =
+      error?.data && typeof error.data === "object" ? error.data : {};
+    res
+      .status(500)
+      .json({ ...diagnosticFields, error: sanitizeError(error.message) });
   }
 });
 
