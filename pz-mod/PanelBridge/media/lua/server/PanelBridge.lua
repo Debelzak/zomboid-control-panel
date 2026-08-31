@@ -2182,6 +2182,20 @@ handlers.getWeather = function(args)
 end
 
 -- Trigger blizzard (duration is in hours, minimum ~2 hours in game)
+-- 2026-08-31 bug hunt follow-up (operator: "fix them" -- this is the finding
+-- from the stopWeather pass). triggerCustomWeatherStage returns a real
+-- boolean (confirmed via javap -c against the real jar: it early-returns
+-- false when weatherPeriod:isRunning() is already true, i.e. a period is
+-- already active), but `if PanelBridge.invoke(...) then` only ever checks
+-- invoke()'s FIRST return (whether the pcall threw), discarding the SECOND
+-- (the callee's own boolean) -- so triggering a second storm/blizzard/
+-- tropical-storm while one is already running reported success and did
+-- nothing. Fixed the same way across all three trigger* handlers: capture
+-- invoke()'s real result, and verify-gate on it via PanelBridge.verifiedResult
+-- (same convention as stopWeather) instead of trusting invoke()'s pcall-only
+-- signal. The transmitTrigger* fallback (legacy/B41, void return -- no
+-- boolean to lose) is left as an unverifiable ("nil") outcome, same ceiling
+-- every other void-API handler in this file already has.
 handlers.triggerBlizzard = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2191,27 +2205,36 @@ handlers.triggerBlizzard = function(args)
     -- Duration is passed directly - the game adds its own minimum
     local duration = args.duration or 2.0
 
+    local used, verified
     local success, err = pcall(function()
-        local used
-        if WeatherPeriod and WeatherPeriod.STAGE_BLIZZARD
-            and PanelBridge.invoke(climate, "triggerCustomWeatherStage", WeatherPeriod.STAGE_BLIZZARD, duration) then
-            used = "triggerCustomWeatherStage"
-        elseif PanelBridge.invoke(climate, "transmitTriggerBlizzard", duration) then
-            used = "transmitTriggerBlizzard"
-        else
-            error("No weather trigger method available")
+        if WeatherPeriod and WeatherPeriod.STAGE_BLIZZARD then
+            local invokeOk, triggered = PanelBridge.invoke(climate, "triggerCustomWeatherStage", WeatherPeriod.STAGE_BLIZZARD, duration)
+            if invokeOk then
+                used = "triggerCustomWeatherStage"
+                verified = triggered == true
+            end
         end
-        PanelBridge.debug("Blizzard triggered", { method = used })
+        if not used then
+            if PanelBridge.invoke(climate, "transmitTriggerBlizzard", duration) then
+                used = "transmitTriggerBlizzard"
+                verified = nil -- void method, no boolean to confirm against
+            else
+                error("No weather trigger method available")
+            end
+        end
+        PanelBridge.debug("Blizzard triggered", { method = used, verified = verified })
     end)
 
     if not success then
         return false, nil, "Failed to trigger blizzard: " .. tostring(err)
     end
 
-    return true, { message = "Blizzard triggered", duration = duration }
+    return PanelBridge.verifiedResult(verified, { message = "Blizzard triggered", duration = duration },
+        "A weather period is already running -- stop it first, or wait for it to finish")
 end
 
 -- Trigger tropical storm
+-- See triggerBlizzard's comment above -- same fix, same reason.
 handlers.triggerTropicalStorm = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2220,27 +2243,36 @@ handlers.triggerTropicalStorm = function(args)
 
     local duration = args.duration or 2.0
 
+    local used, verified
     local success, err = pcall(function()
-        local used
-        if WeatherPeriod and WeatherPeriod.STAGE_TROPICAL_STORM
-            and PanelBridge.invoke(climate, "triggerCustomWeatherStage", WeatherPeriod.STAGE_TROPICAL_STORM, duration) then
-            used = "triggerCustomWeatherStage"
-        elseif PanelBridge.invoke(climate, "transmitTriggerTropical", duration) then
-            used = "transmitTriggerTropical"
-        else
-            error("No weather trigger method available")
+        if WeatherPeriod and WeatherPeriod.STAGE_TROPICAL_STORM then
+            local invokeOk, triggered = PanelBridge.invoke(climate, "triggerCustomWeatherStage", WeatherPeriod.STAGE_TROPICAL_STORM, duration)
+            if invokeOk then
+                used = "triggerCustomWeatherStage"
+                verified = triggered == true
+            end
         end
-        PanelBridge.debug("Tropical storm triggered", { method = used })
+        if not used then
+            if PanelBridge.invoke(climate, "transmitTriggerTropical", duration) then
+                used = "transmitTriggerTropical"
+                verified = nil
+            else
+                error("No weather trigger method available")
+            end
+        end
+        PanelBridge.debug("Tropical storm triggered", { method = used, verified = verified })
     end)
 
     if not success then
         return false, nil, "Failed to trigger tropical storm: " .. tostring(err)
     end
 
-    return true, { message = "Tropical storm triggered", duration = duration }
+    return PanelBridge.verifiedResult(verified, { message = "Tropical storm triggered", duration = duration },
+        "A weather period is already running -- stop it first, or wait for it to finish")
 end
 
 -- Trigger regular storm
+-- See triggerBlizzard's comment above -- same fix, same reason.
 handlers.triggerStorm = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2249,24 +2281,32 @@ handlers.triggerStorm = function(args)
 
     local duration = args.duration or 2.0
 
+    local used, verified
     local success, err = pcall(function()
-        local used
-        if WeatherPeriod and WeatherPeriod.STAGE_STORM
-            and PanelBridge.invoke(climate, "triggerCustomWeatherStage", WeatherPeriod.STAGE_STORM, duration) then
-            used = "triggerCustomWeatherStage"
-        elseif PanelBridge.invoke(climate, "transmitTriggerStorm", duration) then
-            used = "transmitTriggerStorm"
-        else
-            error("No weather trigger method available")
+        if WeatherPeriod and WeatherPeriod.STAGE_STORM then
+            local invokeOk, triggered = PanelBridge.invoke(climate, "triggerCustomWeatherStage", WeatherPeriod.STAGE_STORM, duration)
+            if invokeOk then
+                used = "triggerCustomWeatherStage"
+                verified = triggered == true
+            end
         end
-        PanelBridge.debug("Storm triggered", { method = used })
+        if not used then
+            if PanelBridge.invoke(climate, "transmitTriggerStorm", duration) then
+                used = "transmitTriggerStorm"
+                verified = nil
+            else
+                error("No weather trigger method available")
+            end
+        end
+        PanelBridge.debug("Storm triggered", { method = used, verified = verified })
     end)
 
     if not success then
         return false, nil, "Failed to trigger storm: " .. tostring(err)
     end
 
-    return true, { message = "Storm triggered", duration = duration }
+    return PanelBridge.verifiedResult(verified, { message = "Storm triggered", duration = duration },
+        "A weather period is already running -- stop it first, or wait for it to finish")
 end
 
 -- Stop weather
@@ -2358,6 +2398,25 @@ handlers.stopWeather = function(args)
 end
 
 -- Generate custom weather period
+-- 2026-08-31 bug hunt follow-up -- a WORSE instance of the triggerBlizzard
+-- defect above, not just the same one. transmitGenerateWeather was tried
+-- FIRST and never throws (it's a real method on the jar), so
+-- PanelBridge.invoke always reported success and triggerCustomWeather --
+-- the real, boolean-returning, context-checked B42 method -- was NEVER
+-- reached, for any frontType, ever. And transmitGenerateWeather is a
+-- CLIENT->SERVER request packet (ClimateNetAuth.ClientOnly, confirmed via
+-- javap -c against the real jar) -- the same wrong-direction method class as
+-- transmitStopWeather, likely a no-op when called FROM the server, which is
+-- every call this handler makes. So "Generate weather" very likely did
+-- nothing at all, silently, on every real invocation.
+--
+-- triggerCustomWeather only supports warm/cold (a boolean) -- no stationary
+-- front -- so it can only be tried, and is now tried FIRST, when
+-- frontType ~= 0. Stationary fronts have no other verifiable server-side
+-- method found yet; transmitGenerateWeather is kept as its best-effort
+-- fallback (unverifiable, same ceiling as every void-API handler in this
+-- file) rather than a hard failure, since removing it entirely would leave
+-- stationary fronts with zero implementation instead of an unverified one.
 handlers.generateWeather = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2372,24 +2431,33 @@ handlers.generateWeather = function(args)
     local javaFrontMap = { [0] = 0, [1] = -1, [2] = 1 }
     local javaFrontType = javaFrontMap[frontType] or 0
 
+    local used, verified
     local success, err = pcall(function()
-        local used
-        if PanelBridge.invoke(climate, "transmitGenerateWeather", strength, javaFrontType) then
-            used = "transmitGenerateWeather"
-        -- triggerCustomWeather only supports warm/cold boolean, no stationary
-        elseif PanelBridge.invoke(climate, "triggerCustomWeather", strength, frontType ~= 1) then
-            used = "triggerCustomWeather"
-        else
-            error("No generate weather method available")
+        if frontType ~= 0 then
+            local invokeOk, triggered = PanelBridge.invoke(climate, "triggerCustomWeather", strength, frontType ~= 1)
+            if invokeOk then
+                used = "triggerCustomWeather"
+                verified = triggered == true
+            end
         end
-        PanelBridge.debug("Weather period generated", { method = used })
+        if not used then
+            if PanelBridge.invoke(climate, "transmitGenerateWeather", strength, javaFrontType) then
+                used = "transmitGenerateWeather"
+                verified = nil -- ClientOnly packet, no boolean, no known read-back
+            else
+                error("No generate weather method available")
+            end
+        end
+        PanelBridge.debug("Weather period generated", { method = used, verified = verified })
     end)
 
     if not success then
         return false, nil, "Failed to generate weather: " .. tostring(err)
     end
 
-    return true, { message = "Weather period generated", strength = strength, frontType = frontType }
+    return PanelBridge.verifiedResult(verified,
+        { message = "Weather period generated", strength = strength, frontType = frontType },
+        "A weather period is already running -- stop it first, or wait for it to finish")
 end
 
 -- Set precipitation to snow (also starts rain if enabling snow)

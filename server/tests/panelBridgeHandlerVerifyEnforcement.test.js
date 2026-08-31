@@ -149,11 +149,16 @@ const CANNOT_VERIFY_OR_EQUIVALENT = {
   // 5c7ad09, 428a87a, 6cc240f) -- these climate/weather handlers are
   // STRONG CANDIDATES for the same fix, not a confirmed ceiling. Tracked
   // as a known follow-up so this test stays green without hiding the gap.
-  generateWeather: 'PROVISIONAL: not yet re-checked for a real climate read-back (see getClimateFloats\' own getFinalValue()/isEnableAdmin() usage) -- tracked as a follow-up, same pattern as the vehicle-setter fix.',
-  triggerBlizzard: 'PROVISIONAL: same as generateWeather.',
-  triggerTropicalStorm: 'PROVISIONAL: same as generateWeather.',
-  triggerStorm: 'PROVISIONAL: same as generateWeather.',
-  stopWeather: 'PROVISIONAL: same as generateWeather.',
+  //
+  // generateWeather/triggerBlizzard/triggerTropicalStorm/triggerStorm/
+  // stopWeather used to be listed here too -- the 2026-08-31 live stopWeather
+  // bug hunt found a real defect in all five (an ignored boolean/an admin
+  // override never cleared, see each handler's own comment), fixed all five
+  // with a real isRaining()/triggerCustomWeather-boolean read-back gated via
+  // PanelBridge.verifiedResult, so none of them need this exemption anymore.
+  // Same pattern as restoreUtilities/shutOffUtilities's own removal note
+  // above -- left here rather than silently deleted, since "why isn't X
+  // allowlisted anymore" is as worth answering as "why is X allowlisted".
   setSnow: 'PROVISIONAL: same as generateWeather.',
   startRain: 'PROVISIONAL: same as generateWeather.',
   stopRain: 'PROVISIONAL: same as generateWeather.',
