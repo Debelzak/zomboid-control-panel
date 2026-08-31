@@ -30,6 +30,7 @@
     "peakToday": "Peak Today",
     "roster": "Roster",
     "rosterCaption": "seen",
+    "rosterTip": "Players you've connected with before, now offline. Someone online right now isn't counted here until they disconnect — that's why this can read 0 while a player card is live above it.",
     "bannedLabel": "Banned SteamIDs",
     "bannedManage": "manage",
     "bannedAria": "View {{count}} banned SteamIDs"
@@ -151,7 +152,9 @@
     "boredom": "Boredom",
     "unhappiness": "Unhappiness",
     "pain": "Pain",
-    "wetness": "Wetness"
+    "wetness": "Wetness",
+    "otherStatsLabel": "Other stats",
+    "otherStatsTip": "Shown as raw numbers, not a bar like the vitals above: PanelBridge sends these values, but which of them use a 0-1 scale versus 0-100 hasn't been confirmed against the game itself for every one of them. A colored bar would have to guess the scale, and a confidently wrong severity is worse than no severity at all."
   },
   "actionTiles": {
     "kickDesc": "Boot player with reason",
@@ -159,7 +162,7 @@
     "accessLevelLabel": "Access Level",
     "accessLevelDesc": "Admin · Mod · User",
     "teleportLabel": "Teleport",
-    "teleportDesc": "B42 MP · may not sync",
+    "teleportDesc": "Build 42 multiplayer · may not sync",
     "voiceBanLabel": "Voice Ban",
     "voiceBanTooltip": "Mute or unmute a player from in-game voice chat. They stay connected, but can't talk in proximity voice.",
     "steamIdBanLabel": "SteamID Ban",
@@ -264,12 +267,12 @@
   "spawn": {
     "giveItemsTitle": "Give items",
     "browserBadge": "browser",
-    "giveItemsDescWithPlayer": "Weapons, food, medical, tools — give as many items as you want to <1>{{player}}</1> without closing the dialog.",
-    "giveItemsDescNoPlayer": "Pick a player first, then browse the full item catalog to fill their inventory.",
+    "giveItemsDescWithPlayer": "Weapons, food, medical, tools for {{player}}.",
+    "giveItemsDescNoPlayer": "Pick a player, then browse the item catalog.",
     "browse": "Browse",
     "spawnVehiclesTitle": "Spawn vehicles",
-    "spawnVehiclesDescWithPlayer": "Sedans, trucks, emergency, military — spawn one after another near <1>{{player}}</1>.",
-    "spawnVehiclesDescNoPlayer": "Spawns at the caller's position — select a player to spawn vehicles near them instead.",
+    "spawnVehiclesDescWithPlayer": "Sedans, trucks, emergency, military near {{player}}.",
+    "spawnVehiclesDescNoPlayer": "Spawns at your position, or pick a player first.",
     "giveXpTitle": "Give XP",
     "giveXpDescWithPlayer": "Grant experience to <1>{{player}}</1>",
     "giveXpDescNoPlayer": "Grant experience to the selected player",
@@ -301,6 +304,7 @@
     "killConfirmTypeLabel": "Type {{player}} to confirm",
     "on": "ON",
     "off": "OFF",
+    "unknown": "UNKNOWN",
     "enable": "Enable",
     "disable": "Disable",
     "bridgeRequiredTooltip": "Requires PanelBridge to be connected"

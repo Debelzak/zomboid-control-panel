@@ -30,6 +30,7 @@
     "peakToday": "今日峰值",
     "roster": "名册",
     "rosterCaption": "曾出现",
+    "rosterTip": "以前连接过、目前离线的玩家。当前在线的玩家在断开连接前不计入此数字——这就是为什么上方明明有一张在线玩家卡片，这里却可能显示为 0。",
     "bannedLabel": "已封禁 SteamID",
     "bannedManage": "管理",
     "bannedAria": "查看 {{count}} 个已封禁的 SteamID"
@@ -151,7 +152,9 @@
     "boredom": "无聊",
     "unhappiness": "不快",
     "pain": "疼痛",
-    "wetness": "湿度"
+    "wetness": "湿度",
+    "otherStatsLabel": "其他数值",
+    "otherStatsTip": "以原始数字显示，而不是像上面的生命体征那样用进度条：PanelBridge 会发送这些数值，但尚未逐一对照游戏本体确认每项使用的是 0-1 还是 0-100 的量表。彩色进度条必须先猜测量表才能显示，而一个自信却错误的严重程度指示，比完全不显示更糟。"
   },
   "actionTiles": {
     "kickDesc": "附带原因踢出玩家",
@@ -159,7 +162,7 @@
     "accessLevelLabel": "权限等级",
     "accessLevelDesc": "管理员 · 协管员 · 用户",
     "teleportLabel": "传送",
-    "teleportDesc": "B42 多人模式 · 可能不同步",
+    "teleportDesc": "Build 42 多人模式 · 可能不同步",
     "voiceBanLabel": "语音封禁",
     "voiceBanTooltip": "静音或取消静音玩家的游戏内语音。玩家仍保持连接，但无法在近距离语音中说话。",
     "steamIdBanLabel": "SteamID 封禁",
@@ -264,12 +267,12 @@
   "spawn": {
     "giveItemsTitle": "给予物品",
     "browserBadge": "浏览器",
-    "giveItemsDescWithPlayer": "武器、食物、医疗、工具 — 无需关闭对话框即可向 <1>{{player}}</1> 给予任意数量的物品。",
-    "giveItemsDescNoPlayer": "先选择一名玩家，然后浏览完整物品目录以填充其背包。",
+    "giveItemsDescWithPlayer": "为 {{player}} 提供武器、食物、医疗、工具。",
+    "giveItemsDescNoPlayer": "先选择一名玩家，然后浏览物品目录。",
     "browse": "浏览",
     "spawnVehiclesTitle": "生成载具",
-    "spawnVehiclesDescWithPlayer": "轿车、卡车、应急、军用 — 在 <1>{{player}}</1> 附近连续生成载具。",
-    "spawnVehiclesDescNoPlayer": "将在调用者所在位置生成 — 选择一名玩家可改为在其附近生成载具。",
+    "spawnVehiclesDescWithPlayer": "在 {{player}} 附近生成轿车、卡车、应急、军用载具。",
+    "spawnVehiclesDescNoPlayer": "在你所在位置生成，或先选择一名玩家。",
     "giveXpTitle": "给予经验值",
     "giveXpDescWithPlayer": "为 <1>{{player}}</1> 授予经验值",
     "giveXpDescNoPlayer": "为所选玩家授予经验值",
@@ -301,6 +304,7 @@
     "killConfirmTypeLabel": "输入 {{player}} 以确认",
     "on": "开",
     "off": "关",
+    "unknown": "未知",
     "enable": "启用",
     "disable": "禁用",
     "bridgeRequiredTooltip": "需要先连接 PanelBridge"

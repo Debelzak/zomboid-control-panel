@@ -194,12 +194,14 @@ function SummaryCard({
   value,
   tone = 'default',
   caption,
+  help,
 }: {
   icon: React.ReactNode
   label: string
   value: string | number
   tone?: 'default' | 'success' | 'warning' | 'danger'
   caption?: string
+  help?: React.ReactNode
 }) {
   const toneMap = {
     default: {
@@ -237,7 +239,10 @@ function SummaryCard({
             <span className="text-xs font-medium text-muted-foreground/70">{caption}</span>
           ) : null}
         </div>
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/75">{label}</p>
+        <div className="mt-1 flex items-center gap-1">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/75">{label}</p>
+          {help}
+        </div>
       </div>
     </div>
   )
@@ -1242,6 +1247,15 @@ export default function Players() {
       requireTypedConfirmation: {
         value: player,
         label: t('powers.killConfirmTypeLabel', { player }),
+        // ConfirmContext.tsx defaults an omitted placeholder to the
+        // required value itself -- here that would render the exact
+        // string "Kate" in placeholder-gray inside an untouched input,
+        // pixel-indistinguishable at a glance from having already typed
+        // it (2026-08-31 impeccable pass, verified by cropping the
+        // rendered screenshot and comparing text color against the
+        // Cancel button's real text). An explicit empty placeholder
+        // leaves the box genuinely blank instead.
+        placeholder: '',
       },
     })
     if (!confirmed) return
@@ -1371,6 +1385,7 @@ export default function Players() {
           label={t('summary.roster')}
           value={offlineRoster.length}
           caption={t('summary.rosterCaption')}
+          help={<HelpTip label={t('summary.roster')}>{t('summary.rosterTip')}</HelpTip>}
         />
         {bannedSteamIds.length > 0 && (
           <DisabledReason className="flex-1" reason={!canModerate ? t('permissions.noModerate') : null}>
@@ -2172,9 +2187,18 @@ export default function Players() {
                         isn't confirmed against the jar the way hunger/thirst/
                         fatigue is (see statGet's comment in PanelBridge.lua)
                         -- shown as raw numbers rather than a bar that could
-                        misrepresent the scale. */}
+                        misrepresent the scale. That reasoning was invisible on
+                        screen (2026-08-31 impeccable pass) -- the HelpTip below
+                        surfaces it instead of just the comment here. */}
                     {playerVitals.stats && (
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border/40 pt-2 font-mono text-xs text-muted-foreground/85 sm:grid-cols-3">
+                      <div className="border-t border-border/40 pt-2">
+                        <div className="mb-1 flex items-center gap-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                            {t('vitals.otherStatsLabel')}
+                          </span>
+                          <HelpTip label={t('vitals.otherStatsLabel')}>{t('vitals.otherStatsTip')}</HelpTip>
+                        </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground/85 sm:grid-cols-3">
                         {([
                           ['endurance', playerVitals.stats.endurance, t('vitals.endurance')],
                           ['stress', playerVitals.stats.stress, t('vitals.stress')],
@@ -2187,6 +2211,7 @@ export default function Players() {
                             <span className="tabular-nums text-foreground/85">{Math.round(value * 100) / 100}</span>
                           </div>
                         ))}
+                      </div>
                       </div>
                     )}
 
@@ -2772,9 +2797,24 @@ export default function Players() {
                           {t('spawn.browserBadge')}
                         </span>
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {/* 2026-08-31 impeccable pass. This copy was originally the same
+                          length as the moderation ActionTile descriptions fixed earlier
+                          tonight (truncate -> line-clamp-2), but line-clamp-2 alone was NOT
+                          enough here: with copy long enough to actually need clamping (3-4
+                          natural lines compressed to 2), the ellipsis rendered correctly but
+                          the remaining, hidden-on-paper text ALSO rendered below the card in
+                          normal flow, overlapping the next card on mobile -- confirmed via
+                          real rendered screenshots, reproduced with and without <Trans>'s
+                          nested colored player-name span (ruling that out as the cause), and
+                          confirmed gone once the copy was short enough to fit its 2 lines
+                          without the clamp ever needing to cut anything. Shortened this
+                          description (and its sibling below, and both no-player variants)
+                          rather than keep chasing why line-clamp-2 alone wasn't sufficient --
+                          copy that never needs the clamp to do real work sidesteps the whole
+                          class of risk, whatever its exact mechanism. */}
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                         {selectedPlayer
-                          ? <Trans i18nKey="spawn.giveItemsDescWithPlayer" t={t} values={{ player: selectedPlayer }} components={{ 1: <span className="text-primary font-medium" /> }} />
+                          ? t('spawn.giveItemsDescWithPlayer', { player: selectedPlayer })
                           : t('spawn.giveItemsDescNoPlayer')}
                       </p>
                     </div>
@@ -2823,9 +2863,11 @@ export default function Players() {
                           {t('spawn.browserBadge')}
                         </span>
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {/* line-clamp-2, not truncate -- see the matching comment on the
+                          Give Items row above. */}
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                         {selectedPlayer
-                          ? <Trans i18nKey="spawn.spawnVehiclesDescWithPlayer" t={t} values={{ player: selectedPlayer }} components={{ 1: <span className="text-primary font-medium" /> }} />
+                          ? t('spawn.spawnVehiclesDescWithPlayer', { player: selectedPlayer })
                           : t('spawn.spawnVehiclesDescNoPlayer')}
                       </p>
                     </div>
@@ -2920,20 +2962,42 @@ export default function Players() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {selectedPlayer && selectedPlayerPowers?.godMode !== undefined && (
-                        <Badge variant={selectedPlayerPowers.godMode ? 'default' : 'secondary'} className="text-xs">
-                          {selectedPlayerPowers.godMode ? t('powers.on') : t('powers.off')}
+                      {selectedPlayer && (
+                        <Badge
+                          variant={selectedPlayerPowers?.godMode === undefined ? 'outline' : selectedPlayerPowers.godMode ? 'default' : 'secondary'}
+                          className={cn('text-xs', selectedPlayerPowers?.godMode === undefined && 'border-dashed text-muted-foreground')}
+                        >
+                          {selectedPlayerPowers?.godMode === undefined ? t('powers.unknown') : selectedPlayerPowers.godMode ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
                       <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
-                        <Button
-                          variant={selectedPlayerPowers?.godMode ? 'default' : 'outline'}
-                          size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
-                          onClick={() => handleGodMode(!selectedPlayerPowers?.godMode)}
-                        >
-                          {selectedPlayerPowers?.godMode ? t('powers.disable') : t('powers.enable')}
-                        </Button>
+                        {selectedPlayerPowers?.godMode === undefined ? (
+                          // Nothing has reported this player's real current state yet --
+                          // true on every page load until the operator toggles it once
+                          // this session (no fetch populates playerPowers, only the
+                          // optimistic update after a bridge-confirmed toggle). A single
+                          // "Enable" button here would silently assume "currently off",
+                          // which is exactly the state the operator can't actually see.
+                          // Offering both directions keeps each button's own outcome
+                          // predictable instead of guessing one on the operator's behalf.
+                          <div className="flex items-center gap-1.5">
+                            <Button variant="outline" size="sm" disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools} onClick={() => handleGodMode(true)}>
+                              {t('powers.enable')}
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools} onClick={() => handleGodMode(false)}>
+                              {t('powers.disable')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant={selectedPlayerPowers.godMode ? 'default' : 'outline'}
+                            size="sm"
+                            disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
+                            onClick={() => handleGodMode(!selectedPlayerPowers.godMode)}
+                          >
+                            {selectedPlayerPowers.godMode ? t('powers.disable') : t('powers.enable')}
+                          </Button>
+                        )}
                       </DisabledReason>
                     </div>
                   </div>
@@ -2950,20 +3014,34 @@ export default function Players() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {selectedPlayer && selectedPlayerPowers?.invisible !== undefined && (
-                        <Badge variant={selectedPlayerPowers.invisible ? 'default' : 'secondary'} className="text-xs">
-                          {selectedPlayerPowers.invisible ? t('powers.on') : t('powers.off')}
+                      {selectedPlayer && (
+                        <Badge
+                          variant={selectedPlayerPowers?.invisible === undefined ? 'outline' : selectedPlayerPowers.invisible ? 'default' : 'secondary'}
+                          className={cn('text-xs', selectedPlayerPowers?.invisible === undefined && 'border-dashed text-muted-foreground')}
+                        >
+                          {selectedPlayerPowers?.invisible === undefined ? t('powers.unknown') : selectedPlayerPowers.invisible ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
                       <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
-                        <Button
-                          variant={selectedPlayerPowers?.invisible ? 'default' : 'outline'}
-                          size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
-                          onClick={() => handleInvisible(!selectedPlayerPowers?.invisible)}
-                        >
-                          {selectedPlayerPowers?.invisible ? t('powers.disable') : t('powers.enable')}
-                        </Button>
+                        {selectedPlayerPowers?.invisible === undefined ? (
+                          <div className="flex items-center gap-1.5">
+                            <Button variant="outline" size="sm" disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools} onClick={() => handleInvisible(true)}>
+                              {t('powers.enable')}
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools} onClick={() => handleInvisible(false)}>
+                              {t('powers.disable')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant={selectedPlayerPowers.invisible ? 'default' : 'outline'}
+                            size="sm"
+                            disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
+                            onClick={() => handleInvisible(!selectedPlayerPowers.invisible)}
+                          >
+                            {selectedPlayerPowers.invisible ? t('powers.disable') : t('powers.enable')}
+                          </Button>
+                        )}
                       </DisabledReason>
                     </div>
                   </div>
@@ -2980,20 +3058,34 @@ export default function Players() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {selectedPlayer && selectedPlayerPowers?.noclip !== undefined && (
-                        <Badge variant={selectedPlayerPowers.noclip ? 'default' : 'secondary'} className="text-xs">
-                          {selectedPlayerPowers.noclip ? t('powers.on') : t('powers.off')}
+                      {selectedPlayer && (
+                        <Badge
+                          variant={selectedPlayerPowers?.noclip === undefined ? 'outline' : selectedPlayerPowers.noclip ? 'default' : 'secondary'}
+                          className={cn('text-xs', selectedPlayerPowers?.noclip === undefined && 'border-dashed text-muted-foreground')}
+                        >
+                          {selectedPlayerPowers?.noclip === undefined ? t('powers.unknown') : selectedPlayerPowers.noclip ? t('powers.on') : t('powers.off')}
                         </Badge>
                       )}
                       <DisabledReason reason={!canGmTools ? t('permissions.noGmTools') : (selectedPlayer && !bridgeConnected ? t('powers.bridgeRequiredTooltip') : null)}>
-                        <Button
-                          variant={selectedPlayerPowers?.noclip ? 'default' : 'outline'}
-                          size="sm"
-                          disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
-                          onClick={() => handleNoclip(!selectedPlayerPowers?.noclip)}
-                        >
-                          {selectedPlayerPowers?.noclip ? t('powers.disable') : t('powers.enable')}
-                        </Button>
+                        {selectedPlayerPowers?.noclip === undefined ? (
+                          <div className="flex items-center gap-1.5">
+                            <Button variant="outline" size="sm" disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools} onClick={() => handleNoclip(true)}>
+                              {t('powers.enable')}
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools} onClick={() => handleNoclip(false)}>
+                              {t('powers.disable')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant={selectedPlayerPowers.noclip ? 'default' : 'outline'}
+                            size="sm"
+                            disabled={!selectedPlayer || loading || !bridgeConnected || !canGmTools}
+                            onClick={() => handleNoclip(!selectedPlayerPowers.noclip)}
+                          >
+                            {selectedPlayerPowers.noclip ? t('powers.disable') : t('powers.enable')}
+                          </Button>
+                        )}
                       </DisabledReason>
                     </div>
                   </div>

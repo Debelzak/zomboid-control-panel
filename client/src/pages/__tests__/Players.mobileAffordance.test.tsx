@@ -147,8 +147,31 @@ describe('Players.tsx dossier: mobile-affordance fixes', () => {
     expect(banDesc.className).toContain('line-clamp-2')
     expect(banDesc.className).not.toMatch(/\btruncate\b/)
 
-    const teleportDesc = screen.getByText('B42 MP · may not sync')
+    const teleportDesc = screen.getByText('Build 42 multiplayer · may not sync')
     expect(teleportDesc.className).toContain('line-clamp-2')
+  })
+
+  // 2026-08-31 impeccable pass: the same truncate-vs-line-clamp-2 defect
+  // found again in the same file, this time on the Spawn tab's Give
+  // Items/Spawn Vehicles rows -- confirmed clipping mid-word in the actual
+  // rendered screenshot at both desktop and mobile width ("...without
+  // closing the dial…", "...emergenc…"). These two descriptions render via
+  // <Trans> (the player's name is a separate nested <span>), so unlike the
+  // Ban/Teleport check above, match on the row's structure, not the exact
+  // string -- the text itself is split across multiple DOM nodes.
+  it('#3b Spawn tab Give Items / Spawn Vehicles descriptions clamp to 2 lines instead of truncating to 1', async () => {
+    await setUpFixtures()
+    renderPlayers()
+    await selectTestPlayer()
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Spawn' }), { button: 0 })
+
+    const giveItemsDesc = (await screen.findByText('Give items')).closest('div.flex-1')!.querySelector('p:last-child')!
+    expect(giveItemsDesc.className).toContain('line-clamp-2')
+    expect(giveItemsDesc.className).not.toMatch(/\btruncate\b/)
+
+    const spawnVehiclesDesc = screen.getByText('Spawn vehicles').closest('div.flex-1')!.querySelector('p:last-child')!
+    expect(spawnVehiclesDesc.className).toContain('line-clamp-2')
+    expect(spawnVehiclesDesc.className).not.toMatch(/\btruncate\b/)
   })
 
   it('#7 Activity Log details are reachable even where the dedicated column is hidden', async () => {

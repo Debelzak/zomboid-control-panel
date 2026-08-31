@@ -30,6 +30,7 @@
     "peakToday": "Höchststand heute",
     "roster": "Liste",
     "rosterCaption": "gesehen",
+    "rosterTip": "Spieler, mit denen du dich schon einmal verbunden hast, aktuell offline. Jemand, der gerade online ist, wird hier erst nach der Trennung gezählt — deshalb kann diese Zahl 0 sein, während oben eine Spielerkarte live angezeigt wird.",
     "bannedLabel": "Gebannte SteamIDs",
     "bannedManage": "verwalten",
     "bannedAria": "{{count}} gebannte SteamIDs anzeigen"
@@ -151,7 +152,9 @@
     "boredom": "Langeweile",
     "unhappiness": "Unzufriedenheit",
     "pain": "Schmerz",
-    "wetness": "Nässe"
+    "wetness": "Nässe",
+    "otherStatsLabel": "Weitere Werte",
+    "otherStatsTip": "Als reine Zahlen angezeigt, nicht als Balken wie die Werte oben: PanelBridge sendet diese Werte, aber es ist nicht für jeden von ihnen bestätigt, ob eine 0-1- oder eine 0-100-Skala verwendet wird. Ein farbiger Balken müsste die Skala raten, und ein selbstbewusst falscher Schweregrad ist schlimmer als gar keiner."
   },
   "actionTiles": {
     "kickDesc": "Spieler mit Grund kicken",
@@ -159,7 +162,7 @@
     "accessLevelLabel": "Zugriffsebene",
     "accessLevelDesc": "Admin · Mod · Benutzer",
     "teleportLabel": "Teleport",
-    "teleportDesc": "B42 MP · synchronisiert eventuell nicht",
+    "teleportDesc": "Build 42 Multiplayer · synchronisiert eventuell nicht",
     "voiceBanLabel": "Voice-Bann",
     "voiceBanTooltip": "Schaltet einen Spieler im Ingame-Voice-Chat stumm oder gibt ihn frei. Er bleibt verbunden, kann aber nicht mehr im Nahbereich sprechen.",
     "steamIdBanLabel": "SteamID-Bann",
@@ -264,12 +267,12 @@
   "spawn": {
     "giveItemsTitle": "Items geben",
     "browserBadge": "Browser",
-    "giveItemsDescWithPlayer": "Waffen, Nahrung, Medizin, Werkzeug — gib <1>{{player}}</1> so viele Items, wie du möchtest, ohne den Dialog zu schließen.",
-    "giveItemsDescNoPlayer": "Wähle zuerst einen Spieler, dann durchsuche den vollständigen Item-Katalog, um sein Inventar zu füllen.",
+    "giveItemsDescWithPlayer": "Waffen, Nahrung, Medizin, Werkzeug für {{player}}.",
+    "giveItemsDescNoPlayer": "Wähle einen Spieler, dann durchsuche den Katalog.",
     "browse": "Durchsuchen",
     "spawnVehiclesTitle": "Fahrzeuge spawnen",
-    "spawnVehiclesDescWithPlayer": "Limousinen, Lkw, Einsatzfahrzeuge, Militär — spawne sie nacheinander in der Nähe von <1>{{player}}</1>.",
-    "spawnVehiclesDescNoPlayer": "Spawnt an der Position des Aufrufenden — wähle stattdessen einen Spieler, um Fahrzeuge in seiner Nähe zu spawnen.",
+    "spawnVehiclesDescWithPlayer": "Limousinen, Lkw, Einsatzfahrzeuge, Militär in der Nähe von {{player}}.",
+    "spawnVehiclesDescNoPlayer": "Spawnt an deiner Position, oder wähle zuerst einen Spieler.",
     "giveXpTitle": "XP geben",
     "giveXpDescWithPlayer": "Erfahrung an <1>{{player}}</1> vergeben",
     "giveXpDescNoPlayer": "Erfahrung an den ausgewählten Spieler vergeben",
@@ -301,6 +304,7 @@
     "killConfirmTypeLabel": "Tippe {{player}} zur Bestätigung",
     "on": "AN",
     "off": "AUS",
+    "unknown": "UNBEKANNT",
     "enable": "Aktivieren",
     "disable": "Deaktivieren",
     "bridgeRequiredTooltip": "Erfordert eine Verbindung zu PanelBridge"

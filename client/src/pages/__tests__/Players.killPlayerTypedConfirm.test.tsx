@@ -170,4 +170,23 @@ describe('Players.tsx: killPlayer is guarded by a typed username confirmation', 
 
     await waitFor(() => expect(killPlayer).toHaveBeenCalledWith('TestPlayer'))
   })
+
+  // 2026-08-31 impeccable pass: ConfirmContext.tsx's requireTypedConfirmation
+  // defaults an omitted `placeholder` to the exact required value -- an
+  // untouched input would show "TestPlayer" in placeholder-gray, pixel-
+  // indistinguishable at a glance from having already typed it (confirmed by
+  // cropping the rendered screenshot and comparing text color against a real
+  // button's text). handleKillPlayer now passes an explicit empty
+  // placeholder so the box is genuinely blank instead.
+  it('the typed-confirmation input has no placeholder text mirroring the required value', async () => {
+    await setUpFixtures(true)
+    renderPlayers()
+    await selectTestPlayerAndOpenPowers()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kill' }))
+    const typedInput = await screen.findByLabelText('Type TestPlayer to confirm')
+
+    expect(typedInput).toHaveAttribute('placeholder', '')
+    expect(typedInput).toHaveValue('')
+  })
 })
