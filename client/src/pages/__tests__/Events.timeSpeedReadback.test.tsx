@@ -96,4 +96,23 @@ describe('Events -- time speed slider reflects the server\'s real multiplier ins
     fireEvent.click(screen.getByRole('button', { name: '24×' }))
     expect(screen.getByText('24x')).toBeTruthy()
   })
+
+  // 2026-08-31 impeccable pass: "apply speed" was the only one of three
+  // structurally identical "apply this card's pending changes to the live
+  // game" buttons on the Events page styled variant="outline" -- Climate
+  // Trim's "Apply All Climate" and Visual's "Apply All Visual" both use the
+  // plain default (solid primary) variant, with no reason for the
+  // difference found in the surrounding code or comments.
+  it('styles "apply speed" the same as the page\'s other Apply-All buttons, not outline', async () => {
+    getGameTime.mockResolvedValue({
+      success: true,
+      data: { hour: 12, day: 5, month: 3, multiplier: 1 },
+    } as never)
+
+    renderEvents()
+    await openTimeSpeedSection()
+
+    const applySpeed = await screen.findByRole('button', { name: /apply speed/i })
+    expect(applySpeed).not.toHaveAttribute('data-variant', 'outline')
+  })
 })

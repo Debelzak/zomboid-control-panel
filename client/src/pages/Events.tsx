@@ -2689,7 +2689,11 @@ export default function Events() {
                   <Button size="sm" onClick={() => { markTimeSpeedDirty(); setTimeSpeed(10) }} variant={timeSpeed === 10 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">10×</Button>
                   <Button size="sm" onClick={() => { markTimeSpeedDirty(); setTimeSpeed(24) }} variant={timeSpeed === 24 ? 'secondary' : 'outline'} className="h-8 text-xs font-medium tabular-nums">24×</Button>
                 </div>
-                <Button variant="outline" onClick={() => handleAction('Set time speed', setGameTimeSpeed)} disabled={loading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
+                {/* No explicit variant, matching Apply All Climate/Visual below --
+                    all three are the same shape (apply this card's pending changes
+                    to the live game) and had no reason in the code for one of the
+                    three to be styled differently (2026-08-31 impeccable pass). */}
+                <Button onClick={() => handleAction('Set time speed', setGameTimeSpeed)} disabled={loading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium">
                   {loading === 'Set time speed' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
                   {t('timespeed.applySpeed')}
                 </Button>
