@@ -8,8 +8,18 @@
  *   - db.json.tmp rename ENOENT races (two writers, one shared tmp name)
  *
  * Behaviour:
- *   - acquireLock() reads any existing lock file, checks if that PID is
- *     still alive AND is a panel process, and bails out if so.
+ *   - acquireLock() reads any existing lock file and bails out if that PID
+ *     is still alive. "Alive" is a bare process.kill(pid, 0) liveness probe
+ *     -- it does NOT verify the PID is actually a panel process (bughunt-
+ *     2026-08-31-c: this comment claimed it did, from this file's very
+ *     first commit; the code never did). On a system that reuses PIDs
+ *     quickly (small pid_max, Windows), a panel crash followed by a fast
+ *     restart can land on a PID the OS has already handed to an unrelated
+ *     process, and this would refuse to start believing it's a duplicate
+ *     instance. Left as a known limitation rather than added here: a real
+ *     fix means reading the target process's argv/image name, which has no
+ *     single cross-platform primitive and is a bigger change than this
+ *     comment correction.
  *   - Stale locks (process gone) are silently replaced.
  *   - releaseLock() removes the file; registered for process exit signals.
  */
