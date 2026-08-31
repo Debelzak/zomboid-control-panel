@@ -802,6 +802,38 @@ const VIEWS = [
       await page.route('**/api/panel-bridge/status', (route) => route.fulfill(json({ configured: false, isRunning: false, modConnected: false })))
     },
   },
+  // bug-hunt-2026-08-31 ("error, validation and failure states"): a FAILED
+  // SAVE, not just a failed load -- distinct state, never captured. Mocks
+  // PUT /api/config/app-settings to fail with a real, uncoded 5xx (no
+  // `code` field) so this exercises the exact getUserErrorMessage() ->
+  // wrapUncodedServerError() path fixed this pass (365a18ee), this time in
+  // its actual toast context rather than an EmptyState -- proof the fix
+  // generalizes past the one branch it was found in. Toggles a plain
+  // boolean switch (no client-side validation to fight) to make the page
+  // dirty, then clicks the header Save button.
+  {
+    name: 'settings:save-failed',
+    // 'Enable public IP lookup' lives in the Access tab's TabsContent
+    // (Settings.tsx:2526-2789), not General's (2400-2526) -- both were
+    // swept by one grep range on the first pass, which is what pointed
+    // this view at the wrong tab initially (verified the hard way: this
+    // tool's own click failed the exact same way on all 4 shots, not the
+    // usual mixed contention-timeout signature, which is what said "wrong
+    // element, not a slow machine" and sent me back to re-check the tab
+    // boundary rather than retrying).
+    path: '/settings?tab=access',
+    beforeGoto: async (page) => {
+      await page.route('**/api/config/app-settings', (route) => {
+        if (route.request().method() !== 'PUT') return route.continue()
+        return route.fulfill(errorJson(500, 'Disk write failed'))
+      })
+    },
+    interact: async (page) => {
+      await page.getByRole('switch', { name: 'Enable public IP lookup' }).click()
+      await page.getByRole('button', { name: 'Save Settings' }).click()
+      await page.waitForTimeout(500)
+    },
+  },
   // bug-hunt-2026-08-31 ("error, validation and failure states"): Users.tsx
   // (rendered embedded on this tab) has two distinct, real, never-
   // photographed empty states -- permissionDenied (ApiError.status===403)
