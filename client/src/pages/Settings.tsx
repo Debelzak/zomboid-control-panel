@@ -4137,7 +4137,7 @@ export default function Settings() {
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                    <div id="sftp-panelbridge" className="rounded-md border border-border/60 p-4 space-y-3">
+                    <div id="rcon-command-connection" className="rounded-md border border-border/60 p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium">{t("bridge.rconCommandTitle")}</p>
@@ -4163,7 +4163,7 @@ export default function Settings() {
                       </RouterLink>
                     </div>
 
-                    <div className="rounded-md border border-border/60 p-4 space-y-3">
+                    <div id="sftp-panelbridge" className="rounded-md border border-border/60 p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium">{t("bridge.sftpFilesTitle")}</p>
