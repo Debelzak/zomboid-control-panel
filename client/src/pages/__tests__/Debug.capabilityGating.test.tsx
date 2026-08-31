@@ -512,7 +512,7 @@ describe('Debug.tsx: the PanelBridge tab gates its own data on bridge.diagnostic
     mockedApiFetch.mockImplementation(async (endpoint: string) => {
       if (endpoint.startsWith('/debug/diagnostics')) return jsonResponse(diagnosticsFixture)
       if (endpoint.startsWith('/panel-bridge/status')) {
-        return jsonResponse({ isRunning: true, modConnected: true })
+        return jsonResponse({ isRunning: true, modConnected: true, connection: { canSendCommands: true } })
       }
       if (endpoint.startsWith('/panel-bridge/debug/stats')) {
         return jsonResponse({

@@ -988,6 +988,12 @@ export default function Debug() {
   // /api/debug/worldmap aggregation -- this tab only needs "is the bridge
   // service up and is the mod connected", not tile/save diagnostics.
   const [bridgeDiagConnected, setBridgeDiagConnected] = useState(false);
+  // Whether the file-level bridge connection can actually send commands
+  // right now (getConnectionDiagnostics() server-side) -- narrower than
+  // bridgeDiagConnected's mod-alive flag, used only to keep the badge from
+  // saying "connected" while the Stats card says the connection is
+  // unhealthy. See the reconciliation comment in checkBridgeDiagStatus.
+  const [bridgeDiagHealthy, setBridgeDiagHealthy] = useState(false);
   const [bridgeDiagRunning, setBridgeDiagRunning] = useState(false);
   const [bridgeDiagStatusLoading, setBridgeDiagStatusLoading] = useState(true);
   const [bridgeDiagPermissionDenied, setBridgeDiagPermissionDenied] =
@@ -1848,9 +1854,20 @@ export default function Debug() {
       const data = await res.json();
       setBridgeDiagRunning(data?.isRunning === true);
       setBridgeDiagConnected(data?.modConnected === true);
+      // modConnected alone can lag: the mod is still marked "alive" for a
+      // few failed polls after the file-level connection has already gone
+      // bad. data.connection is the same source the Stats card's
+      // "unhealthy" error reads (getConnectionDiagnostics() server-side) --
+      // fold it into the BADGE specifically so it never claims "connected"
+      // while the card underneath it says otherwise. Left bridgeDiagConnected
+      // itself alone: it also gates the auto-probe effect and every probe
+      // button's disabled state, which is existing, tested behavior this
+      // finding never called into question.
+      setBridgeDiagHealthy(data?.connection?.canSendCommands === true);
     } catch (error) {
       reportClientError("Failed to check bridge status for the Bridge tab.", error);
       setBridgeDiagRunning(false);
+      setBridgeDiagHealthy(false);
       setBridgeDiagConnected(false);
     } finally {
       setBridgeDiagStatusLoading(false);
@@ -3369,6 +3386,14 @@ export default function Debug() {
               wm?.bridge?.statusAgeMs !== undefined
                 ? wm.bridge.statusAgeMs + sinceFetchMs
                 : null;
+            // The server's modConnected only tells us a status object exists,
+            // not that the last poll actually succeeded -- it can keep
+            // reading "Yes" while consecutiveFailures climbs and the
+            // heartbeat never updates. Fold that same detail (already shown
+            // a few rows down) into the headline so the two can't disagree.
+            const modActuallyConnected =
+              wm?.bridge?.modConnected === true &&
+              (wm?.bridge?.consecutiveFailures ?? 0) === 0;
             // Most actionable items first so end users see what to fix.
             const STATUS_ORDER: Record<DiagCheck["status"], number> = {
               fail: 0,
@@ -3442,7 +3467,7 @@ export default function Debug() {
                 lines.push("");
                 lines.push("PanelBridge:");
                 lines.push(
-                  `  configured=${wm.bridge.configured} running=${wm.bridge.isRunning} mod=${wm.bridge.modConnected} heartbeatAge=${fmtAge(liveHeartbeatAge)}`,
+                  `  configured=${wm.bridge.configured} running=${wm.bridge.isRunning} mod=${modActuallyConnected} heartbeatAge=${fmtAge(liveHeartbeatAge)}`,
                 );
                 if (wm.bridge.bridgePath)
                   lines.push(`  path=${wm.bridge.bridgePath}`);
@@ -3923,7 +3948,7 @@ export default function Debug() {
                                 {t("worldMapTab.modConnectedLabel")}
                               </div>
                               <div className="font-medium">
-                                {wm.bridge.modConnected ? t("common.yes") : t("common.no")}
+                                {modActuallyConnected ? t("common.yes") : t("common.no")}
                               </div>
                             </div>
                             {(() => {
@@ -6650,7 +6675,7 @@ export default function Debug() {
                   </p>
                 </div>
                 <BridgeStatusBadge
-                  connected={bridgeDiagConnected}
+                  connected={bridgeDiagConnected && bridgeDiagHealthy}
                   running={bridgeDiagRunning}
                   loading={bridgeDiagStatusLoading}
                   interactive={false}
