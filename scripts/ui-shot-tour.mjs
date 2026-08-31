@@ -181,7 +181,20 @@ let rateLimitResetSeconds = null
 // before this script gets to check again, so pacing on "remaining === 0"
 // would still let that burst tip the server over into a real 429 mid-view.
 // Stopping with headroom to spare keeps the whole burst inside the limit.
-const RATE_LIMIT_SAFE_FLOOR = 20
+//
+// 20 was NOT enough headroom -- confirmed empirically, not assumed: a run
+// with this floor still produced a real 429 on settings-security (desktop/
+// light) in the actual output, with no pacing wait logged in the 3 views
+// immediately before it. Root cause: this check only runs once per view
+// (right before its goto), but the tracked `rateLimitRemaining` only
+// updates when a response actually arrives, so right after a pacing wait
+// resets it to null, the next view proceeds ungated until its own first
+// response lands -- and a single settings tab observed firing 3+ /api/
+// calls on mount (CORS diagnostics, server list, its own tab data) is
+// enough on its own to cross a thin floor mid-view. 80 leaves enough
+// headroom to absorb several such views' worth of burst between checks
+// rather than the single view this was tuned against.
+const RATE_LIMIT_SAFE_FLOOR = 80
 
 function trackRateLimitHeaders(response) {
   try {
