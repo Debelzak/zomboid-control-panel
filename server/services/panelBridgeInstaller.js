@@ -78,25 +78,40 @@ export function canAutoInstall(server) {
   return Boolean(resolveSourcePath());
 }
 
-function readVersion(filePath) {
+function extractVersion(content) {
+  return (content.match(VERSION_REGEX) || [])[1] || null;
+}
+
+function readContent(filePath) {
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    return (content.match(VERSION_REGEX) || [])[1] || null;
+    return fs.readFileSync(filePath, 'utf8');
   } catch (error) {
-    log.debug(`Could not read version from ${filePath}: ${error.message}`);
+    log.debug(`Could not read ${filePath}: ${error.message}`);
     return null;
   }
 }
 
+function readVersion(filePath) {
+  const content = readContent(filePath);
+  return content ? extractVersion(content) : null;
+}
+
+// needsUpdate is decided by comparing file CONTENT, not the hand-maintained
+// VERSION label inside it. Three consecutive real bridge fixes (2026-08-31,
+// operator-fix-the-three, json.decode/runEventSequence/stopWeather) shipped
+// without a version bump, so a VERSION-only comparison silently reported
+// "up to date" while the fixes never reached any server this gates. VERSION
+// is kept only as a human-readable label on the returned status.
 export function checkBridgeInstalled(server) {
   const sourcePath = resolveSourcePath();
   const targetPath = resolveTargetPath(server);
   const installed = Boolean(targetPath && fs.existsSync(targetPath));
-  const sourceVersion = sourcePath ? readVersion(sourcePath) : null;
-  const targetVersion = installed ? readVersion(targetPath) : null;
+  const sourceContent = sourcePath ? readContent(sourcePath) : null;
+  const targetContent = installed ? readContent(targetPath) : null;
+  const targetVersion = targetContent ? extractVersion(targetContent) : null;
   const needsUpdate = Boolean(
-    installed && sourceVersion &&
-    (!targetVersion || compareModVersions(sourceVersion, targetVersion) > 0),
+    installed && sourceContent !== null &&
+    (targetContent === null || targetContent !== sourceContent),
   );
 
   return { installed, version: targetVersion, needsUpdate, sourcePath, targetPath };
@@ -128,12 +143,26 @@ export function installBridge(server) {
 
   try {
     const sourceContent = fs.readFileSync(sourcePath, 'utf8');
-    const sourceVersion = readVersion(sourcePath);
+    const sourceVersion = extractVersion(sourceContent);
     if (!sourceVersion) {
       return { success: false, error: 'PanelBridge source has no readable version.' };
     }
     if (fs.existsSync(targetPath)) {
-      const targetVersion = readVersion(targetPath);
+      const targetContent = fs.readFileSync(targetPath, 'utf8');
+      // Fast path: byte-identical already, regardless of what VERSION says.
+      // A same-version-different-content install (the exact shape that let
+      // three unbumped fixes go undelivered) still needs to fall through to
+      // the write below -- only true content equality short-circuits here.
+      if (targetContent === sourceContent) {
+        return {
+          success: true,
+          targetPath,
+          version: sourceVersion,
+          updated: false,
+          message: `Existing PanelBridge v${sourceVersion} already matches the bundled version; left unchanged.`,
+        };
+      }
+      const targetVersion = extractVersion(targetContent);
       if (targetVersion && compareModVersions(targetVersion, sourceVersion) > 0) {
         return {
           success: true,
