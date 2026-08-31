@@ -2868,9 +2868,19 @@ export default function Debug() {
             Settings' version of this same fix, there's no lg: breakpoint
             where this page switches to a vertical sidebar -- the strip stays
             horizontal (and can still overflow) at every width, so the scroll
-            cue below is never lg:hidden. */}
+            cue below is never lg:hidden.
+            justify-start overrides TabsList's own justify-center: centering
+            an overflowing row overflows symmetrically on both sides, and
+            scrollLeft can't go negative, so whatever hangs off the left edge
+            (including the default-active first tab) is permanently
+            unreachable. justify-[safe_center] would disarm this app-wide,
+            but this Tailwind's justifyContent corePlugin is a fixed
+            addUtilities set (start/end/center/between/around/evenly/normal),
+            not matchUtilities -- arbitrary values are silently inert for it,
+            confirmed by building the CSS and finding no rule emitted for
+            .justify-\[safe_center\]. Narrow, working override here instead. */}
         <div className="relative">
-        <TabsList className="flex h-auto flex-nowrap items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
+        <TabsList className="flex h-auto flex-nowrap items-center justify-start gap-1 overflow-x-auto rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
           {/* Zone: Now */}
           <TabsTrigger value="diagnostics" className="gap-2 shrink-0">
             <CheckCircle className="w-4 h-4" />
