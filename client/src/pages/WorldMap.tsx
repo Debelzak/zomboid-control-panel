@@ -79,6 +79,7 @@ import { cn, copyText } from '@/lib/utils'
 import { createInFlightGate } from '@/lib/inFlightGate'
 import { resolveFallbackTile, conservativeRenderedMaxLevel } from './worldMapTileFallback'
 import { buildTileQuery } from './worldMapTileUrl'
+import { mapConfigsEqual } from './worldMapConfigEqual'
 import { bridgeSupportsPlayerStatus } from './worldMapBridgeVersion'
 import { diagnoseTileFailure, tileFailureCopyKeys, type TileFailureDiagnosis } from './worldMapTileFailureDiagnosis'
 
@@ -182,7 +183,7 @@ const AIRDROP_PRESETS = [
 // Map tiles use the browser-direct pzmap.org path when available. The backend
 // proxy remains the fallback for cached tiles and restricted browsers.
 
-interface MapConfig {
+export interface MapConfig {
   tileUrl: string
   tileSize: number
   fullWidth: number
@@ -203,6 +204,7 @@ interface MapConfig {
   defaultScale: number
   label: string
 }
+
 
 const MAP_B42: MapConfig = {
   tileUrl: '/api/map/tiles',
@@ -806,17 +808,13 @@ export default function WorldMap() {
       // can only be built once that's known.
       const targetCfg = isB41 ? MAP_B41 : b42ConfigFor(await mapApi.resolve())
       if (cancelledRef.current) return
-      // Compare geometry, not just B41/B42: the initial state is a B42
-      // placeholder, so a label check alone would skip applying the
-      // resolved build's real dimensions.
+      // Compare the WHOLE config, not just B41/B42 or a hand-picked field
+      // list: the initial state is a B42 placeholder, so a label-only check
+      // would skip applying the resolved build's real dimensions -- and a
+      // partial field list re-arms the identical bug for the next field
+      // anyone adds. See mapConfigsEqual's own comment above MapConfig.
       const cur = mapCfgRef.current
-      if (
-        cur.label === targetCfg.label &&
-        cur.tileSize === targetCfg.tileSize &&
-        cur.fullWidth === targetCfg.fullWidth &&
-        cur.isoX0 === targetCfg.isoX0 &&
-        cur.isoY0 === targetCfg.isoY0
-      ) return
+      if (mapConfigsEqual(cur, targetCfg)) return
 
       setMapCfg(targetCfg)
       mapCfgRef.current = targetCfg
