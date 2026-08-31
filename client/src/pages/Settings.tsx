@@ -3782,7 +3782,15 @@ export default function Settings() {
                   </div>
                   {bridgeStatus && (
                     <BridgeStatusBadge
-                      connected={bridgeStatus.modConnected}
+                      // modConnected alone is whether the mod is alive
+                      // (debounced -- stays true through a brief poll
+                      // miss). canSendCommands is a live, undebounced
+                      // check of whether the panel can actually write to
+                      // the bridge (dir writable, status file fresh) --
+                      // it can go false while modConnected is still true.
+                      // Badge must reflect both, or it reads "Connected"
+                      // right next to a Ping button that's about to throw.
+                      connected={bridgeStatus.modConnected && bridgeStatus.connection?.canSendCommands === true}
                       running={bridgeStatus.isRunning}
                       loading={bridgeLoading}
                       bridgePath={bridgeStatus.bridgePath}
@@ -4107,7 +4115,11 @@ export default function Settings() {
                       variant="outline"
                       size="sm"
                       className="gap-2"
-                      disabled={!bridgeStatus?.modConnected || pinging}
+                      // Server's sendCommand() throws "Bridge file connection
+                      // is unhealthy" whenever !canSendCommands, regardless of
+                      // modConnected -- gating on modConnected alone leaves
+                      // this clickable while it's guaranteed to throw.
+                      disabled={!bridgeStatus?.modConnected || bridgeStatus?.connection?.canSendCommands !== true || pinging}
                     >
                       {pinging ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
