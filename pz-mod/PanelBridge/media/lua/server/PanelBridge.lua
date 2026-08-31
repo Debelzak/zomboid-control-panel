@@ -2491,7 +2491,12 @@ handlers.setSnow = function(args)
 
     success, err = pcall(function()
         local applied = false
-        -- Admin override is the robust path.
+        -- Admin override is the robust (sticky) path -- see applyClimateFloat's
+        -- comment for why its own effective-value read-back is stale
+        -- immediately after setAdminValue. setPrecipitationIsSnow below is
+        -- what actually makes this handler verifiable: confirmed via
+        -- javap -c, it writes ClimateBool.finalValue DIRECTLY (no
+        -- calculate() involved), so reading it straight back is safe.
         local snowBool = PanelBridge.tryGet(climate, "getClimateBool", 0) -- BOOL_IS_SNOW = 0
         if snowBool and PanelBridge.invoke(snowBool, "setEnableAdmin", true)
             and PanelBridge.invoke(snowBool, "setAdminValue", enabled) then
@@ -2508,10 +2513,28 @@ handlers.setSnow = function(args)
         return false, nil, "Failed to set snow: " .. tostring(err)
     end
 
-    return true, { message = "Snow " .. (enabled and "enabled (with precipitation)" or "disabled") }
+    local isSnowNow = PanelBridge.tryGet(climate, "getPrecipitationIsSnow")
+    local verified
+    if isSnowNow == nil then
+        verified = nil
+    else
+        verified = isSnowNow == enabled
+    end
+
+    return PanelBridge.verifiedResult(verified,
+        { message = "Snow " .. (enabled and "enabled (with precipitation)" or "disabled") },
+        "Snow call succeeded but did not take effect")
 end
 
 -- Start rain
+--
+-- 2026-08-31 bug hunt follow-up. Verifies via getPrecipitationIntensity(),
+-- safely -- unlike the plain climate-float admin-override handlers above,
+-- transmitServerStartRain (confirmed via javap -c) calls the private
+-- updateOnTick() internally before returning, so precipitationIntensity's
+-- finalValue is genuinely fresh by the time this Lua call gets control back
+-- -- no staleness risk here, this is the same mechanism stopWeather's own
+-- isRaining() read-back already relies on for transmitServerStopRain.
 handlers.startRain = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2526,10 +2549,27 @@ handlers.startRain = function(args)
         return false, nil, "Failed to start rain: " .. tostring(err)
     end
 
-    return true, { message = "Rain started", intensity = intensity }
+    local actualIntensity = PanelBridge.tryGet(climate, "getPrecipitationIntensity")
+    local verified
+    if actualIntensity == nil then
+        verified = nil
+    else
+        -- setAdminValue clamps to the float's own [min,max] (0..1 here per
+        -- this handler's own existing comment), so compare against the
+        -- clamped expectation, not the raw request.
+        local expected = intensity
+        if expected < 0 then expected = 0 end
+        if expected > 1 then expected = 1 end
+        verified = math.abs(actualIntensity - expected) < 0.01
+    end
+
+    return PanelBridge.verifiedResult(verified, { message = "Rain started", intensity = intensity },
+        "Start rain call succeeded but precipitation did not take effect")
 end
 
 -- Stop rain
+-- Verifies via isRaining() -- same reasoning as startRain above and
+-- stopWeather's own use of this exact call.
 handlers.stopRain = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2542,7 +2582,18 @@ handlers.stopRain = function(args)
         return false, nil, "Failed to stop rain: " .. tostring(err)
     end
 
-    return true, { message = "Rain stopped" }
+    local stillRaining = PanelBridge.tryGet(climate, "isRaining")
+    local verified
+    if stillRaining == nil then
+        verified = nil
+    elseif stillRaining == false then
+        verified = true
+    else
+        verified = false
+    end
+
+    return PanelBridge.verifiedResult(verified, { message = "Rain stopped" },
+        "Stop rain call succeeded but it is still raining")
 end
 
 -- Trigger lightning
@@ -2576,17 +2627,48 @@ handlers.triggerLightning = function(args)
 end
 
 -- Applies a climate float through the admin override, falling back to the
--- direct setter. Returns the method used, or nil when neither is available.
+-- direct setter. Returns the method used (or nil), and a verified tri-state
+-- (true/false/nil).
+--
+-- 2026-08-31 bug hunt follow-up (clearing the PROVISIONAL block). Verifies
+-- via getAdminValue(), NOT getFinalValue() -- confirmed via javap -c against
+-- the real jar: setAdminValue/setEnableAdmin never call calculate(), which
+-- is the only thing that propagates adminValue into finalValue (the value
+-- the game actually renders/simulates with). calculate() only runs from
+-- ClimateManager's own tick loop -- the private updateOnTick() (unreachable
+-- from Lua at all) or the public but far heavier update() (runs the full
+-- per-tick simulation -- sandbox overrides, weatherPeriod, OnClimateTick --
+-- unsafe to call manually mid-handler). Reading getFinalValue() immediately
+-- after setting would risk reading pre-update stale data -- neither a real
+-- confirmation nor a real refutation, and a false negative here (reporting
+-- a genuinely-working button as failed) would be worse than the ceiling
+-- this replaces. getAdminValue() is a trivial field read of exactly what
+-- setAdminValue just wrote (after the game's own min/max clamp) -- safe,
+-- immediate, no staleness -- and it catches a real failure class
+-- pcall-not-throwing cannot: setAdminValue silently CLAMPS an out-of-range
+-- request instead of throwing, so a caller-requested value outside the
+-- float's real [min,max] would otherwise report success while quietly
+-- applying a different value.
 local function applyClimateFloat(climate, floatIndex, value, setterName)
     local cf = PanelBridge.tryGet(climate, "getClimateFloat", floatIndex)
     if cf and PanelBridge.invoke(cf, "setEnableAdmin", true)
         and PanelBridge.invoke(cf, "setAdminValue", value) then
-        return "climateFloat"
+        local adminValue = PanelBridge.tryGet(cf, "getAdminValue")
+        local verified
+        if adminValue == nil then
+            verified = nil
+        else
+            verified = math.abs(adminValue - value) < 0.01
+        end
+        return "climateFloat", verified
     end
     if PanelBridge.invoke(climate, setterName, value) then
-        return setterName
+        -- Legacy/fallback direct setter -- no admin-value field to compare
+        -- against, so this path stays unverifiable, same ceiling it always
+        -- had.
+        return setterName, nil
     end
-    return nil
+    return nil, nil
 end
 
 -- Set daylight strength (for darkness control)
@@ -2598,8 +2680,10 @@ handlers.setDayLight = function(args)
 
     local value = tonumber(args.value) or 1.0
 
+    local verified
     local success, err = pcall(function()
-        local used = applyClimateFloat(climate, 11, value, "setDayLightStrength") -- FLOAT_DAYLIGHT_STRENGTH = 11
+        local used
+        used, verified = applyClimateFloat(climate, 11, value, "setDayLightStrength") -- FLOAT_DAYLIGHT_STRENGTH = 11
         if not used then error("No method to set daylight") end
     end)
 
@@ -2607,7 +2691,8 @@ handlers.setDayLight = function(args)
         return false, nil, "Failed to set daylight: " .. tostring(err)
     end
 
-    return true, { message = "Daylight set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Daylight set to " .. value },
+        "Daylight call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set night strength
@@ -2619,8 +2704,10 @@ handlers.setNightStrength = function(args)
 
     local value = tonumber(args.value) or 0.0
 
+    local verified
     local success, err = pcall(function()
-        local used = applyClimateFloat(climate, 2, value, "setNightStrength") -- FLOAT_NIGHT_STRENGTH = 2
+        local used
+        used, verified = applyClimateFloat(climate, 2, value, "setNightStrength") -- FLOAT_NIGHT_STRENGTH = 2
         if not used then error("No method to set night strength") end
     end)
 
@@ -2628,7 +2715,8 @@ handlers.setNightStrength = function(args)
         return false, nil, "Failed to set night strength: " .. tostring(err)
     end
 
-    return true, { message = "Night strength set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Night strength set to " .. value },
+        "Night strength call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set desaturation (color saturation control)
@@ -2640,8 +2728,10 @@ handlers.setDesaturation = function(args)
 
     local value = tonumber(args.value) or 0.0
 
+    local verified
     local success, err = pcall(function()
-        local used = applyClimateFloat(climate, 0, value, "setDesaturation") -- FLOAT_DESATURATION = 0
+        local used
+        used, verified = applyClimateFloat(climate, 0, value, "setDesaturation") -- FLOAT_DESATURATION = 0
         if not used then error("No method to set desaturation") end
     end)
 
@@ -2649,7 +2739,8 @@ handlers.setDesaturation = function(args)
         return false, nil, "Failed to set desaturation: " .. tostring(err)
     end
 
-    return true, { message = "Desaturation set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Desaturation set to " .. value },
+        "Desaturation call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set view distance (fog approximation)
@@ -2661,8 +2752,10 @@ handlers.setViewDistance = function(args)
 
     local value = tonumber(args.value) or 1.0
 
+    local verified
     local success, err = pcall(function()
-        local used = applyClimateFloat(climate, 10, value, "setViewDistance") -- FLOAT_VIEW_DISTANCE = 10
+        local used
+        used, verified = applyClimateFloat(climate, 10, value, "setViewDistance") -- FLOAT_VIEW_DISTANCE = 10
         if not used then error("No method to set view distance") end
     end)
 
@@ -2670,7 +2763,8 @@ handlers.setViewDistance = function(args)
         return false, nil, "Failed to set view distance: " .. tostring(err)
     end
 
-    return true, { message = "View distance set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "View distance set to " .. value },
+        "View distance call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set ambient light
@@ -2682,8 +2776,10 @@ handlers.setAmbient = function(args)
 
     local value = tonumber(args.value) or 1.0
 
+    local verified
     local success, err = pcall(function()
-        local used = applyClimateFloat(climate, 9, value, "setAmbient") -- FLOAT_AMBIENT = 9
+        local used
+        used, verified = applyClimateFloat(climate, 9, value, "setAmbient") -- FLOAT_AMBIENT = 9
         if not used then error("No method to set ambient") end
     end)
 
@@ -2691,7 +2787,27 @@ handlers.setAmbient = function(args)
         return false, nil, "Failed to set ambient: " .. tostring(err)
     end
 
-    return true, { message = "Ambient set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Ambient set to " .. value },
+        "Ambient call succeeded but the admin value did not stick (likely clamped out of range)")
+end
+
+-- Same as applyClimateFloat (see its comment for the getAdminValue() vs
+-- getFinalValue() reasoning) but for floats with NO direct-setter fallback
+-- in the real API -- confirmed via javap -c: unlike setDayLightStrength/
+-- setNightStrength/setDesaturation/setAmbient/setViewDistance,
+-- ClimateManager has no setTemperature/setWind/setFog/setClouds method at
+-- all. The admin override is the only mechanism these floats have.
+local function applyClimateFloatAdminOnly(climate, floatIndex, value)
+    local cf = PanelBridge.tryGet(climate, "getClimateFloat", floatIndex)
+    if not (cf and PanelBridge.invoke(cf, "setEnableAdmin", true)
+        and PanelBridge.invoke(cf, "setAdminValue", value)) then
+        return nil, nil
+    end
+    local adminValue = PanelBridge.tryGet(cf, "getAdminValue")
+    if adminValue == nil then
+        return "climateFloat", nil
+    end
+    return "climateFloat", math.abs(adminValue - value) < 0.01
 end
 
 -- Set temperature (Celsius)
@@ -2715,21 +2831,19 @@ handlers.setTemperature = function(args)
     if value < -50 then value = -50 end
     if value > 50 then value = 50 end
 
+    local verified
     local success, err = pcall(function()
-        local cf = climate:getClimateFloat(4) -- FLOAT_TEMPERATURE = 4
-        if cf then
-            cf:setEnableAdmin(true)
-            cf:setAdminValue(value)
-        else
-            error("No method to set temperature")
-        end
+        local used
+        used, verified = applyClimateFloatAdminOnly(climate, 4, value) -- FLOAT_TEMPERATURE = 4
+        if not used then error("No method to set temperature") end
     end)
 
     if not success then
         return false, nil, "Failed to set temperature: " .. tostring(err)
     end
 
-    return true, { message = "Temperature set to " .. value .. "C" }
+    return PanelBridge.verifiedResult(verified, { message = "Temperature set to " .. value .. "C" },
+        "Temperature call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set wind intensity
@@ -2739,18 +2853,16 @@ handlers.setWind = function(args)
 
     local value = tonumber(args.value) or 0.5 -- 0 to 1
 
+    local verified
     local success, err = pcall(function()
-        local cf = climate:getClimateFloat(6) -- FLOAT_WIND_INTENSITY = 6
-        if cf then
-            cf:setEnableAdmin(true)
-            cf:setAdminValue(value)
-        else
-             error("No method to set wind")
-        end
+        local used
+        used, verified = applyClimateFloatAdminOnly(climate, 6, value) -- FLOAT_WIND_INTENSITY = 6
+        if not used then error("No method to set wind") end
     end)
 
     if not success then return false, nil, "Failed to set wind: " .. tostring(err) end
-    return true, { message = "Wind set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Wind set to " .. value },
+        "Wind call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set fog intensity
@@ -2760,18 +2872,16 @@ handlers.setFog = function(args)
 
     local value = tonumber(args.value) or 0.0 -- 0 (Clear) to 1 (Silent Hill)
 
+    local verified
     local success, err = pcall(function()
-        local cf = climate:getClimateFloat(5) -- FLOAT_FOG_INTENSITY = 5
-        if cf then
-            cf:setEnableAdmin(true)
-            cf:setAdminValue(value)
-        else
-             error("No method to set fog")
-        end
+        local used
+        used, verified = applyClimateFloatAdminOnly(climate, 5, value) -- FLOAT_FOG_INTENSITY = 5
+        if not used then error("No method to set fog") end
     end)
 
     if not success then return false, nil, "Failed to set fog: " .. tostring(err) end
-    return true, { message = "Fog set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Fog set to " .. value },
+        "Fog call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Set cloud intensity
@@ -2781,18 +2891,16 @@ handlers.setClouds = function(args)
 
     local value = tonumber(args.value) or 0.0 -- 0 to 1
 
+    local verified
     local success, err = pcall(function()
-        local cf = climate:getClimateFloat(8) -- FLOAT_CLOUD_INTENSITY = 8
-        if cf then
-            cf:setEnableAdmin(true)
-            cf:setAdminValue(value)
-        else
-             error("No method to set clouds")
-        end
+        local used
+        used, verified = applyClimateFloatAdminOnly(climate, 8, value) -- FLOAT_CLOUD_INTENSITY = 8
+        if not used then error("No method to set clouds") end
     end)
 
     if not success then return false, nil, "Failed to set clouds: " .. tostring(err) end
-    return true, { message = "Clouds set to " .. value }
+    return PanelBridge.verifiedResult(verified, { message = "Clouds set to " .. value },
+        "Clouds call succeeded but the admin value did not stick (likely clamped out of range)")
 end
 
 -- Climate override control - set individual climate float values
@@ -2816,10 +2924,29 @@ handlers.setClimateFloat = function(args)
         return false, nil, "Invalid float ID: " .. floatId
     end
 
+    local verified
     local success, err = pcall(function()
         climateFloat:setEnableAdmin(enable)
         if enable then
             climateFloat:setAdminValue(value)
+            -- See applyClimateFloat's comment for why getAdminValue(), not
+            -- getFinalValue() -- same staleness reasoning, this handler IS
+            -- the generic setter the specific ones wrap.
+            local adminValue = PanelBridge.tryGet(climateFloat, "getAdminValue")
+            if adminValue == nil then
+                verified = nil
+            else
+                verified = math.abs(adminValue - value) < 0.01
+            end
+        else
+            -- Disabling is a trivial, immediate field flip -- safe to
+            -- confirm directly, no calculate()/staleness concern.
+            local stillEnabled = PanelBridge.tryGet(climateFloat, "isEnableAdmin")
+            if stillEnabled == nil then
+                verified = nil
+            else
+                verified = stillEnabled == false
+            end
         end
     end)
 
@@ -2827,16 +2954,55 @@ handlers.setClimateFloat = function(args)
         return false, nil, "Failed to set climate float: " .. tostring(err)
     end
 
-    return true, {
+    return PanelBridge.verifiedResult(verified, {
         message = "Climate float set",
         floatId = floatId,
         value = value,
         enabled = enable,
         name = climateFloat:getName()
-    }
+    }, "Climate float call succeeded but did not take effect")
+end
+
+-- Reads back isEnableAdmin() across the known float IDs (0-12) and the snow
+-- bool -- a trivial field read each, no calculate()/staleness concern
+-- (unlike getFinalValue(), see applyClimateFloat's comment) -- and returns
+-- how many are still (wrongly) admin-overridden after a reset. 0 means
+-- genuinely confirmed clean.
+local function countStillOverridden(climate)
+    local stillOn = 0
+    local checked = 0
+    for floatId = 0, 12 do
+        local cf = PanelBridge.tryGet(climate, "getClimateFloat", floatId)
+        if cf then
+            local enabled = PanelBridge.tryGet(cf, "isEnableAdmin")
+            if enabled ~= nil then
+                checked = checked + 1
+                if enabled then stillOn = stillOn + 1 end
+            end
+        end
+    end
+    local snowBool = PanelBridge.tryGet(climate, "getClimateBool", 0) -- BOOL_IS_SNOW
+    if snowBool then
+        local enabled = PanelBridge.tryGet(snowBool, "isEnableAdmin")
+        if enabled ~= nil then
+            checked = checked + 1
+            if enabled then stillOn = stillOn + 1 end
+        end
+    end
+    return stillOn, checked
 end
 
 -- Reset all climate overrides
+--
+-- 2026-08-31 bug hunt follow-up. The resetAdmin() fast path's own
+-- comment used to claim success unconditionally on invoke() not throwing --
+-- confirmed via javap -c that resetAdmin() itself is genuinely
+-- unconditional (an unguarded loop calling setEnableAdmin(false) on every
+-- float/bool/color, no failure path exists once `climate` itself is valid),
+-- so that specific claim wasn't actually a lie -- but it also wasn't
+-- CONFIRMED, just assumed. Now verifies by reading isEnableAdmin() back
+-- across the same floats/bool afterward (safe, immediate, no staleness --
+-- see countStillOverridden above) instead of trusting the call alone.
 handlers.resetClimateOverrides = function(args)
     local climate = getClimateManager()
     if not climate then
@@ -2845,7 +3011,16 @@ handlers.resetClimateOverrides = function(args)
 
     -- B42: resetAdmin() resets all float + bool admin overrides in one call
     if PanelBridge.invoke(climate, "resetAdmin") then
-        return true, { message = "Climate overrides reset via resetAdmin()", floatsReset = 13, boolsReset = 1 }
+        local stillOn, checked = countStillOverridden(climate)
+        local verified
+        if checked == 0 then
+            verified = nil
+        else
+            verified = stillOn == 0
+        end
+        return PanelBridge.verifiedResult(verified,
+            { message = "Climate overrides reset via resetAdmin()", floatsReset = 13, boolsReset = 1 },
+            "Reset call succeeded but " .. stillOn .. " of " .. checked .. " overrides are still active")
     end
 
     -- Fallback: disable admin override on all known float IDs (0-12)
@@ -2867,7 +3042,17 @@ handlers.resetClimateOverrides = function(args)
         end
     end)
 
-    return true, { message = "Climate overrides reset", floatsReset = resetCount, boolsReset = boolsReset }
+    local stillOn, checked = countStillOverridden(climate)
+    local verified
+    if checked == 0 then
+        verified = nil
+    else
+        verified = stillOn == 0
+    end
+
+    return PanelBridge.verifiedResult(verified,
+        { message = "Climate overrides reset", floatsReset = resetCount, boolsReset = boolsReset },
+        "Reset call succeeded but " .. stillOn .. " of " .. checked .. " overrides are still active")
 end
 
 -- Get climate float IDs and their current values
