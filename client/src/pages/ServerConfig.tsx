@@ -962,6 +962,16 @@ export default function ServerConfig() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Active server context, read independently of the (possibly-failed) paths
+  // load below -- server/routes/serverFiles.js's getServerConfigPath() falls
+  // through a remote server with no SFTP transport configured to the same
+  // ServerNotConfiguredError a genuinely-unconfigured panel throws, so the
+  // wire error code alone can't tell "no active server" apart from "active
+  // server is remote and isn't set up for config editing". Same
+  // isRemote-flag-fetched-independently pattern as Backups.tsx.
+  const [activeServerRemote, setActiveServerRemote] = useState(false)
+  const [activeServerName, setActiveServerName] = useState<string | null>(null)
+
   // File browser state (for image path fields)
   const [fileBrowserOpen, setFileBrowserOpen] = useState(false)
   const [fileBrowserKey, setFileBrowserKey] = useState('')  // which INI key we're picking a file for
@@ -1001,6 +1011,10 @@ export default function ServerConfig() {
 
   const loadData = async () => {
     setLoading(true)
+    const active = await serversApi.getResolvedActive().catch(() => ({ server: null }))
+    const isRemote = !!active.server?.isRemote
+    setActiveServerRemote(isRemote)
+    setActiveServerName(active.server?.name || active.server?.serverName || null)
     try {
       // Load paths info first
       const paths = await serverFilesApi.getPaths()
@@ -1033,10 +1047,22 @@ export default function ServerConfig() {
       setLoadError(null)
     } catch (error) {
       reportClientError('Failed to load config.', error)
-      setLoadError(getUserErrorMessage(error, t('toasts.loadConfigFailed')))
+      // getServerConfigPath() (server/routes/serverFiles.js) throws the same
+      // "no active server" error for a genuinely-unconfigured panel AND for
+      // a remote server with no SFTP transport set up -- the wire code can't
+      // be trusted to tell those apart here. When we independently know the
+      // active server IS set and IS remote, say that instead of repeating
+      // the server's misleading "no active server" text: reuse the exact
+      // copy errors.json already ships for this condition everywhere else
+      // remote config access is gated (server/routes/serverFiles.js's own
+      // second-stage SFTP-transport gate), rather than inventing new copy.
+      const message = isRemote
+        ? i18n.t('REMOTE_CONFIG_NOT_CONFIGURED', { ns: 'errors' })
+        : getUserErrorMessage(error, t('toasts.loadConfigFailed'))
+      setLoadError(message)
       toast({
         title: t('toasts.error'),
-        description: getUserErrorMessage(error, t('toasts.loadConfigFailed')),
+        description: message,
         variant: 'destructive'
       })
     } finally {
@@ -2025,16 +2051,32 @@ export default function ServerConfig() {
   return (
     <div className="space-y-4 page-transition pb-24">
       {loadError && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{t('loadErrorTitle')}</AlertTitle>
-          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="min-w-0 break-words" dir="auto" title={loadError}>{loadError}</span>
-            <Button variant="outline" size="sm" onClick={loadData} className="self-start">
-              <RefreshCw className="mr-2 h-4 w-4" /> {t('retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
+        activeServerRemote ? (
+          // Remote-with-no-SFTP-transport isn't a failure to retry -- it's a
+          // configuration step the operator hasn't done yet (same class as
+          // Backups.tsx's/ChunkCleaner's own remote-server alerts), so this
+          // uses their warning styling instead of a destructive one, and
+          // drops the Retry button: retrying can't turn a remote server into
+          // a local one, or add SFTP details on its own.
+          <Alert className="border-warning/40 bg-warning/10">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <AlertTitle>{t('loadErrorTitle')}</AlertTitle>
+            <AlertDescription className="min-w-0 break-words" dir="auto" title={loadError}>
+              {loadError}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t('loadErrorTitle')}</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-words" dir="auto" title={loadError}>{loadError}</span>
+              <Button variant="outline" size="sm" onClick={loadData} className="self-start">
+                <RefreshCw className="mr-2 h-4 w-4" /> {t('retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )
       )}
 
       {/* Duplicate-key warning: a setting appears more than once as its own
@@ -2113,6 +2155,13 @@ export default function ServerConfig() {
                   {pathsInfo.configPath}
                 </span>
               </div>
+            ) : activeServerName ? (
+              // pathsInfo is null here because the load failed -- but a
+              // remote-without-SFTP-transport failure (see loadData) still
+              // means a real server is active, just not this one, so say so
+              // instead of "No server selected", which the sidebar right
+              // next to this strip already contradicts.
+              <span className="text-sm font-semibold text-foreground">{activeServerName}</span>
             ) : (
               <span className="text-xs text-muted-foreground/60">{t('activeServerStrip.noServerSelected')}</span>
             )}
