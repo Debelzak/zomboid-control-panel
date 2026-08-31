@@ -2812,7 +2812,17 @@ export default function Settings() {
                       <span className="inline-flex items-center rounded-full border border-destructive/35 bg-destructive/12 px-2.5 py-0.5 text-xs font-semibold text-destructive">
                         {t("updates.statusCannotReach")}
                       </span>
-                    ) : !panelUpdateStatus ? (
+                    ) : !panelUpdateStatus?.latestVersion ? (
+                      // impeccable-2026-08-31: this used to be !panelUpdateStatus,
+                      // which only guards a null response -- a real-but-never-
+                      // checked status object (currentVersion set, latestVersion
+                      // still unset -- see the "Latest: Not checked yet" /
+                      // "Last Check: Never" fields a few lines below) is truthy,
+                      // so it fell through to the "Up to date" branch and showed
+                      // that badge next to a card plainly saying it was never
+                      // checked. latestVersion is the same field the two detail
+                      // cells below already gate on -- reusing it here instead
+                      // of a bare existence check.
                       <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-semibold text-foreground/80">
                         {t("updates.statusNotChecked")}
                       </span>
