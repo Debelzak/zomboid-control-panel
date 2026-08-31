@@ -1115,6 +1115,21 @@ export const modsApi = {
       wsAdded: number;
       modIdsAdded: number;
       mapFolders: string[];
+      // Per-item outcome, one entry per requested dep, same field names as
+      // the single-add sibling above (addMissingDep) -- see
+      // server/routes/mods.js's own comment on why. The aggregate counts
+      // above can't tell a caller WHICH dep (if any) never got a real Mod
+      // ID resolved; callers must check each entry's own `modId` for null
+      // to decide per-row success, not the aggregate counts or the absence
+      // of a thrown error (a batch with one unresolved dep out of three
+      // still returns success:true, by design, since the other two did
+      // apply and a hard failure would discard those too).
+      results: Array<{
+        workshopId: string;
+        modId: string | null;
+        wsAdded: boolean;
+        modIdAdded: boolean;
+      }>;
       message: string;
     }>,
 
