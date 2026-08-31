@@ -554,12 +554,12 @@ export default function Console() {
       const handleRconResponse = (data: RconResponse) => {
         const entry = { ...data, _id: ++liveLogIdRef.current } as RconResponse & { _id: number }
         setLiveLog(prev => [...prev, entry].slice(-100))
-        // This event broadcasts to the whole "logs" room for EVERY /execute
-        // call, including failed/disconnected ones (data.success: false) --
-        // only a successful response actually proves the connection is live.
-        // Forcing "connected" on any message here could mask a real drop
-        // (someone else's failed command, or this one's own failure echo)
-        // behind a stale "online" banner.
+        // This event broadcasts to the whole "rcon-live" room for EVERY
+        // /execute call, including failed/disconnected ones (data.success:
+        // false) -- only a successful response actually proves the
+        // connection is live. Forcing "connected" on any message here could
+        // mask a real drop (someone else's failed command, or this one's
+        // own failure echo) behind a stale "online" banner.
         if (data.success) {
           setRconConnected(true)
           setRconFailureReason(null)
@@ -568,11 +568,32 @@ export default function Console() {
 
       socket.on('rcon:response', handleRconResponse)
 
+      // 2026-08-31: 'rcon:response' broadcasts into "rcon-live", gated
+      // server-side on rcon.execute (server/index.js) -- the same
+      // capability that already gates every caller of
+      // executeCommand/sendAnnouncement below, and the same one POST
+      // /rcon/history uses for the STORED copy of this content. Moved off
+      // the diagnostics.manage-gated "logs" room App.tsx subscribes to
+      // app-wide, which let any diagnostics.manage holder read every
+      // admin's live console output whether or not they could run commands
+      // themselves -- the exact leak /rcon/history's own capability check
+      // already existed to prevent. Re-emitted on every reconnect, not just
+      // once per mount: room membership is server-side per-connection
+      // state, lost whenever the underlying socket.io connection drops and
+      // re-establishes, even though the client reuses the same Socket
+      // object.
+      const subscribeRcon = () => socket.emit('subscribe:rcon')
+      if (canExecuteRcon) {
+        if (socket.connected) subscribeRcon()
+        socket.on('connect', subscribeRcon)
+      }
+
       return () => {
         socket.off('rcon:response', handleRconResponse)
+        socket.off('connect', subscribeRcon)
       }
     }
-  }, [socket])
+  }, [socket, canExecuteRcon])
 
   useEffect(() => {
     // Auto-scroll to bottom
@@ -635,23 +656,15 @@ export default function Console() {
         })
       }
 
-      // Add to live log only when the server-side 'rcon:response' broadcast
-      // will actually reach us -- that requires the socket to have joined the
-      // "logs" room, which the server gates on diagnostics.manage
-      // independently of transport connectivity (server/index.js
-      // subscribe:logs handler). socket?.connected is NOT that check: a user
-      // with rcon.execute but not diagnostics.manage has a connected socket
-      // that never joins "logs", so relying on transport connectivity here
-      // left this panel permanently empty for them.
-      if (!can('diagnostics.manage')) {
-        setLiveLog(prev => [...prev, {
-          command,
-          response: result.response || result.error || t('rcon.noResponseFallback'),
-          success: result.success,
-          timestamp: new Date().toISOString(),
-          _id: ++liveLogIdRef.current,
-        } as RconResponse & { _id: number }].slice(-100))
-      }
+      // No manual live-log push here: the server-side 'rcon:response'
+      // broadcast (handled above) now goes to the "rcon-live" room, gated on
+      // rcon.execute -- the exact capability this function already requires
+      // to reach this point (see the early return above), so every caller
+      // who can get this far is guaranteed to be a room member and receive
+      // the broadcast. A manual push here as well would double the entry,
+      // not fill a gap -- that used to be a real gap, back when the
+      // broadcast went to the diagnostics.manage-gated "logs" room instead,
+      // which a caller could hold rcon.execute without ever joining.
 
       // Add to command cache (limit to 100 entries)
       setCommandCache(prev => [...prev.slice(-99), command])
@@ -736,20 +749,10 @@ export default function Console() {
         }
       }
 
-      // Same shape as executeCommand above: add to live log only when the
-      // 'rcon:response' broadcast won't reach us (see the diagnostics.manage
-      // reasoning there) -- the server emits its own event for every
-      // /execute call, broadcasts included, but only to sockets that hold
-      // that capability.
-      if (!can('diagnostics.manage')) {
-        setLiveLog(prev => [...prev, {
-          command: cmd,
-          response: result.response || result.error || t('rcon.noResponseFallback'),
-          success: result.success,
-          timestamp: new Date().toISOString(),
-          _id: ++liveLogIdRef.current,
-        } as RconResponse & { _id: number }].slice(-100))
-      }
+      // Same shape as executeCommand above: no manual live-log push here --
+      // the 'rcon:response' broadcast goes to "rcon-live", gated on
+      // rcon.execute, which this function already requires (see the early
+      // return above). A manual push would double the entry.
 
       if (result.success) {
         toast({

@@ -12,15 +12,29 @@ import enConsole from '../../locales/en/console.json'
 // RCON console, both rooted in treating "a socket message arrived" as proof
 // of something it doesn't actually prove.
 //
-// 1. executeCommand/sendAnnouncement skipped their own local live-log push
-//    whenever `socket?.connected` was true, assuming the server's
-//    'rcon:response' broadcast would fill the entry in instead. But that
-//    broadcast only reaches sockets that joined the "logs" room, which the
-//    server gates on the diagnostics.manage capability (server/index.js
-//    subscribe:logs handler) -- a completely separate check from transport
-//    connectivity. A technician (rcon.execute but not diagnostics.manage)
-//    has a connected socket that never joins "logs", so the Console Output
-//    panel stayed empty for every command they ran, with zero feedback.
+// 1. (2026-08-31-a) executeCommand/sendAnnouncement skipped their own local
+//    live-log push whenever `socket?.connected` was true, assuming the
+//    server's 'rcon:response' broadcast would fill the entry in instead.
+//    But that broadcast used to only reach sockets that joined the "logs"
+//    room, which the server gated on the diagnostics.manage capability
+//    (server/index.js subscribe:logs handler) -- a completely separate
+//    check from transport connectivity. A technician (rcon.execute but not
+//    diagnostics.manage) had a connected socket that never joined "logs",
+//    so the Console Output panel stayed empty for every command they ran,
+//    with zero feedback. Fixed then by pushing locally whenever the caller
+//    lacked diagnostics.manage.
+//
+//    (2026-08-31-b) That same-content broadcast has since moved to its own
+//    "rcon-live" room, gated on rcon.execute instead (server/index.js) --
+//    the same capability executeCommand/sendAnnouncement already require to
+//    run at all (see Console.tsx's own subscribe:rcon), and the same one
+//    POST /rcon/history already used for the STORED copy of this content.
+//    Every caller who can reach the live-log push is now guaranteed to be a
+//    room member, so the 2026-08-31-a manual push became a guaranteed
+//    DOUBLE-write instead of an occasional fill-in, and was removed. This
+//    file's first describe block below now proves the broadcast alone
+//    produces exactly one entry, not that the manual push fires for a
+//    diagnostics.manage-less caller (that mechanism no longer exists).
 //
 // 2. handleRconResponse (the 'rcon:response' socket listener) set
 //    rconConnected(true) unconditionally for ANY message in that room,
@@ -145,25 +159,37 @@ async function runCommand(command: string) {
   fireEvent.click(runButton)
 }
 
-describe('Console.tsx: live log visibility does not depend on transport connectivity', () => {
-  it('still shows an executed command in the Console Output panel for a role without diagnostics.manage, even with a connected socket', async () => {
-    // A regression here manifests as findByText never resolving (the log
-    // stays empty forever) rather than a clean assertion failure -- fail
-    // fast instead of the default 5s x this file's slower setup.
+describe('Console.tsx: the live log fills from the rcon-live broadcast alone, exactly once, for any rcon.execute caller', () => {
+  it('shows the command\'s own rcon:response broadcast exactly once for a role without diagnostics.manage, not twice', async () => {
+    // 2026-08-31-b: this used to prove the OLD manual-echo fallback fired
+    // for a role lacking diagnostics.manage (see the file header). That
+    // fallback is gone now -- the broadcast moved to a room gated on
+    // rcon.execute, which this role already has (mockCan only strips
+    // diagnostics.manage), so it's now guaranteed to receive the broadcast
+    // like anyone else who can run commands at all. This proves that: the
+    // command's own broadcast still fills the panel (the original gap this
+    // file existed to close), and it does so exactly once -- findByText
+    // throws on more than one match, so a reintroduced manual push here
+    // would fail this test by finding two, not by finding none.
     mockCan = (capability) => capability !== 'diagnostics.manage'
     await setUp()
     execute.mockResolvedValue({ success: true, response: '1 player online' })
 
-    // The socket IS connected -- this is exactly the state that made the old
-    // `!socket?.connected` check wrongly skip the local log push, on the
-    // (wrong) assumption a server broadcast would arrive instead.
-    const { socket } = createFakeSocket(true)
+    const { socket, trigger } = createFakeSocket(true)
 
     renderConsole(socket)
     await openRconTab()
     await runCommand('players')
 
     await waitFor(() => expect(execute).toHaveBeenCalledWith('players'))
+
+    trigger('rcon:response', {
+      command: 'players',
+      response: '1 player online',
+      success: true,
+      timestamp: new Date().toISOString(),
+    })
+
     await screen.findByText('players')
     await screen.findByText('1 player online')
     expect(screen.queryByText(enConsole.rcon.noCommandsTitle)).not.toBeInTheDocument()
