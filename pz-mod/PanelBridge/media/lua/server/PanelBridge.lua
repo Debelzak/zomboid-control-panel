@@ -1,10 +1,23 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.43
+    Version: 1.7.44
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.44 Changes:
+                - Fix: setSnow/startRain/stopRain, the daylight/night/
+                    desaturation/view-distance/ambient/temperature/wind/fog/
+                    cloud climate floats, the generic setClimateFloat, and
+                    resetClimateOverrides now confirm their write actually
+                    took effect (getAdminValue/getPrecipitationIsSnow/
+                    getPrecipitationIntensity/isRaining/isEnableAdmin, each
+                    chosen per-handler against what is actually safe to read
+                    immediately -- getFinalValue() is NOT, confirmed via
+                    javap -c: it is not refreshed until the next natural
+                    game tick) instead of reporting success on invoke() not
+                    throwing.
 
                 v1.7.43 Changes:
                 - Fix: triggerBlizzard/triggerTropicalStorm/triggerStorm all
@@ -427,7 +440,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.43",
+    VERSION = "1.7.44",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
