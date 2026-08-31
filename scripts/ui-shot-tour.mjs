@@ -618,6 +618,13 @@ const VIEWS = [
   {
     name: 'servers:add-remote',
     path: '/servers',
+    // impeccable-critique-2026-08-31: missing dialogExpected meant the
+    // generic leaked-overlay defense (dismissOpenDialogs, see its own
+    // header) closed this dialog right before the shot every single time --
+    // interact() opened it correctly, but the capture always showed the
+    // plain Servers list underneath. Same fix as players:powers-kill-confirm
+    // above: this view's entire point is an open dialog at capture time.
+    dialogExpected: true,
     interact: async (page) => {
       await page.getByRole('button', { name: 'Add Remote Server' }).first().click()
       await page.waitForTimeout(300)
