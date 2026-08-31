@@ -172,7 +172,9 @@
     "snowing": "nevando",
     "raining": "lloviendo",
     "clear": "despejado",
-    "windReading": "{{speed}} km/h @ {{angle}}°"
+    "windReading": "{{speed}} km/h @ {{angle}}°",
+    "weatherActive": "activo",
+    "weatherInactive": "inactivo"
   },
   "visual": {
     "sublabelOnline": "puente · anulación de administrador",

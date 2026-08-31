@@ -1421,6 +1421,32 @@ export default function Events() {
     }
   }, [])
 
+  // Same getWeather() read as checkBridgeStatus's own poll tick above, split
+  // out so a toggle that just changed weather state can reconcile with the
+  // real result immediately after its command resolves, instead of waiting
+  // for the next scheduled 10s poll -- see the snow/rain StateToggles below.
+  // Failure is swallowed the same way checkBridgeStatus's own read already
+  // does: a failed reconcile just leaves whatever value is already showing
+  // (the optimistic flip, on a fresh toggle) until the next poll tries again.
+  const refetchWeather = useCallback(async () => {
+    try {
+      const weatherResult = await panelBridgeApi.getWeather()
+      if (!mountedRef.current) return
+      if (weatherResult.success && weatherResult.data) {
+        const w = weatherResult.data
+        setLiveWeather({
+          isRaining: Boolean(w.isRaining),
+          isSnowing: Boolean(w.isSnowing),
+          isThunderStorming: Boolean(w.isThunderStorming),
+          windSpeedKph: typeof w.windSpeed === 'number' ? w.windSpeed : 0,
+          windAngleDeg: typeof w.windAngle === 'number' ? w.windAngle : 0,
+        })
+      }
+    } catch {
+      // Swallowed -- see comment above.
+    }
+  }, [])
+
   useEffect(() => {
     mountedRef.current = true
     fetchPlayers()
@@ -1573,7 +1599,13 @@ export default function Events() {
   }, [i18n.language])
 
   // Bridge weather commands
-  const handleBridgeAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
+  // onSettled: same additive, opt-in shape as handleAction's own -- see its
+  // comment. Added so the snow/rain toggles below can reconcile their own
+  // optimistic flip (refetch the real weather on success, revert it on
+  // failure) without every OTHER caller of this shared function (Stop All
+  // Weather, helicopter, sound/chat actions, ...) growing a weather refetch
+  // it has no use for.
+  const handleBridgeAction = useCallback(async (action: string, fn: () => Promise<unknown>, onSettled?: (success: boolean) => void | Promise<void>) => {
     setBridgeLoading(action)
     try {
       await fn()
@@ -1584,6 +1616,7 @@ export default function Events() {
         variant: 'success' as const,
       })
       pushActivity(successCopy.title, true)
+      await onSettled?.(true)
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.bridgeCommandFailedFallback'))
       toast({
@@ -1592,6 +1625,7 @@ export default function Events() {
         variant: 'destructive',
       })
       pushActivity(t('toasts.actionFailedTitle', { action }), false)
+      await onSettled?.(false)
     } finally {
       setBridgeLoading(null)
     }
@@ -1612,7 +1646,13 @@ export default function Events() {
   // panelBridgeSpawnHordeFabricatedCount.test.js) resolves to
   // `{ toastOverride }` instead -- runtime-checked here rather than widening
   // `fn`'s type, so every other caller is unaffected.
-  const handleAction = useCallback(async (action: string, fn: () => Promise<unknown>) => {
+  // onSettled is optional and additive -- every existing caller that doesn't
+  // pass one is unaffected. It exists so a caller driving a state-reflecting
+  // toggle (e.g. the rain StateToggle below) can reconcile its own optimistic
+  // UI flip with the real outcome (refetch on success, revert on failure)
+  // without this function needing to know what "the right state" is for
+  // every one of its many callers (teleport, spawn, quick sounds, ...).
+  const handleAction = useCallback(async (action: string, fn: () => Promise<unknown>, onSettled?: (success: boolean) => void | Promise<void>) => {
     setLoading(action)
     try {
       const result = await fn()
@@ -1632,6 +1672,7 @@ export default function Events() {
         })
         pushActivity(successCopy.title, true)
       }
+      await onSettled?.(true)
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.commandFailedFallback'))
       toast({
@@ -1640,6 +1681,7 @@ export default function Events() {
         variant: 'destructive',
       })
       pushActivity(t('toasts.actionFailedTitle', { action }), false)
+      await onSettled?.(false)
     } finally {
       setLoading(null)
     }
@@ -2385,12 +2427,24 @@ export default function Events() {
                       icon={CloudRain}
                       label={t('rain.rainLabel')}
                       state={liveWeather ? liveWeather.isRaining : null}
-                      onLabel={t('utilities.statusOnline')}
-                      offLabel={t('utilities.statusOffline')}
+                      onLabel={t('climate.weatherActive')}
+                      offLabel={t('climate.weatherInactive')}
                       pendingLabel={t('utilities.statusPending')}
                       disabled={loading !== null}
                       ariaLabel={t('rain.rainLabel')}
-                      onToggle={(next) => handleAction(next ? 'Start rain' : 'Stop rain', next ? startRain : stopRain)}
+                      onToggle={(next) => {
+                        // Optimistic flip -- state we ARE currently showing,
+                        // not a fake one -- then reconcile with the real
+                        // result once the command resolves, rather than
+                        // waiting on the next scheduled poll (was ~5s per
+                        // the operator's own report on Tower).
+                        const previous = liveWeather
+                        setLiveWeather((prev) => (prev ? { ...prev, isRaining: next } : prev))
+                        handleAction(next ? 'Start rain' : 'Stop rain', next ? startRain : stopRain, async (success) => {
+                          if (success) await refetchWeather()
+                          else setLiveWeather(previous)
+                        })
+                      }}
                     />
                   ) : (
                     // PanelBridge is NOT connected -- this section exists specifically
@@ -2481,12 +2535,19 @@ export default function Events() {
                     icon={Snowflake}
                     label={t('severe.snowToggleLabel')}
                     state={liveWeather ? liveWeather.isSnowing : null}
-                    onLabel={t('utilities.statusOnline')}
-                    offLabel={t('utilities.statusOffline')}
+                    onLabel={t('climate.weatherActive')}
+                    offLabel={t('climate.weatherInactive')}
                     pendingLabel={t('utilities.statusPending')}
                     disabled={bridgeLoading !== null || !bridgeConnected}
                     ariaLabel={t('severe.snowToggleLabel')}
-                    onToggle={(next) => handleBridgeAction(next ? 'Enable Snow' : 'Disable Snow', () => panelBridgeApi.setSnow(next))}
+                    onToggle={(next) => {
+                      const previous = liveWeather
+                      setLiveWeather((prev) => (prev ? { ...prev, isSnowing: next } : prev))
+                      handleBridgeAction(next ? 'Enable Snow' : 'Disable Snow', () => panelBridgeApi.setSnow(next), async (success) => {
+                        if (success) await refetchWeather()
+                        else setLiveWeather(previous)
+                      })
+                    }}
                   />
                   <Button variant="outline" onClick={() => handleBridgeAction('Stop All Weather', () => panelBridgeApi.stopWeather())} disabled={bridgeLoading !== null || !bridgeConnected} className="h-9 gap-2 text-xs font-medium text-destructive/85 hover:text-destructive hover:border-destructive/40">
                     {bridgeLoading === 'Stop All Weather' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
@@ -2680,12 +2741,23 @@ export default function Events() {
                 icon={CloudRain}
                 label={t('climate.rainWithPercent', { percent: Math.max(5, precipitationIntensity) })}
                 state={liveWeather ? liveWeather.isRaining : null}
-                onLabel={t('utilities.statusOnline')}
-                offLabel={t('utilities.statusOffline')}
+                onLabel={t('climate.weatherActive')}
+                offLabel={t('climate.weatherInactive')}
                 pendingLabel={t('utilities.statusPending')}
                 disabled={bridgeLoading !== null || !bridgeConnected}
                 ariaLabel={t('climate.precipitation')}
-                onToggle={(next) => handleBridgeAction(next ? 'Start Rain' : 'Stop Rain', () => next ? panelBridgeApi.startRain(Math.max(0.05, precipitationIntensity / 100)) : panelBridgeApi.stopRain())}
+                onToggle={(next) => {
+                  const previous = liveWeather
+                  setLiveWeather((prev) => (prev ? { ...prev, isRaining: next } : prev))
+                  handleBridgeAction(
+                    next ? 'Start Rain' : 'Stop Rain',
+                    () => next ? panelBridgeApi.startRain(Math.max(0.05, precipitationIntensity / 100)) : panelBridgeApi.stopRain(),
+                    async (success) => {
+                      if (success) await refetchWeather()
+                      else setLiveWeather(previous)
+                    },
+                  )
+                }}
               />
             </div>
           </TacticalPanel>

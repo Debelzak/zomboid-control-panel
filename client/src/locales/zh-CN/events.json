@@ -172,7 +172,9 @@
     "snowing": "降雪",
     "raining": "降雨",
     "clear": "晴朗",
-    "windReading": "{{speed}} 公里/小时 @ {{angle}}°"
+    "windReading": "{{speed}} 公里/小时 @ {{angle}}°",
+    "weatherActive": "进行中",
+    "weatherInactive": "未发生"
   },
   "visual": {
     "sublabelOnline": "桥接 · 管理员覆盖",

@@ -99,6 +99,71 @@ describe('Events -- Severe Weather snow toggle reflects real state (three states
     await waitFor(() => expect(setSnow).toHaveBeenCalledWith(false))
   })
 
+  it('OPTIMISTIC: flips immediately on click (does not wait for the next poll), then reverts if the command fails', async () => {
+    // toggle-latency-2026-08-31, operator report on the live panel ("it take
+    // like 5 sec to trigger and see the change"): handleBridgeAction never
+    // refetched weather, so the switch stayed on the OLD value until the
+    // next scheduled 10s poll happened to land. This proves the fix without
+    // needing a real poll interval to fire in the test.
+    getWeather.mockResolvedValue({
+      success: true,
+      data: { isRaining: false, isSnowing: false, isThunderStorming: false, windSpeed: 0, windAngle: 0 },
+    } as never)
+
+    let rejectSetSnow!: (err: Error) => void
+    setSnow.mockReturnValue(new Promise((_, reject) => { rejectSetSnow = reject }))
+
+    renderEvents()
+    await openSevereSection()
+
+    const sw = await snowSwitch()
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'false'))
+
+    sw.click()
+
+    // Optimistic: flips to checked immediately, before setSnow's promise has
+    // even settled -- this is the state the operator wants to see instantly.
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'))
+
+    rejectSetSnow(new Error('bridge command failed'))
+
+    // Reverts to the last known-real state on failure -- never leaves the
+    // optimistic guess standing as if it were confirmed.
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'false'))
+  })
+
+  it('RECONCILE: refetches the real weather after a successful command, and the real answer wins over the optimistic guess', async () => {
+    // The optimistic flip is a GUESS, not a claim of confirmed knowledge --
+    // if the real post-command read disagrees (mod silently rejected it,
+    // another admin changed it in between, ...), the refetch's answer must
+    // win, not the click's assumption.
+    getWeather.mockResolvedValue({
+      success: true,
+      data: { isRaining: false, isSnowing: false, isThunderStorming: false, windSpeed: 0, windAngle: 0 },
+    } as never)
+    setSnow.mockResolvedValue({ success: true } as never)
+
+    renderEvents()
+    await openSevereSection()
+
+    const sw = await snowSwitch()
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'false'))
+
+    sw.click()
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true')) // optimistic
+    await waitFor(() => expect(setSnow).toHaveBeenCalledWith(true))
+    // Baseline AFTER the optimistic flip, not before render -- mount's own
+    // poll already calls getWeather at least once, so an absolute count
+    // would be coupled to unrelated polling timing. What matters is that a
+    // NEW read happens once the command settles.
+    const callsBeforeReconcile = getWeather.mock.calls.length
+
+    // The reconcile read fired after setSnow resolved still says off --
+    // must overwrite the optimistic "on".
+    await waitFor(() => expect(getWeather.mock.calls.length).toBeGreaterThan(callsBeforeReconcile))
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'false'))
+  })
+
   it('OFF: renders unchecked when liveWeather.isSnowing is false, and clicking enables snow', async () => {
     getWeather.mockResolvedValue({
       success: true,

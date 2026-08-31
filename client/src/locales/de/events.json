@@ -172,7 +172,9 @@
     "snowing": "Schneefall",
     "raining": "Regen",
     "clear": "klar",
-    "windReading": "{{speed}} km/h @ {{angle}}°"
+    "windReading": "{{speed}} km/h @ {{angle}}°",
+    "weatherActive": "aktiv",
+    "weatherInactive": "inaktiv"
   },
   "visual": {
     "sublabelOnline": "Brücke · Admin-Override",

@@ -172,7 +172,9 @@
     "snowing": "lanèj",
     "raining": "lapli",
     "clear": "tan klè",
-    "windReading": "{{speed}} km/h @ {{angle}}°"
+    "windReading": "{{speed}} km/h @ {{angle}}°",
+    "weatherActive": "aktif",
+    "weatherInactive": "inaktif"
   },
   "visual": {
     "sublabelOnline": "bridge · ranplasman admin",

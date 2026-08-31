@@ -172,7 +172,9 @@
     "snowing": "snowing",
     "raining": "raining",
     "clear": "clear",
-    "windReading": "{{speed}} km/h @ {{angle}}°"
+    "windReading": "{{speed}} km/h @ {{angle}}°",
+    "weatherActive": "active",
+    "weatherInactive": "inactive"
   },
   "visual": {
     "sublabelOnline": "bridge · admin override",
