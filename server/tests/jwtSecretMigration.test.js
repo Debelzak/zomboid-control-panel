@@ -170,8 +170,26 @@ describe("authService.init() — JWT secret migration out of db.json", () => {
 
   it("fails loud and does not start when jwt.secret exists but is unreadable — never silently regenerates", async () => {
     fs.mkdirSync(getJwtSecretPath()); // directory at the path -> unreadable as a file
+    // bug hunt 2026-08-31-c (under-coverage sweep): the title's own third
+    // clause -- "never silently regenerates" -- had no assertion; only the
+    // rejection itself was checked. authService is a shared singleton
+    // across every test in this file (module-scoped, not reset between
+    // `it`s), so by the time this test runs jwtSecret/initialized already
+    // hold a REAL value from an earlier test in this same describe block --
+    // asserting they equal null/false here would be wrong (it would fail
+    // on correct code, for the wrong reason: leftover state, not a
+    // regression). The actual claim is that init()'s catch block leaves
+    // them UNTOUCHED, so the correct check is relative: capture them
+    // before the call, assert they're unchanged after.
+    const before = {
+      jwtSecret: authService.jwtSecret,
+      initialized: authService.initialized,
+    };
 
     await expect(authService.init()).rejects.toThrow(/could not be read/i);
+
+    expect(authService.jwtSecret).toBe(before.jwtSecret);
+    expect(authService.initialized).toBe(before.initialized);
   });
 });
 
