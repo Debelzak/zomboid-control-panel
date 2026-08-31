@@ -2864,7 +2864,12 @@ export default function Debug() {
         {/* flex-nowrap + overflow-x-auto rather than flex-wrap: at 9 tabs,
             wrapping strands the last one ("Environment") alone on its own
             row on desktop. shrink-0 on every trigger and divider keeps the
-            strip scrolling instead of squeezing icons/labels to fit. */}
+            strip scrolling instead of squeezing icons/labels to fit. Unlike
+            Settings' version of this same fix, there's no lg: breakpoint
+            where this page switches to a vertical sidebar -- the strip stays
+            horizontal (and can still overflow) at every width, so the scroll
+            cue below is never lg:hidden. */}
+        <div className="relative">
         <TabsList className="flex h-auto flex-nowrap items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 p-1.5 w-full shadow-inner">
           {/* Zone: Now */}
           <TabsTrigger value="diagnostics" className="gap-2 shrink-0">
@@ -2949,6 +2954,16 @@ export default function Debug() {
             {t("tabs.system")}
           </TabsTrigger>
         </TabsList>
+        {/* Static scroll-continuation cue -- not scroll-position-tracked, just
+            a constant "there's more this way" edge. Same pattern as
+            Settings.tsx's sub-tab strip and RolesPermissions.tsx's matrix. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end rounded-r-lg bg-gradient-to-l from-muted to-transparent pr-1.5"
+        >
+          <ChevronRight className="h-4 w-4 text-muted-foreground/80" />
+        </div>
+        </div>
 
         {/* Diagnostics Tab — Smart health checks with green/amber/red */}
         <TabsContent value="diagnostics" className="space-y-4">
