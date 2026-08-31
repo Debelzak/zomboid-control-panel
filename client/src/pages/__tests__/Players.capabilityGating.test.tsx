@@ -320,6 +320,38 @@ describe('Players.tsx: capability gating', () => {
     expect(teleport).not.toHaveBeenCalled()
   })
 
+  // bug-hunt-2026-08-31: a71c947a added `!canModerate` to the wrapping
+  // <button disabled={...}> for Kick/Ban/Access Level (correctly blocking
+  // the click, confirmed by the toBeDisabled() assertions above) but never
+  // extended ActionTile's OWN `disabled` prop to match -- ActionTile is a
+  // plain <div>, not a real form control, so its "looks disabled" signal is
+  // entirely the manually-threaded `disabled` prop driving one Tailwind
+  // class (`opacity-50`); DisabledReason (components/DisabledReason.tsx)
+  // adds only a hover tooltip and cursor-not-allowed, no dimming of its own,
+  // and nothing in the CSS resets a bare <button> to any dimmed appearance.
+  // Net effect before this fix: an operator who holds no players.moderate
+  // capability but HAS a player selected saw these three tiles at full
+  // opacity -- indistinguishable from enabled -- while the click was
+  // silently swallowed. This test targets the visual class directly, since
+  // toBeDisabled() above only proves the click gate, not the appearance.
+  it('dims Kick/Ban/Access Level ActionTiles (not just blocks the click) when a player is selected but the role lacks players.moderate', async () => {
+    mockCan = () => false
+    await setUpFixtures()
+    renderPlayers()
+    await selectTestPlayer()
+
+    // index [0] of each pair is the dossier header's quick-action <Button>
+    // (a real shadcn Button, which dims itself natively via its own
+    // disabled: variant) -- index [1] is the ActionTile trigger this fix
+    // targets, the one with no native disabled styling of its own.
+    const kickTile = screen.getAllByRole('button', { name: /^Kick\b/ })[1].firstElementChild
+    const banTile = screen.getAllByRole('button', { name: /^Ban\b/ })[1].firstElementChild
+    const accessLevelTile = screen.getByRole('button', { name: /^Access Level\b/ }).firstElementChild
+    expect(kickTile?.className).toContain('opacity-50')
+    expect(banTile?.className).toContain('opacity-50')
+    expect(accessLevelTile?.className).toContain('opacity-50')
+  })
+
   it('enables gated triggers once the role holds the matching capability', async () => {
     mockCan = () => true
     await setUpFixtures()

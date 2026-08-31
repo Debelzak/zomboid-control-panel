@@ -2217,7 +2217,7 @@ export default function Players() {
                   <Dialog open={kickDialogOpen} onOpenChange={setKickDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" disabled={!selectedPlayer || !canModerate} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<UserX className="w-4 h-4" />} label={t('dossier.kickButton')} description={t('actionTiles.kickDesc')} disabled={!selectedPlayer} emphasis="warning" />
+                        <ActionTile icon={<UserX className="w-4 h-4" />} label={t('dossier.kickButton')} description={t('actionTiles.kickDesc')} disabled={!selectedPlayer || !canModerate} emphasis="warning" />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -2253,7 +2253,7 @@ export default function Players() {
                   <Dialog open={banDialogOpen} onOpenChange={setBanDialogOpen}>
                     <DialogTrigger asChild>
                       <button type="button" disabled={!selectedPlayer || !canModerate} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<Ban className="w-4 h-4" />} label={t('dossier.banButton')} description={t('actionTiles.banDesc')} disabled={!selectedPlayer} emphasis="danger" />
+                        <ActionTile icon={<Ban className="w-4 h-4" />} label={t('dossier.banButton')} description={t('actionTiles.banDesc')} disabled={!selectedPlayer || !canModerate} emphasis="danger" />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
@@ -2331,7 +2331,7 @@ export default function Players() {
                   <Dialog>
                     <DialogTrigger asChild>
                       <button type="button" disabled={!selectedPlayer || !canModerate} className="block h-auto w-full p-0 text-left">
-                        <ActionTile icon={<Shield className="w-4 h-4" />} label={t('actionTiles.accessLevelLabel')} description={t('actionTiles.accessLevelDesc')} disabled={!selectedPlayer} emphasis="primary" />
+                        <ActionTile icon={<Shield className="w-4 h-4" />} label={t('actionTiles.accessLevelLabel')} description={t('actionTiles.accessLevelDesc')} disabled={!selectedPlayer || !canModerate} emphasis="primary" />
                       </button>
                     </DialogTrigger>
                     <DialogContent>
