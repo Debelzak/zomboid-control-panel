@@ -187,6 +187,7 @@
     "title": "Zeitzone des Planers",
     "description": "Jeder Zeitplan unten -- deine Aufgaben, die automatische Sicherung und der automatische Neustart -- läuft in dieser Zeitzone.",
     "inputLabel": "IANA-Zeitzonenname",
+    "noMatches": "Keine passende Zeitzone gefunden",
     "saveButton": "Speichern",
     "currentlyEffective": "Derzeit aktiv: {{tz}}",
     "savedDesc": "Zeitpläne laufen jetzt in {{tz}}.",

@@ -221,3 +221,106 @@ describe('Scheduler.tsx: the create/edit-task dialog also discloses the effectiv
     expect(within(dialog).queryByText(/undefined/)).not.toBeInTheDocument()
   })
 })
+
+describe('Scheduler.tsx: timezone card is a searchable picker, not a bare free-text field (2026-08-31)', () => {
+  it('typing filters the dropdown to matching timezones only', async () => {
+    await baseMocks()
+    getStatus.mockResolvedValue({
+      activeTasks: 0,
+      autoRestartEnabled: false,
+      modUpdateRestartPending: false,
+      timezone: 'UTC',
+      configuredTimezone: 'UTC',
+      timezoneFallback: null,
+    })
+
+    renderScheduler()
+
+    const input = await screen.findByLabelText('IANA timezone name')
+    await waitFor(() => expect(input).toHaveValue('UTC'))
+    fireEvent.change(input, { target: { value: 'Berlin' } })
+
+    const listbox = await screen.findByRole('listbox', { name: 'IANA timezone name' })
+    expect(await within(listbox).findByRole('option', { name: 'Europe/Berlin' })).toBeInTheDocument()
+    expect(within(listbox).queryByRole('option', { name: 'America/New_York' })).not.toBeInTheDocument()
+  })
+
+  it('clicking a filtered option selects it, and Save persists that exact value', async () => {
+    await baseMocks()
+    getStatus.mockResolvedValue({
+      activeTasks: 0,
+      autoRestartEnabled: false,
+      modUpdateRestartPending: false,
+      timezone: 'UTC',
+      configuredTimezone: 'UTC',
+      timezoneFallback: null,
+    })
+    setTimezone.mockResolvedValue({
+      success: true,
+      timezone: 'Europe/Berlin',
+      configuredTimezone: 'Europe/Berlin',
+      timezoneFallback: null,
+    })
+
+    renderScheduler()
+
+    const input = await screen.findByLabelText('IANA timezone name')
+    await waitFor(() => expect(input).toHaveValue('UTC'))
+    fireEvent.change(input, { target: { value: 'Berlin' } })
+
+    const listbox = await screen.findByRole('listbox', { name: 'IANA timezone name' })
+    fireEvent.click(await within(listbox).findByRole('option', { name: 'Europe/Berlin' }))
+    expect(input).toHaveValue('Europe/Berlin')
+
+    const saveButton = screen.getByRole('button', { name: 'Save' })
+    await waitFor(() => expect(saveButton).not.toBeDisabled())
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(setTimezone).toHaveBeenCalledWith('Europe/Berlin'))
+  })
+
+  it('a saved zone missing from the built-in list is still shown verbatim in the input, not blanked or reset to UTC', async () => {
+    await baseMocks()
+    getStatus.mockResolvedValue({
+      activeTasks: 0,
+      autoRestartEnabled: false,
+      modUpdateRestartPending: false,
+      timezone: 'UTC',
+      configuredTimezone: 'Not/AZone',
+      timezoneFallback: { configured: 'Not/AZone', effective: 'UTC' },
+    })
+
+    renderScheduler()
+
+    const input = await screen.findByLabelText('IANA timezone name')
+    await waitFor(() => expect(input).toHaveValue('Not/AZone'))
+  })
+
+  it('offers UTC even though it is absent from Intl.supportedValuesOf("timeZone")', async () => {
+    // Real gap, not a hypothetical: on this project's engine,
+    // Intl.supportedValuesOf('timeZone') does not include 'UTC' even though
+    // Intl.DateTimeFormat (and node-cron, and this app's own server-side
+    // isValidIanaTimezone()) accept it fine -- see server/utils/
+    // cronValidation.js's comment on the same gap. Confirm the picker
+    // doesn't inherit that omission.
+    expect(Intl.supportedValuesOf('timeZone')).not.toContain('UTC')
+
+    await baseMocks()
+    getStatus.mockResolvedValue({
+      activeTasks: 0,
+      autoRestartEnabled: false,
+      modUpdateRestartPending: false,
+      timezone: 'UTC',
+      configuredTimezone: '',
+      timezoneFallback: null,
+    })
+
+    renderScheduler()
+
+    const input = await screen.findByLabelText('IANA timezone name')
+    fireEvent.focus(input)
+
+    const listbox = await screen.findByRole('listbox', { name: 'IANA timezone name' })
+    expect(await within(listbox).findByRole('option', { name: 'UTC' })).toBeInTheDocument()
+  })
+})

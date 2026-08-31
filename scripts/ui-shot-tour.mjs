@@ -719,6 +719,23 @@ const VIEWS = [
   { name: 'mods', path: '/mods' },
   { name: 'templates', path: '/templates' },
   { name: 'scheduler', path: '/scheduler' },
+  // timezone-picker-searchable-2026-08-31: the Scheduler Timezone card's
+  // free-text field became a searchable combobox (client/src/pages/
+  // Scheduler.tsx's TimezonePicker) -- the base `scheduler` view above only
+  // ever shows it closed, identical to the old plain <Input>. This is the
+  // one state that's actually new: focus opens the full grouped dropdown.
+  {
+    name: 'scheduler:timezone-open',
+    path: '/scheduler',
+    dialogExpected: true, // not a real dialog, but same reason: the open
+    // dropdown IS this view's entire point, so it must survive whatever
+    // leaked-overlay defense would otherwise close a stray open panel
+    // before the shot (see players:powers-kill-confirm's own comment).
+    interact: async (page) => {
+      await page.getByLabel('IANA timezone name').click()
+      await page.waitForTimeout(200)
+    },
+  },
   { name: 'backups', path: '/backups' },
   { name: 'chunks', path: '/chunks' },
   { name: 'servers', path: '/servers' },

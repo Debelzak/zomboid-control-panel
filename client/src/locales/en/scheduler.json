@@ -187,6 +187,7 @@
     "title": "Scheduler Timezone",
     "description": "Every schedule below -- your tasks, the automatic backup, and auto-restart -- runs in this timezone.",
     "inputLabel": "IANA timezone name",
+    "noMatches": "No matching timezone",
     "saveButton": "Save",
     "currentlyEffective": "Currently in effect: {{tz}}",
     "savedDesc": "Schedules now run in {{tz}}.",

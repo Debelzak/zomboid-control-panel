@@ -187,6 +187,7 @@
     "title": "计划任务时区",
     "description": "以下所有计划——你的任务、自动备份和自动重启——都按此时区运行。",
     "inputLabel": "IANA 时区名称",
+    "noMatches": "没有匹配的时区",
     "saveButton": "保存",
     "currentlyEffective": "当前生效：{{tz}}",
     "savedDesc": "计划现在按 {{tz}} 运行。",

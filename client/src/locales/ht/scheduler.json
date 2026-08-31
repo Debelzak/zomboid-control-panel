@@ -187,6 +187,7 @@
     "title": "Fizo Orè Pwogramatè a",
     "description": "Chak orè anba a -- tach ou yo, sovgad otomatik la, ak redemaraj otomatik la -- fonksyone nan fizo orè sa a.",
     "inputLabel": "Non fizo orè IANA",
+    "noMatches": "Pa gen okenn fizo orè ki koresponn",
     "saveButton": "Sove",
     "currentlyEffective": "Aktyèlman ann aplikasyon: {{tz}}",
     "savedDesc": "Orè yo kounye a fonksyone nan {{tz}}.",

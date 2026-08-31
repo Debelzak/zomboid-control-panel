@@ -187,6 +187,7 @@
     "title": "Zona horaria del planificador",
     "description": "Todos los horarios de abajo -- tus tareas, la copia de seguridad automática y el reinicio automático -- se ejecutan en esta zona horaria.",
     "inputLabel": "Nombre de zona horaria IANA",
+    "noMatches": "No hay ninguna zona horaria coincidente",
     "saveButton": "Guardar",
     "currentlyEffective": "Actualmente en vigor: {{tz}}",
     "savedDesc": "Los horarios ahora se ejecutan en {{tz}}.",

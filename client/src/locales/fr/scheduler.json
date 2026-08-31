@@ -187,6 +187,7 @@
     "title": "Fuseau horaire du planificateur",
     "description": "Toutes les planifications ci-dessous -- vos tâches, la sauvegarde automatique et le redémarrage automatique -- s'exécutent dans ce fuseau horaire.",
     "inputLabel": "Nom de fuseau horaire IANA",
+    "noMatches": "Aucun fuseau horaire correspondant",
     "saveButton": "Enregistrer",
     "currentlyEffective": "Actuellement en vigueur : {{tz}}",
     "savedDesc": "Les planifications s'exécutent maintenant dans {{tz}}.",
