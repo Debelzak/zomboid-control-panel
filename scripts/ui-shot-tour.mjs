@@ -709,6 +709,27 @@ const VIEWS = [
   { name: 'discord', path: '/discord' },
   { name: 'settings', path: '/settings' },
   ...SETTINGS_TABS.map((tab) => ({ name: `settings:${tab}`, path: `/settings?tab=${tab}` })),
+  // impeccable-critique-2026-08-31: closes a coverage gap god flagged --
+  // 76ef3753's About-tab "Up to date" status badge only renders once
+  // panelUpdateStatus.latestVersion is populated, and nothing populates it
+  // except clicking Check for Updates. This script full-navigates per view
+  // (see the shell-async-race card), so no other view's fetch can leave
+  // that state behind for this one to inherit -- it has to be driven here.
+  // Loads on the Updates tab (where the button lives), clicks it, then
+  // switches to About via a plain tab click (client-side, no navigation,
+  // so the just-fetched state survives) rather than a second page.goto.
+  {
+    name: 'settings:about-checked',
+    path: '/settings?tab=updates',
+    interact: async (page) => {
+      await page.getByRole('button', { name: 'Check for Updates' }).click()
+      await page.waitForFunction(
+        () => !document.body.innerText.includes('Checking...'),
+        { timeout: 8000 },
+      ).catch(() => {})
+      await clickTabByRole(page, 'About')
+    },
+  },
   { name: 'debug', path: '/debug' },
   ...DEBUG_TABS.map(({ value, label }) => ({
     name: `debug:${value}`,
