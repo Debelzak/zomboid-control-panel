@@ -1655,7 +1655,7 @@ router.post("/:id/activate", requirePermission("servers.manage"), async (req, re
 
     // Emit to clients that active server changed
     if (io) {
-      io.emit("activeServerChanged", { server });
+      io.emit("activeServerChanged", { server: sanitizeServerResponse(server) });
     }
 
     log.info(`Activated server: ${server.name} (ID: ${server.id})`);

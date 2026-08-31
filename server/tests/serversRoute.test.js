@@ -35,7 +35,7 @@ const {
   parseDiscoveredPort,
   parseServerId,
 } = await import("../routes/servers.js");
-const { getServer, getActiveServer, deleteServer } = await import("../database/init.js");
+const { getServer, getActiveServer, deleteServer, setActiveServer } = await import("../database/init.js");
 const {
   getSteamLoginArgs,
   hasSteamManifestAccessDeniedState,
@@ -894,6 +894,51 @@ describe("DELETE /api/servers/:id: deleting the active server must reload live s
     expect(serverManager.reloadConfig).not.toHaveBeenCalled();
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true }),
+    );
+  });
+});
+
+// POST /:id/activate's HTTP response correctly runs the server record
+// through sanitizeServerResponse() before res.json() -- but the Socket.IO
+// broadcast a few lines earlier emitted the raw `server` object instead,
+// leaking rconPassword (and any other SENSITIVE_FIELD_RE-matching field) to
+// every connected socket, not just the requester. activeServerChanged is
+// subscribed app-shell-wide (Layout.tsx) for every logged-in role, so a
+// moderator with no servers.manage capability received an admin's plaintext
+// RCON password the instant anyone else activated a server.
+describe("POST /api/servers/:id/activate: the activeServerChanged broadcast must not leak credentials", () => {
+  let io;
+
+  function buildReq(id) {
+    return {
+      params: { id },
+      user: { role: "admin" },
+      app: {
+        get: (key) => ({ io, modChecker: null })[key],
+      },
+    };
+  }
+
+  beforeEach(() => {
+    setActiveServer.mockReset();
+    io = { emit: vi.fn() };
+  });
+
+  it("sanitizes the server payload on the Socket.IO broadcast, not just the HTTP response", async () => {
+    setActiveServer.mockResolvedValue({
+      id: "1",
+      name: "Active One",
+      rconPassword: "top-secret",
+    });
+
+    const response = createResponse();
+    await runRoute("/:id/activate", "post", buildReq("1"), response);
+
+    expect(io.emit).toHaveBeenCalledWith(
+      "activeServerChanged",
+      expect.objectContaining({
+        server: expect.not.objectContaining({ rconPassword: "top-secret" }),
+      }),
     );
   });
 });
