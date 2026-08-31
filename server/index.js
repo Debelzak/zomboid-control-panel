@@ -324,6 +324,22 @@ let activePanelPort = null;
 // HTTPS server — created during startup if certs are available
 let httpsServer = null;
 
+// Whether HTTPS is currently up, per the module-level `httpsServer` binding
+// setupHttpsServer() nulls on any failure (cert error, EADDRINUSE, invalid
+// port) so a later check (the boot-banner URL list, the protocol string
+// used to build the printed panel URL) never reports HTTPS as available
+// after it's actually failed closed. Exported narrowly so a test can
+// observe this specific state transition -- bug hunt 2026-08-31-c
+// (under-coverage sweep): a prior test asserted "does NOT crash" and
+// "fails closed" correctly via the returned server object's own
+// `.listening` property, but had no way to see whether this MODULE-level
+// binding (a separate reference from what setupHttpsServer() returns) was
+// actually reset, despite its own title explicitly claiming "(server nulls
+// itself out)" as part of what it verifies.
+export function isHttpsServerActive() {
+  return httpsServer !== null;
+}
+
 // CORS — restrict to known development and production origins
 // Must be declared before Socket.IO or Express CORS middleware reference it
 const defaultAllowedOrigins = [
