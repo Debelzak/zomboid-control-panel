@@ -36,6 +36,13 @@
 //            which is the tracked, hand-curated README gallery.
 //   --port   Port for the throwaway server. Default 34917.
 //   --keep-server   Don't kill the throwaway server on exit (debugging).
+//            Spawned detached so it survives this script's own process
+//            exiting, not just surviving the finally block's own
+//            server.kill() call -- see spawnServer's own comment for why a
+//            non-detached child dies with the parent on Windows regardless.
+//            Its data dir is deliberately left on disk (the server needs
+//            it); clean up both yourself when done (the script prints the
+//            exact commands).
 //
 // WHAT THIS DOES (both modes)
 //   1. Builds the client (`vite build`) against whatever repo root it's
@@ -189,7 +196,7 @@
 
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -300,23 +307,72 @@ async function buildClient(root) {
   await run('npm', ['run', 'build'], clientDir)
 }
 
-function spawnServer(root, dataRoot, port) {
+function spawnServer(root, dataRoot, port, keepServer) {
   const configPath = path.join(dataRoot, 'paths.config.json')
   writeFileSync(configPath, JSON.stringify({
     dataDir: path.join(dataRoot, 'data'),
     logsDir: path.join(dataRoot, 'logs'),
   }, null, 2))
+  const env = {
+    ...process.env,
+    PANEL_PATHS_CONFIG_PATH: configPath,
+    PORT: String(port),
+    SETUP_TOKEN,
+    PANEL_NO_SUPERVISOR: '1',
+    NODE_ENV: 'production',
+  }
+
+  // --keep-server-outlives-parent (2026-08-31): this branch is the ONLY
+  // thing --keep-server changes -- the plain (keepServer falsy) path below
+  // is byte-for-byte what every existing caller already runs, so the normal
+  // shoot-and-look flow three agents depend on cannot regress from this.
+  //
+  // Root cause (Kevin's diagnosis): a child spawned WITHOUT `detached: true`
+  // is tied into the same Windows job object as this script's own process,
+  // so the child dies whenever the parent's process tree is torn down --
+  // Ctrl+C, a timeout, or (the actual failure mode here) whatever spawned
+  // THIS script reaping its process tree once the foreground command
+  // finishes -- regardless of whether anything ever calls server.kill().
+  // `detached: true` breaks that association. `windowsHide: true` alongside
+  // it is required on Windows or the child pops its own visible console
+  // window (Node's own documented behavior for options.detached there).
+  // `child.unref()` stops THIS process's event loop waiting on the child,
+  // so main() can finish and exit promptly instead of hanging forever
+  // "waiting" for a child that is now meant to outlive it.
+  //
+  // The normal path's stdio: ['ignore', 'pipe', 'pipe'] can't be reused
+  // here: an active `.on('data', ...)` pipe listener is itself a handle
+  // that would keep this process alive/tied to the child, defeating the
+  // whole point. Redirect to real log files instead -- the server's output
+  // survives parent exit and stays inspectable, which is the documented
+  // purpose of --keep-server ("debugging"). Parent's own copy of the fds is
+  // closed right after spawn (the child gets its own duplicated fds from
+  // the OS at spawn time, so this doesn't affect its ability to keep
+  // writing) purely so this soon-to-exit process doesn't hold them open
+  // longer than it needs to.
+  if (keepServer) {
+    const stdoutLogPath = path.join(dataRoot, 'server-stdout.log')
+    const stderrLogPath = path.join(dataRoot, 'server-stderr.log')
+    const outFd = openSync(stdoutLogPath, 'a')
+    const errFd = openSync(stderrLogPath, 'a')
+    const child = spawn('node', ['server/index.js'], {
+      cwd: root,
+      env,
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', outFd, errFd],
+    })
+    closeSync(outFd)
+    closeSync(errFd)
+    child.unref()
+    child.stdoutLogPath = stdoutLogPath
+    child.stderrLogPath = stderrLogPath
+    return child
+  }
 
   const child = spawn('node', ['server/index.js'], {
     cwd: root,
-    env: {
-      ...process.env,
-      PANEL_PATHS_CONFIG_PATH: configPath,
-      PORT: String(port),
-      SETUP_TOKEN,
-      PANEL_NO_SUPERVISOR: '1',
-      NODE_ENV: 'production',
-    },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   child.stdout.on('data', (d) => process.stdout.write(`[server] ${d}`))
@@ -1544,7 +1600,7 @@ async function main() {
   mkdirSync(path.join(dataRoot, 'data'), { recursive: true })
   mkdirSync(path.join(dataRoot, 'logs'), { recursive: true })
 
-  const server = spawnServer(args.root, dataRoot, args.port)
+  const server = spawnServer(args.root, dataRoot, args.port, args.keepServer)
   const manifest = []
   let browser = null
 
@@ -1737,10 +1793,19 @@ async function main() {
     await browser?.close().catch(() => {})
     if (!args.keepServer) {
       server.kill()
+      rmSync(dataRoot, { recursive: true, force: true })
     } else {
+      // Deleting dataRoot here would pull the data/logs dir and
+      // paths.config.json out from under a server this branch just went to
+      // the trouble of keeping alive -- it would still hold the PID, but
+      // break for real on its next disk read/write (db.json, DiskMonitor's
+      // periodic poll, etc.). Left in place deliberately; the operator is
+      // responsible for cleaning it up when done debugging.
       console.log(`[ui-shot-tour] --keep-server: leaving server up at ${BASE_URL} (pid ${server.pid})`)
+      console.log(`[ui-shot-tour] --keep-server: data dir left in place (server needs it): ${dataRoot}`)
+      console.log(`[ui-shot-tour] --keep-server: server logs: ${server.stdoutLogPath} / ${server.stderrLogPath}`)
+      console.log(`[ui-shot-tour] --keep-server: clean up when done -- Windows: taskkill /PID ${server.pid} /F && rmdir /s /q "${dataRoot}"`)
     }
-    rmSync(dataRoot, { recursive: true, force: true })
   }
 
   writeFileSync(path.join(args.out, 'manifest.json'), JSON.stringify(manifest, null, 2))
