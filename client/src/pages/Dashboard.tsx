@@ -1041,6 +1041,20 @@ export default function Dashboard() {
     { to: '/server-config', icon: Server, label: t('workItems.config') },
   ]
 
+  // WORK_STATE_TONE (DashboardVerdict.tsx) already colors each row by
+  // severity, but color alone doesn't pull a 'bad' row up past several
+  // calm ones above it in a 7-row list -- the operator has to read every
+  // row to find it. Sorting by severity (stable, so same-tone rows keep
+  // their original relative order) puts what needs attention where the
+  // operator's own "actionable items on top" ask actually lands: the top
+  // of the list, not just a different color partway down it.
+  const WORK_ITEM_SEVERITY: Record<'bad' | 'warning' | 'default' | 'good', number> = {
+    bad: 0, warning: 1, default: 2, good: 3,
+  }
+  const sortedWorkItems = [...workItems].sort(
+    (a, b) => WORK_ITEM_SEVERITY[a.tone ?? 'default'] - WORK_ITEM_SEVERITY[b.tone ?? 'default'],
+  )
+
   /* ====================================================================== */
   /*  RENDER                                                                  */
   /* ====================================================================== */
@@ -1672,7 +1686,7 @@ export default function Dashboard() {
 
           {/* DESTINATIONS — each one carries its own live state */}
           <section>
-            <WorkList items={workItems} />
+            <WorkList items={sortedWorkItems} />
             <div className="mt-2 border-t border-border/25 px-1 pt-1">
               <ConnLine
                 label={t('connLine.rcon')}
