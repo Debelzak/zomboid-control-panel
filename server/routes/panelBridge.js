@@ -303,6 +303,35 @@ export const BRIDGE_ACTION_CAPABILITY = {
   // debug action for free, the exact bypass class e728248 closed for the
   // moderation four.
   debugItemScript: "bridge.diagnostics",
+  // 2026-08-31 bug hunt: these eight are the SAME actions the 2026-08-27
+  // ranked-bug #5 ruling (see the big comment above the route matrix,
+  // "operator ruling on ranked-bug #5") moved off server.world_events onto
+  // players.endanger_or_impersonate for their own dedicated routes
+  // (/sound/near-player, /sound/gunshot, /sound/alarm, /sound/noise,
+  // /zombies/spawn-near, /zombies/spawn-behind, /chat/admin,
+  // /chat/general) -- but this generic passthrough was never updated to
+  // match, so a role holding only bridge.command (a legitimate GM/
+  // world-event-automation grant, per this file's own header comment) could
+  // reach targeted zombie-spawning, targeted sound effects, and chat
+  // impersonation-as-server/admin through POST /command with no
+  // endanger_or_impersonate check at all -- the exact bypass class e728248
+  // closed for the moderation four, just not extended here. REPLACEMENT
+  // semantics (see ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS below), not
+  // ADDITIONAL like the moderation four or debugItemScript: unlike
+  // debugItemScript (ADDITIONAL because "there's no described legitimate
+  // automation role that needs this probe without also holding
+  // bridge.command"), a role holding ONLY players.endanger_or_impersonate
+  // already reaches all eight through their dedicated routes today --
+  // requiring bridge.command here too would newly block that role from this
+  // passthrough for actions it's otherwise fully entitled to.
+  playSoundNearPlayer: "players.endanger_or_impersonate",
+  triggerGunshot: "players.endanger_or_impersonate",
+  triggerAlarmSound: "players.endanger_or_impersonate",
+  createNoise: "players.endanger_or_impersonate",
+  spawnHordeNearPlayer: "players.endanger_or_impersonate",
+  spawnHordeBehindPlayer: "players.endanger_or_impersonate",
+  sendToAdminChat: "players.endanger_or_impersonate",
+  sendToGeneralChat: "players.endanger_or_impersonate",
 };
 
 // The subset of BRIDGE_ACTION_CAPABILITY that uses REPLACEMENT semantics
@@ -317,19 +346,39 @@ export const GM_TOOLS_ONLY_ACTIONS = new Set([
   "healPlayer",
 ]);
 
+// Same REPLACEMENT-semantics bucket as GM_TOOLS_ONLY_ACTIONS above, for the
+// eight players.endanger_or_impersonate actions (2026-08-31 bug hunt) --
+// see BRIDGE_ACTION_CAPABILITY's own comment on those eight entries for why
+// this is REPLACEMENT (matching their dedicated routes, which require
+// players.endanger_or_impersonate alone) rather than ADDITIONAL.
+export const ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS = new Set([
+  "playSoundNearPlayer",
+  "triggerGunshot",
+  "triggerAlarmSound",
+  "createNoise",
+  "spawnHordeNearPlayer",
+  "spawnHordeBehindPlayer",
+  "sendToAdminChat",
+  "sendToGeneralChat",
+]);
+
 // POST /command's own gate can't be a flat requirePermission("bridge.command")
-// the way every other bridge.setup route above is: GM_TOOLS_ONLY_ACTIONS
-// must be reachable WITHOUT bridge.command, decided per-request by the
-// action in the body, which requirePermission()'s capability argument
-// (fixed at route-registration time) has no way to see. This still enforces
-// authentication (401) exactly like requirePermission does; it only skips
-// the bridge.command capability check when the action is one of the four
-// GM tools, leaving BRIDGE_ACTION_CAPABILITY's own inline check further
-// down in the handler as their sole gate.
+// the way every other bridge.setup route above is: GM_TOOLS_ONLY_ACTIONS and
+// ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS must each be reachable WITHOUT
+// bridge.command, decided per-request by the action in the body, which
+// requirePermission()'s capability argument (fixed at route-registration
+// time) has no way to see. This still enforces authentication (401) exactly
+// like requirePermission does; it only skips the bridge.command capability
+// check when the action is in one of those two REPLACEMENT-semantics sets,
+// leaving BRIDGE_ACTION_CAPABILITY's own inline check further down in the
+// handler as their sole gate.
 const requireBridgeCommand = requirePermission("bridge.command");
 function requireBridgeCommandUnlessGmToolsOnly(req, res, next) {
   const { action } = req.body || {};
-  if (typeof action === "string" && GM_TOOLS_ONLY_ACTIONS.has(action)) {
+  if (
+    typeof action === "string" &&
+    (GM_TOOLS_ONLY_ACTIONS.has(action) || ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS.has(action))
+  ) {
     return next();
   }
   return requireBridgeCommand(req, res, next);
@@ -1319,10 +1368,11 @@ router.get("/ping", async (req, res) => {
 // real work today: roles are data now, an operator can create a custom
 // role and grant it bridge.command deliberately, and this is exactly what
 // stops that role also getting the unrestricted passthrough by accident.
-// EXCEPT for GM_TOOLS_ONLY_ACTIONS (see requireBridgeCommandUnlessGmToolsOnly
-// and BRIDGE_ACTION_CAPABILITY's own comment above) — those four skip this
-// gate entirely and are enforced solely by the inline players.gm_tools
-// check further down in this handler.
+// EXCEPT for GM_TOOLS_ONLY_ACTIONS and ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS
+// (see requireBridgeCommandUnlessGmToolsOnly and BRIDGE_ACTION_CAPABILITY's
+// own comment above) — those twelve skip this gate entirely and are
+// enforced solely by their inline single-capability check further down in
+// this handler.
 router.post("/command", requireBridgeCommandUnlessGmToolsOnly, async (req, res) => {
   const activeServer = await getActiveServer();
   if (activeServer?.isRemote && !bridge.isSftpRunning() && !bridge.isRunning) {
@@ -1365,15 +1415,19 @@ router.post("/command", requireBridgeCommandUnlessGmToolsOnly, async (req, res) 
   // gating shapes here: the four moderation actions need players.moderate
   // ADDITIONALLY, on top of the bridge.command gate already enforced by
   // requireBridgeCommandUnlessGmToolsOnly above. The GM four
-  // (GM_TOOLS_ONLY_ACTIONS) never went through that gate at all for this
-  // request -- players.gm_tools here is their ONLY gate, not an addition.
+  // (GM_TOOLS_ONLY_ACTIONS) and the eight endanger_or_impersonate actions
+  // (ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS) never went through that gate at
+  // all for this request -- their one mapped capability here is their ONLY
+  // gate, not an addition.
   const requiredCapability = BRIDGE_ACTION_CAPABILITY[action];
   if (requiredCapability) {
     const role = req.user ? await getRoleByName(req.user.role) : null;
     const capabilities = Array.isArray(role?.capabilities) ? role.capabilities : [];
     if (!capabilities.includes(requiredCapability)) {
+      const isReplacementSemantics =
+        GM_TOOLS_ONLY_ACTIONS.has(action) || ENDANGER_OR_IMPERSONATE_ONLY_ACTIONS.has(action);
       return res.status(403).json({
-        error: GM_TOOLS_ONLY_ACTIONS.has(action)
+        error: isReplacementSemantics
           ? `"${action}" requires ${requiredCapability}.`
           : `"${action}" also requires ${requiredCapability}.`,
         code: ErrorCode.PANELBRIDGE_ACTION_CAPABILITY_REQUIRED,
