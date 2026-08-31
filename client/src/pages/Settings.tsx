@@ -3644,7 +3644,13 @@ export default function Settings() {
             {/* Panel Bridge - Advanced Features */}
             <Card id="settings-bridge">
               <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
+                {/* impeccable-2026-08-31: this used to be a plain flex row
+                    with no responsive stacking -- on mobile the title +
+                    description column got squeezed into a narrow space next
+                    to the badge, wrapping the description into 5 short
+                    lines instead of its normal 2-3. Same fix shape as the
+                    Updates card's header a few tabs over. */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-primary" />
@@ -4148,7 +4154,16 @@ export default function Settings() {
                     </p>
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                  {/* impeccable-2026-08-31: lg:items-start left the RCON card
+                      (much shorter content -- name, host:port, one link) at
+                      its own natural height inside a row sized to the SFTP
+                      card (host/port/user/password/folder/interval/buttons),
+                      so the RCON card's border ended with a large empty gap
+                      beneath it instead of lining up with its neighbor.
+                      Default grid stretch instead: both cards' borders now
+                      match the row height, same fix shape as any two cards
+                      meant to sit level in one row. */}
+                  <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
                     <div id="rcon-command-connection" className="rounded-md border border-border/60 p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -4224,7 +4239,14 @@ export default function Settings() {
                       </div>
                       <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
                     </div>
-                    <div className="flex flex-wrap items-end gap-3">
+                    {/* impeccable-2026-08-31: below sm:, this used to stay a
+                        row (flex-wrap alone doesn't force a break while
+                        flex-1 can still shrink) -- the path input compressed
+                        down to ~11 characters next to the button and clipped
+                        the rest with no ellipsis. Stack on mobile, row from
+                        sm: up, matching the same breakpoint the input's own
+                        sm:min-w-[18rem] already used. */}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                       <div className="min-w-0 flex-1 space-y-1.5 sm:min-w-[18rem]">
                         <Label htmlFor="sftp-config-path">{t("bridge.remoteServerFolderLabel")}</Label>
                         <Input
@@ -4271,7 +4293,9 @@ export default function Settings() {
                       </div>
                       <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
                     </div>
-                    <div className="flex flex-wrap items-end gap-3">
+                    {/* impeccable-2026-08-31: same mobile truncation fix as
+                        the Remote server folder row above. */}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                       <div className="min-w-0 flex-1 space-y-1.5 sm:min-w-[18rem]">
                         <Label htmlFor="sftp-log-path">{t("bridge.remoteLogFolderLabel")}</Label>
                         <Input
@@ -4808,7 +4832,17 @@ export default function Settings() {
                       compact
                       type={backupsLoadError ? "disconnected" : "empty"}
                       title={backupsLoadError ? t("backups.loadFailedTitle") : t("backups.emptyTitle")}
-                      description={backupsLoadError ? t("backups.loadFailedDescription") : t("backups.emptyDescription")}
+                      description={
+                        backupsLoadError
+                          ? t("backups.loadFailedDescription")
+                          : // impeccable-2026-08-31: this used to always say "Click Backup Now
+                            // to create one" even when Backup Now is disabled because the saves
+                            // folder wasn't found (see the status row above) -- pointing the
+                            // operator at a dead control instead of the actual blocker.
+                            !backupStatus?.savesExists
+                            ? t("backups.emptyDescriptionSavesNotFound")
+                            : t("backups.emptyDescription")
+                      }
                     />
                   ) : (
                     <ScrollArea className="h-[200px] rounded-lg border">
@@ -5658,9 +5692,19 @@ export default function Settings() {
                         {panelUpdateStatus?.latestVersion ? (
                           <>
                             v{panelUpdateStatus.latestVersion}
-                            {panelUpdateStatus.updateAvailable && (
+                            {panelUpdateStatus.updateAvailable ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
                                 {t("about.updateAvailableBadge")}
+                              </span>
+                            ) : (
+                              /* impeccable-2026-08-31: installed/latest matching used to render as
+                                 two bare numbers with no affirmative status -- the operator has to
+                                 compare them manually. The Updates tab already shows this same fact
+                                 with a status pill (statusUpToDate); this reuses that pattern instead
+                                 of leaving the "everything's fine" case silent next to the "update
+                                 available" case, which does get a badge. */
+                              <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                                {t("about.upToDateBadge")}
                               </span>
                             )}
                           </>
@@ -6329,6 +6373,15 @@ function WorkshopCollectionSyncCard({
         </div>
 
         {/* Steam session cookies */}
+        {/* impeccable-2026-08-31: this whole section -- auto-detect from
+            browser, paste-a-request, manual cookie fields -- used to render
+            fully expanded even though none of it does anything until a
+            Collection ID is set (Test Connection and Check Drift below are
+            already disabled on !collectionIdValid). The one hint that said
+            so was a small corner label, easy to miss. Gate the section
+            itself instead: shorter page by default, and the placeholder
+            names the actual next step instead of leaving it implicit. */}
+        {collectionIdValid ? (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -6589,6 +6642,12 @@ function WorkshopCollectionSyncCard({
             </p>
           </div>
         </div>
+        ) : (
+          <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-background/40 p-4 text-sm text-muted-foreground">
+            <KeyRound className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+            <p>{t("workshopSync.cookiesNeedCollectionId")}</p>
+          </div>
+        )}
 
         {/* Status / actions */}
         <div className="space-y-2 pt-2 border-t border-border/40">
