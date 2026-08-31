@@ -1888,6 +1888,13 @@ export default function Events() {
           variant: 'success' as const,
         })
       }
+      // Every other bridge action on this page (handleAction, handleBridgeAction,
+      // runInlineAction) logs to Recent Actions -- this, the general Bridge
+      // Tools "Run Operation" path, was the one gap: it toasted and populated
+      // the results table but never called pushActivity, so the sidebar log
+      // could sit on "No recent actions" in the same frame as a completed,
+      // timestamped operation result (2026-08-31 quality pass).
+      pushActivity(operationLabel, true)
     } catch (error) {
       const message = getUserErrorMessage(error, t('toasts.bridgeOperationFailedFallback'))
       setBridgeResultData({
@@ -1903,6 +1910,7 @@ export default function Events() {
         description: message,
         variant: 'destructive',
       })
+      pushActivity(t('toasts.bridgeOperationFailedTitle'), false)
     } finally {
       setBridgeLoading(null)
     }

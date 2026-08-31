@@ -772,11 +772,21 @@ export default function Discord() {
                     }`}
                   >
                     {isDone ? (
-                      <Check className="w-4 h-4" />
+                      <Check className="w-4 h-4 shrink-0" />
                     ) : (
-                      <Icon className="w-4 h-4" />
+                      <Icon className="w-4 h-4 shrink-0" />
                     )}
-                    <span className="hidden md:inline">{step.label}</span>
+                    {/* Used to be hidden below `md`, leaving 6 bare icon
+                        buttons on mobile (lightning/briefcase/eye/person+/
+                        hash/play) with no text anywhere to say what step
+                        each one is -- "Intents" and "Server IDs" aren't
+                        guessable from their icons alone. The row already
+                        scrolls (overflow-x-auto on the parent, shrink-0
+                        here) rather than wrapping or truncating, so keeping
+                        the label uses the scroll behavior this stepper was
+                        already built with instead of fighting it (2026-08-31
+                        quality pass). */}
+                    <span className="whitespace-nowrap">{step.label}</span>
                   </button>
                 </DisabledReason>
                 {i < SETUP_STEPS.length - 1 && (
