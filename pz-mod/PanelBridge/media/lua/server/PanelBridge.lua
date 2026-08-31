@@ -1,10 +1,27 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.41
+    Version: 1.7.42
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.42 Changes:
+                - Fix: stopWeather never cleared a lingering rain
+                    admin-override left by startRain/setSnow -- "Stop All
+                    Weather" correctly stopped the weather period, but
+                    admin-forced rain (a separate ClimateFloat mechanism)
+                    kept falling forever. Now also clears it and verifies
+                    isRaining() before reporting success.
+                - Fix: runEventSequence's `ok` field now reflects whether any
+                    step actually failed, not just whether the loop finished.
+                - Fix: json.decode dropped \uXXXX escapes into literal
+                    "uXXXX" text instead of the real character.
+                - This bump exists because the installer (panelBridgeInstaller.js)
+                    only redeploys on a VERSION string difference -- the three
+                    fixes above landed without one, so a server whose bridge
+                    was never separately reinstalled since 1.7.41 does not
+                    have them yet even though this VERSION says otherwise.
 
                 v1.7.41 Changes:
                 - Fix: the v1.7.12 inbox-desync resync (tryResyncInboxCursor)
@@ -396,7 +413,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.41",
+    VERSION = "1.7.42",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
