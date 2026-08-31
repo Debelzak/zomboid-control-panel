@@ -1,17 +1,28 @@
 # CodeQL alert triage — 2026-08-31
 
-First full triage of the repository's CodeQL backlog. Covers all 214 alerts open as of
-2026-08-31 (commit `59bc9bc5`). A prior partial pass on 2026-08-29 dismissed 116 alerts
-directly in the GitHub UI, with reasoning recorded only in the GitHub dismissal comments
-(not in the repo) — that pass is cross-referenced below wherever an open alert shares a
-root cause with a dismissed one, rather than re-deriving a second verdict.
+First full triage of the repository's CodeQL backlog, and the justification record for a
+future bulk dismissal. Covers all 214 alerts open as of 2026-08-31 (commit `59bc9bc5`). A
+prior partial pass on 2026-08-29 dismissed 116 alerts directly in the GitHub UI, with
+reasoning recorded only in the GitHub dismissal comments (not the repo, which is why it
+looked like no triage record existed) — that pass is cross-referenced below wherever an
+open alert shares a root cause with a dismissed one, rather than re-deriving a second
+verdict in different words. The intent is that a bulk dismissal of the 214 covered here can
+cite a section of this doc per alert instead of re-arguing each one in the UI, the way the
+2026-08-29 pass had to.
 
 **Discriminator used throughout: who can reach it beats how bad it sounds.** This panel is
 an admin/operator tool with a real capability system (`server/services/permissions.js`,
 `requirePermission(capability)`, fails closed). Three roles: `admin` (all capabilities),
 `technician` (a broad but real subset), `moderator` (narrow). A finding reachable only by a
 role that already holds equal-or-greater capability elsewhere is **accepted-risk**, not a
-gap — exploiting it grants nothing the role doesn't already have another way to get.
+gap — exploiting it grants nothing the role doesn't already have another way to get. Two
+threat classes fall outside that single axis and needed a second question each — both real
+findings below come from asking it: a **shared-resource TOCTOU** (is the resource itself
+attacker-writable independent of any panel capability, e.g. a world-shared temp directory)
+and an **algorithmic-complexity DoS** (does exploiting this cost the attacker's own
+privilege, or does it cost *everyone's* availability regardless of the attacker's
+privilege — a hung single-threaded Node event loop is everyone's outage, not just the
+caller's).
 
 ## Counts
 
@@ -37,44 +48,132 @@ operator, taken as one batch (see "What was and wasn't done" below).
 - Cross-checked the two pre-flagged criticals (`js/command-line-injection` #297, `js/request-forgery` #333) independently against the initial hypothesis, verifying rather than assuming.
 - Settled a standing open question about whether CodeQL's in-source suppression comments are actually honored by this repo's CI pipeline, by downloading the raw SARIF for the latest clean analysis and checking it directly (see below) — read-only, no GitHub UI action.
 
+## Top finding: alert #289 is the only one NOT gated behind technician/admin
+
+Every other real, false-positive, or accepted-risk verdict in this triage rests on the
+"who can reach it" test *lowering* severity — a finding gated behind `server.install`,
+`servers.manage`, `bridge.setup`, etc. is accepted-risk because only a role that already
+has broad trust can reach it. **Alert #289 is the one case where that same test *raises*
+the severity instead: the reachable set is "any authenticated panel user," not a
+privileged role.**
+
+**`server/services/panelUpdateChecker.js`**, `readMostRecentApplyLog()`'s legacy
+`os.tmpdir()` fallback (this method backs `GET /api/panel/update-apply-log`, which requires
+login but has **no specific capability gate** — every authenticated role, including
+`moderator`, can call it). The fallback used `fs.statSync`/`fs.readFileSync`/`fs.openSync`
+(all symlink-following) on files matched only by a predictable name pattern
+(`zomboid-panel-update-<digits>.log`) inside the shared, world-writable system temp
+directory, with no check for whether a matched entry was a symlink.
+
+**Impact:** on a shared host where the panel process doesn't run under systemd's
+`PrivateTmp=true` (bare-metal/manual installs, `docker-compose.install.yml` deployments —
+`PrivateTmp` only protects the *recommended* systemd-unit deployment, and the code needs its
+own defense regardless of deployment shape), a lower-privileged local OS user could plant a
+symlink named to match the pattern, pointing at any file the panel process can read. **Any
+logged-in panel user's session — not a privileged one — is then the vehicle**: pulling up
+to 8KB of that file's content back through this endpoint.
+
+**Fix — the stronger option, not a patch around the symlink:** searched for any current
+writer to this location (`grep -rn "zomboid-panel-update-" server/`) and found none. The
+only other reference is in `cleanupOldHelperArtifacts()`, whose own doc comment calls this
+pattern **"legacy, pre-v1.0.21"** and only *prunes* matching files — it doesn't write them
+either. Nothing in the current codebase still produces files here; the write path moved to
+`<exeDir>/.panel-helpers/*.cmd` and `logsDir`-based logs long ago. Since there's no live
+caller left to justify keeping a read path into a world-shared directory, **the entire
+`os.tmpdir()` fallback branch was removed** rather than defended with an `lstatSync` check —
+removing the vulnerability class outright, not leaving a predictable-name path in `/tmp`
+that a future change could re-expose. The two `logsDir`-based fallbacks
+(`supervisor.log`, `panel-update-last.log`, and timestamped `panel-update-*.log` under
+`logsDir`) are untouched and still work — `logsDir` is the panel's own private directory,
+not a location shared with other OS users, so those don't carry the same exposure.
+
+## The two polynomial-ReDoS findings — a different risk shape from the rest of this triage
+
+**`server/services/remoteConfigFiles.js:33`** (`safeRemoteDir`) and
+**`server/services/panelBridgeSftp.js:15`** (`safeRemotePath`) both ran
+`value.replace(/\/+$/, "")` — quadratic on a crafted input (many trailing slashes) — on a
+value (`configPath` / `bridgePath`) that had no length cap before reaching the regex. Both
+are reachable via `bridge.setup`-gated routes (`/sftp/test`, `/sftp/configure`, and the
+remote-config-transport setup routes) — alerts #3 and #1.
+
+**These are technician-gated to *trigger*, but the damage crosses every user of the panel —
+that's a different risk shape from every accepted-risk verdict elsewhere in this doc, and
+shouldn't be filed next to them as if the reasoning were the same.** Everywhere else,
+"only a technician/admin can reach it" ends the analysis, because the role already holds
+equivalent-or-greater capability, so exploiting the finding gains that role nothing new.
+That reasoning doesn't apply to a denial-of-service: Node is single-threaded, so a
+technician sending one oversized `configPath`/`bridgePath` (well under Express's 1MB JSON
+body limit) hangs the event loop for **every concurrent user of the panel**, including users
+with capabilities the attacker doesn't have. The privilege needed to *trigger* the bug says
+nothing about who *suffers* from it — a privilege-crossing DoS is real regardless of the
+gate in front of it, which is exactly the second question the "who can reach it" framework
+needs for this rule class.
+
+**Fix:** reject the value outright (same "must be an absolute POSIX path" error) if its
+length exceeds 500 characters, before the regex ever runs. This number isn't invented: `500`
+is an established convention already used for the same kind of path-length cap in at least
+ten other places in this codebase (`server/routes/panelBridge.js:3242`,
+`server/routes/servers.js:353,475,508,988`, `server/routes/debug.js:1721,1724`,
+`server/utils/paths.js:177`, and others) — matched verbatim rather than picking an eleventh
+number. *Considered going further and extracting a single shared helper, since
+`safeRemoteDir`/`safeRemotePath` are near-identical — but found no existing shared
+`MAX_PATH_LENGTH` constant to consolidate onto (all ten existing sites independently declare
+their own `500`), so unifying them would be a repo-wide refactor unrelated to this fix's
+blast radius, not a two-function change. Left as two independent, numerically-consistent
+implementations rather than mixing an unrelated refactor into a security patch.*
+
+**Tests added** (`server/tests/codeqlReDoSPathLengthCap.test.js`,
+`server/tests/panelUpdateApplyLogSymlinkSkip.test.js`): length-cap rejection/acceptance for
+both validators; for #289, that the `logsDir` fallbacks still work, that a *real* file
+sitting in the shared temp dir is now ignored entirely (not just its symlink variant), and
+a platform-skipped symlink case (matching this repo's existing pattern, e.g.
+`linuxBackupSymlinkSkipVisibility.test.js`). Full server suite re-run clean after all three
+fixes: 391 files / 3516 tests passed, 18 files / 91 skipped (expected platform skips), 0
+failures.
+
 ## The suppression-pipeline question, settled
 
-`.github/workflows/codeql.yml` carries a comment recording two attempts to make CodeQL
+`.github/workflows/codeql.yml` carried a comment recording two attempts to make CodeQL
 honor the ~105 in-source `// codeql[js/path-injection]`-style justification comments
 already written across the codebase: attempt 1 (a query in `queries:`) was rejected at
 database init; attempt 2 (`44d04efa`, moving it to `packs:`) was believed to have fixed it
-but was marked **unverified in the real pipeline**, with an explicit instruction to check
-a subsequent run's raw SARIF for a non-empty `suppressions[]` on a known-annotated result.
-Three clean runs had since happened (`1818924c`, `b6f95a5d`, `59bc9bc5`) with nobody
-checking. Checked directly, read-only, via `gh api .../code-scanning/analyses/{id} -H
-"Accept: application/sarif+json"` against the `59bc9bc5` analysis:
+but the comment claimed, in capitals, that suppression **"never engages in this repo
+pipeline, for anyone, ever"** and was **still unverified** — with an explicit instruction to
+check a subsequent run's raw SARIF for a non-empty `suppressions[]` on a known-annotated
+result. Three clean runs had since happened (`1818924c`, `b6f95a5d`, `59bc9bc5`) with
+nobody checking. Checked directly, read-only, via `gh api .../code-scanning/analyses/{id}
+-H "Accept: application/sarif+json"` against the `59bc9bc5` analysis:
 
-- **104 results in the SARIF carry `suppressions: [{state: "accepted"}]`** — an exact
-  match for the 104 alerts dismissed on 2026-08-29 that cited the generic "in-source
-  suppression, honoured by the pipeline" reasoning. **Attempt 2 worked. CodeQL's own
-  analysis is now correctly recognizing and accepting the in-source suppression
-  comments.**
+- **109 of 330 results in the SARIF carry `suppressions: [{"state": "accepted"}]`**,
+  confirmed against a known-annotated site (`server/routes/players.js:55`, which carries a
+  `// codeql[js/path-injection]` justification). **Attempt 2 worked — the claim in
+  `codeql.yml` was stale, not correct, and has been corrected in this commit's sibling
+  workflow-comment fix.** CodeQL's own analysis is now correctly recognizing and accepting
+  the in-source suppression comments.
 - **But 5 of the currently-open 214 alerts also carry an accepted suppression** —
   `server/services/panelBridge.js:897, 902, 925, 967, 974` (alerts #417, #418, #419, #414,
   #415; see the panelBridge.js section below). These have valid, CodeQL-accepted
   suppression comments and are still sitting open.
 
-**Conclusion: suppression being "accepted" by CodeQL's own analysis does not cause
-GitHub to auto-dismiss the alert.** The two are independent systems — an accepted
-in-source suppression makes GitHub's UI *show* the comment as an annotation, but changing
-an alert's `state` to `dismissed` still requires an explicit action (the 2026-08-29 pass
-did this by hand/API for 104 alerts; nobody has done it for these 5). So the 2026-08-29
-dismissal comments' claim ("the suppression is now honoured by the pipeline") is
-half-right: the *recognition* works, but its implied conclusion — that the backlog would
-now stay self-clearing — does not hold. **Every future alert whose location matches an
-existing suppression comment will still need the exact same manual/API dismissal the
-2026-08-29 pass did, every time a new alert number is created for it.** This is the
-single highest-value finding from this triage: it explains why the backlog wasn't smaller
-despite ~105 comments already being written, and it will keep recurring until either (a)
-every new suppressed-but-undismissed alert gets a dismissal pass like this one, or (b) the
-project decides accepted-suppression alerts should be dismissed programmatically (e.g. a
-scheduled `gh api` sweep matching accepted-suppression SARIF entries to open alert
-numbers) rather than manually.
+**Conclusion: suppression being "accepted" by CodeQL's own analysis does not cause GitHub
+to auto-dismiss the alert — annotation is documentation, not dismissal.** The two are
+independent systems: an accepted in-source suppression makes GitHub's UI *show* the
+comment as an annotation on the alert, but changing the alert's `state` to `dismissed`
+still requires a separate, explicit action (the 2026-08-29 pass did this by hand/API for
+104 alerts; nobody has done it for these 5). So the 2026-08-29 dismissal comments' own claim
+("the suppression is now honoured by the pipeline") was half-right: the *recognition* works,
+but the implied conclusion — that the backlog would now stay self-clearing — does not hold.
+**Every future alert whose location matches an existing suppression comment will still need
+the exact same manual/API dismissal the 2026-08-29 pass did, every time a new alert number
+is created for it.** This is the single highest-value finding from this triage: it explains
+why the backlog wasn't smaller despite ~105 comments already being written, and it will
+keep recurring until either (a) every new suppressed-but-undismissed alert gets a dismissal
+pass like this one, or (b) the project decides accepted-suppression alerts should be
+dismissed programmatically (e.g. a scheduled `gh api` sweep matching accepted-suppression
+SARIF entries to open alert numbers) rather than manually. **Practical corollary: writing
+more `codeql[...]` comments (e.g. on `embeddedLua.js`'s 3 new sink lines, noted below) is
+still worth doing for a human reviewer's benefit, but it will not by itself close an alert
+— so it wasn't done as part of this triage, to avoid implying it would.**
 
 ## The two pre-flagged criticals
 
@@ -121,7 +220,7 @@ job is letting the operator point installs anywhere on the host).
 - **`/install` ini existence check** (2676-2677, alerts 344,345) — **false-positive**: `serverName` regex blocks traversal regardless of `installPath` breadth.
 - **`/branches`, `/install` steamcmdExe checks** (2065-2453, alerts 355,102,356,104) — **accepted-risk**: `isValidPath()` blocks traversal but not directory scope; `server.install` already implies full filesystem trust.
 - **`/install`, `/quick-setup`, `/steam-update`, `/steamcmd/download`, `/steamcmd/check`** (2678-4225, alerts 346,121-134,347,348,135-145) — **accepted-risk**: same `isValidPath`/`isValidServerName` gate pattern, `server.install`-only, arbitrary-absolute-path is the documented install-anywhere feature.
-- **`/delete-files`** (4308, 4401, alerts 307, 148) — **false-positive**: `deletePath` is validated, marker-checked, **and matched exactly against a configured server's stored `installPath` from the DB** (`matchesConfiguredServer`, lines 4342-4353) before the destructive `rmSync` at 4401 — CodeQL doesn't model the DB-equality check as a sanitizer, but it fully confines the real sink. *`permissions.js`'s `server.wipe` capability description is now stale — see "Secondary findings" below.*
+- **`/delete-files`** (4308, 4401, alerts 307, 148) — **false-positive**: `deletePath` is validated, marker-checked, **and matched exactly against a configured server's stored `installPath` from the DB** (`matchesConfiguredServer`, lines 4342-4353) before the destructive `rmSync` at 4401 — CodeQL doesn't model the DB-equality check as a sanitizer, but it fully confines the real sink. *`permissions.js`'s `server.wipe` capability description was stale describing this route's pre-fix behavior — corrected in a separate commit, see "Secondary findings."*
 - **`/list-directory`** (4472-4484, alerts 309,308,150) — **accepted-risk**: `isValidPath()`-gated, but this route is an explicit in-app filesystem browser (folder names only) — enumerating the host is the point.
 
 **Cluster total: 62, real 0, false-positive 30, accepted-risk 32.**
@@ -180,8 +279,8 @@ passthrough) is admin-only.
 ### `server/services/panelUpdateChecker.js` + `updateChecker.js` + `server/utils/certs.js` (12 alerts)
 
 - **`certs.js` startup TOCTOU** (alerts 319,320,397) — **false-positive**: `loadOrCreateCerts()` runs once at boot (`index.js:617`), no HTTP route reaches it; failure is non-fatal.
-- **`readMostRecentApplyLog` — supervisor.log/panel-update-last.log TOCTOU** (alerts 260,261,329,330) — **accepted-risk**: race only affects a debug/log display value in the panel's own private data directory; `GET /api/panel/update-apply-log` requires login but has no specific capability gate — narrower than ideal, but the raced content is informational only.
-- **`readMostRecentApplyLog` — legacy `os.tmpdir()` fallback** (alert 289) — **REAL, fixed.** See "Real findings" below.
+- **`readMostRecentApplyLog` — supervisor.log/panel-update-last.log TOCTOU** (alerts 260,261,329,330) — **accepted-risk**: race only affects a debug/log display value in the panel's own private data directory; `GET /api/panel/update-apply-log` requires login but has no specific capability gate — narrower than ideal, but the raced content is informational only and `logsDir` isn't shared with other OS users the way `os.tmpdir()` is (contrast with #289 above).
+- **`readMostRecentApplyLog` — legacy `os.tmpdir()` fallback** (alert 289) — **REAL, fixed. See "Top finding" above — led this doc, not buried in this cluster.**
 - **GitHub release-check `https.get`** (alert 268) — **false-positive**: the "file" is the panel's own `package.json` version read once at boot, echoed into a request header to GitHub's API — not request-driven, not attacker-influenced.
 - **`updateChecker.js` version/build-info TOCTOU** (alerts 262, 263) — **accepted-risk**: paths from operator-configured settings, `server.world_events`-gated; race only degrades parsed version info (caught, returns null).
 - **`spawnWindowsApplyHelper`** (alert 5) — **false-positive (dead code)**: function has no caller anywhere in the codebase; the live Windows apply path hard-refuses (409) this legacy branch.
@@ -228,10 +327,10 @@ flow rather than pattern-matched. **No auth-bypass condition was found.**
 ### `server/services/serverManager.js` + `rcon.js` + `sourceRcon.js` + `embeddedLua.js` + `panelBridgeSftp.js` + `remoteConfigFiles.js` (12 alerts, incl. critical #333)
 
 - **`checkTcpReachable`, `SourceRconClient.authenticate`** (alerts 333, 26) — **accepted-risk**, see criticals section above.
-- **`ensureReadableDirTree`** (embeddedLua.js:65,68,70 — alerts 399,400,401) — **false-positive**: `dir` traces to `destPath`, already validated (4 sibling `codeql[...]` suppressions at lines 98/103/110/114 in the same file, enforced by `panelBridge.js:3254-3300`) — required-absolute + realpath'd + must end in `/media/lua/server(/)`. These 3 new sink lines don't yet carry their own matching suppression comment; recommend adding one for consistency (see "Secondary findings").
+- **`ensureReadableDirTree`** (embeddedLua.js:65,68,70 — alerts 399,400,401) — **false-positive**: `dir` traces to `destPath`, already validated (4 sibling `codeql[...]` suppressions at lines 98/103/110/114 in the same file, enforced by `panelBridge.js:3254-3300`) — required-absolute + realpath'd + must end in `/media/lua/server(/)`. These 3 new sink lines don't yet carry their own matching suppression comment; **deliberately not added** — see "The suppression-pipeline question" above for why a comment alone wouldn't close these anyway.
 - **`serverBat`/custom-launcher spawn** (alerts 271, 270, 6) — **accepted-risk**: values are never request-controlled at request time (DB row or deploy-time env var only), `startCommand` additionally passes `validateStartCommand()` (blocks shell metacharacters), is extension-allowlisted, and `spawn()` uses an argv array with no `shell:true`. Documented as an intentional, supported feature (commit `df0ff31`).
 - **`getSftpCachePath`, `getMirrorPath` hash inputs** (alerts 403, 299) — **false-positive**: both `sha256` calls hash only `host:port:username:...` — `password` is never part of the hashed string; CodeQL's field-insensitive taint over-attributes because the same config object also carries a `.password` property elsewhere.
-- **`safeRemoteDir`, `safeRemotePath` — polynomial ReDoS** (alerts 3, 1) — **REAL, fixed.** See "Real findings" below.
+- **`safeRemoteDir`, `safeRemotePath` — polynomial ReDoS** (alerts 3, 1) — **REAL, fixed. See "The two polynomial-ReDoS findings" above.**
 
 **Cluster total: 12, real 2, false-positive 5, accepted-risk 5.**
 
@@ -269,82 +368,37 @@ edited even where a fix was warranted.
 
 **Cluster total: 8, real 0, false-positive 7, accepted-risk 1.**
 
-## Real findings (3) — all fixed
-
-### 1. Symlink-following in the legacy update-apply-log fallback (alert #289)
-
-**`server/services/panelUpdateChecker.js:2261-2293`**, `readMostRecentApplyLog()`'s legacy
-`os.tmpdir()` fallback (kept for installations upgraded from older helper versions).
-`GET /api/panel/update-apply-log` requires login but has no specific capability gate — any
-authenticated role can call it. The fallback used `fs.statSync`/`fs.readFileSync`/
-`fs.openSync` (all symlink-following) on files matched only by a predictable name pattern
-(`zomboid-panel-update-<digits>.log`) inside the shared system temp directory, with no
-check for whether an entry was a symlink.
-
-**Impact:** on a non-systemd Linux install (i.e. one *not* using the bundled
-`zomboid-panel.service` unit, which already sets `PrivateTmp=true` and closes this for the
-recommended deployment), a lower-privileged local user on a shared host could plant a
-symlink named to match the pattern, pointing at any file the panel process can read. Any
-logged-in panel user could then pull up to 8KB of that file's content back through this
-endpoint.
-
-**Fix:** use `fs.lstatSync` (does not follow symlinks) and skip any entry where
-`isSymbolicLink()` is true, before it's ever considered as a candidate.
-
-### 2 & 3. Polynomial ReDoS in two remote-path trailing-slash trims (alerts #3, #1)
-
-**`server/services/remoteConfigFiles.js:33`** (`safeRemoteDir`) and
-**`server/services/panelBridgeSftp.js:15`** (`safeRemotePath`) both run
-`value.replace(/\/+$/, "")` — quadratic on a crafted input (many trailing slashes) — on a
-value (`configPath` / `bridgePath`) that had no length cap before reaching the regex.
-Both are reachable via `bridge.setup`-gated routes (`/sftp/test`, `/sftp/configure`, and the
-remote-config-transport setup routes).
-
-**Impact:** Node is single-threaded; a request body up to Express's configured 1MB JSON
-limit containing an oversized `configPath`/`bridgePath` could hang the event loop for
-**every user of the panel**, not only the requester — a genuine cross-user denial-of-service,
-even though triggering it needs a technician/admin-gated capability the attacker would
-already hold (the point is that a technician shouldn't be able to *degrade service for
-everyone else*, which is a different threat model than the "who can reach it" access-control
-framework used elsewhere in this triage — a privilege-crossing DoS is real regardless of who
-can reach it).
-
-**Fix:** reject the value outright (same "must be an absolute POSIX path" error) if its
-length exceeds 500 characters, before the regex ever runs — matching the existing pattern
-used elsewhere in the bridge code for capping untrusted string lengths.
-
-**Tests added** (`server/tests/codeqlReDoSPathLengthCap.test.js`,
-`server/tests/panelUpdateApplyLogSymlinkSkip.test.js`): length-cap rejection/acceptance for
-both validators, plus symlink-skip behavior for the tmpdir fallback (platform-skipped on
-Windows, matching this repo's existing pattern for symlink tests, e.g.
-`linuxBackupSymlinkSkipVisibility.test.js`). Full server suite re-run clean after the fixes:
-391 files / 3516 tests passed, 18 files / 91 skipped (expected platform skips), 0 failures.
-
-## Secondary findings (flagged, not fixed — for the operator's judgment)
+## Secondary findings
 
 1. **Suppression-accepted-but-undismissed alerts exist beyond the 5 already noted above.**
    Any future CodeQL run may surface more of these as new alert numbers even where the
    underlying code is unchanged and already has an accepted in-source suppression. See "The
    suppression-pipeline question, settled" above — this is the top recommendation from this
    triage.
-2. **`server/services/permissions.js`'s `server.wipe` capability description is stale**
-   (line 114): *"...any directory elsewhere on the host that merely passes a PZ-install
-   marker-file check, not only the configured server's own folder."* This described
-   `/delete-files`'s behavior *before* the 2026-08-27 fix that added the
-   `matchesConfiguredServer` DB-equality whitelist (server.js:4342-4353). The route is now
-   more restrictive than this text says — worth a documentation-only correction so a future
-   reader of the capability catalogue doesn't overestimate this route's actual reach.
-3. **`server/utils/embeddedLua.js:65,68,70`** (`ensureReadableDirTree`) don't yet carry
-   their own `codeql[js/path-injection]` suppression comment, unlike the file's 4 sibling
-   sinks at lines 98/103/110/114 that document the identical validated-`destPath`
-   reasoning. Worth adding for consistency, though as finding #1 shows, a suppression
-   comment alone won't close the alert without a follow-up dismissal.
+2. **`server/services/permissions.js`'s `server.wipe` capability description was stale —
+   fixed, own commit.** It described `/delete-files`'s behavior *before* the 2026-08-27 fix
+   that added the `matchesConfiguredServer` DB-equality whitelist (server.js:4342-4353),
+   overstating the route's current reach to a future reader of the capability catalogue.
+3. **`.github/workflows/codeql.yml`'s own suppression-status comment was stale — fixed, own
+   commit.** It asserted suppression "never engages... for anyone, ever" and "STILL
+   UNVERIFIED" — both were true when written but are now false per the SARIF check above;
+   corrected in place so the next reader doesn't redo this exact investigation.
+4. **`server/utils/embeddedLua.js:65,68,70`** don't carry their own `codeql[...]`
+   suppression comment, unlike 4 sibling sinks in the same file. **Deliberately not added**:
+   per finding above, an accepted suppression doesn't dismiss an alert on its own, so adding
+   three more comments to the ~105 already written wouldn't close these — it would be
+   documentation value only, and this triage doc already records the same reasoning in one
+   place.
 
 ## What was and wasn't done
 
 - **Nothing was dismissed in the GitHub UI or via the API.** Per the task brief, dismissals
-  go to the operator as one batch from `god`.
-- **The 3 real findings were fixed** with the smallest change that closes each, tests
-  included, entirely within `server/` — no `client/` files were touched anywhere in this
-  triage, even where a fix was identified (see the client-only cluster).
+  go to the operator as one batch from `god`, citing sections of this doc.
+- **The 3 real findings were fixed** with the smallest change that closes each (in #289's
+  case, the smallest change that removes the vulnerable code path entirely rather than
+  patching around it), tests included, entirely within `server/` — no `client/` files were
+  touched anywhere in this triage, even where a fix was identified (see the client-only
+  cluster).
+- **The `server.wipe` catalogue-text fix and the `codeql.yml` comment fix are each their own
+  commit**, separate from the 3 security fixes, per instruction.
 - **`CHANGELOG.md` and `package.json` were not touched**, per standing instruction.

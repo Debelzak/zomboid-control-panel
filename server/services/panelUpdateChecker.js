@@ -2183,8 +2183,16 @@ export class PanelUpdateChecker {
    */
   readMostRecentApplyLog() {
     // Start.bat v2 writes apply diagnostics to supervisor.log. Older helper
-    // versions use panel-update-last.log or timestamped files, so retain
-    // those fallbacks for upgraded installations.
+    // versions (pre-v1.0.21) used panel-update-last.log or timestamped
+    // files under logsDir, so those fallbacks are retained for upgraded
+    // installations. The oldest fallback -- timestamped files under the
+    // shared, world-writable os.tmpdir() -- is NOT retained: nothing in
+    // this codebase still writes there (cleanupOldHelperArtifacts() only
+    // prunes it, confirming it's dead even for pre-v1.0.21 installs), and
+    // reading a predictably-named file from a directory shared with every
+    // other local OS user is a symlink-following disclosure primitive
+    // (CodeQL js/insecure-temporary-file #289) with no live caller left to
+    // justify keeping it.
     try {
       const logsDir = getDataPaths().logsDir;
       const supervisor = path.join(logsDir, "supervisor.log");
@@ -2258,50 +2266,7 @@ export class PanelUpdateChecker {
     } catch (err) {
       log.debug(`readMostRecentApplyLog (logs dir) failed: ${err.message}`);
     }
-    try {
-      const dir = os.tmpdir();
-      const names = fs
-        .readdirSync(dir)
-        .filter((n) => /^zomboid-panel-update-\d+\.log$/.test(n))
-        .map((n) => {
-          const fp = path.join(dir, n);
-          try {
-            // lstat (not stat) so a symlink planted in the shared tmp dir by
-            // another local user can't redirect this read to an arbitrary
-            // file (CodeQL js/insecure-temporary-file #289).
-            const lstat = fs.lstatSync(fp);
-            if (lstat.isSymbolicLink()) {
-              log.debug(`Skipping symlink in update-log fallback: ${fp}`);
-              return null;
-            }
-            return { fp, mtime: lstat.mtimeMs, size: lstat.size };
-          } catch (err) {
-            log.debug(`Could not stat ${fp}: ${err.message}`);
-            return null;
-          }
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.mtime - a.mtime);
-
-      if (!names.length) return null;
-
-      const { fp, size } = names[0];
-      const MAX_BYTES = 8 * 1024;
-      if (size <= MAX_BYTES) {
-        return fs.readFileSync(fp, "utf8");
-      }
-      const fd = fs.openSync(fp, "r");
-      try {
-        const buf = Buffer.alloc(MAX_BYTES);
-        fs.readSync(fd, buf, 0, MAX_BYTES, size - MAX_BYTES);
-        return `... (truncated, tail only)\n${buf.toString("utf8")}`;
-      } finally {
-        fs.closeSync(fd);
-      }
-    } catch (err) {
-      log.debug(`readMostRecentApplyLog failed: ${err.message}`);
-      return null;
-    }
+    return null;
   }
 
   /**
