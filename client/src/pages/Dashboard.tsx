@@ -55,7 +55,17 @@ interface ServerStatus {
   startTime: string | null
   uptime: number
   serverPath: string
-  configured: boolean
+  // Renamed from `configured` server-side (2026-08-31): this has only ever
+  // meant "does the local process-launch path have a directory to run in"
+  // (server/services/serverManager.js's startServer() guard), not "is this
+  // server profile complete". A remote server's launch happens on a
+  // different host and correctly never sets serverPath, so under the old
+  // name it read as permanently unconfigured everywhere this field was
+  // read without already special-casing isRemote -- see the three call
+  // sites below, all still gated on !activeServer?.isRemote for exactly
+  // that reason. The value was already right for what it actually gates;
+  // only the name over-promised.
+  serverPathConfigured: boolean
   publicIp?: string
   localIp?: string
   port?: number
@@ -855,18 +865,19 @@ export default function Dashboard() {
 
   /* One verdict at a time, highest severity wins. Calm states say nothing at all. */
   const verdict: Verdict = (() => {
-    // status.configured is `!!serverManager.serverPath` (server/services/
-    // serverManager.js) -- a LOCAL install-path signal. installPath is not
-    // required for remote servers (server/routes/servers.js's create
-    // validation), so a fully-configured remote server -- name, RCON host/
-    // port/password all required and present -- structurally can never set
-    // it, and this verdict permanently misread "remote" as "unconfigured"
-    // (2026-08-31 visual sweep: "NOT CONFIGURED" sitting under a named,
-    // addressed, REMOTE-badged server). Same family as Layout.tsx's
-    // servers-as-[] fix (3665aa20): a signal that cannot represent one real
-    // case was trusted for all cases instead of being scoped to the ones it
-    // actually describes.
-    if (!hasServer || (status && !status.configured && !activeServer?.isRemote)) {
+    // status.serverPathConfigured (server-side rename of `configured`, see
+    // the ServerStatus interface above) means "the local process-launch
+    // path has a directory to run in" -- correctly, structurally false for
+    // every remote server, since a remote server's launch happens on a
+    // different host and never sets serverPath (installPath isn't required
+    // for isRemote:true in server/routes/servers.js's create validation).
+    // This verdict used to read that as "remote == unconfigured" before the
+    // rename made the narrower meaning explicit (2026-08-31 visual sweep:
+    // "NOT CONFIGURED" sitting under a named, addressed, REMOTE-badged
+    // server). Same family as Layout.tsx's servers-as-[] fix (3665aa20): a
+    // signal that cannot represent one real case was trusted for all cases
+    // instead of being scoped to the ones it actually describes.
+    if (!hasServer || (status && !status.serverPathConfigured && !activeServer?.isRemote)) {
       return {
         level: 'warning',
         headline: t('verdict.noServerConfigured'),
@@ -1472,9 +1483,10 @@ export default function Dashboard() {
 
       {/* ─── Not configured ──────────────────────────────────────────────── */}
       {/* !activeServer?.isRemote: see the verdict's own comment above -- a
-          remote server's installPath-based status.configured is always
-          false by construction, not a real "unconfigured" signal. */}
-      {status && !status.configured && !activeServer?.isRemote && (
+          remote server's serverPathConfigured is always false by
+          construction (no local launch path), not a real "unconfigured"
+          signal. */}
+      {status && !status.serverPathConfigured && !activeServer?.isRemote && (
         <Link
           to="/server-setup"
           className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-warning/40 bg-warning/[0.04] py-2 pl-3 pr-2 shadow-[inset_2px_0_0_hsl(var(--warning))] transition-colors hover:bg-warning/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
@@ -1565,8 +1577,8 @@ export default function Dashboard() {
             {playerActivity.length === 0 ? (
               <div className="flex items-center px-3 py-3">
                 <p className="text-xs text-muted-foreground/75">
-                  {/* Third consumer of the same status.configured signal
-                      gated at :869/:1477 -- same !activeServer?.isRemote
+                  {/* Third consumer of the same status.serverPathConfigured
+                      signal gated at :869/:1477 -- same !activeServer?.isRemote
                       fix, or an offline remote server with no recent
                       activity would still read "not configured" here after
                       the verdict and banner above it were already
@@ -1576,7 +1588,7 @@ export default function Dashboard() {
                       which reads worse than being uniformly wrong). */}
                   {online
                     ? t('liveActivity.emptyOnline')
-                    : status?.configured || activeServer?.isRemote
+                    : status?.serverPathConfigured || activeServer?.isRemote
                       ? t('liveActivity.emptyConfiguredNotRunning')
                       : t('liveActivity.emptyNotConfigured')}
                 </p>

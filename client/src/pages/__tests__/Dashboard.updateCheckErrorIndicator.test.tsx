@@ -87,7 +87,7 @@ async function setUpCommon() {
   getResolvedActive.mockResolvedValue({ server: null })
   getStatus.mockResolvedValue({
     running: false, startTime: null, uptime: 0, serverPath: null,
-    configured: false, rcon: { host: '', port: 0, connected: false },
+    serverPathConfigured: false, rcon: { host: '', port: 0, connected: false },
   } as Awaited<ReturnType<typeof serverApi.getStatus>>)
   getPlayers.mockResolvedValue({ players: [] })
   getActivityLogs.mockResolvedValue({ logs: [] })

@@ -85,7 +85,7 @@ async function setUpCommon() {
   getResolvedActive.mockResolvedValue({ server: offline })
   getStatus.mockResolvedValue({
     running: false, startTime: null, uptime: 0, serverPath: 'C:/servers/ashenwood',
-    configured: true, rcon: { host: '', port: 0, connected: false },
+    serverPathConfigured: true, rcon: { host: '', port: 0, connected: false },
   } as Awaited<ReturnType<typeof serverApi.getStatus>>)
   getComposedStatus.mockRejectedValue(new Error('no composed status in this fixture'))
   getPlayers.mockResolvedValue({ players: [] })

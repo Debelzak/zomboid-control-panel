@@ -8,17 +8,22 @@ import {
   debugApi, panelUpdateApi, modsApi, schedulerApi, type ServerInstance,
 } from '@/lib/api'
 
-// 2026-08-31 visual sweep: status.configured is `!!serverManager.serverPath`
+// 2026-08-31 visual sweep: status.serverPathConfigured (server-side renamed
+// from `configured` in the same follow-up) is `!!serverManager.serverPath`
 // (server/services/serverManager.js) -- a LOCAL install-path signal.
 // installPath is not required for remote servers (server/routes/servers.js's
 // create validation requires only name/rconHost/rconPort/rconPassword for
 // isRemote:true), so a fully-configured remote server can never set it. The
-// verdict and the "Not configured" banner both used to read status.configured
+// verdict and the "Not configured" banner both used to read this field
 // alone, so a properly-configured remote server -- named, addressed, REMOTE-
 // badged in its own header two lines above -- was told it had "No server
 // configured" in the same frame. Same family as Layout.tsx's servers-as-[]
 // fix (3665aa20): a signal that structurally cannot represent one real case
 // (remote) was trusted for all cases instead of scoped to what it describes.
+// The client-side !activeServer?.isRemote guards stay after the rename --
+// the field's VALUE was always correct for what it actually gates (can the
+// local launch path run), only its old NAME over-promised "is this server
+// configured" in general.
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -85,7 +90,7 @@ async function setUpCommon(server: ServerInstance) {
   getResolvedActive.mockResolvedValue({ server })
   getStatus.mockResolvedValue({
     running: false, startTime: null, uptime: 0, serverPath: '',
-    configured: false, rcon: { host: server.rconHost, port: server.rconPort, connected: false },
+    serverPathConfigured: false, rcon: { host: server.rconHost, port: server.rconPort, connected: false },
   } as Awaited<ReturnType<typeof serverApi.getStatus>>)
   getComposedStatus.mockRejectedValue(new Error('no composed status in this fixture'))
   getPlayers.mockResolvedValue({ players: [] })
@@ -166,7 +171,7 @@ describe('Dashboard.tsx: a remote server is never told it is unconfigured by the
     await setUpCommon(local)
     getStatus.mockResolvedValue({
       running: false, startTime: null, uptime: 0, serverPath: 'C:/servers/ashenwood',
-      configured: true, rcon: { host: '', port: 0, connected: false },
+      serverPathConfigured: true, rcon: { host: '', port: 0, connected: false },
     } as Awaited<ReturnType<typeof serverApi.getStatus>>)
 
     renderDashboard()

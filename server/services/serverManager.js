@@ -2109,7 +2109,23 @@ export class ServerManager {
       startTime: this.startTime,
       uptime: uptimeSeconds,
       serverPath: this.serverPath,
-      configured: !!this.serverPath,
+      // Renamed from `configured` (2026-08-31, quality-pass follow-up):
+      // this has only ever meant "does the LOCAL process-launch path have
+      // a directory to run in" -- the exact thing startServer() itself
+      // checks (`!this.startCommand && !this.serverPath`, above) before
+      // it will spawn anything. That's a real, narrower question than "is
+      // this server configured": a remote server's launch happens on a
+      // different host entirely and correctly never sets serverPath, so
+      // under the old name every remote server read as permanently
+      // unconfigured to any consumer that didn't already know to special-
+      // case isRemote. Four independent readers (client/src/pages/
+      // Dashboard.tsx's verdict, banner, and Live Activity empty state)
+      // hit exactly that misreading in the same night before this was
+      // traced to its root and renamed rather than "fixed" -- the VALUE
+      // was already right for what it actually gates, only the name over-
+      // promised. Callers that want "is this server profile complete"
+      // should look at isRemote-aware validation, not this field.
+      serverPathConfigured: !!this.serverPath,
       publicIp: this.publicIp,
       localIp: await this.getLocalIp(),
       port: this.gamePort,
