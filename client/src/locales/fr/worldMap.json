@@ -171,7 +171,7 @@
     "qtySuffix": " × {{count}}",
     "multiItemDesc": "{{count}} objets ({{total}} au total) à {{coords}}",
     "itemPackageFallback": "Colis de {{count}} objets",
-    "dropFailedTitle": "Échec du largage",
+    "dropFailedTitle": "Échec du largage personnalisé",
     "teleportedTitle": "Joueur téléporté",
     "teleportedDesc": "{{username}} → {{x}}, {{y}}",
     "teleportErrorTitle": "Erreur de téléportation",
