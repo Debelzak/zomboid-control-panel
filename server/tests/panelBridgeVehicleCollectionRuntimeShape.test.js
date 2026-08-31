@@ -190,6 +190,21 @@ function FakeVehicleSet:iterator()
     return it
 end
 function FakeCell:getVehicles() return FakeVehicleSet end
+-- Overrides fakeVehicleDecl's always-true stub: removeVehicle now re-checks
+-- findVehicleById() after removal (2026-08-31, verify-enforcement-
+-- provisionals), so the fake must actually leave the set for that re-check
+-- to see, the same way the real BaseVehicle.permanentlyRemove() ->
+-- removeFromWorld() synchronously removes itself from IsoCell's live vehicle
+-- Set (confirmed via javap -c -- see the handler's own comment).
+function FakeVehicle1:permanentlyRemove()
+    for i, v in ipairs(FakeVehicleSet._items) do
+        if v == FakeVehicle1 then
+            table.remove(FakeVehicleSet._items, i)
+            break
+        end
+    end
+    return true
+end
 `;
     const bridge = loadPanelBridge(LUA_PATH, worldStub(cell));
     // removeVehicle is a thin wrapper over findVehicleById + a removal call --

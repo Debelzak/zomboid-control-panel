@@ -7999,7 +7999,36 @@ handlers.removeVehicle = function(args)
     end)
     if not ok then return false, nil, "Failed to remove vehicle: " .. tostring(err) end
 
-    return true, { message = "Vehicle removed", vehicleId = vId, scriptName = scriptName, x = vx, y = vy }
+    -- Verify by effect (2026-08-31, clearing the last PROVISIONAL entries in
+    -- the verify-enforcement gate): confirmed via javap -c against the real
+    -- B42 jar that this is safe, unlike the climate/weather ClimateFloat
+    -- case that turned out to need a DIFFERENT read-back. BaseVehicle.
+    -- permanentlyRemove() calls removeFromWorld() directly in the same call
+    -- stack, and removeFromWorld() synchronously does
+    -- IsoWorld.instance.currentCell.vehicles:remove(this) (a java.util.Set) --
+    -- and IsoCell.getVehicles() is a trivial `return this.vehicles` field
+    -- read of that EXACT SAME Set, not a copy or a tick-deferred view. So
+    -- re-finding this vehicle immediately after removal is a real synchronous
+    -- read-back, not a false-negative risk the way getFinalValue() was.
+    -- findVehicleById already handles every collection shape this build's
+    -- getVehicles() might hand back (see collectVehicles) -- reuse it rather
+    -- than re-deriving a second table scan.
+    local stillPresent, recheckErr = findVehicleById(vId)
+    local verified
+    if stillPresent ~= nil then
+        verified = false
+    elseif type(recheckErr) == "string" and recheckErr:find("^Vehicle not found") then
+        verified = true
+    else
+        -- The list itself became unreadable on the re-check (a different
+        -- failure than "not found") -- genuinely can't confirm either way,
+        -- not a false "still there".
+        verified = nil
+    end
+
+    return PanelBridge.verifiedResult(verified,
+        { message = "Vehicle removed", vehicleId = vId, scriptName = scriptName, x = vx, y = vy },
+        "Vehicle removal call succeeded but the vehicle is still present in getVehiclesList()")
 end
 
 handlers.removeVehiclesInArea = function(args)
@@ -8202,12 +8231,22 @@ end
 -- AI DIRECTOR EVENT HANDLERS
 -- ============================================
 
+-- 2026-08-31, clearing the last PROVISIONAL entries in the verify-enforcement
+-- gate: same VirtualZombieManager-first, fire-and-forget-fallback treatment
+-- spawnHordeNearPlayer's own fix already established -- confirmed applicable
+-- here too (VirtualZombieManager.createRealZombieNow(float,float,float) is a
+-- general-purpose per-zombie spawn, not player-specific; only its CALLER
+-- picked coordinates from a player before). Area has no player/z reference to
+-- read a floor from, so z defaults to 0 (ground level, the same implicit
+-- level every one of the fire-and-forget fallbacks below already operated at
+-- -- none of them takes a z argument either), overridable via args.z.
 handlers.triggerSwarmEvent = function(args)
     local count = math.floor(tonumber(args.count) or 25)
     local x1 = math.floor(tonumber(args.x1) or 0)
     local y1 = math.floor(tonumber(args.y1) or 0)
     local x2 = math.floor(tonumber(args.x2) or x1)
     local y2 = math.floor(tonumber(args.y2) or y1)
+    local z = math.floor(tonumber(args.z) or 0)
 
     count = math.min(math.max(count, 1), 500)
     if x2 < x1 then x1, x2 = x2, x1 end
@@ -8216,29 +8255,68 @@ handlers.triggerSwarmEvent = function(args)
     local midX = math.floor((x1 + x2) / 2)
     local midY = math.floor((y1 + y2) / 2)
     local method = "unknown"
+    local spawned = 0
+    local verified = false
 
     local ok, err = pcall(function()
-        local zpop = getZombiePopManager()
-        if zpop and zpop.createHordeInAreaTo then
-            zpop:createHordeInAreaTo(x1, y1, x2 - x1, y2 - y1, midX, midY, count)
-            method = "createHordeInAreaTo"
-        elseif zpop and zpop.createHordeFromTo then
-            zpop:createHordeFromTo(x1, y1, midX, midY, count)
-            method = "createHordeFromTo"
+        local vzm = _G.VirtualZombieManager and _G.VirtualZombieManager.instance
+        if vzm and vzm.createRealZombieNow then
+            for i = 1, count do
+                local tx = x1 + ZombRand(x2 - x1 + 1)
+                local ty = y1 + ZombRand(y2 - y1 + 1)
+                local okZ, zombie = pcall(function()
+                    return vzm:createRealZombieNow(tx, ty, z)
+                end)
+                if okZ and zombie then spawned = spawned + 1 end
+            end
+            method = "VirtualZombieManager.createRealZombieNow"
+            verified = true
         else
-            local world = getWorld()
-            if world and world.CreateSwarm then
-                world:CreateSwarm(count, x1, y1, x2, y2)
-                method = "CreateSwarm"
+            -- Fallback: fire-and-forget horde APIs, no count to read back --
+            -- see spawnHordeNearPlayer's comment for why `spawned` must stay
+            -- nil here rather than being fabricated as `count`.
+            local zpop = getZombiePopManager()
+            if zpop and zpop.createHordeInAreaTo then
+                zpop:createHordeInAreaTo(x1, y1, x2 - x1, y2 - y1, midX, midY, count)
+                method = "createHordeInAreaTo"
+                spawned = nil
+            elseif zpop and zpop.createHordeFromTo then
+                zpop:createHordeFromTo(x1, y1, midX, midY, count)
+                method = "createHordeFromTo"
+                spawned = nil
             else
-                error("No zombie spawning API available")
+                local world = getWorld()
+                if world and world.CreateSwarm then
+                    world:CreateSwarm(count, x1, y1, x2, y2)
+                    method = "CreateSwarm"
+                    spawned = nil
+                else
+                    error("No zombie spawning API available (VirtualZombieManager / ZombiePopulationManager / IsoWorld.CreateSwarm all missing)")
+                end
             end
         end
     end)
     if not ok then return false, nil, "Failed to trigger swarm: " .. tostring(err) end
 
-    PanelBridge.warn("Swarm event triggered", { count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 }, method = method })
-    return true, { message = "Swarm event triggered", count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 }, method = method }
+    local verifiedStr = "unverifiable"
+    if verified == true then verifiedStr = "confirmed" end
+
+    if verified == true and spawned == 0 then
+        PanelBridge.warn("Swarm event created no zombies", { count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 }, spawned = spawned, verified = verified, method = method })
+        return false, nil, "Failed to trigger swarm: no zombies were created (0/" .. count .. "); the target area may not be loaded or available"
+    end
+
+    PanelBridge.warn("Swarm event triggered", { count = count, area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 }, spawned = spawned, verified = verified, method = method })
+    return true, {
+        message = verified
+            and ("Spawned " .. spawned .. "/" .. count .. " zombies in the area")
+            or ("Requested " .. count .. " zombies in the area via " .. method .. " (spawn count not verifiable for this method)"),
+        count = count,
+        spawned = spawned,
+        verified = verifiedStr,
+        area = { x1 = x1, y1 = y1, x2 = x2, y2 = y2 },
+        method = method
+    }
 end
 
 handlers.runEventSequence = function(args)

@@ -83,9 +83,12 @@ const GETTERS = new Set([
 // (hydroPowerOn reported as unGated diagnostic data) -- the 2026-08-31 bug
 // hunt found `ok` was never actually gated on that read-back despite the
 // exemption's own wording implying it was, fixed both to gate ok on it for
-// real, so they no longer need an exemption either. Left this note rather
-// than silently deleting the history, since "why isn't X allowlisted
-// anymore" is as worth answering as "why is X allowlisted".
+// real, so they no longer need an exemption either. triggerSwarmEvent and
+// removeVehicle used to be listed too (both PROVISIONAL) -- see the note
+// near the bottom of this table for what changed and the jar evidence.
+// Left this note rather than silently deleting the history, since "why
+// isn't X allowlisted anymore" is as worth answering as "why is X
+// allowlisted".
 const CANNOT_VERIFY_OR_EQUIVALENT = {
   // Verifies via a differently-named but equivalent mechanism.
   healPlayer: 'The one truly unverifiable path (nil bodyDamage) is gated directly to ok=false; RestoreToFullHealth has no cheap read-back the game exposes.',
@@ -178,8 +181,32 @@ const CANNOT_VERIFY_OR_EQUIVALENT = {
   // field. Same pattern as restoreUtilities/shutOffUtilities's own removal
   // note above -- left here rather than silently deleted, since "why isn't
   // X allowlisted anymore" is as worth answering as "why is X allowlisted".
-  triggerSwarmEvent: 'PROVISIONAL: same fire-and-forget horde APIs spawnHordeNearPlayer\'s fallback branches had (createHordeInAreaTo/createHordeFromTo/CreateSwarm) -- not yet given the verified/spawned-count treatment those got. Tracked as a follow-up.',
-  removeVehicle: 'PROVISIONAL: pcall+invoke-checked at the call-didn\'t-throw ceiling today; the vehicle\'s subsequent absence from getVehiclesList would be a real confirmation but isn\'t wired up -- tracked as a follow-up now that vehicleSetAlarm etc. proved vehicles ARE gateable.',
+
+  // 2026-08-31, clearing the last two PROVISIONAL entries (verify-
+  // enforcement-provisionals): triggerSwarmEvent and removeVehicle used to be
+  // listed here, both saying "tracked as a follow-up" with no owner.
+  //
+  // triggerSwarmEvent now gets the same VirtualZombieManager-first,
+  // spawned-count treatment spawnHordeNearPlayer's own fix already
+  // established -- confirmed applicable here too via the real jar:
+  // VirtualZombieManager.createRealZombieNow(float,float,float) is a
+  // general-purpose per-zombie spawn, not player-specific, so the same
+  // primary/fallback split applies to an area with no player reference.
+  //
+  // removeVehicle now re-checks findVehicleById() immediately after removal
+  // and gates `verified` on the vehicle's genuine absence. Confirmed SAFE to
+  // do synchronously via javap -c against the real B42 jar, precisely the
+  // check the ClimateFloat false-negative (see the block above) says to run
+  // before trusting a read-back: BaseVehicle.permanentlyRemove() calls
+  // removeFromWorld() directly in the same call stack, and removeFromWorld()
+  // synchronously does IsoWorld.instance.currentCell.vehicles:remove(this) --
+  // a live java.util.Set, not a tick-deferred queue. IsoCell.getVehicles() is
+  // a trivial `return this.vehicles` field read of that EXACT SAME Set. So
+  // unlike getFinalValue() after setAdminValue, there is no propagation delay
+  // between the write and the read-back here -- confirmed, not assumed.
+  //
+  // Both now emit a literal `verified` field, so neither needs an exemption
+  // anymore.
 };
 
 function loadHandlerLineRanges() {
