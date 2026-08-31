@@ -767,6 +767,61 @@ async function restoreMainAfterCapture(page, prevStyle) {
   }, prevStyle)
 }
 
+// quality-pass-2026-08-31: expandMainForCapture's own forced overflow/
+// height/width change on #main-content -- the very style mutation the
+// function above exists to make -- re-triggers the `.page-transition`
+// wrapper's `pageEnter` keyframe (index.css, 0.3s opacity 0->1) on every
+// single view, every single time, confirmed by dumping getAnimations() and
+// per-element computed opacity in a standalone harness DURING the mutation
+// window: opacity read 0.49-0.56 with pageEnter `playState: "running"`
+// right after expandMainForCapture ran, despite that same element reading
+// opacity ~1 (animation absent) one line earlier. waitForSettle's own
+// animation check (below) cannot catch this -- it runs BEFORE
+// expandMainForCapture, so it settles on a page that hasn't been mutated
+// yet and has no way to see an animation this function is about to cause.
+// This produced the washed-out/dimmed captures four separate agents
+// reported across three different lanes (players, events, discord) over
+// several hours tonight, each read as a leaked dialog, then a leaked
+// overlay, then eventually (wrongly, if persuasively) as a bug that
+// "starts at some ordinal capture position and never recovers" -- a
+// measured re-test (same standalone harness) found the SAME dip magnitude
+// at every view including the first, meaning the clean-early/dim-later
+// split reviewers saw was just where each shot happened to land inside the
+// 300ms re-triggered fade, not a state that starts and persists.
+//
+// Fix, and why it isn't a wait: an early attempt waited for
+// `.page-transition`'s OWN getAnimations() to go quiet (the same pattern
+// waitForSettle already uses), positioned after expandMainForCapture
+// instead of before. That fixed 4 of 6 views tested (players, moderation,
+// vitals, spawn) but NOT Powers or Notes & Log -- both still captured
+// dimmed even after the wait reported clean. Root cause of THAT: Powers
+// and Notes each stagger their row elements in with their OWN separate
+// `springFadeIn` animation per row (3 of them), and `el.getAnimations()`
+// only returns animations targeting THAT element, not its descendants --
+// so a `.page-transition`-scoped wait can correctly report "my own
+// animation is done" while 3 child rows are still mid-fade underneath it.
+// Waiting for the right thing in the wrong scope reports clean forever, so
+// this doesn't wait at all: it forces every non-infinite animation on the
+// page to its end state via the Web Animations API's own `.finish()`
+// (document.getAnimations(), not scoped to one element), right before the
+// shot. Infinite/looping ones (compressHeader, brand-led-pulse, the
+// connection-status `pulse` dot) throw on `.finish()` since they have no
+// natural end state -- expected, caught per-animation, left running; they
+// were never the problem (a permanently-running decorative pulse doesn't
+// dim a screenshot, an animation caught mid-fade does). Deterministic
+// regardless of how many elements are affected or when they were
+// triggered, unlike a wait that has to correctly enumerate every affected
+// element up front.
+async function finishRunningAnimations(page) {
+  await page
+    .evaluate(() => {
+      for (const a of document.getAnimations()) {
+        try { a.finish() } catch { /* infinite/looping animation -- no end state, leave it running */ }
+      }
+    })
+    .catch(() => {})
+}
+
 // visual-sweep-2026-08-30 follow-up: the tour used to capture after a fixed
 // wait with no idea whether the page had actually finished loading. That
 // missed a real failure mode -- a page that fires SEVERAL parallel mount
@@ -1024,6 +1079,7 @@ async function main() {
             const fileName = `${view.name.replace(/:/g, '-')}__${viewport.key}__${theme}.png`
             const filePath = path.join(args.out, fileName)
             const prevMainStyle = await expandMainForCapture(page)
+            await finishRunningAnimations(page)
             await page.screenshot({ path: filePath, fullPage: true })
             await restoreMainAfterCapture(page, prevMainStyle)
             // Unconditional cleanup, even for a `dialogExpected` view whose
