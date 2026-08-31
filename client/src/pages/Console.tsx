@@ -550,9 +550,16 @@ export default function Console() {
       const handleRconResponse = (data: RconResponse) => {
         const entry = { ...data, _id: ++liveLogIdRef.current } as RconResponse & { _id: number }
         setLiveLog(prev => [...prev, entry].slice(-100))
-        // If we get a response, RCON is connected
-        setRconConnected(true)
-        setRconFailureReason(null)
+        // This event broadcasts to the whole "logs" room for EVERY /execute
+        // call, including failed/disconnected ones (data.success: false) --
+        // only a successful response actually proves the connection is live.
+        // Forcing "connected" on any message here could mask a real drop
+        // (someone else's failed command, or this one's own failure echo)
+        // behind a stale "online" banner.
+        if (data.success) {
+          setRconConnected(true)
+          setRconFailureReason(null)
+        }
       }
 
       socket.on('rcon:response', handleRconResponse)
@@ -618,8 +625,15 @@ export default function Console() {
         })
       }
 
-      // Add to live log only when socket updates are unavailable to avoid duplicates.
-      if (!socket?.connected) {
+      // Add to live log only when the server-side 'rcon:response' broadcast
+      // will actually reach us -- that requires the socket to have joined the
+      // "logs" room, which the server gates on diagnostics.manage
+      // independently of transport connectivity (server/index.js
+      // subscribe:logs handler). socket?.connected is NOT that check: a user
+      // with rcon.execute but not diagnostics.manage has a connected socket
+      // that never joins "logs", so relying on transport connectivity here
+      // left this panel permanently empty for them.
+      if (!can('diagnostics.manage')) {
         setLiveLog(prev => [...prev, {
           command,
           response: result.response || result.error || t('rcon.noResponseFallback'),
@@ -712,10 +726,12 @@ export default function Console() {
         }
       }
 
-      // Same shape as executeCommand above: add to live log only when socket
-      // updates are unavailable to avoid duplicates -- the server emits its
-      // own 'rcon:response' for every /execute call, broadcasts included.
-      if (!socket?.connected) {
+      // Same shape as executeCommand above: add to live log only when the
+      // 'rcon:response' broadcast won't reach us (see the diagnostics.manage
+      // reasoning there) -- the server emits its own event for every
+      // /execute call, broadcasts included, but only to sockets that hold
+      // that capability.
+      if (!can('diagnostics.manage')) {
         setLiveLog(prev => [...prev, {
           command: cmd,
           response: result.response || result.error || t('rcon.noResponseFallback'),
