@@ -2511,10 +2511,18 @@ export async function getObservedServerRunning() {
 // correct, from this function's own point of view), saw no change, and
 // said nothing -- it did not fail to notice, it correctly noticed nothing
 // had changed, while a different module had already told every client
-// something false. Routing every "did the running state actually change"
-// decision through this ONE function, and having every caller ask it to
-// re-check rather than assert its own answer, means there is no second copy
-// of `lastKnownRunning` anywhere left to drift out of sync with this one.
+// something false. That specific bypass -- a route asserting a competing
+// claim without ever touching `lastKnownRunning` -- is closed now: routes
+// ask this function to re-check instead of emitting their own. It is NOT
+// the only site that reads and writes `lastKnownRunning`, though: the
+// rconService "disconnected" handler below (:1219-1244) does too,
+// independently, and predates this fix by a day. The two do not currently
+// drift -- they share this one variable, and the handler's own
+// `lastKnownRunning !== false` guard mirrors this function's
+// `running !== lastKnownRunning` one, so whichever resolves first
+// correctly suppresses the other -- but a future fix made only here will
+// not reach that handler. Consolidating it is carded, not done
+// (bughunt-2026-08-31-b).
 export async function checkServerStatusNow() {
   try {
     const running = await getObservedServerRunning();
