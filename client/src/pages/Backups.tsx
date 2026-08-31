@@ -243,6 +243,15 @@ export default function Backups() {
     // assert the action is unreachable, don't just make the control look
     // disabled (Angela's Console.tsx Enter-key bypass finding).
     if (!canManageBackups) return
+    // A PRIOR backup's 'complete'/'error' socket handler (or this
+    // function's own catch block, below) may have scheduled an auto-clear
+    // timeout that hasn't fired yet -- e.g. a second click within its 2-3s
+    // window. Without this, that leftover timer wipes THIS backup's live
+    // progress out from under it partway through, well before it's done.
+    if (progressTimeoutRef.current) {
+      clearTimeout(progressTimeoutRef.current)
+      progressTimeoutRef.current = null
+    }
     setCreatingBackup(true)
     setBackupProgress({ phase: 'preparing', percent: 0, message: t('progress.startingFallback') })
     try {
