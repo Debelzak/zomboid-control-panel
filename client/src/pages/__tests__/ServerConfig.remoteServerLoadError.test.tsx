@@ -67,6 +67,27 @@ describe('ServerConfig.tsx: active-server-is-remote load-error messaging', () =>
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument()
   })
 
+  // bug-hunt-2026-08-31: the Settings/Sandbox tab badges independently read
+  // pathsInfo?.exists.{ini,sandbox} to decide whether to show a "file
+  // missing" warning icon -- pathsInfo is null here for the SAME reason the
+  // banner above exists (nothing was confirmed missing, the remote host was
+  // just unreachable without SFTP transport), so before this fix both tabs
+  // showed "file missing" right next to a banner already explaining the
+  // real reason, and next to a sidebar naming this same server as REMOTE.
+  it('does not also claim the Settings/Sandbox tab files are missing for the same remote-no-SFTP condition', async () => {
+    getResolvedActive.mockResolvedValue({
+      server: { id: 1, name: 'Tour Remote Server', serverName: 'servertest', isRemote: true } as never,
+    })
+    getPaths.mockRejectedValue(
+      new ApiError('No active server configured', { status: 404, code: 'SERVER_NOT_CONFIGURED' }),
+    )
+
+    renderServerConfig()
+
+    await screen.findByText(/This server is remote\. Add its SFTP details/)
+    expect(screen.queryByLabelText('file missing')).not.toBeInTheDocument()
+  })
+
   it('still shows the generic load-error copy with a Retry button for a real, non-remote failure', async () => {
     getResolvedActive.mockResolvedValue({
       server: { id: 2, name: 'Ashenwood', serverName: 'Ashenwood', isRemote: false } as never,
@@ -90,5 +111,10 @@ describe('ServerConfig.tsx: active-server-is-remote load-error messaging', () =>
     expect(await screen.findByText('No active server configured')).toBeInTheDocument()
     expect(screen.getByText('No server selected')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
+    // Positive control for the test above: a genuinely-unconfigured panel
+    // (not remote) still gets the "file missing" badges -- confirms the new
+    // !activeServerRemote guard is scoped to the remote case specifically,
+    // not a blanket suppression of the badge.
+    expect(screen.getAllByLabelText('file missing').length).toBeGreaterThan(0)
   })
 })

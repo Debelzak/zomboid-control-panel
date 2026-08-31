@@ -2211,8 +2211,16 @@ export default function ServerConfig() {
       }}>
         <TabsList className="flex h-auto flex-wrap gap-1 bg-muted/30 border border-border/50 p-1 rounded-md w-full">
           {([
-            { value: 'ini', label: t('tabs.serverSettings'), icon: Settings, dirty: hasIniChanges, count: changedIniCount, missing: !pathsInfo?.exists.ini },
-            { value: 'sandbox', label: t('tabs.sandbox'), icon: FileText, dirty: hasSandboxChanges, count: changedSandboxCount, missing: !pathsInfo?.exists.sandbox },
+            // pathsInfo is null both for a genuinely-unconfigured panel (where
+            // "missing" is correct -- there is no file) and for a remote
+            // server with no SFTP transport set up (loadData, ~line 1050),
+            // where nothing is actually confirmed missing, only unreachable.
+            // The banner above already explains the real reason for the
+            // remote case with its own copy -- don't also claim these two
+            // specific files are missing, which the sidebar's REMOTE badge
+            // two rows up already contradicts.
+            { value: 'ini', label: t('tabs.serverSettings'), icon: Settings, dirty: hasIniChanges, count: changedIniCount, missing: !activeServerRemote && !pathsInfo?.exists.ini },
+            { value: 'sandbox', label: t('tabs.sandbox'), icon: FileText, dirty: hasSandboxChanges, count: changedSandboxCount, missing: !activeServerRemote && !pathsInfo?.exists.sandbox },
             { value: 'spawnpoints', label: t('tabs.spawnPoints'), icon: MapPin, dirty: false, count: 0, missing: false },
             { value: 'spawnregions', label: t('tabs.spawnRegions'), icon: Map, dirty: false, count: 0, missing: false },
             { value: 'modsettings', label: t('tabs.modSettings'), icon: Puzzle, dirty: false, count: modifiedModSettingsCount, missing: false },
