@@ -185,6 +185,8 @@ function getEventSuccessCopy(action: string, t: TFunction) {
     case 'Stop weather':
     case 'Stop All Weather':
       return copy('weatherCleared')
+    case 'Generate Weather Front':
+      return copy('weatherFrontGenerated')
     case 'Enable Snow':
       return copy('snowEnabled')
     case 'Disable Snow':
@@ -213,6 +215,10 @@ function getEventSuccessCopy(action: string, t: TFunction) {
       return copy('powerRestored')
     case 'Restore Water':
       return copy('waterRestored')
+    case 'Shut Off Power':
+      return copy('powerShutDown')
+    case 'Shut Off Water':
+      return copy('waterShutDown')
     case 'Helicopter':
       return copy('helicopterTriggered')
     case 'Gunshot':
@@ -236,6 +242,8 @@ function getEventSuccessCopy(action: string, t: TFunction) {
       return copy('rearHordeSpawned')
     case 'Remove all zombies':
       return copy('zombiesCleared')
+    case 'Clear zombies near player':
+      return copy('zombiesClearedNear')
     case 'Set time speed':
       return copy('timeSpeedUpdated')
     case 'Teleport':
@@ -248,6 +256,8 @@ function getEventSuccessCopy(action: string, t: TFunction) {
       return copy('announcementSent')
     case 'Apply All Climate':
       return copy('climateApplied')
+    case 'Apply All Visual':
+      return copy('visualApplied')
     case 'Helicopter Event':
       return copy('helicopterEventTriggered')
     case 'Stop Helicopter Event':
@@ -1239,11 +1249,19 @@ export default function Events() {
         if (utilitiesRes.status === 'fulfilled' && utilitiesRes.value.success && utilitiesRes.value.data) {
           setUtilitiesStatus(utilitiesRes.value.data)
         }
+      } else {
+        // The bridge went offline -- a last-known-good reading here would keep
+        // rendering its old green/red "Online"/"Offline" badge (just dimmed by
+        // the panel's opacity-60) instead of falling back to the neutral
+        // "Pending" state, letting an admin mistake a stale reading for a live
+        // one. Clear it so the UI honestly reflects "we don't currently know."
+        setUtilitiesStatus(null)
       }
     } catch (error) {
       if (mountedRef.current) {
         setBridgeConnected(false)
         setBridgeConnectionSummary(t('toasts.unableToReadBridgeStatus'))
+        setUtilitiesStatus(null)
       }
     }
   }, [])

@@ -622,6 +622,10 @@
       "title": "Clima despejado",
       "description": "Se han eliminado todas las condiciones climáticas forzadas."
     },
+    "weatherFrontGenerated": {
+      "title": "Frente climático generado",
+      "description": "Un nuevo frente climático ahora se mueve por el servidor."
+    },
     "snowEnabled": {
       "title": "Nevada activada",
       "description": "La precipitación de nieve ya está activa."
@@ -678,6 +682,14 @@
       "title": "Agua restaurada",
       "description": "El servicio de agua ya está en línea."
     },
+    "powerShutDown": {
+      "title": "Electricidad cortada",
+      "description": "El servicio eléctrico ha sido cortado."
+    },
+    "waterShutDown": {
+      "title": "Agua cortada",
+      "description": "El servicio de agua ha sido cortado."
+    },
     "helicopterTriggered": {
       "title": "Helicóptero activado",
       "description": "Ahora hay un evento de helicóptero activo."
@@ -722,6 +734,10 @@
       "title": "Zombis eliminados",
       "description": "Se han eliminado todos los zombis de las celdas cargadas."
     },
+    "zombiesClearedNear": {
+      "title": "Zombis cercanos eliminados",
+      "description": "Se han eliminado los zombis cerca del objetivo."
+    },
     "timeSpeedUpdated": {
       "title": "Velocidad del tiempo actualizada",
       "description": "Se ha cambiado el multiplicador de tiempo."
@@ -741,6 +757,10 @@
     "climateApplied": {
       "title": "Clima aplicado",
       "description": "Se han actualizado todos los parámetros climáticos."
+    },
+    "visualApplied": {
+      "title": "Ajustes visuales aplicados",
+      "description": "Se han actualizado todos los parámetros visuales."
     },
     "actionCompleteDefault": {
       "title": "Acción completada",
