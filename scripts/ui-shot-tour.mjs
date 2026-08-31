@@ -87,6 +87,44 @@
 // guessed delay -- correct regardless of how many requests some future
 // page or interact() step happens to fire.
 //
+// AN APP FEATURE COMMIT BROKE THIS TOOL'S OWN SELECTORS, AND THE BREAKAGE
+// LOOKED LIKE AN APP BUG (visual-sweep-2026-08-30, quality-pass follow-up).
+// This is the one worth remembering above the other two collisions in this
+// header: those were this tool fighting the app's real, correct behavior
+// (a production rate limit, an intentional page-enter fade); this one was
+// the app and the tool actively agreeing with each other while still
+// producing a wrong result. `getByRole('button', { name: X })` without
+// `exact: true` is a case-insensitive SUBSTRING match. Adding a HelpTip
+// (components/HelpTip.tsx) next to any control gives that control's row a
+// SECOND button whose accessible name is "Help: <label>" -- and if X is (or
+// is contained in) that label, the tour's locator for the REAL control now
+// resolves to two elements. `.click()` on an ambiguous locator throws a
+// strict-mode-violation error; every `.click(...).catch(() => {})` in this
+// file (the norm here, since a missing/renamed control shouldn't take the
+// whole view down) swallowed it silently. Concretely: the Kill button's row
+// got a HelpTip labeled "Kill" (Players.tsx), so its trigger's accessible
+// name became "Help: Kill" -- a substring match on this file's own
+// `getByRole('button', { name: 'Kill' })` -- so the click that was supposed
+// to open the typed-confirm dialog silently did nothing, in EVERY viewport/
+// theme combo, for two full capture runs. Fixed by adding `exact: true`
+// (below); audited every other `getByRole('button', ...)` name in this file
+// against every HelpTip `label` in the app at the time of this fix and
+// found no other collision -- but that audit is a snapshot, not a
+// guarantee. THE UNDERLYING RISK IS STRUCTURAL AND STAYS: either roster
+// (this file's named button/tab/option targets, or the app's HelpTip
+// placements) can grow a new collision at any time. This WAS genuinely
+// worth fixing, confirmed by reading killButton's own locale string
+// (client/src/locales/en/players.json) rather than assumed -- but it was
+// NOT the cause of the dimming/washed-out capture symptom multiple
+// reviewers reported that same night: a follow-up run with this exact fix
+// applied (plus the leaked-dialog and page-transition-fade fixes above,
+// and 0 stray overlays / 0 not-settled in that run's own manifest) still
+// showed players-notes washed out. Whatever is producing that symptom is
+// still open as of this comment -- do not assume it is this file's fault
+// just because the ordinal signature matches; it might not be a capture
+// artifact at all. See the investigation notes in memory/hive history
+// (quality-pass-2026-08-31) before proposing a fifth capture-side theory.
+//
 // WHAT THIS DOES NOT COVER (be honest about the gap, don't fabricate)
 //   - Modal/dialog content (e.g. Scheduler's "Add Task" dialog, confirm
 //     dialogs) and multi-step wizards (ServerSetup's install steps beyond
@@ -438,7 +476,25 @@ const VIEWS = [
     interact: async (page) => {
       await selectFirstPlayer(page)
       await clickTabByRole(page, 'Powers')
-      await page.getByRole('button', { name: 'Kill' }).click({ timeout: 5000 }).catch(() => {})
+      // visual-sweep-2026-08-30 quality-pass follow-up: `name: 'Kill'`
+      // without `exact` is a case-insensitive SUBSTRING match, not an
+      // equality check -- it silently started matching a SECOND button
+      // once the Kill row grew a HelpTip (client/src/pages/Players.tsx,
+      // HelpTip coverage card), because HelpTip's own trigger button's
+      // aria-label is "Help: <label>" (HelpTip.tsx:38) and this row's
+      // label is literally "Kill", so its tooltip trigger's accessible
+      // name is "Help: Kill" -- a substring match on 'Kill'. Two matches
+      // makes this locator's .click() throw a strict-mode-violation
+      // error, which the .catch(() => {}) below swallowed -- so the
+      // real Kill button was NEVER clicked, in EVERY viewport/theme
+      // combo, and this view silently captured a plain Powers tab
+      // instead of its whole reason for existing (the typed-confirm
+      // dialog). `exact: true` restricts the match back to the literal
+      // "Kill" button; confirmed the fix by reading killButton's own
+      // locale string (client/src/locales/en/players.json), not assumed.
+      // See the header comment above for why this fix, though genuine,
+      // turned out NOT to explain the separate dimming symptom.
+      await page.getByRole('button', { name: 'Kill', exact: true }).click({ timeout: 5000 }).catch(() => {})
       await page.waitForTimeout(300)
     },
   },
