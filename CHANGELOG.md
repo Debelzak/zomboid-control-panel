@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Saving RCON, port or UPnP settings could rewrite an unrelated line of the server config** if
+  its text happened to contain one of those setting names - each now matches only its own line.
+
 ## [1.2.10] - 2026-08-31
 
 ### Security
