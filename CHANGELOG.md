@@ -9,470 +9,356 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **A crafted install path could run arbitrary shell commands on a Linux server managed as an
-  OpenRC service.** Generating the OpenRC service script quoted values correctly for the shell's
-  first read of the file, but OpenRC's own startup script re-evaluates two of those values a
-  second time, effectively unquoted - so a value containing a shell command substitution survived
-  the first pass and executed anyway on the second. Values are now escaped against both passes,
-  not just the first.
-
-- **Deleting or checking the size of a save could reach outside the intended save folder, with no
-  permission check on the size check at all.** ChunkCleaner's routes sanitized the requested save
-  name by comparing it to its own basename - a check that does nothing for the two most dangerous
-  inputs, `.` and `..`, since both are already "just a basename." Requesting the delete route with
-  a save name of `..` genuinely deleted a file one directory above the intended save folder; the
-  stats route returned an aggregate size across every sibling save. Both names are now explicitly
-  rejected everywhere a save name is accepted.
-
-- **Two ChunkCleaner read routes had no permission check at all.** The corresponding write routes
-  already required the `chunks.manage` permission; the reads that list saves and browse them did
-  not, so any logged-in account could pull that data regardless of role, and a role that genuinely
-  lacked the permission landed on a misleading "no saves found" page instead of an honest denial.
-  Both now require `chunks.manage` and show a real denied state.
-
-- **The panel's own outbound server-discovery queries could be fed a spoofed reply.** The Steam
-  master-server query and the follow-up per-server info query both listened on a plain UDP socket
-  that accepted a reply from any sender on the local port, not just the address that was queried -
-  and the master-server fallback probed every address a reply claimed, with no check against
-  private or loopback ranges. An authenticated request to the server-discovery endpoint could
-  therefore be used to probe internal addresses and have the answers reflected back. Both sockets
-  now bind to the specific address they queried, so only a real reply from that address is ever
+- **A crafted install path could run shell commands on a Linux server managed as an OpenRC
+  service** - service-script values are now escaped against OpenRC's own second, unquoted read of
+  the file, not just the first.
+- **Deleting or checking the size of a save could reach outside the intended save folder** using
+  `.` or `..` as the save name - both are now explicitly rejected everywhere a save name is
   accepted.
-
-- **The PanelBridge SFTP password was stored in plain text in the panel's own database file.**
-  Every other saved credential - the RCON password, the Discord bot token, the Steam session - had
-  already been moved off disk in cleartext form; this one field was missed, so it rode along
-  unredacted through every backup rotation and every pre-update snapshot of that file. It now gets
-  the same treatment as the RCON password: redacted on disk, rehydrated transparently on load.
-
-- **A secret could reach a Discord message if it didn't match the shape the redaction filter was
-  looking for.** Redaction matched on what a secret was expected to look like rather than on the
-  actual secret values the panel holds. It now matches every known secret value directly, wherever
-  it appears in the outgoing text.
-
-- **A custom `JWT_SECRET` had no minimum-length check.** A one-character override was accepted
-  without complaint, silently signing every session token on that install with a key weak enough
-  to brute-force. A 32-character minimum is now enforced; the panel's own auto-generated secret
-  was never affected.
-
-- **A stolen access token kept working for up to 24 hours after you logged out.** Logging out
-  revoked the ability to silently refresh a session, but the access token you already held kept
-  authenticating every request until it expired on its own - and the code's own comment already
-  (incorrectly) called a 24-hour token "short-lived." Access tokens are now valid for 15 minutes,
-  closing most of that window.
-
-- **Data and secrets directories on Linux installs could end up more permissive than intended.**
-  The directory holding `db.json`, `jwt.secret` and server secrets was created without an explicit
-  mode, so its real permissions depended on the host's umask - world-writable in the worst case,
-  which lets a secret file inside it be replaced or symlinked even if the file itself is locked
-  down. A regenerated TLS certificate could also keep a stale, looser mode from before the
-  regeneration. All of these now get an explicit, owner-only mode on every write.
-
+- **Two ChunkCleaner read routes (list and browse saves) had no permission check at all** - both
+  now require `chunks.manage` and show an honest denial instead of a misleading empty result.
+- **The panel's outbound server-discovery queries could be fed a spoofed reply from any address,
+  including internal ones** - both sockets now only accept a reply from the address actually
+  queried.
+- **The PanelBridge SFTP password was stored in plain text in the panel's own database file** -
+  now redacted on disk like every other saved credential.
+- **A secret could reach a Discord message if it didn't match the shape the redaction filter
+  expected** - redaction now matches every known secret value directly.
+- **A custom `JWT_SECRET` had no minimum-length check**, so a one-character override could weaken
+  every session token - a 32-character minimum is now enforced.
+- **A stolen access token kept working for up to 24 hours after you logged out** - access tokens
+  now expire in 15 minutes.
+- **Data and secrets directories on Linux installs could end up world-writable**, depending on the
+  host's umask - both now get an explicit, owner-only mode.
 - **Live RCON command output was visible to any role that could view diagnostics, not just roles
-  that could actually run RCON commands.** The console's live command/response stream was
-  broadcast over the same channel as general log and performance data, gated on the broader
-  permission that covers those. A role granted only diagnostics access - a legitimate, narrower
-  grant on its own - could watch every admin's live RCON console output as it happened. It now has
-  its own channel, gated on the same permission required to run an RCON command in the first
-  place.
-
-- **Activating a server broadcast its RCON password, in plain text, to every connected browser.**
-  The server list already stripped credentials before sending a server's details to whoever
-  requested them, but the real-time notification sent the moment a server was activated skipped
-  that step - so any signed-in account, regardless of role, received the RCON password of
-  whichever server anyone activated.
-
-- **Eight actions that can target or impersonate a specific player - dropping up to 500 zombies on
-  them, spawning gunfire or noise near them, or sending a chat message that reads as coming from an
-  admin - were reachable by any role holding only the broad automation permission**, bypassing the
-  narrower player-targeting permission those same actions require everywhere else they're exposed.
-  Closed to match.
-
+  that could run RCON commands** - it now has its own, correctly-gated channel.
+- **Activating a server broadcast its RCON password, in plain text, to every connected browser** -
+  the notification is now sanitized like every other server-detail response.
+- **Eight actions that can target or impersonate a player were reachable by any role holding only
+  the broad automation permission** - now correctly gated behind the narrower player-targeting
+  permission.
 - **A join password with a space around its `=` in the server config could reach Discord in plain
-  text.** Redacting secrets from outgoing Discord messages depends on reading each secret's current
-  value out of the config file first, and a hand-edited or manually-saved "Key = value" line (with
-  spaces) was invisible to the reader used for that - so the real password was never added to the
-  set of text to scrub, and an RCON response echoing it back would post to Discord unredacted.
-  Fixed at the source: config values with this spacing are now read correctly everywhere, closing
-  the same gap in every other place that reads them too.
-
+  text** - spaced config values are now read correctly everywhere secrets are scrubbed from
+  outgoing messages.
 - **Clearing a server's RCON password didn't actually delete it - it came back on the next
-  restart.** The code that deletes a saved password's file only ran when a *new* password was
-  written; explicitly clearing the field to empty skipped that step entirely, so the old password's
-  file was left on disk and silently reloaded the next time the panel started, undoing what looked
-  like a successful clear.
-
-- **Restoring a backup from a carefully-crafted (but real) filename could write outside the
-  intended config folder.** The restore's own backup filename was already safely checked, but a
-  second, derived filename recovered from it was never independently re-validated before being
-  used as the write target - a filename shaped a specific way could make that derived value resolve
-  to a parent directory instead of the file it was supposed to name. Explicitly rejected now,
-  regardless of what any particular platform happens to do with that kind of path on its own.
+  restart.**
+- **Restoring a backup from a specially-crafted filename could write outside the intended config
+  folder** - the derived filename is now independently re-validated before use.
+- **A diagnostic mod action could be triggered by any role holding only the general automation
+  permission, without the stricter diagnostics permission it should require** - now correctly
+  requires both.
+- **Several Linux secret and config files (TLS certificates, mirrored remote-server configs, and
+  files rewritten in place) could end up more permissive than intended, especially after being
+  regenerated** - all now keep a locked-down, owner-only mode.
 
 ### Added
 
-- **A live Vitals tab for players**, backed by PanelBridge's real player-detail data (health,
-  hunger, thirst, fatigue, and more) instead of the moderation-only view that existed before.
-- **A Kill Player action**, guarded by typing the player's own name to confirm before it fires.
-- **Live weather conditions and five new environment controls on the Events page** - view
-  distance, daylight strength, night strength, desaturation, and ambient light - backed by real
-  PanelBridge reads instead of controls that changed nothing you could see reflected back.
+- **A live Vitals tab for players**, backed by real PanelBridge player-detail data instead of the
+  moderation-only view that existed before.
+- **A Kill Player action**, guarded by typing the player's own name to confirm.
+- **Live weather conditions and five new environment controls on the Events page** (view distance,
+  daylight, night strength, desaturation, ambient light), backed by real PanelBridge reads.
 - **Zombie count and current map name on the Dashboard**, read live from the server.
-- **A PanelBridge diagnostics tab on the Debug page**, and several more diagnostics checks that
-  were previously "fix it yourself" are now fixable with one click - a missing sandbox-vars file,
-  a read-only database file, a stalled mod checker, and a Discord bot that dropped offline with a
-  token already saved.
-- **A Discord gateway health indicator** - a dismissible banner that tells you when the bot's
-  connection to Discord itself is down, not just whether a message failed to send.
-- **Steam Workshop health on the Mods page** - mods that Steam no longer recognizes, or that the
-  panel can no longer identify at all, are now called out instead of silently listed as normal.
+- **A PanelBridge diagnostics tab on the Debug page**, with one-click fixes for a missing
+  sandbox-vars file, a read-only database file, a stalled mod checker, and an offline Discord bot.
+- **A Discord gateway health indicator** that shows when the bot's own connection to Discord is
+  down, not just a failed message.
+- **Steam Workshop health on the Mods page** - mods Steam no longer recognizes, or the panel can't
+  identify, are now called out.
 - **A searchable timezone picker for the scheduler**, so scheduled tasks run against the timezone
-  you actually intend rather than the server host's own clock - type to filter instead of typing a
-  full zone name from memory.
+  you actually intend.
 - **A quiet, dismissible indicator when the panel's own update check fails**, instead of that
   failure being invisible.
 - **The support bundle now captures Docker container and systemd/journald service logs**, not just
-  the panel's and game server's own log files on disk. A container's stdout never lived in a file
-  the previous bundle could find, which is exactly where the decisive detail in a recent restart
-  bug report turned out to live.
-- **Linux game servers can now be installed as managed systemd or OpenRC services.** Instead of a
-  bare background process, the panel can generate and register a real service unit so the server
-  starts on boot and is supervised by the OS like any other service - including installs where the
-  game server runs as a different Linux user than the panel itself.
-- **Unresolved `Mods=` entries are now triaged, not just listed.** Each one is classified as a
-  likely typo, still downloading, present on disk but not registered, or genuinely missing - with a
-  one-click fix offered for a typo, a confirm-gated removal for something genuinely gone, and
-  guidance for the other two cases, right where the review already happens.
+  the panel's and game server's own log files.
+- **Linux game servers can now be installed as managed systemd or OpenRC services** instead of a
+  bare background process.
+- **Unresolved `Mods=` entries are now triaged** (typo, still downloading, on disk but not
+  registered, or genuinely missing), with a fix or guidance offered per cause.
+- **A way to end a triggered helicopter event early**, instead of only being able to wait it out.
+- **A custom weather front control, a "clear zombies near this player" action, chat
+  delivery-status notes, and a compact health indicator on each player's roster row.**
+- **Contextual help tips on risky or non-obvious controls**, across Players, Events, World Map,
+  Servers, Server Finder, Chat, Chunk Cleaner, Backups, Console, and Scheduler.
 
 ### Changed
 
-- **Player access-level options now come from your server's own role table when it's available,
-  with a corrected built-in list as the fallback.** The dropdown had been a hand-maintained list
-  that was wrong in both directions - it offered "overseer," which no default server has, and was
-  missing "priority," which every default server does. It now reads your server's real roles
-  directly when it can, and the fallback list matches the actual game.
-- **Every enable/disable button pair on the Events page - snow, rain, and the utilities' power/water
-  controls - is now a single toggle that shows the real current state and responds the instant you
-  click it**, instead of two separate buttons and a several-second wait to see whether anything
-  actually happened. A toggle whose state genuinely isn't known yet (the reading hasn't arrived, or
-  failed) shows a distinct, clearly-unconfirmed appearance rather than guessing.
+- **Player access-level options now come from your server's own role table when available**, with
+  a corrected built-in list as the fallback.
+- **Every enable/disable button pair on the Events page is now a single toggle showing real
+  current state and responding instantly**, instead of two buttons and a several-second wait.
+- **Role capability descriptions are now shown on demand via a help icon** instead of always
+  expanded, shortening the Roles & Permissions page.
 
 ### Fixed
 
-- **A panel-initiated restart could leave a server unable to start again.** Restarting waited for
-  the previous process to be confirmed dead using a process scan that only sees processes in the
-  panel's own container - a scan that reports "not running" even while a real Project Zomboid
-  process on a separately-containerized or host-native install is still shutting down. If that
-  shutdown ever ran longer than the fixed wait, the new instance could start while the old JVM
-  binary was still in use, producing a "Text file busy" failure that looped forever on "verifying
-  files." The restart now asks the one question that actually matters - is this specific binary
-  file still busy - regardless of which process table can see the process holding it.
-
-- **PanelBridge command round-trips could intermittently hang for the full 15-second timeout
-  instead of answering in a fraction of a second.** The counter tracking which commands had
-  already been processed only ever resynchronized once per process lifetime. If more than one
-  panel process ever pointed at the same bridge folder - including an old process that never fully
-  exited - its counter could silently drift behind what the game server had actually consumed, so
-  newly sent commands reused sequence numbers the server had already moved past and were discarded
-  until the timeout gave up. Resynchronization now runs continuously instead of once.
-
-- **Several PanelBridge-backed actions could report success on a mutation that had already
-  failed, or fail silently while giving no indication anything had happened**, including killing a
-  player, healing a player, and the utility restore/shut-off actions. Each now reports what
-  actually happened rather than an optimistic default.
-
-- **Weather, sandbox options, and per-player detail reads could lose everything to a single bad
-  field.** `getWeather`, `getClimateFloats`, and the sandbox-options and player-detail reads each
-  wrapped many independent fields in one shared error boundary, so one field that couldn't be read
-  discarded the other dozen-plus that could. Each field is now read and guarded independently.
-  Along the way, player detail fields that were always returning empty (bleeding state,
-  temperature) are now wired to the real Build 42 API, and sandbox options that were silently
-  returning nothing now return the real values.
-
+- **A panel-initiated restart could leave a server unable to start again** if the previous process
+  was still shutting down outside the panel's own container - the restart now checks whether the
+  specific binary file is still busy, not just the local process table.
+- **PanelBridge command round-trips could intermittently hang for the full 15-second timeout** if
+  more than one panel process ever pointed at the same bridge folder - the sequence counter now
+  resynchronizes continuously instead of once.
+- **Several PanelBridge-backed actions (killing/healing a player, utility restore/shut-off) could
+  report success on a mutation that had already failed** - each now reports what actually
+  happened.
+- **Weather, sandbox options, and per-player detail reads could lose everything to one bad
+  field** - each field is now read and guarded independently, and several previously-empty fields
+  (bleeding state, temperature, sandbox options) now return real values.
 - **Vehicle actions reported "Vehicle not found" for problems that had nothing to do with the
-  vehicle.** The lookup behind eight vehicle actions (repair, hotwire, fuel, battery, siren, alarm,
-  trunk lock, and removal) collapsed "the vehicle list itself couldn't be read" into the same
-  generic not-found message as "no vehicle with this ID exists," sending anyone investigating the
-  wrong problem down the wrong path. The two cases are now reported distinctly, and several related
-  vehicle-part reads (part count, battery charge, and others) were moved onto the game's real API
-  after confirming the ones they used didn't exist.
-
-- **A horde triggered to spawn behind a player, and the helicopter and horde-event actions more
-  broadly, used fallback logic that could pick the wrong direction or the wrong API entirely.**
-  Both were corrected to the one API each actually supports, along with a broader sweep of the
-  same file for related mistakes (inventory-key handling, guarded import/export, and an unguarded
-  item-give path).
-
+  vehicle** - a failed vehicle-list read and a genuinely missing vehicle are now reported
+  distinctly.
+- **A horde spawned behind a player, and the helicopter/horde-event actions more broadly, could
+  pick the wrong direction or the wrong API entirely** - both now use the one API each actually
+  supports.
 - **RCON commands like ban, unban, and whitelist add/remove could report success on a command the
-  game server had actually rejected.** The classifier recognized only some of the game's rejection
-  message classes, and separately could be fooled by a player whose own name happened to match part
-  of a success message. Both are fixed: the classifier now recognizes rejections from every
-  relevant game class, and matching is anchored so a player's name can no longer flip a real
-  failure into a reported success (or vice versa).
-
-- **A dropped RCON connection could go undetected until the next command was sent.** The panel now
-  recognizes a dropped session by its actual error code instead of inferring it from response text.
-
+  game server had actually rejected** - the classifier now recognizes every relevant rejection
+  class and can no longer be fooled by a player's name.
+- **A dropped RCON connection could go undetected until the next command was sent** - the panel
+  now recognizes the drop by its real error code.
 - **The Add Remote Server dialog claimed weather and world-event controls would work over RCON
-  alone.** They don't - those features need PanelBridge's file-based connection, which a
-  RCON-only remote server has no way to reach. The banner (and its translation into all five other
-  supported languages) now says so, and points at the SFTP bridge setup that actually enables them.
-
-- **A batch of real mobile-layout defects across Settings, Events, Debug, Console, World Map, and
-  Chat** - text truncated to unreadable fragments, page content overflowing the viewport
-  horizontally, a workshop-sync table with a wider minimum width than any phone screen, and a
-  roster panel with no way to collapse it. All confirmed on a real narrow viewport (some of these
-  had been masked by a screenshot tool that produced false-positive overflow reports for pages with
-  their own legitimately-scrollable regions) and fixed without changing desktop layouts.
-
-- **Chat broadcast placeholder text was clipping mid-word**, worse in French and Spanish than in
-  English since a fix sized for one language's text length doesn't hold for languages that run
-  20-60% longer. Fixed by dropping a redundant "press enter to send" clause that meant nothing on
-  a touch keyboard, rather than shrinking the text further and further with every new translation.
-
+  alone** - they don't, and the banner now says so and points at the SFTP bridge setup that
+  actually enables them.
+- **A batch of real mobile-layout defects across Settings, Events, Players, Debug, Console, World
+  Map, and Chat** - truncated text, horizontal overflow, an uncollapsible roster panel, a section
+  pick that left you scrolled above its own content, and a hidden Activity Log column - fixed
+  without changing desktop layouts.
+- **Chat broadcast placeholder text was clipping mid-word**, worse in French and Spanish than
+  English - fixed by trimming a redundant clause instead of shrinking the text further.
 - **A failed scheduled backup, or a scheduler running against the wrong timezone, gave no visible
-  signal anywhere in the panel.** Scheduler failures now surface on the Auto-Backup status card,
-  scheduled backups are deferred rather than skipped during an active restart, and every schedule
-  now reports the real timezone it's running in.
-
+  signal anywhere in the panel** - failures now surface on the Auto-Backup status card, and every
+  schedule reports its real timezone.
 - **Backup listing and pruning could pick the wrong file when two backups were created within the
-  same instant.** Both were sorted by filesystem creation time, which is unreliable for this in two
-  different ways depending on platform - Windows can return an unstable order, and real Linux
-  ext4 can report an identical timestamp for several backups made in one tick, at which point the
-  freshest backup was sometimes the one pruned. Both now sort by the timestamp embedded in the
-  backup's own filename.
-
+  same instant** - both now sort by the timestamp embedded in the backup's own filename.
 - **Restoring a backup no longer trusts a corrupted archive, and a restore in progress can no
-  longer be interrupted by a second restore or a new backup starting.** Extracted files are now
-  checksummed before anything is restored from them, and both operations now refuse to start while
-  the other is already running.
-
-- **The panel could report having regenerated a start script, or reported a mod ID as saved, when
-  neither was actually true.** A server using a custom launcher file had its start-script
-  regeneration attempt quietly discarded and then logged as successful; saving a mod order or
-  applying a preset could silently drop any mod whose ID happened to look like a Steam Workshop ID
-  (a small but real overlap - some mods legitimately share the two). Both now reflect what
-  actually happened.
-
-- **Mods, workshop items, and map entries with unusual whitespace in the server's `.ini` file could
-  be missed or duplicated on save.** Around three dozen sites reading or writing `Mods=`,
-  `WorkshopItems=`, and `Map=` required exact single-space formatting; all are now
-  whitespace-tolerant, and structured saves now preserve the file's original per-line formatting
-  and line endings instead of normalizing them away.
-
-- **Dashboard status could lag well behind what the server was actually doing.** Three separate
-  gaps meant the live status indicator didn't update during a scheduler-triggered restart, when a
-  Docker-managed server container started, or when the watchdog was checking a server actually
-  running in Docker - closed one at a time and confirmed independently. A related gap left the
-  Stop/Force Stop/Restart buttons stuck disabled whenever RCON was reachable but the host-level
-  process scan couldn't see the process, even though the server was demonstrably controllable.
-
-- **A stale session token, or certain reconnect failures, required a full page reload (F5) to
-  recover.** The dashboard's live connection now recovers on its own in both cases.
-
-- **A single bad reply from the game-server discovery scan could crash the entire panel process**,
-  not just fail the one request that triggered it - a synchronous error thrown from inside a socket
-  callback bypassed the panel's normal error handling entirely. It's now caught where it occurs.
-
-- **Several Linux-specific installation and discovery gaps**: bare-metal SteamCMD layouts and
-  Flatpak Steam's workshop folder are now recognized during server discovery; a custom launcher
-  script without a file extension is now made executable before the panel tries to run it; a
-  first-run install left unreadable by a prior root-owned run now fails with one clear diagnostic
-  instead of a confusing downstream error; and a permissions error writing to your install or data
-  path now explains what to do about it instead of a bare `EACCES`.
-
+  longer be interrupted by a second restore or a new backup starting.**
+- **The panel could report having regenerated a start script, or saved a mod ID, when neither was
+  actually true** - both now reflect what actually happened.
+- **Mods, workshop items, and map entries with unusual whitespace in the server's `.ini` file
+  could be missed or duplicated on save** - all affected sites are now whitespace-tolerant, and
+  structured saves preserve the file's original formatting.
+- **Dashboard status could lag well behind what the server was actually doing**, and the
+  Stop/Force Stop/Restart buttons could stay stuck disabled even when the server was
+  controllable - both closed.
+- **A stale session token, or certain reconnect failures, required a full page reload to
+  recover** - the dashboard's live connection now recovers on its own.
+- **A single bad reply from the game-server discovery scan could crash the entire panel
+  process** - it's now caught where it occurs.
+- **Several Linux-specific installation and discovery gaps** - bare-metal SteamCMD, Flatpak
+  Steam's workshop folder, an extensionless launcher script, a root-owned first run, and a bare
+  `EACCES` - all fixed with real detection or a clear diagnostic.
 - **The updater could lose recent database changes, corrupt a Windows path, or fail to notice a
-  supervisor-level recovery had actually failed**, across several related fixes to the in-place
-  update path: the pre-update database snapshot is preserved correctly, Windows path separators
-  survive an update, Windows supervisor recovery is verified rather than assumed, a startup-journal
-  race that could leave state ambiguous is closed, and frontend/backend bundles now activate
-  together as one versioned unit instead of independently. A panel restart or update no longer
-  disturbs an already-running game server in the process, and containerized Linux installs no
-  longer get told to `git pull` to update.
-
-- **A sustained Discord rate limit could hang the notification path indefinitely.** Sending a
-  Discord message is now bounded, so a rate limit degrades that one notification instead of
-  blocking everything behind it.
-
-- **The spawn browser's "recent" rail could overflow the dialog on narrow content, and had no way
-  to clear it.** Both fixed; a clear button was added.
-
-- **Saving a data path that didn't actually point at a Zomboid data folder was accepted silently.**
-  A structurally-valid but wrong path could later cause a Wipe action to look for save data in the
-  wrong place. The path is now checked at save time.
-
+  supervisor-level recovery had actually failed** - all fixed, and frontend/backend bundles now
+  activate together as one unit.
+- **A sustained Discord rate limit could hang the notification path indefinitely** - sending a
+  Discord message is now bounded.
+- **The spawn browser's "recent" rail could overflow the dialog and had no way to clear it** -
+  both fixed.
+- **Saving a data path that didn't actually point at a Zomboid data folder was accepted
+  silently** - it's now checked at save time.
 - **Docker containers reported the panel's version as `v0.0.0`, which blocked the panel from
-  loading entirely once frontend/backend version-matching was enforced.** A container has no git
-  history to read the build identifier from, and the failed lookup was silently discarding a
-  version that had already been read successfully. Both the backend and frontend build identifiers
-  now resolve correctly in a container.
-
-- **A handful of error messages and update-related notices were still showing in English regardless
-  of your language setting.** The last of the untranslated raw-error sites, and the game-server
-  preservation messaging introduced this cycle, are now translated in every supported language.
-
+  loading entirely** - both backend and frontend build identifiers now resolve correctly in a
+  container.
+- **A handful of error messages and update-related notices were still showing in English
+  regardless of your language setting** - now translated in every supported language.
 - **A French admin choosing "Normal" for a vehicle's spawn rate was actually saving what the
-  English list calls "High" - a real, silent misconfiguration, not a display glitch.** Two French
-  sandbox-option scales (vehicle spawn rate and animal age) had their option labels shifted out of
-  order relative to the values they save, so the label read did not match the setting actually
-  applied. Both are corrected to match their real values; every other French option scale was
-  checked and no further instances were found.
-
-- **Several other French setting labels described the wrong setting entirely** - a stats-decay-
-  speed setting labeled "food expiration," an endurance-recovery setting carrying the same wrong
-  label, a farming-XP multiplier labeled as a generic agriculture multiplier, a house-locking-
-  frequency setting labeled "house alarm frequency," and a wildlife/fish abundance setting labeled
-  "agriculture abundance." Each came from the same label being reused across settings it didn't
-  actually describe. All are corrected to describe the setting they're actually attached to.
-
-- **The RCON console's main command box stayed active and clickable even when the connection
-  banner said the host was unreachable, and if the connection dropped mid-session it gave the same
-  "check host and port" advice as a connection that was never established at all.** The primary
-  command field and its Run button were missing the same disabled-when-disconnected check every
-  other control on the page already had, and a mid-session drop reused a generic message that made
-  no sense right after a command had just worked. The input now disables along with everything
-  else, and a drop mid-session gets its own, accurate message pointing at Recheck.
-
-- **Eight pages that should have shown "Access Denied" for a role without permission instead showed
-  the same "No Data" message as an empty, allowed page.** The icon next to the message correctly
-  showed a lock; the text underneath it didn't match. All eight now show the correct message.
-
+  English list calls "High"** - a real, silent misconfiguration, now corrected.
+- **Several other French setting labels described the wrong setting entirely**, from a shared
+  label being reused across unrelated settings - all corrected.
+- **The RCON console's command box stayed clickable even when disconnected, and gave the wrong
+  advice after a mid-session drop** - both now match the connection state correctly.
+- **Eight pages that should have shown "Access Denied" instead showed "No Data"** - all eight now
+  show the correct message.
 - **The mods conflict panel's "Fix All" button could mark a missing dependency as fixed even when
-  it wasn't.** Adding a dependency is a two-step process - subscribing to the Steam Workshop item,
-  then resolving it to a real mod ID - and the second step can fail on its own even when the first
-  succeeds, leaving the dependency subscribed but never actually loading. "Fix All" and the
-  single-item "Add" button both used to report success the moment the request itself didn't error,
-  without checking whether resolution had actually worked. Both now check the real per-item result
-  before marking anything fixed.
-
-- **When editing a remote server's details produced a name/host/port collision with another saved
-  server, the warning was a toast that faded away, leaving no lasting sign of which two fields
-  actually collided.** The Display Name and RCON host fields now get a persistent red outline and
-  inline hint for as long as the collision exists, clearing automatically the moment it's resolved.
-
-- **Running a sequence of world events could report complete success even when some steps failed -
-  and once that was fixed at the source, the detail of which steps failed still never reached the
-  screen.** The event sequence handler now reports which steps failed and how many, instead of
-  reporting success unconditionally. Separately, that kind of failure detail was being discarded
-  before it ever reached the browser at three different points along the way - an event sequence's
-  result, a teleport's failed position check, and a kill command's failure diagnostics all now show
-  what actually went wrong instead of a bare failure card, and the Events page shows a real
-  partial-success view naming which steps failed instead of treating any failure as total.
-
+  it wasn't** - it now checks the real per-item result before marking anything fixed.
+- **A name/host/port collision when editing a remote server was only shown as a toast that faded
+  away** - the colliding fields now stay marked until the collision is resolved.
+- **Running a sequence of world events could report complete success even when some steps failed,
+  and the failure detail never reached the screen** - it's now reported accurately, with a real
+  partial-success view.
 - **A PanelBridge command response containing certain special characters could come back with
-  garbled text** - the decoder didn't handle one of the ways those characters are encoded in
-  transit, and dropped literal placeholder characters into the result instead of the real ones.
-  Fixed.
-
-- **Over an SFTP-based PanelBridge connection, a command could occasionally fail with "no response
-  from mod" even though the mod had already answered, or the connection could stall silently for a
-  long stretch after briefly losing sync.** Both came from the same underlying resync logic: it
-  could move its read position backward on a stale signal, triggering a long silent stall while it
-  re-processed already-handled data, and separately could jump forward past a result that had
-  genuinely already arrived without ever reading it. Both are fixed - the position can no longer
-  move backward, and a forward jump now recovers anything real that was sitting in the gap it
-  skips.
-
-- **Deleting a built-in template hid it with no way to bring it back, despite nothing suggesting
-  that was permanent.** The panel now shows any hidden built-in templates and lets you restore one
-  with a click.
-
-- **An unexpected server error could show as one run-on sentence with no punctuation between the
-  error detail and the panel's own explanation.** A separator is now added when the error detail
-  doesn't already end in punctuation of its own.
-
-- **A rare, inconclusive result from the panel's own startup safety check could let two copies of
-  the panel run against the same server at once** - the exact conflict (a locked port, a corrupted
-  database file) the check exists to prevent. An unclear result now makes the panel refuse to start
-  rather than assume it's safe to proceed; the failure is visible and easy to recover from (delete
-  the lock file and restart), unlike the silent conflict it used to risk.
-
+  garbled text** - fixed.
+- **Over an SFTP-based PanelBridge connection, a command could fail with "no response from mod"
+  even after a real answer arrived, or the connection could stall silently** - both fixed.
+- **Deleting a built-in template hid it with no way to bring it back** - the panel now shows
+  hidden built-in templates and lets you restore one.
+- **An unexpected server error could show as one run-on sentence with no punctuation** - a
+  separator is now added automatically.
+- **A rare, inconclusive result from the panel's startup safety check could let two copies of the
+  panel run against the same server at once** - an unclear result now makes the panel refuse to
+  start instead of assuming it's safe.
 - **Importing a Steam Workshop collection reported a mod count that could be higher than what you
-  actually got**, with no indication that some individual items in the collection - deleted or made
-  private since the collection was created - failed to resolve at all. The response now reports
-  which requested items were skipped, alongside the existing notice for skipped sub-collections.
-
-- **A scheduled task using a comma-separated list of hours (rather than "every hour") could bypass
-  the panel's own 5-minute minimum spacing between runs.** The check meant to catch a task
-  configured to run too frequently only recognized the "every hour" case; a task set to fire at,
-  say, 5:58 and 6:00 - two minutes apart - was never flagged. It's now caught the same way
-  regardless of how the hours are listed.
-
-- **A scheduled backup's skip note in Schedule History said a file "vanished during archiving" even
-  when it was a symbolic link deliberately excluded on purpose, not a real disappearance.** The
-  note now describes the actual cause instead of assuming the file went missing.
-
-- **Wiping player or world data could report "nothing found to delete" even when the delete itself
-  had actually failed** - a locked or in-use file (for example, still held by antivirus or backup
-  software right after the server stopped) was silently logged and treated the same as a folder
-  that was genuinely already empty. A real deletion failure is now reported as a failure, with the
-  affected files named, instead of being reported as if there was nothing there to begin with.
-
-- **"Stop All Weather" could leave rain falling forever once rain had ever been forced on from the
-  panel.** It correctly stopped an active storm or blizzard, but never cleared the separate override
-  that had been pinning rain on - so a server where rain had been manually started stayed rainy no
-  matter how many times "Stop All Weather" was pressed. It now clears that override too, and
-  confirms the rain actually stopped.
-
-- **Triggering a blizzard, tropical storm, or generic storm while one was already running silently
-  did nothing but still reported success - and "Generate Weather" never worked at all, on any
-  call.** Both now report what actually happened: a second trigger while one is already active says
-  so and explains what to do, and Generate Weather now uses the correct game-side call instead of
-  one that was silently ignored server-side every time.
-
-- **Several weather and climate controls (snow, rain, fog, wind, temperature, cloud cover, and
-  more) could report success on a change that silently failed to apply.** 14 of them now read the
-  game's own confirmation back after making the change, instead of only checking that the request
-  itself didn't error.
-
-- **A PanelBridge mod fix could sit undelivered on a server indefinitely.** The updater only
-  redeployed the bundled mod file when its version label had changed - three real fixes shipped in
-  a row without a version bump, so none of them actually reached any server until this was
-  corrected to compare the file's real content instead of just its label.
-
-- **A successful mod-update auto-restart wasn't always recorded as handled, so the same update
-  could trigger a second, unnecessary restart on the next check.**
-
+  actually got** - the response now reports which items were skipped.
+- **A scheduled task using a comma-separated list of hours could bypass the panel's 5-minute
+  minimum spacing between runs** - now caught regardless of how the hours are listed.
+- **A scheduled backup's skip note said a file "vanished during archiving" even when it was a
+  symlink deliberately excluded** - the note now describes the actual cause.
+- **Wiping player or world data could report "nothing found to delete" even when the delete
+  itself had actually failed** - a real deletion failure is now reported as one.
+- **"Stop All Weather" now clears rain that was forced on from the panel** - previously it stopped
+  storms but left that rain falling indefinitely.
+- **Triggering a storm while one was already running silently did nothing but reported success,
+  and "Generate Weather" never worked at all** - both now work correctly, and a busy trigger
+  explains why it didn't fire.
+- **14 weather and climate controls could report success on a change that silently failed to
+  apply** - they now confirm the change actually took effect.
+- **A PanelBridge mod fix could sit undelivered on a server indefinitely** - the updater now
+  compares the mod file's real content, not just its version label.
+- **A successful mod-update auto-restart wasn't always recorded as handled**, risking an
+  unnecessary second restart.
 - **Collecting a support bundle, or viewing container logs, could hang indefinitely if Docker
-  itself was slow or unresponsive**, instead of timing out and reporting the problem.
-
-- **A backup that deleted successfully could be reported as a failure** if the panel's own
-  follow-up activity-log entry for that deletion happened to fail to write - the file was already
-  gone either way, but the response said otherwise.
-
+  itself was slow** - now bounded.
+- **A backup that deleted successfully could be reported as a failure** if its own log entry
+  failed to write - fixed.
 - **The Server Console's "RCON disconnected" banner didn't always appear when a reconnect attempt
-  failed**, silently leaving the console looking connected when it wasn't.
-
+  failed.**
 - **On Windows, a real, running dedicated server launched in an unusual way could be confidently
-  reported as not running.** A launch that didn't match the panel's usual process signature was
-  read as "definitely not this server" instead of "can't tell" - now treated the same cautious way
-  the Linux side already handles it.
-
-- **A disk or process scan that failed to complete could be silently read as "the server is
-  confirmed stopped"** - which could let a config edit through without its "stop the server first"
-  warning while the server was actually still running, and could show the wrong status on the
-  Dashboard. A failed scan now reads as "unknown," not "stopped."
-
-- **Uploading a backup after being idle for a while could fail outright with a session error**,
-  instead of quietly refreshing your session and continuing the upload the way every other action
-  in the panel already does.
-
-- **The template preview screen could show the wrong label for a setting that was about to
-  change**, because two unrelated real game settings happen to share the same internal name - a
-  preview that should have named a large-range XP multiplier instead named the unrelated 1-5
-  skill-growth setting it collides with. Both are now labeled correctly.
-
-- **The safeguard against restarting into a game process that hadn't finished shutting down yet
-  ("Text file busy") was accidentally skipped on every real restart** - exactly the failure it was
-  built to prevent.
-
+  reported as not running** - now treated the same cautiously as the Linux side already is.
+- **A failed disk or process scan could be silently read as "the server is confirmed stopped"**,
+  which could suppress the "stop the server first" warning or show the wrong Dashboard status - a
+  failed scan now reads as "unknown."
+- **Uploading a backup after being idle for a while could fail outright with a session error**
+  instead of quietly refreshing your session, unlike every other action.
+- **The template preview screen could show the wrong label for a setting about to change**, since
+  two unrelated settings share an internal name - both now labeled correctly.
+- **The safeguard against restarting into a game process that hadn't finished shutting down was
+  accidentally skipped on every real restart** - restored.
 - **Failing to delete a user account could silently drop keyboard focus with no indication of
-  where it went.** Focus now returns to a sensible, visible place after a failed delete, the same
-  as it already did after a successful one.
-
-- **The French UI's error message for a failed custom item drop misnamed it as a failed airdrop** -
-  a different, unrelated feature. Corrected to name the actual feature that failed.
-
+  where it went** - focus now returns to a sensible place.
+- **The French UI's error message for a failed custom item drop misnamed it as a failed
+  airdrop** - corrected.
+- **Auto-sort by dependencies could wrongly mark an installed mod as missing** if its ID only
+  differed from its requirement by letter case - both now match the same way.
+- **A launcher script saved with an uppercase file extension could silently break PanelBridge
+  auto-update and automatic mod installation** - the install folder is now found correctly
+  regardless of extension case.
+- **Starting a server (including via a managed systemd/OpenRC service), restarting it, or applying
+  an update could all run at the same time as an in-progress Steam install/update** - concurrent
+  operations against the same install now refuse instead of racing each other.
+- **A critical disk-health alert could silently clear itself the moment the disk became
+  unreachable, and a config-edit safety warning could be skipped when the server's path was only
+  briefly unreachable** - both now fail safely instead of silently.
+- **Enabling, reordering, or reapplying a preset for a mod whose ID happens to look like a Steam
+  Workshop ID could silently drop it**, even when it's the mod's real ID - the panel now checks the
+  mod's actual files on disk first.
+- **Numerous small visual and interaction inconsistencies were fixed across Players, Events,
+  Debug, Settings, and Chat** - mismatched button styling, a touch-only tooltip gap, a
+  chunk-selection action affecting the wrong area, moderation buttons that looked enabled when
+  blocked, and decorative header chrome that didn't match the rest of the panel.
+- **The Dashboard could label stale performance numbers as "live" even when the server's status
+  couldn't be confirmed** - it now shows an honest "unconfirmed" label instead.
+- **The Dashboard's list of items needing attention wasn't sorted by severity** - the most urgent
+  issues now appear first.
+- **A remote server missing its SFTP setup showed both a calm warning banner and a duplicate red
+  error toast saying the same thing** - the duplicate toast is now skipped.
+- **A long template description could overflow its card, and deleting a built-in template warned
+  "this can't be undone" even though it's always reversible** - both fixed.
+- **The Debug page showed duplicate buttons where only one actually worked across 17 diagnostic
+  checks, and its Health/PanelBridge headlines (along with the World Map's "mod connected"
+  status) could contradict their own detail or claim an issue before the first check had even
+  run** - all now show one working action and headlines that match reality.
+- **Several Settings tabs had confusing or wrong states** - the Updates and About tabs could claim
+  "Up to date" before ever actually checking, Backups' empty message didn't explain why Backup Now
+  was disabled, the PanelBridge card had a layout gap, and Workshop cookie fields showed before
+  they were relevant.
+- **The initial Setup screen's Submit button stayed clickable with an invalid panel port** - it's
+  now disabled until the port is valid, matching every other field.
+- **A technician-level role running RCON commands saw nothing in the Console Output panel**, and a
+  failed command's response could wrongly flip the connection banner back to "online" - both fixed.
+- **Settings and Sandbox tabs showed a false "file missing" warning for a remote server that
+  simply had no SFTP bridge configured** - the badge is now suppressed for that case.
+- **Clicking Install twice during server setup could wipe the in-flight install log and start a
+  second install underneath the first, and the Max RAM slider was capped below the field next to
+  it** - both fixed.
+- **Starting a new backup shortly after a previous one finished could make its progress display
+  revert to a generic "Creating backup..." message** instead of the new backup's real progress -
+  fixed.
+- **Several Events actions showed only a generic "Action Complete" message, and the Utilities
+  status kept showing a stale reading after the bridge disconnected** - both fixed.
+- **The Settings page's PanelBridge badge could say "Connected" with an enabled Ping button even
+  when the panel couldn't actually send commands** - both now reflect the real connection state.
+- **Panning the world map to certain areas could show hard-edged black rectangles over otherwise-
+  loaded terrain on some map versions** - the map viewer now compares every field of the server's
+  map info before deciding nothing changed.
+- **A fully configured remote server could be told "No server configured" on the Dashboard, Server
+  Config, or Live Activity** - all views now recognize a configured remote server correctly.
+- **Submitting Add Remote Server twice could silently create two identical remote server
+  entries** - a duplicate with the same name, RCON host, and RCON port is now blocked.
+- **Several pages (Chunk Cleaner, Servers, Backups, and the sidebar) could flash a false "none
+  found" message while data was still loading, or hang with no error after a failed fetch** - each
+  now distinguishes "still loading" from "confirmed empty" and shows a real, retry-able error.
+- **Over an SFTP-based PanelBridge connection, the panel's automatic recovery from a stuck command
+  queue never actually worked** - the panel now uploads what that recovery check depends on, in
+  the correct order.
+- **Raw log files in a downloaded support bundle were never scanned for passwords, tokens, or
+  session cookies, unlike the diagnostics summary in the same bundle** - all raw log sources are
+  now redacted for known secret shapes.
+- **No-clip, God Mode, and invisibility could report success on a player without the change
+  actually taking effect** - the panel now uses a bypass that makes the change apply regardless of
+  the player's own in-game permissions.
+- **A manually configured PanelBridge bridge path could be lost after a panel restart** - it's now
+  saved with your settings and restored automatically.
+- **The PanelBridge diagnostics tab could describe your game version's build capabilities
+  inaccurately**, including reporting an unverifiable capability as a confirmed failure - wording
+  and detection both corrected.
+- **Exporting a player's data could silently merge two different worn containers that only looked
+  identical to the panel, losing items in the process** - each is now kept separate correctly.
+- **A sandbox option change could appear not to have taken effect for up to 5 minutes after
+  saving it** - the panel was serving a stale cached copy, now correctly refreshed after a change.
+- **Exporting or importing a player's data could crash entirely, losing traits, worn items, and
+  inventory too, if a single perk couldn't be read** - an unreadable perk is now skipped instead of
+  failing the whole operation.
+- **Importing player data could report a level restoration as failed even though the level change
+  had actually landed** - the reported result now matches what was actually restored.
+- **Changing a sandbox option could show a false "World not available" error even though the
+  change saved successfully, and a manual world save could never succeed at all** - both now use
+  the correct save call.
+- **A server alert could silently degrade to an ordinary chat message with no banner, without
+  falling back to RCON like other broadcasts already do** - alerts now fall back to RCON the same
+  way.
+- **A failed PanelBridge action could show a generic "Command failed" message instead of its real,
+  more specific reason** - the actual error and diagnostic detail now reach the screen.
+- **The safehouse "Add Player" button could silently add whichever player happened to be first in
+  the server's online list, not the one you meant** - you must now pick a player before it works.
+- **A player, item, or vehicle action could be wrongly reported as unsupported on your game
+  version even though it actually works** - a caching bug that could confuse two different objects
+  together is fixed.
+- **Adding or removing a player from a faction, or changing a faction's tag, could report success
+  even though the change wasn't actually synced to already-connected players** - the response now
+  says plainly when it only applied locally.
+- **The World Map's player dossier could show blank hunger, thirst, and fatigue** for a selected
+  player - it now displays their real, live values.
+- **The Events page's time-speed slider could show a stale multiplier** after a change made via
+  RCON, another admin, or a server restart - it now shows the real, current speed.
+- **Vehicle repair, refuel, and battery actions could silently fail** on a real, repairable vehicle
+  because the panel read its parts from the wrong place - all four now work correctly.
+- **A vehicle's siren had no toggle on the Events page, and the World Map's siren indicator never
+  lit up** - both fixed, with a new Siren button added.
+- **Map tiles cached in your browser could keep showing an old game build's imagery** for up to a
+  week after an update - tile addresses now include the exact build, so a browser can no longer
+  mix stale and fresh tiles.
+- **A configuration change saved right as the panel was shutting down could be silently lost** -
+  shutdown now waits for the save to finish first.
+- **The live chat and admin log view could silently freeze on an old session's log file** when two
+  log files shared an identical timestamp - the panel now reliably picks the newest one.
+- **A crash or failed save could leave stray temporary files behind indefinitely**, slowly
+  consuming disk space - failed saves now clean up after themselves.
+- **Saving server settings through the structured config editor could silently convert a
+  Windows-style file's line endings**, rewriting the entire file even when only one setting
+  changed - the original line-ending style is now preserved.
+- **After a Linux in-place update, the page's own anti-flicker startup script could be blocked by
+  the browser's security policy for a few seconds before the panel restarts** - the security policy
+  is now kept in sync with the newly-installed files.
+- **Toggling "Start server automatically" could fail to actually save the change** - the setting
+  is now sent as a real on/off value instead of text that could be misread.
+- **A Docker/container install that couldn't self-update was told to run `git pull`, which does
+  nothing in a container** - it now gives the correct container-update instructions instead.
+- **PanelBridge.lua could be installed with permissions too strict for the account actually
+  running the game server**, so the mod silently never loaded when the panel and game server run
+  as different Linux users - it's now installed with permissions that account can always read.
+- **Restarting or updating the panel on a bare-metal Linux install could also stop any running
+  Project Zomboid server**, since both shared the same process group - the Linux launcher now
+  isolates panel restarts from the game server, and warns plainly if your install isn't using the
+  protected launcher.
 - Horde spawning now uses the coordinate-aware Build 42 API and reports zero-result failures honestly.
 - Workshop cookie extraction now ignores expired cookies and pairs fresh credentials from the correct browser profile and domain.
 - Vehicle and player map actions now work on click/tap, guard against stale or offline state, and prevent overlapping commands.
