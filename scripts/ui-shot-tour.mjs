@@ -1080,7 +1080,29 @@ async function main() {
             const filePath = path.join(args.out, fileName)
             const prevMainStyle = await expandMainForCapture(page)
             await finishRunningAnimations(page)
-            await page.screenshot({ path: filePath, fullPage: true })
+            // quality-pass-2026-08-31, round 2: finishRunningAnimations
+            // above -- called as late as possible, right before this line
+            // -- still wasn't enough on its own. Confirmed on a full 204-
+            // view run: players-notes/powers (tall, fixed by the call
+            // above) came out clean, but events__desktop__light and
+            // discord__desktop__light (also taller than the 900px
+            // viewport) still captured dimmed. The remaining gap: for a
+            // page taller than the viewport, Playwright's own fullPage
+            // handling resizes/reflows the page AS PART OF this
+            // screenshot() call, and that reflow can retrigger
+            // `.page-transition`'s pageEnter animation AFTER
+            // finishRunningAnimations already ran -- one step later than
+            // any pre-check can reach, no matter how late that check runs.
+            // `animations: 'disabled'` is Playwright's own option for
+            // exactly this: it fast-forwards finite CSS animations/
+            // transitions to completion and freezes infinite ones, for the
+            // FULL DURATION of the screenshot operation itself (including
+            // its internal reflow), not just at one instant beforehand --
+            // closing the gap structurally instead of chasing the trigger
+            // one step later each round. Kept finishRunningAnimations too:
+            // cheap, still correct, and narrows what this option has to
+            // paper over.
+            await page.screenshot({ path: filePath, fullPage: true, animations: 'disabled' })
             await restoreMainAfterCapture(page, prevMainStyle)
             // Unconditional cleanup, even for a `dialogExpected` view whose
             // own dialog was deliberately left open for the shot just taken
