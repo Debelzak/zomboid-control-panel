@@ -446,10 +446,12 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverActiveOrInstallPath.label"),
         automated: false,
-        links: [
-          { to: "/servers", label: L("openServers") },
-          { to: "/server-finder", label: L("autoDetect") },
-        ],
+        // manualRoute makes the primary button itself navigate to /servers
+        // instead of popping a toast that just repeats the note below --
+        // don't also list "Open Servers" in links, or the row shows two
+        // identically-labelled buttons where only one of them does anything.
+        manualRoute: "/servers",
+        links: [{ to: "/server-finder", label: L("autoDetect") }],
         note: t("fixActions.serverActiveOrInstallPath.note"),
       };
     case "server.zomboidData":
@@ -858,6 +860,51 @@ export function getRequiredCapabilityForCheck(checkId: string): string | null {
 const DebugPerformanceCharts = lazy(
   () => import("@/components/DebugPerformanceCharts"),
 );
+
+export type HealthHeadlineTone = "checking" | "healthy" | "servicesDown" | "issues";
+
+export interface HealthHeadline {
+  tone: HealthHeadlineTone;
+  title: string;
+}
+
+// healthStatus.status only ever means "did GET /debug/health's own
+// collection complete without throwing" -- server/routes/debug.js hardcodes
+// status: "ok" in its success branch regardless of what services.rcon/
+// services.server report, and that distinction is real (two server route
+// tests assert on it; overloading this field would break them). So "ok"
+// staying "ok" while RCON/the game server are down is not a server bug --
+// but the Health tab's headline and its Services card render from the SAME
+// payload object, and a UI that draws a green verdict from one field of it
+// while showing red services from two other fields of it two inches below
+// is contradicting itself from its own data. That's the bug, and it's a
+// render-side one: derive the headline from healthStatus.services too, not
+// just .status, so it can never disagree with the card underneath it -- and
+// name which service is down rather than a vague "Degraded", so the
+// headline still answers "what do I do next" and not just "something's up".
+export function getHealthHeadline(
+  healthStatus: HealthStatus | null,
+  t: TFunction,
+): HealthHeadline {
+  if (!healthStatus) {
+    return { tone: "checking", title: t("healthTab.checking") };
+  }
+  if (healthStatus.status !== "ok") {
+    return { tone: "issues", title: t("healthTab.issuesDetected") };
+  }
+  const rconDown = !healthStatus.services.rcon.connected;
+  const serverDown = !healthStatus.services.server.running;
+  if (rconDown && serverDown) {
+    return { tone: "servicesDown", title: t("healthTab.rconAndServerOffline") };
+  }
+  if (rconDown) {
+    return { tone: "servicesDown", title: t("healthTab.rconOffline") };
+  }
+  if (serverDown) {
+    return { tone: "servicesDown", title: t("healthTab.gameServerOffline") };
+  }
+  return { tone: "healthy", title: t("healthTab.healthy") };
+}
 
 export default function Debug() {
   const { t, i18n } = useTranslation("debug");
@@ -5789,8 +5836,8 @@ export default function Debug() {
               </CardHeader>
               <CardContent>
                 {!selectedCrashLog ? (
-                  <div className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px] flex items-center justify-center text-muted-foreground">
-                    {t("crashesTab.selectToView")}
+                  <div className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px] flex items-center justify-center">
+                    <EmptyState type="noFile" title={t("crashesTab.selectToView")} compact />
                   </div>
                 ) : loadingCrashLog ? (
                   <div className="max-h-[45vh] lg:h-[calc(100vh-360px)] lg:max-h-none min-h-[160px] lg:min-h-[300px] flex items-center justify-center">
@@ -5833,7 +5880,7 @@ export default function Debug() {
                 onValueChange={(v) => setPerfRange(v as "1h" | "6h" | "24h")}
               >
                 <SelectTrigger
-                  className="w-[110px] h-8"
+                  className="w-[132px] h-8"
                   aria-label={t("performanceTab.timeRangeAria")}
                 >
                   <Clock className="w-3.5 h-3.5 mr-1" />
@@ -6130,7 +6177,9 @@ export default function Debug() {
               </CardContent>
             </Card>
           )}
-          {healthError && !healthStatus ? null : (
+          {healthError && !healthStatus ? null : (() => {
+          const headline = getHealthHeadline(healthStatus, t);
+          return (
           <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Overall Status */}
@@ -6144,35 +6193,38 @@ export default function Debug() {
               <CardContent>
                 <div className="flex items-center gap-4">
                   <div
-                    className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                      !healthStatus
-                        ? "bg-muted"
-                        : healthStatus.status === "ok"
-                          ? "bg-primary/10"
-                          : "bg-destructive/10"
-                    }`}
+                    className={cn(
+                      "w-16 h-16 rounded-full flex items-center justify-center",
+                      headline.tone === "checking" && "bg-muted",
+                      headline.tone === "healthy" && "bg-primary/10",
+                      headline.tone === "servicesDown" && "bg-warning/10",
+                      headline.tone === "issues" && "bg-destructive/10",
+                    )}
                   >
-                    {!healthStatus ? (
+                    {headline.tone === "checking" ? (
                       <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
-                    ) : healthStatus.status === "ok" ? (
+                    ) : headline.tone === "healthy" ? (
                       <CheckCircle className="w-8 h-8 text-primary" />
+                    ) : headline.tone === "servicesDown" ? (
+                      <AlertTriangle className="w-8 h-8 text-warning" />
                     ) : (
                       <AlertCircle className="w-8 h-8 text-destructive" />
                     )}
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {/* healthStatus is only ever null before fetchHealthStatus()'s
-                          first resolution -- once it settles, either this or
-                          healthError is always set (2026-08-30 visual sweep: this
-                          headline used to fall to "Issues Detected" for that brief
-                          pending window too, since `?.status === "ok"` is false for
-                          both "not ok" AND "not loaded yet"). */}
-                      {!healthStatus
-                        ? t("healthTab.checking")
-                        : healthStatus.status === "ok"
-                          ? t("healthTab.healthy")
-                          : t("healthTab.issuesDetected")}
+                      {/* getHealthHeadline() derives this from BOTH
+                          healthStatus.status and healthStatus.services --
+                          never just .status. See its own comment: .status
+                          "ok" only means the collection itself succeeded,
+                          not that the services it collected data about are
+                          up, and this headline sits directly above a
+                          Services card rendering those same services. A
+                          green verdict here while that card shows RCON/the
+                          game server down would be this page contradicting
+                          itself from its own data (2026-08-31 impeccable
+                          pass, finding #1). */}
+                      {headline.title}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {healthStatus?.timestamp ? (
@@ -6431,7 +6483,8 @@ export default function Debug() {
             </CardContent>
           </Card>
           </>
-          )}
+          );
+          })()}
         </TabsContent>
 
         {/* System Tab */}
@@ -6751,8 +6804,11 @@ export default function Debug() {
                       {t("bridgeTab.notYetProbed")}
                     </div>
                   ) : !probeResults["bridgeStats"].ok ? (
-                    <div className="text-sm text-destructive">
-                      {probeResults["bridgeStats"].error}
+                    <div className="p-2.5 rounded-md border border-destructive/40 bg-destructive/10 text-sm flex items-start gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+                      <div className="text-destructive">
+                        {probeResults["bridgeStats"].error}
+                      </div>
                     </div>
                   ) : (
                     (() => {

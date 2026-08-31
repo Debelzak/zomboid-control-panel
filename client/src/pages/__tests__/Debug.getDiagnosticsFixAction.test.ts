@@ -42,6 +42,20 @@ describe('getDiagnosticsFixAction fallback branch (uncovered check ids)', () => 
     expect(action?.links).toBeUndefined()
   })
 
+  // impeccable-critique-2026-08-31, finding #2: the primary button's own
+  // `label` used to duplicate `links[0]`'s label ("Open Servers" appeared
+  // twice), and only the links button actually navigated -- the primary one
+  // just popped a toast repeating the note. manualRoute makes the primary
+  // button itself the real navigation, so the duplicate link is dropped.
+  it.each(['server.active', 'server.installPath'])(
+    '%s navigates via its own manualRoute instead of a redundant duplicate "Open Servers" link',
+    (id) => {
+      const action = getDiagnosticsFixAction(fallbackCheck({ id, category: 'server' }), t)
+      expect(action?.manualRoute).toBe('/servers')
+      expect(action?.links).toEqual([{ to: '/server-finder', label: 'fixActions.links.autoDetect' }])
+    },
+  )
+
   it('opens server config when the hint contains the literal server.ini token', () => {
     const action = getDiagnosticsFixAction(
       fallbackCheck({ hint: 'Edit server.ini to fix this.' }),
