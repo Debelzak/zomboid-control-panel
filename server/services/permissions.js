@@ -111,7 +111,7 @@ export const CAPABILITIES = [
     group: "Server Lifecycle",
     label: "Wipe the world",
     description:
-      "Irreversibly delete map, player or world save data -- and, via the 'clear install folder' action, any directory elsewhere on the host that merely passes a PZ-install marker-file check, not only the configured server's own folder.",
+      "Irreversibly delete map, player or world save data -- including, via the 'clear install folder' action, an install directory that passes a PZ-install marker-file check AND matches a configured server's own recorded install path.",
   },
   {
     key: "server.world_events",
