@@ -2013,9 +2013,13 @@ io.on("connection", (socket) => {
   // Subscribe to logs. Mirrors GET /api/debug/logs (debug.js), which
   // requires diagnostics.manage -- every route in that file is admin-only
   // by design. Without this check, moderator (which does not hold
-  // diagnostics.manage) could get the identical live log stream, including
-  // RCON command text, just by connecting a socket instead of calling the
-  // HTTP route.
+  // diagnostics.manage) could get the identical live log stream just by
+  // connecting a socket instead of calling the HTTP route. RCON command
+  // text used to ride along in this room too (rcon.js's rcon:response
+  // event) -- moved to its own rcon-live room below (2026-08-31 bug hunt),
+  // since that content is gated rcon.execute everywhere else it's exposed
+  // (see /rcon/history's own header comment) and diagnostics.manage is a
+  // different, broader capability that never mentions RCON at all.
   socket.on("subscribe:logs", async () => {
     if (!(await socketHasCapability(socket, "diagnostics.manage"))) return;
     socket.join("logs");
@@ -2029,6 +2033,20 @@ io.on("connection", (socket) => {
   });
   socket.on("unsubscribe:perf", () => {
     socket.leave("perf");
+  });
+
+  // Subscribe to live RCON command/response traffic (rcon.js's
+  // rcon:response event). Mirrors GET /api/rcon/history, which requires
+  // rcon.execute specifically -- not diagnostics.manage, a different and
+  // broader capability -- because that route's own header comment records
+  // a past fix: an ungated history endpoint let any logged-in role read
+  // every admin/technician's past RCON console session and every
+  // whitelist password ever set. The live broadcast of the identical
+  // content class must not reopen that through a narrower-looking but
+  // still-too-broad gate (2026-08-31 bug hunt).
+  socket.on("subscribe:rcon", async () => {
+    if (!(await socketHasCapability(socket, "rcon.execute"))) return;
+    socket.join("rcon-live");
   });
 });
 
