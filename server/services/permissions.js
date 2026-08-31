@@ -708,7 +708,16 @@ export async function updateRole(
     capabilities: nextCapabilities,
     updatedAt: new Date().toISOString(),
   };
-  await replaceRoleById(id, updated);
+  // replaceRoleById re-checks existence at write time against a fresh
+  // getDb() read, independent of the `existing` lookup above -- it returns
+  // null rather than writing if the role was deleted between that lookup and
+  // this write (a concurrent DELETE /roles/:id for the same id). Without
+  // checking this, the caller below would report the edit as saved even
+  // though nothing was written and the role no longer exists.
+  const written = await replaceRoleById(id, updated);
+  if (!written) {
+    throw makeError(ErrorCode.ROLE_NOT_FOUND, "Role not found", 404);
+  }
 
   // A custom role's name just changed under its current members' feet --
   // propagate it to every user.role string that pointed at the OLD name,
@@ -805,7 +814,16 @@ export async function deleteRole(id, { reassignTo, actingUser } = {}) {
     reassigned = await reassignRoleMembers(role, targetRole);
   }
 
-  await removeRoleById(id);
+  // removeRoleById re-checks existence at write time against a fresh
+  // getDb() read, independent of the getRoleById lookup above -- it returns
+  // false rather than removing anything if the role was already deleted
+  // between that lookup and this write (a concurrent second DELETE for the
+  // same id). Without checking this, the caller below would report the
+  // delete as done even though this call removed nothing.
+  const removed = await removeRoleById(id);
+  if (!removed) {
+    throw makeError(ErrorCode.ROLE_NOT_FOUND, "Role not found", 404);
+  }
   return { deleted: true, reassigned, reassignedTo: targetRole?.id || null };
 }
 

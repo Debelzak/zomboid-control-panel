@@ -825,7 +825,15 @@ router.post("/save-path", requirePermission("chunks.manage"), async (req, res) =
     }
 
     if (activeServer?.id) {
-      await updateServer(activeServer.id, { zomboidDataPath: validated });
+      // updateServer() returns null instead of writing anything if this
+      // server id no longer exists by the time this call runs (deleted
+      // concurrently between the getActiveServer() call above and here) --
+      // without checking that, this route reported the path as saved to a
+      // server profile that was no longer there to save it to.
+      const updated = await updateServer(activeServer.id, { zomboidDataPath: validated });
+      if (!updated) {
+        return res.status(404).json({ error: "Active server no longer exists." });
+      }
       log.info(
         `[ChunkCleaner] Saved zomboidDataPath to active server "${activeServer.name}": ${validated}`,
       );

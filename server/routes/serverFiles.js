@@ -1031,6 +1031,44 @@ export function applySandboxChanges(originalContent, changes) {
   return content;
 }
 
+// The 6 top-level shapes applySandboxChanges()/createSandboxVars() actually
+// know how to write. Music and Debug are parsed by parseSandboxVars() (read
+// path) but neither writer touches them, so they're deliberately excluded
+// here too -- checking them would report every Music/Debug key as
+// "unpersisted" even though no write was ever attempted for them.
+const SANDBOX_WRITABLE_SECTIONS = [
+  "settings",
+  "ZombieLore",
+  "ZombieConfig",
+  "MultiplierConfig",
+  "Map",
+  "Basement",
+];
+
+// modifySandboxValue() (used by applySandboxChanges for an existing file)
+// silently returns its input unchanged when a submitted key's regex finds no
+// matching line to update -- key not present in this file, lives in a block
+// modifySandboxValue doesn't know about, unusual formatting, etc. Compares
+// `submitted` (the request body's `sandbox` object) against `persisted` (the
+// freshly re-parsed on-disk content, via parseSandboxVars) and returns the
+// list of keys that were requested but did not actually change, formatted as
+// "key" for top-level settings or "Section.key" for a nested block.
+export function findUnpersistedSandboxKeys(submitted, persisted) {
+  const unpersistedKeys = [];
+  for (const section of SANDBOX_WRITABLE_SECTIONS) {
+    const submittedSection = submitted[section];
+    if (!submittedSection || typeof submittedSection !== "object") continue;
+    const persistedSection =
+      section === "settings" ? persisted.settings : persisted[section];
+    for (const [key, value] of Object.entries(submittedSection)) {
+      if ((persistedSection || {})[key] !== value) {
+        unpersistedKeys.push(section === "settings" ? key : `${section}.${key}`);
+      }
+    }
+  }
+  return unpersistedKeys;
+}
+
 function createSandboxVars(sandbox) {
   const sections = [
     "settings",
@@ -1518,6 +1556,7 @@ router.put("/sandbox", async (req, res) => {
     // values so the editor works before the game's first boot.
     let fileExists;
     let backupWarning = null;
+    let unpersistedKeys = [];
     await withFileLock(filePath, async () => {
       fileExists = fs.existsSync(filePath);
       const newContent = fileExists
@@ -1529,14 +1568,27 @@ router.put("/sandbox", async (req, res) => {
         );
       }
       writeFileAtomic(filePath, newContent, "utf-8");
+
+      // Without this read-back, a key modifySandboxValue() couldn't find a
+      // line for was silently dropped and this route still reported success
+      // (this route's own PUT /ini sibling already verifies its writes this
+      // way; this route did not).
+      const persisted = parseSandboxVars(fs.readFileSync(filePath, "utf-8"));
+      unpersistedKeys = findUnpersistedSandboxKeys(sandbox, persisted);
     });
 
+    if (unpersistedKeys.length > 0) {
+      log.warn(
+        `SandboxVars keys did not persist (no matching entry found to update): ${unpersistedKeys.join(", ")}`,
+      );
+    }
     log.info(`${fileExists ? "Saved" : "Created"} SandboxVars file`);
     res.json({
       success: true,
       created: !fileExists,
       message: fileExists ? "Sandbox settings saved" : "SandboxVars file created",
       path: filePath,
+      ...(unpersistedKeys.length > 0 ? { unpersistedKeys } : {}),
       ...(backupWarning ? { backupWarning } : {}),
       ...(req.configEditRestartWarning ? { restartRequired: true } : {}),
     });
