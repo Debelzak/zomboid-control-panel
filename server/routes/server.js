@@ -89,16 +89,28 @@ function getSteamCmdExe(steamcmdPath) {
   return primary; // Return primary path even if not found — let caller handle the error
 }
 
-// The single point every spawn() of a SteamCMD-family executable in this
-// file goes through. CodeQL js/command-line-injection #10,11,12,13,297
-// (2026-08-27 triage, operator-ruled fix): every call site used to resolve
-// steamcmdExe from a per-request steamcmdPath/installPath value, checked
-// only for absoluteness and no traversal (isValidPath) -- the DIRECTORY a
-// binary got spawned from was fully caller-chosen within one request, with
-// no persistent record of intent. Operator's own reasoning for choosing
-// this over a stronger capability gate: "a gate on top of a per-request
-// executable path still leaves a per-request executable path -- it relies
-// on that gate being right forever."
+// CodeQL js/command-line-injection #10,11,12,13,297 (2026-08-27 triage,
+// operator-ruled fix): every call site used to resolve steamcmdExe from a
+// per-request steamcmdPath/installPath value, checked only for absoluteness
+// and no traversal (isValidPath) -- the DIRECTORY a binary got spawned from
+// was fully caller-chosen within one request, with no persistent record of
+// intent. Operator's own reasoning for choosing this over a stronger
+// capability gate: "a gate on top of a per-request executable path still
+// leaves a per-request executable path -- it relies on that gate being
+// right forever."
+//
+// THE RULE, not a count of call sites: no spawn() of a SteamCMD-family
+// executable may ever resolve steamcmdExe from a path that wasn't
+// persisted as the saved steamcmdPath setting first. Calling this function
+// is how an async call site does that. A synchronous context that can't
+// await it (see runFirstTimeSetup() below) may resolve via the lower-level
+// getSteamCmdExe() directly instead, but ONLY when reusing a path this
+// function already persisted earlier in the SAME request -- runFirstTimeSetup
+// documents exactly that at its own call. "The single point every spawn()
+// goes through" was asserted here once (bughunt-2026-08-31-b,
+// completeness-claims audit) and was already false the day it was written;
+// check a given spawn() against the rule above, not against this comment's
+// name for itself, since a future exception won't update this count either.
 //
 // candidatePath, when the caller has one (the operator typed/browsed to it
 // in THIS request, already passed through isValidPath by the caller), gets
