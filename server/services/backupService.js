@@ -838,6 +838,12 @@ export class BackupService {
   async getBackupSnapshot(backupName) {
     const backupsPath = await this.getBackupsPath();
     const safeName = path.basename(backupName);
+    // LOAD-BEARING for traversal safety, not just a format check: neither
+    // "." nor ".." ends in ".zip", so this incidentally rejects both even
+    // though safeName is never compared back to backupName itself (the
+    // check every OTHER basename-sanitized route in this codebase uses).
+    // Do not relax or remove the .zip requirement without adding that
+    // explicit "." / ".." rejection first.
     if (!backupsPath || !safeName.endsWith(".zip")) {
       return { success: false, message: "Invalid backup file" };
     }

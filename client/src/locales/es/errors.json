@@ -56,6 +56,7 @@
   "RESTORE_INVALID_EXTENSION": "Extensión de archivo de copia de seguridad no válida",
   "RESTORE_BACKUP_NOT_FOUND": "No se encontró la copia de seguridad",
   "RESTORE_INVALID_FILENAME": "Nombre de archivo de copia de seguridad no válido",
+  "RESTORE_INVALID_ORIGINAL_NAME": "Nombre de archivo de copia de seguridad no válido",
   "SAVE_AND_RELOAD_RCON_NOT_CONNECTED": "RCON no está conectado. Los cambios se guardaron, pero no se recargaron.",
   "TEMPLATE_ID_INVALID": "ID de plantilla no válido",
   "TEMPLATE_NOT_FOUND": "No se encontró la plantilla",

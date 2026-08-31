@@ -56,6 +56,7 @@
   "RESTORE_INVALID_EXTENSION": "Ungültige Dateiendung für das Backup",
   "RESTORE_BACKUP_NOT_FOUND": "Backup nicht gefunden",
   "RESTORE_INVALID_FILENAME": "Ungültiger Backup-Dateiname",
+  "RESTORE_INVALID_ORIGINAL_NAME": "Ungültiger Backup-Dateiname",
   "SAVE_AND_RELOAD_RCON_NOT_CONNECTED": "RCON nicht verbunden. Änderungen gespeichert, aber nicht neu geladen.",
   "TEMPLATE_ID_INVALID": "Ungültige Vorlagen-ID",
   "TEMPLATE_NOT_FOUND": "Vorlage nicht gefunden",

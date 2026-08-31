@@ -56,6 +56,7 @@
   "RESTORE_INVALID_EXTENSION": "Invalid backup file extension",
   "RESTORE_BACKUP_NOT_FOUND": "Backup not found",
   "RESTORE_INVALID_FILENAME": "Invalid backup filename",
+  "RESTORE_INVALID_ORIGINAL_NAME": "Invalid backup filename",
   "SAVE_AND_RELOAD_RCON_NOT_CONNECTED": "RCON not connected. Changes saved but not reloaded.",
   "TEMPLATE_ID_INVALID": "Invalid template ID",
   "TEMPLATE_NOT_FOUND": "Template not found",

@@ -56,6 +56,7 @@
   "RESTORE_INVALID_EXTENSION": "Extension de fichier de sauvegarde invalide",
   "RESTORE_BACKUP_NOT_FOUND": "Sauvegarde introuvable",
   "RESTORE_INVALID_FILENAME": "Nom de fichier de sauvegarde invalide",
+  "RESTORE_INVALID_ORIGINAL_NAME": "Nom de fichier de sauvegarde invalide",
   "SAVE_AND_RELOAD_RCON_NOT_CONNECTED": "RCON non connecté. Modifications enregistrées mais non rechargées.",
   "TEMPLATE_ID_INVALID": "Identifiant de modèle invalide",
   "TEMPLATE_NOT_FOUND": "Modèle introuvable",

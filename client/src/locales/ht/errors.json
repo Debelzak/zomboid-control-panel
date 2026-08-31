@@ -56,6 +56,7 @@
   "RESTORE_INVALID_EXTENSION": "Ekstansyon dosye kopi sovgad envalid",
   "RESTORE_BACKUP_NOT_FOUND": "Kopi sovgad pa jwenn",
   "RESTORE_INVALID_FILENAME": "Non dosye kopi sovgad envalid",
+  "RESTORE_INVALID_ORIGINAL_NAME": "Non dosye kopi sovgad envalid",
   "SAVE_AND_RELOAD_RCON_NOT_CONNECTED": "RCON pa konekte. Chanjman sove men pa rechaje.",
   "TEMPLATE_ID_INVALID": "ID modèl envalid",
   "TEMPLATE_NOT_FOUND": "Modèl pa jwenn",

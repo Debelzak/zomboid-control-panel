@@ -2183,6 +2183,29 @@ router.post("/restore/:filename", async (req, res) => {
     const timestampStart = filename.lastIndexOf(".", bakIndex - 1);
     const originalName = filename.substring(0, timestampStart);
 
+    // originalName is a SUBSTRING of filename, never independently
+    // re-validated -- unlike filename itself (protected by the .bak-only
+    // check above, which incidentally also rejects bare "." and ".."
+    // since neither ends in ".bak"). A crafted name like "....bak" makes
+    // the lastIndexOf/substring math above land on originalName === "..".
+    // Explicit, not incidental: this must hold regardless of whether
+    // fs.copyFile below happens to refuse a directory target on a given
+    // platform. path.basename() would leave "." and ".." unchanged (same
+    // caveat as chunks.js's saveName sanitization), so check for those
+    // and any separator explicitly rather than re-deriving via basename.
+    if (
+      !originalName ||
+      originalName === "." ||
+      originalName === ".." ||
+      originalName.includes("/") ||
+      originalName.includes("\\")
+    ) {
+      return res.status(400).json({
+        error: "Invalid backup filename",
+        code: ErrorCode.RESTORE_INVALID_ORIGINAL_NAME,
+      });
+    }
+
     const targetPath = path.join(configPath, originalName);
 
     // Create backup of current before restoring. The restore itself is a

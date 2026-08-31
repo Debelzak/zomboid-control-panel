@@ -256,6 +256,13 @@ export const ErrorCode = Object.freeze({
    * filename doesn't have the expected <name>.<timestamp>.bak shape (fewer
    * than 3 dot-separated parts). */
   RESTORE_INVALID_FILENAME: "RESTORE_INVALID_FILENAME",
+  /** server/routes/serverFiles.js -- POST /restore/:filename, the original
+   * filename recovered by stripping the .bak+timestamp suffix is empty, is
+   * exactly "." or "..", or contains a path separator -- e.g. a crafted
+   * "....bak" makes the stripped result exactly "..". Load-bearing for
+   * traversal safety: this is the one value in this handler that is never
+   * re-checked by the .bak-extension guard above it. */
+  RESTORE_INVALID_ORIGINAL_NAME: "RESTORE_INVALID_ORIGINAL_NAME",
   /** server/routes/serverFiles.js -- POST /save-and-reload, no rconService
    * or it isn't connected, so `reloadoptions` can't be sent. */
   SAVE_AND_RELOAD_RCON_NOT_CONNECTED: "SAVE_AND_RELOAD_RCON_NOT_CONNECTED",
