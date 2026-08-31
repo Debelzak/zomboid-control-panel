@@ -187,6 +187,94 @@ function formatSize(bytes: number): string {
   return `${bytes} B`;
 }
 
+// A single bounding box across a non-contiguous chunk selection covers
+// chunks the operator never selected -- handleDelete's live vehicle-removal
+// step used to send exactly one such box (2026-08-31 bug hunt), so a
+// removeVehiclesInArea call for e.g. two chunks nine apart swept every
+// chunk in between too, since PanelBridge.lua's handler takes only
+// {minX,minY,maxX,maxY} with no chunk-list awareness. It accepts one
+// rectangle per call, so decompose the selection into the minimal set of
+// rectangles whose UNION is EXACTLY the selected chunks, then send one
+// call per rectangle instead of one call for the whole extent.
+//
+// Not a general minimal-rectangle-cover solver (that's NP-hard) -- the
+// simple version: per-row contiguous X runs, merged vertically when
+// consecutive rows share an identical run. A single solid rectangular
+// drag-select (the overwhelmingly common case) collapses back to exactly
+// one rectangle, same as before this existed.
+function decomposeIntoRectangles(
+  selectedChunks: Set<string>,
+): Array<{ minX: number; minY: number; maxX: number; maxY: number }> {
+  // `new globalThis.Map`, not `new Map` -- this file imports Lucide's `Map`
+  // icon under that exact name, which shadows the global Map constructor
+  // (same fix WorldMap.tsx already applies for its own player-position map).
+  const rowsMap = new globalThis.Map<number, number[]>();
+  for (const key of selectedChunks) {
+    const [xStr, yStr] = key.split("_");
+    const x = Number(xStr);
+    const y = Number(yStr);
+    const row = rowsMap.get(y);
+    if (row) row.push(x);
+    else rowsMap.set(y, [x]);
+  }
+
+  // Per-row contiguous X runs -> horizontal strips.
+  const strips: Array<{ y: number; xStart: number; xEnd: number }> = [];
+  for (const [y, xsRaw] of rowsMap) {
+    const xs = [...xsRaw].sort((a, b) => a - b);
+    let runStart = xs[0];
+    let prev = xs[0];
+    for (let i = 1; i <= xs.length; i++) {
+      const cur = xs[i];
+      if (cur === prev + 1) {
+        prev = cur;
+        continue;
+      }
+      strips.push({ y, xStart: runStart, xEnd: prev });
+      if (cur !== undefined) {
+        runStart = cur;
+        prev = cur;
+      }
+    }
+  }
+
+  // Merge vertically-adjacent strips that share an identical X range.
+  const byRange = new globalThis.Map<string, number[]>();
+  for (const s of strips) {
+    const k = `${s.xStart}_${s.xEnd}`;
+    const ys = byRange.get(k);
+    if (ys) ys.push(s.y);
+    else byRange.set(k, [s.y]);
+  }
+  const rects: Array<{ minX: number; minY: number; maxX: number; maxY: number }> = [];
+  for (const [k, ysRaw] of byRange) {
+    const [xStart, xEnd] = k.split("_").map(Number);
+    const ys = [...ysRaw].sort((a, b) => a - b);
+    let runStart = ys[0];
+    let prev = ys[0];
+    for (let i = 1; i <= ys.length; i++) {
+      const cur = ys[i];
+      if (cur === prev + 1) {
+        prev = cur;
+        continue;
+      }
+      rects.push({ minX: xStart, minY: runStart, maxX: xEnd, maxY: prev });
+      if (cur !== undefined) {
+        runStart = cur;
+        prev = cur;
+      }
+    }
+  }
+  return rects;
+}
+
+// A selection this fragmented (e.g. Invert Selection on a large save) would
+// mean this many individual bridge round-trips for a step that's already
+// best-effort/cosmetic (see the comment above its call site) -- past this,
+// skip live sync and say so rather than silently issuing a long burst of
+// commands. The authoritative vehicles.db cleanup is unaffected either way.
+const MAX_VEHICLE_REMOVAL_RECTS = 40;
+
 function findFirstRenderableChunkIndex(
   chunks: ChunkInfo[],
   minX: number,
@@ -2003,41 +2091,43 @@ export default function ChunkCleaner() {
       // — the authoritative cleanup happens server-side against vehicles.db.
       if (deleteVehicles) {
         const tilesPerChunk = isB42Ref.current ? 8 : 10;
-        let minGX = Infinity,
-          minGY = Infinity,
-          maxGX = -Infinity,
-          maxGY = -Infinity;
-        for (const key of selectedChunks) {
-          const [cx, cy] = key.split("_").map(Number);
-          minGX = Math.min(minGX, cx * tilesPerChunk);
-          minGY = Math.min(minGY, cy * tilesPerChunk);
-          maxGX = Math.max(maxGX, (cx + 1) * tilesPerChunk);
-          maxGY = Math.max(maxGY, (cy + 1) * tilesPerChunk);
-        }
-        try {
-          await panelBridgeApi.sendCommand("removeVehiclesInArea", {
-            minX: minGX,
-            minY: minGY,
-            maxX: maxGX,
-            maxY: maxGY,
+        // One rectangle per call, not one call for the whole selection's
+        // extent -- see decomposeIntoRectangles' own comment for why.
+        const rects = decomposeIntoRectangles(selectedChunks);
+        if (rects.length > MAX_VEHICLE_REMOVAL_RECTS) {
+          toast({
+            title: t("toasts.liveVehicleCleanupTooFragmentedTitle"),
+            description: t("toasts.liveVehicleCleanupTooFragmentedDesc"),
           });
-        } catch (err) {
-          // Bridge unreachable (server stopped, bridge not running) is
-          // benign here — the authoritative vehicles.db cleanup above
-          // already ran server-side, so live removal was only ever a
-          // cosmetic "no ghost car for a second" nicety. A 403 is a
-          // DIFFERENT failure the operator can act on: it means this
-          // role has chunks.manage (or it couldn't have reached this far)
-          // but not bridge.command, so live removal will silently skip
-          // on every future deletion too until an admin grants it or
-          // adds it to the role. Previously both cases hit the same bare
-          // catch and looked identical — 2026-08-27 bug-hunt silent-
-          // swallow-class fix.
-          if (err instanceof ApiError && err.status === 403) {
-            toast({
-              title: t("toasts.liveVehicleCleanupNoPermissionTitle"),
-              description: t("toasts.liveVehicleCleanupNoPermissionDesc"),
-            });
+        } else {
+          for (const rect of rects) {
+            try {
+              await panelBridgeApi.sendCommand("removeVehiclesInArea", {
+                minX: rect.minX * tilesPerChunk,
+                minY: rect.minY * tilesPerChunk,
+                maxX: (rect.maxX + 1) * tilesPerChunk,
+                maxY: (rect.maxY + 1) * tilesPerChunk,
+              });
+            } catch (err) {
+              // Bridge unreachable (server stopped, bridge not running) is
+              // benign here — the authoritative vehicles.db cleanup above
+              // already ran server-side, so live removal was only ever a
+              // cosmetic "no ghost car for a second" nicety. A 403 is a
+              // DIFFERENT failure the operator can act on: it means this
+              // role has chunks.manage (or it couldn't have reached this
+              // far) but not bridge.command -- true for every remaining
+              // rectangle too, so stop issuing more calls instead of
+              // repeating the same failure N times. Previously both cases
+              // hit the same bare catch and looked identical — 2026-08-27
+              // bug-hunt silent-swallow-class fix.
+              if (err instanceof ApiError && err.status === 403) {
+                toast({
+                  title: t("toasts.liveVehicleCleanupNoPermissionTitle"),
+                  description: t("toasts.liveVehicleCleanupNoPermissionDesc"),
+                });
+                break;
+              }
+            }
           }
         }
       }

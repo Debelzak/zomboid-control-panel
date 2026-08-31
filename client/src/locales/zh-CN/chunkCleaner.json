@@ -154,6 +154,8 @@
     "pathSavedTitle": "路径已保存",
     "liveVehicleCleanupNoPermissionTitle": "跳过了实时载具清理",
     "liveVehicleCleanupNoPermissionDesc": "区块及其载具记录已删除。从正在运行的服务器中移除已加载的载具需要 bridge.command 权限，而该角色没有此权限——管理员可以授予该权限，或者过时的载具会在该区域下次重新加载时自行消失。",
+    "liveVehicleCleanupTooFragmentedTitle": "跳过了实时载具清理",
+    "liveVehicleCleanupTooFragmentedDesc": "区块及其载具记录已删除。此选择过于分散，无法实时同步载具——过时的载具会在该区域下次重新加载时自行消失。",
     "pathSavedServerDesc": "已保存到当前服务器配置——面板下次将使用此路径。",
     "pathSavedPanelDesc": "已保存到面板设置。",
     "pathSaveFailedTitle": "无法保存路径",

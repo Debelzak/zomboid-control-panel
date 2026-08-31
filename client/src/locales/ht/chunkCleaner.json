@@ -154,6 +154,8 @@
     "pathSavedTitle": "Chemen Sove",
     "liveVehicleCleanupNoPermissionTitle": "Netwayaj Veyikil An Dirèk Pa Fèt",
     "liveVehicleCleanupNoPermissionDesc": "Chunk yo ak done veyikil yo efase. Pou retire veyikil ki deja chaje sou sèvè a an dirèk, ou bezwen pèmisyon bridge.command, e wòl sa a pa genyen li -- yon admin ka bay li, oswa yon vye veyikil ap disparèt pou kont li lè zòn nan reload ankò.",
+    "liveVehicleCleanupTooFragmentedTitle": "Netwayaj Veyikil An Dirèk Pa Fèt",
+    "liveVehicleCleanupTooFragmentedDesc": "Chunk yo ak done veyikil yo efase. Seleksyon sa a te twò gaye pou senkronize veyikil an dirèk -- yon vye veyikil ap disparèt pou kont li lè zòn nan reload ankò.",
     "pathSavedServerDesc": "Sove nan konfigirasyon sèvè aktif la — panèl la ap itilize chemen sa a pwochen fwa.",
     "pathSavedPanelDesc": "Sove nan paramèt panèl la.",
     "pathSaveFailedTitle": "Pa T Kapab Sove Chemen",

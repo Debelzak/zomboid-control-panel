@@ -154,6 +154,8 @@
     "pathSavedTitle": "Pfad gespeichert",
     "liveVehicleCleanupNoPermissionTitle": "Live-Fahrzeugbereinigung übersprungen",
     "liveVehicleCleanupNoPermissionDesc": "Chunks und ihre Fahrzeugdatensätze wurden gelöscht. Das Entfernen bereits geladener Fahrzeuge vom laufenden Server erfordert die Berechtigung bridge.command, über die diese Rolle nicht verfügt -- ein Administrator kann sie erteilen, oder ein veraltetes Fahrzeug verschwindet von selbst, sobald das Gebiet das nächste Mal neu geladen wird.",
+    "liveVehicleCleanupTooFragmentedTitle": "Live-Fahrzeugbereinigung übersprungen",
+    "liveVehicleCleanupTooFragmentedDesc": "Chunks und ihre Fahrzeugdatensätze wurden gelöscht. Diese Auswahl war zu verstreut, um Fahrzeuge live zu synchronisieren -- ein veraltetes Fahrzeug verschwindet von selbst, sobald das Gebiet das nächste Mal neu geladen wird.",
     "pathSavedServerDesc": "In der aktiven Serverkonfiguration gespeichert — das Panel verwendet diesen Pfad beim nächsten Mal.",
     "pathSavedPanelDesc": "In den Paneleinstellungen gespeichert.",
     "pathSaveFailedTitle": "Pfad konnte nicht gespeichert werden",

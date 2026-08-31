@@ -154,6 +154,8 @@
     "pathSavedTitle": "Path Saved",
     "liveVehicleCleanupNoPermissionTitle": "Live Vehicle Cleanup Skipped",
     "liveVehicleCleanupNoPermissionDesc": "Chunks and their vehicle records were deleted. Removing already-loaded vehicles from the live server needs the bridge.command permission, which this role doesn't have -- an admin can grant it, or a stale vehicle will disappear on its own next time the area reloads.",
+    "liveVehicleCleanupTooFragmentedTitle": "Live Vehicle Cleanup Skipped",
+    "liveVehicleCleanupTooFragmentedDesc": "Chunks and their vehicle records were deleted. This selection was too scattered to sync live vehicles for -- a stale vehicle will disappear on its own next time the area reloads.",
     "pathSavedServerDesc": "Saved to the active server config — the panel will use this path next time.",
     "pathSavedPanelDesc": "Saved to panel settings.",
     "pathSaveFailedTitle": "Could Not Save Path",
