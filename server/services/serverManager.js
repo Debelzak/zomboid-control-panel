@@ -1322,36 +1322,51 @@ export class ServerManager {
             `RCON port ${rconHost}:${rconPort} is already in use — a server may be running that process detection missed. Aborting start to prevent port conflict.`,
           );
         }
+      }
 
-        // isJvmExecutableBusy() here answers a DIFFERENT question than in
-        // restartServer()'s wait loop: not "has the process I just told to
-        // quit released the binary" but "is ANY process anywhere executing
-        // it" -- and that has a legitimate "yes" that isn't a bug. Multiple
-        // PZ servers (differing only by -servername/-cachedir) sharing ONE
-        // install directory to avoid a second multi-gigabyte copy is a
-        // normal deployment shape this codebase already accommodates
-        // elsewhere (db.data.servers has no installPath uniqueness
-        // constraint; server/routes/server.js's and updateChecker.js's
-        // activeSteamOperations guards are keyed by PATH, not by server,
-        // for exactly this reason).
-        //
-        // So this WAITS, then PROCEEDS regardless -- never refuses. The
-        // actual danger ETXTBSY describes is something REWRITING the binary
-        // while a process executes it; simply launching a new process
-        // against a binary another process is already executing is
-        // ordinary, unrestricted POSIX behavior (many processes can
-        // execve() the same file at once with zero conflict -- ETXTBSY is
-        // specifically about OPENING FOR WRITE, never about a second
-        // execute). So a bounded wait protects the case this exists for
-        // (Rhazun's own prior instance still finishing its exit right after
-        // a manual Stop, in the Stop-then-Start workaround) without ever
-        // punishing the shared-install case: if it's still busy once the
-        // bound expires -- most likely a legitimately running sibling
-        // server -- starting anyway is correct, not a compromise.
-        if (this.isJvmExecutableBusy()) {
-          for (let attempt = 0; attempt < 10 && this.isJvmExecutableBusy(); attempt++) {
-            await this.sleep(300);
-          }
+      // isJvmExecutableBusy() answers a DIFFERENT question than
+      // restartServer()'s (dead-code, no real caller) wait loop: not "has
+      // the process I just told to quit released the binary" but "is ANY
+      // process anywhere executing it" -- and that has a legitimate "yes"
+      // that isn't a bug. Multiple PZ servers (differing only by
+      // -servername/-cachedir) sharing ONE install directory to avoid a
+      // second multi-gigabyte copy is a normal deployment shape this
+      // codebase already accommodates elsewhere (db.data.servers has no
+      // installPath uniqueness constraint; server/routes/server.js's and
+      // updateChecker.js's activeSteamOperations guards are keyed by PATH,
+      // not by server, for exactly this reason).
+      //
+      // So this WAITS, then PROCEEDS regardless -- never refuses. The
+      // actual danger ETXTBSY describes is something REWRITING the binary
+      // while a process executes it; simply launching a new process
+      // against a binary another process is already executing is
+      // ordinary, unrestricted POSIX behavior (many processes can
+      // execve() the same file at once with zero conflict -- ETXTBSY is
+      // specifically about OPENING FOR WRITE, never about a second
+      // execute). So a bounded wait protects the case this exists for
+      // (Rhazun's own prior instance still finishing its exit right after
+      // a manual Stop, in the Stop-then-Start workaround) without ever
+      // punishing the shared-install case: if it's still busy once the
+      // bound expires -- most likely a legitimately running sibling
+      // server -- starting anyway is correct, not a compromise.
+      //
+      // Moved OUT of the !skipRunningCheck block above (2026-08-31,
+      // ordering-dependent-guards pass): the ONLY reachable production
+      // restart flow, scheduler.js's performRestart(), stops the old
+      // process itself and then calls startServer({skipRunningCheck:
+      // true}) specifically to skip re-verifying "is the old process
+      // confirmed stopped" -- a concern this comment's own SteamCMD-guard
+      // sibling above was already pulled out for being orthogonal to that.
+      // The ETXTBSY wait is exactly as orthogonal (it answers "did the
+      // kernel finish releasing the binary", not "does the process table
+      // still show it"), but had been left nested here, so every real
+      // restart launched a new JVM with zero wait for the kernel to
+      // release the binary -- reproducing the exact "Text file busy" crash
+      // this check exists to prevent, through the one code path that
+      // actually restarts a server in production.
+      if (this.isJvmExecutableBusy()) {
+        for (let attempt = 0; attempt < 10 && this.isJvmExecutableBusy(); attempt++) {
+          await this.sleep(300);
         }
       }
 

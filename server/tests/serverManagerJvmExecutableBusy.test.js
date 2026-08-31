@@ -182,6 +182,40 @@ async function waitUntil(predicate, { timeoutMs = 3000, intervalMs = 50 } = {}) 
       ).rejects.not.toThrow(/Text file busy/);
     }, 10000);
 
+    // Regression (2026-08-31, ordering-dependent-guards pass): this wait
+    // used to live INSIDE the `if (!skipRunningCheck)` block, so
+    // scheduler.js's performRestart() -- the only real production restart
+    // path, which always calls startServer({skipRunningCheck: true}) since
+    // it has already confirmed the old process stopped itself -- got ZERO
+    // protection against the exact ETXTBSY race this file exists to guard,
+    // reproducing Rhazun's original "Text file busy" crash through the one
+    // code path that actually restarts a server. Before the fix, this test
+    // observed elapsedMs near-instant (the wait block was skipped
+    // entirely); after it, elapsedMs is close to the full 3000ms bound.
+    it("startServer({skipRunningCheck: true}) ALSO waits for the busy binary to clear -- this is the flag scheduler.js's performRestart() actually uses", async () => {
+      const { spawn } = await import("child_process");
+      child = spawn(javaPath, ["30"], { stdio: "ignore" });
+      await new Promise((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+
+      getActiveServer.mockResolvedValue({
+        serverName: "JvmBusyTest",
+        serverPath: tmpDir,
+        serverBat: "start-server.sh",
+      });
+
+      const manager = new ServerManager();
+      const start = Date.now();
+      await expect(
+        manager.startServer({ skipRunningCheck: true }),
+      ).rejects.not.toThrow(/Text file busy/);
+      const elapsedMs = Date.now() - start;
+
+      expect(elapsedMs).toBeGreaterThanOrEqual(2500);
+    }, 10000);
+
     it("startServer() stops waiting as soon as the binary frees, rather than always sleeping the full bound", async () => {
       const { spawn } = await import("child_process");
       child = spawn(javaPath, ["1"], { stdio: "ignore" }); // exits after ~1s
