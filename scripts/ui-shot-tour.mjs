@@ -65,6 +65,28 @@
 //   - Nothing else. No real Project Zomboid server, no real panel-bridge
 //     mod connection, no auth setup ahead of time.
 //
+// A SETTLE CONDITION AND A RATE LIMITER COLLIDE (visual-sweep-2026-08-30,
+// step 3) -- both are individually correct, and whoever next makes this
+// tour dwell even longer per view needs to know why that can silently
+// re-break the sweep. server/index.js:807 applies a real, production-
+// necessary rate limit -- 300 req/min per IP, in scope for THAT file, not
+// this one -- to every /api/ route, auth included. Once waitForSettle
+// (below) started actually waiting for pages to finish loading instead of
+// a blind fixed sleep, the run started spending more real time per view,
+// which meant more of this tool's own polling/background-refresh requests
+// landed inside any given rolling 60s window than before. Nothing about
+// the settle condition or the limiter is wrong on its own; the combination
+// crossed 300/min by the time a full sweep reached the settings tabs, worse
+// on the mobile pass (runs second, inherits the first pass's window
+// history). Fixed here, NOT in server/index.js -- that limiter is a
+// production safety feature and out of scope to weaken for this tool's
+// convenience. See paceForRateLimit below: it reads the RateLimit-Remaining
+// / RateLimit-Reset headers express-rate-limit already sends
+// (standardHeaders: true, draft-6) on every /api/ response and pauses for
+// exactly as long as the server itself says is left, rather than a fixed
+// guessed delay -- correct regardless of how many requests some future
+// page or interact() step happens to fire.
+//
 // WHAT THIS DOES NOT COVER (be honest about the gap, don't fabricate)
 //   - Modal/dialog content (e.g. Scheduler's "Add Task" dialog, confirm
 //     dialogs) and multi-step wizards (ServerSetup's install steps beyond
@@ -141,6 +163,42 @@ async function waitForHealth(url, timeoutMs = 30000) {
     await new Promise((r) => setTimeout(r, 300))
   }
   throw new Error(`Server at ${url} did not become healthy within ${timeoutMs}ms`)
+}
+
+// ---------------------------------------------------------------------------
+// Rate-limit pacing -- see the header comment above ("A SETTLE CONDITION AND
+// A RATE LIMITER COLLIDE") for why this exists. Reads the RateLimit-Remaining
+// / RateLimit-Reset headers express-rate-limit puts on every /api/ response
+// (server/index.js:807, standardHeaders: true -> draft-6) instead of
+// tracking or guessing a request count ourselves -- the server already knows
+// the exact true answer, so asking it beats reconstructing an estimate that
+// would need updating every time a page's own request count changes.
+// ---------------------------------------------------------------------------
+let rateLimitRemaining = null
+let rateLimitResetSeconds = null
+
+// A view's own page.goto + interact() can fire a burst of several requests
+// before this script gets to check again, so pacing on "remaining === 0"
+// would still let that burst tip the server over into a real 429 mid-view.
+// Stopping with headroom to spare keeps the whole burst inside the limit.
+const RATE_LIMIT_SAFE_FLOOR = 20
+
+function trackRateLimitHeaders(response) {
+  try {
+    if (!response.url().includes('/api/')) return
+    const headers = response.headers()
+    if (headers['ratelimit-remaining'] !== undefined) rateLimitRemaining = Number(headers['ratelimit-remaining'])
+    if (headers['ratelimit-reset'] !== undefined) rateLimitResetSeconds = Number(headers['ratelimit-reset'])
+  } catch { /* response headers unavailable (e.g. request aborted) -- next response updates us */ }
+}
+
+async function paceForRateLimit() {
+  if (rateLimitRemaining === null || rateLimitRemaining > RATE_LIMIT_SAFE_FLOOR) return
+  const waitSeconds = Number.isFinite(rateLimitResetSeconds) && rateLimitResetSeconds > 0 ? rateLimitResetSeconds : 60
+  const waitMs = waitSeconds * 1000 + 500 // past the server's own reported reset instant, not right up against it
+  console.log(`[ui-shot-tour] pacing: only ${rateLimitRemaining} requests left in the server's rate-limit window (server/index.js's 300/min cap) -- waiting ${Math.ceil(waitMs / 1000)}s for it to reset`)
+  await new Promise((r) => setTimeout(r, waitMs))
+  rateLimitRemaining = null // unknown again until the next response tells us
 }
 
 async function buildClient(root) {
@@ -821,6 +879,7 @@ async function main() {
     browser = await chromium.launch()
     const context = await browser.newContext({ viewport: VIEWPORTS[0] })
     await installFixtureRoutes(context)
+    context.on('response', trackRateLimitHeaders)
     const page = await context.newPage()
     await login(page)
 
@@ -828,6 +887,7 @@ async function main() {
       await page.setViewportSize({ width: viewport.width, height: viewport.height })
       for (const theme of THEMES) {
         try {
+          await paceForRateLimit()
           await setTheme(page, theme)
         } catch (err) {
           // Most likely the throwaway server itself died mid-run (a page
@@ -859,6 +919,7 @@ async function main() {
             // instead of the real tile grid. 1200ms covers that
             // comfortably; the loading-text wait below is an extra,
             // bounded safety net for any page that takes longer.
+            await paceForRateLimit()
             await page.goto(`${BASE_URL}${view.path}`, { waitUntil: 'domcontentloaded' })
             await page.waitForTimeout(1200)
             await page.waitForFunction(
