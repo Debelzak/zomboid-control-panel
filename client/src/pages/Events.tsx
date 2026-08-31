@@ -1100,6 +1100,24 @@ export default function Events() {
   const [activeSection, setActiveSection] = useState<EventSectionKey>('rain')
   const [sectionQuery, setSectionQuery] = useState('')
   const [activity, setActivity] = useState<ActivityEntry[]>([])
+  // Below `lg` the sidebar/content grid collapses to one column, so the full
+  // ~18-item nav (plus Recent Actions) renders ABOVE the section you just
+  // picked -- reaching it costs a scroll past everything else on the page,
+  // every time. Desktop's two-column layout never has this problem. Jumping
+  // the content into view on selection is scoped to exactly that narrow
+  // case (2026-08-31 quality pass, operator-approved aesthetic fix) rather
+  // than restructuring the nav itself, which touches far more of the page.
+  const contentRef = useRef<HTMLDivElement>(null)
+  const jumpToContentOnMobile = () => {
+    // jsdom (every existing test on this page) has no matchMedia at all,
+    // unlike WorldMap.tsx's unconditional call to it -- guard rather than
+    // require every Events.tsx test file to stub a global just so an
+    // unrelated nav click doesn't throw.
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -2090,7 +2108,10 @@ export default function Events() {
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => setActiveSection(item.id)}
+                        onClick={() => {
+                          setActiveSection(item.id)
+                          jumpToContentOnMobile()
+                        }}
                         aria-current={isActive ? 'true' : undefined}
                         className={cn(
                           'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
@@ -2140,7 +2161,7 @@ export default function Events() {
           </div>
         </aside>
 
-        <div className="min-w-0 space-y-4">
+        <div ref={contentRef} className="min-w-0 space-y-4 scroll-mt-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">{activeMeta.label}</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">{activeMeta.hint}</p>
