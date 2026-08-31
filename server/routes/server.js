@@ -16,6 +16,7 @@ import {
   getServers,
 } from "../database/init.js";
 import { sanitizeError, sanitizeIniValue } from "../utils/sanitize.js";
+import { hasIniKeyValue, setIniKeyLine } from "../utils/iniKeyWrite.js";
 import { resolveLaunchMode } from "../services/serverManager.js";
 import {
   isSteamOperationIdle,
@@ -506,10 +507,8 @@ export async function ensureRconConfigured() {
 
       // INI exists — check if RCON is already configured correctly
       let content = fs.readFileSync(iniPath, "utf-8").replace(/\r\n/g, "\n");
-      const hasCorrectPassword = content.includes(
-        `RCONPassword=${rconPassword}`,
-      );
-      const hasCorrectPort = content.includes(`RCONPort=${rconPort}`);
+      const hasCorrectPassword = hasIniKeyValue(content, "RCONPassword", rconPassword);
+      const hasCorrectPort = hasIniKeyValue(content, "RCONPort", rconPort);
 
       if (hasCorrectPassword && hasCorrectPort) {
         log.debug("ensureRconConfigured: RCON already configured correctly");
@@ -521,21 +520,8 @@ export async function ensureRconConfigured() {
 
       // Update RCONPassword (sanitize to prevent INI injection via newlines)
       const safePassword = sanitizeIniValue(rconPassword);
-      if (content.includes("RCONPassword=")) {
-        content = content.replace(
-          /RCONPassword=.*/g,
-          () => `RCONPassword=${safePassword}`,
-        );
-      } else {
-        content += `\nRCONPassword=${safePassword}`;
-      }
-
-      // Update RCONPort
-      if (content.includes("RCONPort=")) {
-        content = content.replace(/RCONPort=.*/g, () => `RCONPort=${rconPort}`);
-      } else {
-        content += `\nRCONPort=${rconPort}`;
-      }
+      content = setIniKeyLine(content, "RCONPassword", safePassword);
+      content = setIniKeyLine(content, "RCONPort", rconPort);
 
       writeFileAtomic(iniPath, content, { encoding: "utf-8", mode: 0o600 });
       log.info("RCON auto-configured successfully in server .ini file");
@@ -3261,21 +3247,8 @@ router.post("/configure-rcon", requirePermission("server.configure"), async (req
 
       // Update RCONPassword (sanitize to prevent INI injection via newlines)
       const safePassword = sanitizeIniValue(rconPassword);
-      if (content.includes("RCONPassword=")) {
-        content = content.replace(
-          /RCONPassword=.*/g,
-          () => `RCONPassword=${safePassword}`,
-        );
-      } else {
-        content += `\nRCONPassword=${safePassword}`;
-      }
-
-      // Update RCONPort
-      if (content.includes("RCONPort=")) {
-        content = content.replace(/RCONPort=.*/g, () => `RCONPort=${rconPort}`);
-      } else {
-        content += `\nRCONPort=${rconPort}`;
-      }
+      content = setIniKeyLine(content, "RCONPassword", safePassword);
+      content = setIniKeyLine(content, "RCONPort", rconPort);
 
       writeFileAtomic(iniPath, content, { encoding: "utf-8", mode: 0o600 });
     });
@@ -3316,11 +3289,7 @@ export async function applyUpnpToIni(serverConfigPath, serverName, useUpnp) {
     await withFileLock(iniPath, async () => {
       let content = fs.readFileSync(iniPath, "utf-8").replace(/\r\n/g, "\n");
       const upnpValue = useUpnp ? "true" : "false";
-      if (content.includes("UPnP=")) {
-        content = content.replace(/UPnP=.*/g, `UPnP=${upnpValue}`);
-      } else {
-        content += `\nUPnP=${upnpValue}`;
-      }
+      content = setIniKeyLine(content, "UPnP", upnpValue);
       writeFileAtomic(iniPath, content, { encoding: "utf-8", mode: 0o600 });
     });
     return { applied: true };
@@ -3369,22 +3338,9 @@ router.post("/configure-network", requirePermission("server.configure"), async (
     await withFileLock(iniPath, async () => {
       let content = fs.readFileSync(iniPath, "utf-8").replace(/\r\n/g, "\n");
 
-      // Update DefaultPort
-      if (content.includes("DefaultPort=")) {
-        content = content.replace(
-          /DefaultPort=.*/g,
-          `DefaultPort=${serverPort}`,
-        );
-      } else {
-        content += `\nDefaultPort=${serverPort}`;
-      }
-
-      // Update UDPPort (DefaultPort + 1)
-      if (content.includes("UDPPort=")) {
-        content = content.replace(/UDPPort=.*/g, `UDPPort=${serverPort + 1}`);
-      } else {
-        content += `\nUDPPort=${serverPort + 1}`;
-      }
+      // Update DefaultPort, then UDPPort (DefaultPort + 1)
+      content = setIniKeyLine(content, "DefaultPort", serverPort);
+      content = setIniKeyLine(content, "UDPPort", serverPort + 1);
 
       writeFileAtomic(iniPath, content, { encoding: "utf-8", mode: 0o600 });
     });
