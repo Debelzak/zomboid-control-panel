@@ -961,7 +961,41 @@ const VIEWS = [
 // `unstable` views are skipped by the default (no-argument) full sweep;
 // capture one deliberately with `npm run ui:shot-tour -- server-finder`
 // (single-view mode also isolates the blast radius to that one run).
-const VIEW_NAMES = VIEWS.map((v) => v.name)
+// ui-tour-never-drives-interactive-state (2026-08-31): Setup.tsx is
+// structurally unreachable through the normal VIEWS loop below -- it
+// isn't a route, and needsSetup resolves permanently false the instant
+// bootstrapAccount() creates the admin account, which happens before any
+// VIEWS entry's interact() ever gets a chance (see the header's WHAT THIS
+// DOES NOT COVER section for the full story). Captured instead through a
+// separate, throwaway browser context opened and closed BEFORE
+// bootstrapAccount() runs (see capturePreAuthViews below).
+//
+// Two views, not three -- decided and endorsed 2026-08-31. A third,
+// tempting candidate (the post-submit `errors.invalidPort` text) was
+// considered and dropped: 6d514160 added `!panelPortValid` to the Submit
+// button's own `disabled` expression, so an out-of-range port disables the
+// button before handleSubmit -- and therefore that error text -- can ever
+// run. Same shape as the Add Remote Server blank-submit toast found
+// earlier this hunt: the validation TEXT is unreachable by construction,
+// but the DISABLED BUTTON next to an otherwise-fully-valid form is real,
+// reachable, and had zero coverage since 6d514160 shipped -- that's what
+// setup:invalid-port captures.
+const PRE_AUTH_VIEWS = [
+  { name: 'setup', path: '/' },
+  {
+    name: 'setup:invalid-port',
+    path: '/',
+    interact: async (page) => {
+      await page.locator('#setupToken').fill('tour-setup-token')
+      await page.locator('#username').fill('admin')
+      await page.locator('#panelPort').fill('80')
+      await page.locator('#password').fill('ValidPassw0rd!7')
+      await page.locator('#confirmPassword').fill('ValidPassw0rd!7')
+    },
+  },
+]
+
+const VIEW_NAMES = [...VIEWS, ...PRE_AUTH_VIEWS].map((v) => v.name)
 const SWEEP_VIEWS = VIEWS.filter((v) => !v.unstable)
 
 function printViewList() {
@@ -1387,28 +1421,104 @@ async function setTheme(page, theme) {
   await page.waitForTimeout(300)
 }
 
+// ui-tour-never-drives-interactive-state (2026-08-31): captures
+// PRE_AUTH_VIEWS through their own throwaway context, opened and closed
+// BEFORE bootstrapAccount() runs -- the only way to see Setup.tsx at all
+// (see PRE_AUTH_VIEWS' own comment). Deliberately NOT the shared
+// per-view logic the main loop below uses (no fixture routes, no
+// dialogExpected/dismissOpenDialogs, no beforeGoto, no rate-limit pacing --
+// none of those apply pre-auth, and reaching for the same helper would mean
+// widening it to tolerate a mode it was never built for). Still reuses
+// waitForSettle/expandMainForCapture/finishRunningAnimations/readPngHeight
+// so a pre-auth capture is checked for the same completeness signals as
+// every other one, and pushes into the SAME manifest shape so MANIFEST.md's
+// existing summary code needs no changes to include these.
+async function capturePreAuthViews(browser, views, manifest) {
+  const context = await browser.newContext({ viewport: VIEWPORTS[0] })
+  const page = await context.newPage()
+  // setTheme's localStorage.setItem throws SecurityError on the page's
+  // initial about:blank (an opaque origin, no localStorage access at all --
+  // confirmed the hard way, first run) -- the authenticated main loop below
+  // never hits this because login(page) always navigates first. One real
+  // navigation before the loop starts gives every view a real origin to set
+  // theme against, same as the authenticated path gets from login().
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    for (const theme of THEMES) {
+      await setTheme(page, theme)
+      for (const view of views) {
+        try {
+          await page.goto(BASE_URL + view.path, { waitUntil: 'domcontentloaded' })
+          await page.waitForTimeout(600)
+          if (view.interact) await view.interact(page)
+          const settled = await waitForSettle(page)
+          const fileName = `${view.name.replace(/:/g, '-')}__${viewport.key}__${theme}.png`
+          const filePath = path.join(args.out, fileName)
+          await expandMainForCapture(page)
+          await finishRunningAnimations(page)
+          const expectedHeight = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => null)
+          await page.screenshot({ path: filePath, fullPage: true, animations: 'disabled' })
+          await restoreMainAfterCapture(page)
+          const capturedHeight = readPngHeight(filePath)
+          const heightTruncated = expectedHeight !== null && capturedHeight < expectedHeight - 4
+          manifest.push({
+            file: fileName, view: view.name, path: view.path, viewport: viewport.key, theme,
+            width: viewport.width, height: viewport.height, settled, strayOverlay: null,
+            heightTruncated, capturedHeight, expectedHeight,
+          })
+          const flags = [
+            settled ? '' : ' -- NOT SETTLED (spinner/skeleton still present after timeout)',
+            heightTruncated ? ` -- HEIGHT TRUNCATED (captured ${capturedHeight}px, page needed ${expectedHeight}px)` : '',
+          ].join('')
+          console.log(`[ui-shot-tour] captured ${fileName} (pre-auth)${flags}`)
+        } catch (err) {
+          console.error(`[ui-shot-tour] FAILED ${view.name} (${viewport.key}/${theme}, pre-auth): ${err.message}`)
+          manifest.push({ file: null, view: view.name, path: view.path, viewport: viewport.key, theme, error: err.message })
+        }
+      }
+    }
+  }
+  await context.close()
+}
+
 async function main() {
   if (args.list) {
     printViewList()
     return
   }
 
-  let targetViews = SWEEP_VIEWS
+  // ui-tour-never-drives-interactive-state: PRE_AUTH_VIEWS are captured
+  // through a separate path (capturePreAuthViews, before bootstrapAccount)
+  // -- kept out of targetViews/SWEEP_VIEWS so the normal authenticated loop
+  // below never sees them. Both default to empty (not SWEEP_VIEWS) so a
+  // single pre-auth-view request doesn't also drag in the entire
+  // authenticated sweep -- only the else branch (no args.view -- the full
+  // run) turns both on.
+  let targetViews = []
+  let targetPreAuthViews = []
   if (args.view) {
-    const match = VIEWS.find((v) => v.name === args.view)
-    if (!match) {
-      console.error(`Unknown view "${args.view}".\n`)
-      printViewList()
-      process.exitCode = 1
-      return
+    const preAuthMatch = PRE_AUTH_VIEWS.find((v) => v.name === args.view)
+    if (preAuthMatch) {
+      targetPreAuthViews = [preAuthMatch]
+    } else {
+      const match = VIEWS.find((v) => v.name === args.view)
+      if (!match) {
+        console.error(`Unknown view "${args.view}".\n`)
+        printViewList()
+        process.exitCode = 1
+        return
+      }
+      targetViews = [match]
     }
-    targetViews = [match]
   } else {
+    targetViews = SWEEP_VIEWS
+    targetPreAuthViews = PRE_AUTH_VIEWS
     const skipped = VIEWS.length - SWEEP_VIEWS.length
     if (skipped) console.log(`[ui-shot-tour] skipping ${skipped} unstable view(s) in the default sweep (see the VIEWS comment) -- capture by name explicitly if you need one`)
   }
 
-  console.log(`[ui-shot-tour] root=${args.root} out=${args.out} port=${args.port} views=${args.view || `all (${VIEWS.length})`}`)
+  console.log(`[ui-shot-tour] root=${args.root} out=${args.out} port=${args.port} views=${args.view || `all (${VIEWS.length + PRE_AUTH_VIEWS.length})`}`)
   mkdirSync(args.out, { recursive: true })
 
   await buildClient(args.root)
@@ -1423,16 +1533,27 @@ async function main() {
 
   try {
     await waitForHealth(BASE_URL)
+
+    if (targetPreAuthViews.length) {
+      // MUST run before bootstrapAccount(): needsSetup (App.tsx) resolves
+      // permanently false the instant that account exists, and there is no
+      // going back within this process's lifetime -- see PRE_AUTH_VIEWS'
+      // own comment.
+      browser = await chromium.launch()
+      await capturePreAuthViews(browser, targetPreAuthViews, manifest)
+    }
+
     await bootstrapAccount(dataRoot)
 
-    browser = await chromium.launch()
-    const context = await browser.newContext({ viewport: VIEWPORTS[0] })
-    await installFixtureRoutes(context)
-    context.on('response', trackRateLimitHeaders)
-    const page = await context.newPage()
-    await login(page)
+    if (targetViews.length) {
+      if (!browser) browser = await chromium.launch()
+      const context = await browser.newContext({ viewport: VIEWPORTS[0] })
+      await installFixtureRoutes(context)
+      context.on('response', trackRateLimitHeaders)
+      const page = await context.newPage()
+      await login(page)
 
-    for (const viewport of VIEWPORTS) {
+      for (const viewport of VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height })
       for (const theme of THEMES) {
         try {
@@ -1580,6 +1701,12 @@ async function main() {
         }
       }
     }
+    } // end if (targetViews.length) -- indentation of the block above is
+      // intentionally left as it was before this wrap (not re-flowed) to
+      // keep this diff reviewable as "one guard added, nothing else
+      // touched" rather than a whitespace-only rewrite of ~170 lines that
+      // would hide a real content change inside it just as easily as show
+      // one wasn't made.
 
   } catch (err) {
     // A fatal, unrecovered error (server bootstrap failed, browser crashed,
