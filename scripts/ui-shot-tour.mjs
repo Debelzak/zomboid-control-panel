@@ -1249,44 +1249,68 @@ async function main() {
   writeFileSync(path.join(args.out, 'manifest.json'), JSON.stringify(manifest, null, 2))
   const okCount = manifest.filter((m) => m.file).length
   const failCount = manifest.length - okCount
+  const capturedFiles = manifest.filter((m) => m.file)
+  // quality-pass-2026-08-31: merging a handful of freshly-recaptured entries
+  // (with a NEW field) into an existing manifest whose other entries predate
+  // that field exposed a false clean, not just for heightTruncated but by
+  // the same construction for settled too -- `m.heightTruncated ? ... :
+  // 'ok'` and `m.settled === false ? ... : 'yes'` both render an entry that
+  // was NEVER MEASURED for that check identically to one that was measured
+  // and passed. Caught it directly: a 4-entry chunks recapture merged into
+  // the other 200 pre-existing entries rendered ALL 200 as "Height: ok" in
+  // MANIFEST.md, though the height check had never run on them. This is the
+  // exact "settled/strayOverlay could never express this class BY
+  // CONSTRUCTION" gap heightTruncated itself was built to close -- except
+  // this time it was wrongly EXPRESSED as clean instead of silently absent,
+  // which is worse: a missing signal makes you go look; a confident "ok"
+  // stops you looking. Every boolean-valued check below now has three
+  // states -- true, false, and "never measured" (field absent, e.g. an
+  // older manifest.json's entries merged in unchanged) -- and unmeasured is
+  // never folded into the passing bucket for either the table or the
+  // summary line.
+  const settledMeasured = capturedFiles.filter((m) => typeof m.settled === 'boolean')
+  const settledUnmeasured = capturedFiles.filter((m) => typeof m.settled !== 'boolean')
   // A captured file whose own settle condition timed out (still busy/
   // spinning when the timeout hit) is NOT a failure -- the screenshot
   // exists and might even be fine -- but it must not read as an ordinary
   // success either. visual-sweep-2026-08-30: a "204 captured / 0 failed"
   // summary that silently included several still-loading pages is what
   // sent two reviewers chasing bugs that were actually this script's own
-  // too-short wait. `settled === false` (not just falsy/undefined) so an
-  // older manifest entry or a non-capture entry never misreports here.
-  const unsettled = manifest.filter((m) => m.file && m.settled === false)
+  // too-short wait.
+  const unsettled = settledMeasured.filter((m) => m.settled === false)
   // visual-sweep-2026-08-30 defect 2: a stray dialog that Escape couldn't
   // close within dismissOpenDialogs' own retry budget -- distinct from the
   // ordinary case (leaked in, one Escape closed it, capture is clean) which
   // never reaches here at all.
-  const strayOverlays = manifest.filter((m) => m.file && m.strayOverlay)
+  const strayOverlays = capturedFiles.filter((m) => m.strayOverlay)
   // See readPngHeight's own header: a captured file that is settled, has no
   // stray overlay, and is STILL wrong -- the actual PNG is shorter than the
   // page needed at capture time. chunks__desktop__survival.png was exactly
   // this: settled:true, strayOverlay:null, and truncated anyway.
-  const truncated = manifest.filter((m) => m.file && m.heightTruncated)
+  const heightMeasured = capturedFiles.filter((m) => typeof m.heightTruncated === 'boolean')
+  const heightUnmeasured = capturedFiles.filter((m) => typeof m.heightTruncated !== 'boolean')
+  const truncated = heightMeasured.filter((m) => m.heightTruncated)
   const md = [
     '# UI shot tour manifest',
     '',
-    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay, ${truncated.length} height-truncated) from \`${args.root}\` against \`${BASE_URL}\`.`,
+    `Captured ${okCount} views (${failCount} failed, ${unsettled.length} not settled${settledUnmeasured.length ? ` [${settledUnmeasured.length} never measured for settle]` : ''}, ${strayOverlays.length} with a stray overlay, ${truncated.length} height-truncated of ${heightMeasured.length} measured${heightUnmeasured.length ? ` [${heightUnmeasured.length} never measured for height]` : ''}) from \`${args.root}\` against \`${BASE_URL}\`.`,
     ...(unsettled.length ? ['', '**Not settled means the capture may show a mid-load spinner or skeleton, not the real page -- verify before treating it as a finding.**'] : []),
     ...(strayOverlays.length ? ['', '**Stray overlay means a leaked dialog from an earlier view survived three Escape presses -- the capture may be dimmed by its backdrop with the dialog itself off-screen or unrendered. Verify before treating it as a finding.**'] : []),
     ...(truncated.length ? ['', '**Height-truncated means the captured PNG is shorter than the page actually needed -- content below the cutoff is missing from the image entirely. Verify before treating it as a finding.**'] : []),
+    ...(settledUnmeasured.length || heightUnmeasured.length ? ['', '**"never measured" means this entry predates that check (e.g. merged in from an older manifest.json) -- it is NOT the same as passing, and is never counted as clean above.**'] : []),
     '',
     '| File | View | Route | Viewport | Theme | Settled | Stray overlay | Height |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...manifest.filter((m) => m.file).map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${m.settled === false ? '⚠️ NO' : 'yes'} | ${m.strayOverlay ? `⚠️ ${m.strayOverlay}` : '--'} | ${m.heightTruncated ? `⚠️ ${m.capturedHeight}px < ${m.expectedHeight}px` : 'ok'} |`),
+    ...capturedFiles.map((m) => `| ${m.file} | ${m.view} | \`${m.path}\` | ${m.viewport} | ${m.theme} | ${typeof m.settled !== 'boolean' ? '❔ not measured' : m.settled === false ? '⚠️ NO' : 'yes'} | ${m.strayOverlay ? `⚠️ ${m.strayOverlay}` : '--'} | ${typeof m.heightTruncated !== 'boolean' ? '❔ not measured' : m.heightTruncated ? `⚠️ ${m.capturedHeight}px < ${m.expectedHeight}px` : 'ok'} |`),
     ...(failCount ? ['', '## Failed captures', '', ...manifest.filter((m) => !m.file).map((m) => `- **${m.view}** (${m.viewport}/${m.theme}, \`${m.path}\`): ${m.error}`)] : []),
     ...(unsettled.length ? ['', '## Captured but not settled', '', 'Spinner or skeleton (`[aria-busy="true"]` / `.animate-spin`) was still present when the timeout hit -- the file exists but may not show the real page.', '', ...unsettled.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\``)] : []),
     ...(strayOverlays.length ? ['', '## Captured with a stray overlay', '', 'A dialog leaked in from an earlier view and three Escape presses did not close it before the shot.', '', ...strayOverlays.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\` -- "${m.strayOverlay}"`)] : []),
     ...(truncated.length ? ['', '## Height-truncated captures', '', 'The captured PNG is shorter than `document.documentElement.scrollHeight` measured at the same instant -- content below the cutoff is missing from the image entirely, not just off-screen.', '', ...truncated.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\` -- captured ${m.capturedHeight}px, page needed ${m.expectedHeight}px`)] : []),
+    ...(heightUnmeasured.length ? ['', '## Never measured for height', '', 'These entries predate the heightTruncated check (typically merged in from an older manifest.json) -- the check has not run on them at all. Re-capture to get a real answer; do not read their "not measured" Height cell as a pass.', '', ...heightUnmeasured.map((m) => `- **${m.view}** (${m.viewport}/${m.theme}): \`${m.file}\``)] : []),
   ].join('\n')
   writeFileSync(path.join(args.out, 'MANIFEST.md'), md)
 
-  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay, ${truncated.length} height-truncated. Output: ${args.out}`)
+  console.log(`[ui-shot-tour] done. ${okCount} captured, ${failCount} failed, ${unsettled.length} not settled, ${strayOverlays.length} with a stray overlay, ${truncated.length} height-truncated of ${heightMeasured.length} measured${heightUnmeasured.length ? ` (${heightUnmeasured.length} never measured)` : ''}. Output: ${args.out}`)
   if (failCount) process.exitCode = 1
 }
 
