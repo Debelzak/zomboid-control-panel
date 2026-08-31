@@ -227,6 +227,9 @@
     "live": "en vivo",
     "lastSecondsLive": "últimos {{seconds}}s · en vivo",
     "lastMinutesLive": "últimos {{minutes}} min · en vivo",
+    "unconfirmed": "sin confirmar",
+    "lastSecondsUnconfirmed": "últimos {{seconds}}s · sin confirmar",
+    "lastMinutesUnconfirmed": "últimos {{minutes}} min · sin confirmar",
     "placeholderOnline": "La telemetría aparecerá en el próximo ciclo de muestreo.",
     "placeholderOffline": "Iniciar el servidor para rastrear las métricas de CPU, RAM y jugadores."
   },

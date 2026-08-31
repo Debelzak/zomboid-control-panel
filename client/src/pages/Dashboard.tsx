@@ -1637,6 +1637,24 @@ export default function Dashboard() {
               <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
                 {(() => {
                   if (performanceHistory.length === 0) return online ? t('telemetry.sampling') : t('telemetry.standby')
+                  // This history comes from the server's own persisted log
+                  // (debugApi.getPerformanceHistory), independent of the
+                  // verdict's own online/hostUnknown check above -- recent
+                  // samples can survive even while that check can't confirm
+                  // the server right now. Calling a stale-relative-to-that-
+                  // check reading "live" said the opposite of the verdict
+                  // headline sitting right above it on the same page.
+                  if (!online) {
+                    if (performanceHistory.length < 2) return t('telemetry.unconfirmed')
+                    const first = performanceHistory[0].timestamp
+                    const last = performanceHistory[performanceHistory.length - 1].timestamp
+                    if (first && last) {
+                      const spanSec = (new Date(last).getTime() - new Date(first).getTime()) / 1000
+                      if (spanSec < 120) return t('telemetry.lastSecondsUnconfirmed', { seconds: Math.round(spanSec) })
+                      return t('telemetry.lastMinutesUnconfirmed', { minutes: Math.round(spanSec / 60) })
+                    }
+                    return t('telemetry.unconfirmed')
+                  }
                   if (performanceHistory.length < 2) return t('telemetry.live')
                   const first = performanceHistory[0].timestamp
                   const last = performanceHistory[performanceHistory.length - 1].timestamp

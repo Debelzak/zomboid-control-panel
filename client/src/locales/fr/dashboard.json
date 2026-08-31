@@ -227,6 +227,9 @@
     "live": "en direct",
     "lastSecondsLive": "dernières {{seconds}}s · en direct",
     "lastMinutesLive": "dernières {{minutes}} min · en direct",
+    "unconfirmed": "non confirmé",
+    "lastSecondsUnconfirmed": "dernières {{seconds}}s · non confirmé",
+    "lastMinutesUnconfirmed": "dernières {{minutes}} min · non confirmé",
     "placeholderOnline": "La télémétrie apparaîtra au prochain cycle d'échantillonnage.",
     "placeholderOffline": "Démarrez le serveur pour suivre le CPU, la RAM et les statistiques des joueurs."
   },

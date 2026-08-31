@@ -227,6 +227,9 @@
     "live": "an dirèk",
     "lastSecondsLive": "dènye {{seconds}}s · an dirèk",
     "lastMinutesLive": "dènye {{minutes}} min · an dirèk",
+    "unconfirmed": "pa konfime",
+    "lastSecondsUnconfirmed": "dènye {{seconds}}s · pa konfime",
+    "lastMinutesUnconfirmed": "dènye {{minutes}} min · pa konfime",
     "placeholderOnline": "Telemetri ap parèt nan pwochen sik echantiyonaj la.",
     "placeholderOffline": "Demare sèvè a pou swiv CPU, RAM, ak metrik jwè."
   },

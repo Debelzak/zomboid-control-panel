@@ -227,6 +227,9 @@
     "live": "live",
     "lastSecondsLive": "last {{seconds}}s · live",
     "lastMinutesLive": "last {{minutes}} min · live",
+    "unconfirmed": "unconfirmed",
+    "lastSecondsUnconfirmed": "last {{seconds}}s · unconfirmed",
+    "lastMinutesUnconfirmed": "last {{minutes}} min · unconfirmed",
     "placeholderOnline": "Telemetry will appear within the next sample cycle.",
     "placeholderOffline": "Start the server to track CPU, RAM, and player metrics."
   },

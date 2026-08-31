@@ -227,6 +227,9 @@
     "live": "live",
     "lastSecondsLive": "letzte {{seconds}} s · live",
     "lastMinutesLive": "letzte {{minutes}} Min. · live",
+    "unconfirmed": "unbestätigt",
+    "lastSecondsUnconfirmed": "letzte {{seconds}} s · unbestätigt",
+    "lastMinutesUnconfirmed": "letzte {{minutes}} Min. · unbestätigt",
     "placeholderOnline": "Telemetriedaten erscheinen im nächsten Messzyklus.",
     "placeholderOffline": "Starte den Server, um CPU-, RAM- und Spielermetriken zu verfolgen."
   },
