@@ -74,6 +74,58 @@ export function stripLuaComments(src) {
   return out.join('');
 }
 
+// 2026-08-31 bug hunt (scripts/**): the Pass-1 assignment regex below (`assignRe`) has no way to
+// tell a real Lua assignment (`local cell = getWorld():getCell()`) apart from a TABLE CONSTRUCTOR
+// FIELD of the same shape (`{ cell = someExpr, ... }`) -- its only precondition on the character
+// before the identifier is "not `.` or a word character", which `{`, `,`, and plain whitespace all
+// satisfy, and all three precede table fields constantly. A field whose value is itself a chain
+// expression (not a string/number literal, which parseChainAt can't start from) gets recorded into
+// `varTypes` exactly like a real assignment -- silently overwriting a REAL variable's correctly
+// resolved type with whatever the field's value chain resolves to (frequently null, since return-
+// value fields are rarely typed the same as an unrelated in-scope variable that happens to share
+// its name). A later REAL use of that variable then walks from the wrong starting type and reports
+// `chain-broke-before-end` -- SKIPPED, not checked -- even though the receiver's real type was
+// already known moments earlier. Confirmed on the real PanelBridge.lua: 220 non-local `NAME = expr`
+// matches collide with a real tracked local-variable name of the same spelling.
+//
+// Fix: track `{}` nesting depth (string-aware, using the same quote-skipping logic
+// stripLuaComments already uses, since a brace inside a string literal must not count) across the
+// whole comment-stripped source, and reject any assignRe match whose identifier sits inside an
+// unclosed brace -- it's a table field, not a statement-level assignment.
+export function computeTableConstructorDepths(src) {
+  const depthAtOffset = new Int32Array(src.length + 1);
+  let depth = 0;
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    depthAtOffset[i] = depth;
+    if (c === '"' || c === "'") {
+      const quote = c;
+      i++;
+      while (i < n && src[i] !== quote) {
+        if (src[i] === '\\' && i + 1 < n) i += 2;
+        else i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (c === '}') {
+      depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
+    i++;
+  }
+  depthAtOffset[n] = depth;
+  return depthAtOffset;
+}
+
 /** Precomputed newline offsets so line-of-offset lookups are O(log n) instead of re-scanning. */
 export function buildLineIndex(src) {
   const offsets = [0];
@@ -352,6 +404,7 @@ const LUA_KEYWORDS = new Set([
 export function resolveAllCallSites(rawSrc, classProvider) {
   const src = stripLuaComments(rawSrc);
   const lineIndex = buildLineIndex(rawSrc);
+  const tableDepth = computeTableConstructorDepths(src);
   const varTypes = new Map(); // name -> { type, elementType }
 
   // Every `PanelBridge.<helper>(...)` call site, indexed by the source offset of "PanelBridge" --
@@ -454,6 +507,9 @@ export function resolveAllCallSites(rawSrc, classProvider) {
   while ((m = assignRe.exec(src))) {
     const name = m[1];
     if (LUA_KEYWORDS.has(name)) continue;
+    // Table-constructor field, not a real assignment -- see computeTableConstructorDepths' own
+    // comment for why this guard exists and what it fixes.
+    if (tableDepth[m.index] > 0) continue;
     const exprStart = m.index + m[0].length;
     let chain = parseChainAt(src, exprStart);
     if (!chain) continue;
