@@ -56,6 +56,64 @@ describe('getDiagnosticsFixAction fallback branch (uncovered check ids)', () => 
     },
   )
 
+  // impeccable-critique-2026-08-31, finding #2 turned out to be systemic, not
+  // a one-off: reshooting debug:bridge for the fix above surfaced the exact
+  // same shape on "Start script not found" / "Bundled JRE not found" (both
+  // showing "Open Server Finder" twice) -- a fresh grep of every manual
+  // (automated: false) case found the SAME `label` duplicates the (only, or
+  // first) `links`/`openServerConfig`/`openMods` entry's own rendered text
+  // in 16 more check-id groups. Every one gets the identical treatment:
+  // promote the duplicated destination to manualRoute so the primary button
+  // itself navigates, and drop only the link/flag that duplicated it --
+  // a genuinely distinct secondary link (e.g. server.rconPassword's
+  // Settings link, disk.free's Chunk Cleaner link) stays.
+  const manualRouteFixes: Array<{
+    ids: string[]
+    manualRoute: string
+    links?: Array<{ to: string; label: string }>
+    openServerConfig?: boolean
+    openMods?: boolean
+  }> = [
+    { ids: ['mods.workshopCrash'], manualRoute: '/mods' },
+    { ids: ['server.zomboidData'], manualRoute: '/settings' },
+    { ids: ['server.startScript', 'server.jre', 'server.jreWorks'], manualRoute: '/server-finder' },
+    { ids: ['server.ini'], manualRoute: '/server-config' },
+    {
+      ids: ['server.rconPassword'],
+      manualRoute: '/server-config',
+      links: [{ to: '/settings', label: 'fixActions.links.openSettings' }],
+    },
+    { ids: ['server.bridgeMod'], manualRoute: '/server-finder' },
+    { ids: ['server.configDrift'], manualRoute: '/server-config' },
+    { ids: ['scheduler', 'services.error'], manualRoute: '/settings' },
+    { ids: ['bridge.writable', 'bridge.heartbeat'], manualRoute: '/server-finder' },
+    { ids: ['db.exists'], manualRoute: '/settings' },
+    { ids: ['logs.writable'], manualRoute: '/settings' },
+    {
+      ids: ['disk.free'],
+      manualRoute: '/backups',
+      links: [{ to: '/chunks', label: 'fixActions.links.openChunkCleaner' }],
+    },
+    { ids: ['storage.saveSize'], manualRoute: '/chunks' },
+    { ids: ['runtime.heap', 'runtime.hostMem'], manualRoute: '/settings' },
+    { ids: ['update.panel', 'updates.error'], manualRoute: '/settings' },
+    { ids: ['update.mods'], manualRoute: '/mods' },
+  ]
+
+  for (const fix of manualRouteFixes) {
+    it.each(fix.ids)(
+      `%s navigates via manualRoute "${fix.manualRoute}" with no leftover duplicate link/flag`,
+      (id) => {
+        const action = getDiagnosticsFixAction(fallbackCheck({ id, category: 'server' }), t)
+        expect(action?.automated).toBe(false)
+        expect(action?.manualRoute).toBe(fix.manualRoute)
+        expect(action?.links).toEqual(fix.links)
+        expect(action?.openServerConfig).toBeUndefined()
+        expect(action?.openMods).toBeUndefined()
+      },
+    )
+  }
+
   it('opens server config when the hint contains the literal server.ini token', () => {
     const action = getDiagnosticsFixAction(
       fallbackCheck({ hint: 'Edit server.ini to fix this.' }),

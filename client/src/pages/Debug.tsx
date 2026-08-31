@@ -429,7 +429,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.modsWorkshopCrash.label"),
         automated: false,
-        openMods: true,
+        manualRoute: "/mods",
         note: t("fixActions.modsWorkshopCrash.note"),
       };
 
@@ -458,7 +458,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverZomboidData.label"),
         automated: false,
-        links: [{ to: "/settings", label: L("openSettings") }],
+        manualRoute: "/settings",
         note: t("fixActions.serverZomboidData.note"),
       };
     case "server.startScript":
@@ -467,7 +467,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverStartScriptOrJre.label"),
         automated: false,
-        links: [{ to: "/server-finder", label: L("openServerFinder") }],
+        manualRoute: "/server-finder",
         note: t("fixActions.serverStartScriptOrJre.note"),
       };
     case "server.ini":
@@ -480,7 +480,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverIniOrSandboxVars.label"),
         automated: false,
-        openServerConfig: true,
+        manualRoute: "/server-config",
         note: t("fixActions.serverIniOrSandboxVars.note"),
       };
     case "server.sandboxVars":
@@ -508,7 +508,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverRconPassword.label"),
         automated: false,
-        openServerConfig: true,
+        manualRoute: "/server-config",
         links: [{ to: "/settings", label: L("openSettings") }],
         note: t("fixActions.serverRconPassword.note"),
       };
@@ -516,14 +516,14 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.serverBridgeMod.label"),
         automated: false,
-        links: [{ to: "/server-finder", label: L("openServerFinder") }],
+        manualRoute: "/server-finder",
         note: t("fixActions.serverBridgeMod.note"),
       };
     case "server.configDrift":
       return {
         label: t("fixActions.serverConfigDrift.label"),
         automated: false,
-        openServerConfig: true,
+        manualRoute: "/server-config",
         note: t("fixActions.serverConfigDrift.note"),
       };
     case "server.staleLocks":
@@ -579,7 +579,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.servicesStuck.label"),
         automated: false,
-        links: [{ to: "/settings", label: L("openSettings") }],
+        manualRoute: "/settings",
         note: t("fixActions.servicesStuck.note"),
       };
     case "discord.bot":
@@ -612,7 +612,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.bridgeWritableOrHeartbeat.label"),
         automated: false,
-        links: [{ to: "/server-finder", label: L("openServerFinder") }],
+        manualRoute: "/server-finder",
         note: t("fixActions.bridgeWritableOrHeartbeat.note"),
       };
 
@@ -629,7 +629,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.dbExistsOrWritable.label"),
         automated: false,
-        links: [{ to: "/settings", label: L("openSettings") }],
+        manualRoute: "/settings",
         note: t("fixActions.dbExistsOrWritable.note"),
       };
     case "db.writable":
@@ -657,24 +657,25 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.logsWritable.label"),
         automated: false,
-        links: [{ to: "/settings", label: L("openSettings") }],
+        manualRoute: "/settings",
         note: t("fixActions.logsWritable.note"),
       };
     case "disk.free":
       return {
         label: t("fixActions.diskFree.label"),
         automated: false,
-        links: [
-          { to: "/backups", label: L("openBackups") },
-          { to: "/chunks", label: L("openChunkCleaner") },
-        ],
+        // label is "Open Backups" -- manualRoute makes the primary button
+        // itself go there instead of toasting, so only the distinct second
+        // link (Chunk Cleaner) needs to stay in the links row.
+        manualRoute: "/backups",
+        links: [{ to: "/chunks", label: L("openChunkCleaner") }],
         note: t("fixActions.diskFree.note"),
       };
     case "storage.saveSize":
       return {
         label: t("fixActions.storageSaveSize.label"),
         automated: false,
-        links: [{ to: "/chunks", label: L("openChunkCleaner") }],
+        manualRoute: "/chunks",
         note: t("fixActions.storageSaveSize.note"),
       };
 
@@ -684,7 +685,7 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.runtimeHeapOrHostMem.label"),
         automated: false,
-        links: [{ to: "/settings", label: L("openSettings") }],
+        manualRoute: "/settings",
         note: t("fixActions.runtimeHeapOrHostMem.note"),
       };
     case "runtime.timeSkew":
@@ -700,14 +701,14 @@ export function getDiagnosticsFixAction(
       return {
         label: t("fixActions.updatePanelOrError.label"),
         automated: false,
-        links: [{ to: "/settings", label: L("openSettings") }],
+        manualRoute: "/settings",
         note: t("fixActions.updatePanelOrError.note"),
       };
     case "update.mods":
       return {
         label: t("fixActions.updateMods.label"),
         automated: false,
-        openMods: true,
+        manualRoute: "/mods",
         note: t("fixActions.updateMods.note"),
       };
     case "update.steamApi":
