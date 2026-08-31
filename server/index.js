@@ -2011,10 +2011,19 @@ io.on("connection", (socket) => {
   });
 
   // Subscribe to logs. Mirrors GET /api/debug/logs (debug.js), which
-  // requires diagnostics.manage -- every route in that file is admin-only
-  // by design. Without this check, moderator (which does not hold
-  // diagnostics.manage) could get the identical live log stream just by
-  // connecting a socket instead of calling the HTTP route. RCON command
+  // requires diagnostics.manage -- that route's own gate is what this
+  // socket has to match. Not "every route in debug.js requires it": that
+  // was asserted here once (bughunt-2026-08-31-b, completeness-claims
+  // audit) and was already false the day it was written -- POST
+  // /debug/client-errors is a deliberate, separately-documented
+  // unauthenticated exception (write-only crash-report intake, returns no
+  // data, doesn't undermine this socket's purpose either way). A second
+  // exception added later would make a re-stated "every route but that
+  // one" claim just as stale. Check GET /api/debug/logs's own gate
+  // directly if this ever needs re-verifying, not a count of the file.
+  // Without this check, moderator (which does not hold diagnostics.manage)
+  // could get the identical live log stream just by connecting a socket
+  // instead of calling the HTTP route. RCON command
   // text used to ride along in this room too (rcon.js's rcon:response
   // event) -- moved to its own rcon-live room below (2026-08-31 bug hunt),
   // since that content is gated rcon.execute everywhere else it's exposed
