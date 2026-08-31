@@ -878,8 +878,17 @@ export class Scheduler {
             // must not bury it inside a message that reads identically to a
             // clean run, since Schedule History is the only place anyone
             // would ever see it for an unattended backup.
+            //
+            // "that vanished during archiving" was accurate until 2026-08-29
+            // (bughunt-2026-08-31-c, completeness-claims-audit-followups):
+            // walkDirectory() now also records a deliberately-excluded
+            // symbolic link in this same skippedFiles array (see that
+            // function's own comment), and this message was never updated
+            // to match -- routes/backup.js's equivalent operator-facing
+            // warning was, the same day, in the same commit (445c15a5).
+            // Cause-agnostic now, matching that convention.
             const skipNote = result.skippedFiles?.length
-              ? ` (skipped ${result.skippedFiles.length} file(s) that vanished during archiving: ${result.skippedFiles.join(", ")})`
+              ? ` (${result.skippedFiles.length} file(s) not included -- a temp/log/lock file rewritten mid-backup, or a symbolic link deliberately not followed: ${result.skippedFiles.join(", ")})`
               : "";
             await logScheduleExecution(
               null,
