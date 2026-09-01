@@ -23,6 +23,7 @@ import { sanitizeError } from "../utils/sanitize.js";
 import { describeStartFailure } from "./discordStartFailure.js";
 import { readIniValues } from "../utils/templateFiles.js";
 import { runManagedLifecycle } from "./managedContainer.js";
+import { resolveObservedServerRunning } from "../utils/serverStatus.js";
 import {
   collectKnownSecretValues,
   redactKnownSecrets,
@@ -926,13 +927,19 @@ export class DiscordBot {
   async handleStatus(interaction) {
     await interaction.deferReply();
 
-    // getServerStatus() already runs getServerProcessDetails() internally
-    // and exposes scanFailed -- no need for a second, separate
-    // checkServerRunning() call that would silently discard it and report
-    // a confident "offline" during a detection hiccup.
+    // getServerStatus() is still the source for uptime/etc, but its OWN
+    // .running/.scanFailed come from the local process scan alone -- wrong
+    // for a split-container/docker-managed setup where PZ is genuinely up
+    // but not locally visible (GH#114). resolveObservedServerRunning() is
+    // the same OR-of-every-signal verdict the dashboard badge and the
+    // status watchdog use, so this can't disagree with either of them.
     const status = await this.serverManager.getServerStatus();
-    const isRunning = status.running;
-    const statusUnknown = status.scanFailed;
+    const observedRunning = await resolveObservedServerRunning(
+      this.serverManager,
+      this.rconService,
+    );
+    const isRunning = observedRunning === true;
+    const statusUnknown = observedRunning === null;
 
     // Format uptime from seconds
     let uptimeStr = "N/A";
@@ -980,14 +987,20 @@ export class DiscordBot {
   async handlePlayers(interaction) {
     await interaction.deferReply();
 
-    const details = await this.serverManager.getServerProcessDetails();
-    if (details.scanFailed) {
+    // See handleStatus()'s comment: the raw local scan alone can't see a
+    // split-container/docker-managed server, so this asks the same
+    // OR-every-signal question the dashboard badge and watchdog do.
+    const observedRunning = await resolveObservedServerRunning(
+      this.serverManager,
+      this.rconService,
+    );
+    if (observedRunning === null) {
       await interaction.editReply(
         "🟡 Unable to verify server status — try again shortly.",
       );
       return;
     }
-    if (!details.running) {
+    if (!observedRunning) {
       await interaction.editReply("🔴 Server is offline");
       return;
     }
@@ -1048,19 +1061,23 @@ export class DiscordBot {
   async handleStart(interaction) {
     await interaction.deferReply();
 
-    // getServerProcessDetails(), not checkServerRunning() -- the latter
-    // collapses a failed detection scan into a confident "not running,"
-    // which would let this command launch a second server process
-    // alongside one that's actually still up. Same fail-open class already
+    // resolveObservedServerRunning(), not the raw local scan alone -- the
+    // latter can't see a split-container/docker-managed server at all
+    // (GH#114) and would let this command attempt a start against one
+    // that's genuinely already up, alongside collapsing a failed detection
+    // scan into a confident "not running." Same fail-open class already
     // fixed at /wipe, /delete-files, chunks.js, templates.js and others.
-    const details = await this.serverManager.getServerProcessDetails();
-    if (details.scanFailed) {
+    const observedRunning = await resolveObservedServerRunning(
+      this.serverManager,
+      this.rconService,
+    );
+    if (observedRunning === null) {
       await interaction.editReply(
         "⚠️ Unable to verify whether the server is already running — refusing to start to avoid launching a second process. Check the panel UI directly.",
       );
       return;
     }
-    if (details.running) {
+    if (observedRunning) {
       await interaction.editReply("⚠️ Server is already running");
       return;
     }
@@ -1087,14 +1104,21 @@ export class DiscordBot {
   async handleStop(interaction) {
     await interaction.deferReply();
 
-    const details = await this.serverManager.getServerProcessDetails();
-    if (details.scanFailed) {
+    // See handleStart()'s comment: the raw local scan alone can't see a
+    // split-container/docker-managed server, so this used to refuse every
+    // stop/restart of one with "Server is not running" even with RCON
+    // connected and able to execute it.
+    const observedRunning = await resolveObservedServerRunning(
+      this.serverManager,
+      this.rconService,
+    );
+    if (observedRunning === null) {
       await interaction.editReply(
         "⚠️ Unable to verify whether the server is running. Check the panel UI directly before retrying.",
       );
       return;
     }
-    if (!details.running) {
+    if (!observedRunning) {
       await interaction.editReply("⚠️ Server is not running");
       return;
     }
@@ -1135,14 +1159,19 @@ export class DiscordBot {
 
     const minutes = interaction.options.getInteger("minutes") ?? 5;
 
-    const details = await this.serverManager.getServerProcessDetails();
-    if (details.scanFailed) {
+    // See handleStart()'s comment: the raw local scan alone can't see a
+    // split-container/docker-managed server.
+    const observedRunning = await resolveObservedServerRunning(
+      this.serverManager,
+      this.rconService,
+    );
+    if (observedRunning === null) {
       await interaction.editReply(
         "⚠️ Unable to verify whether the server is running. Check the panel UI directly before retrying.",
       );
       return;
     }
-    if (!details.running) {
+    if (!observedRunning) {
       await interaction.editReply(
         "⚠️ Server is not running. Use /start to start the server.",
       );
@@ -1483,10 +1512,17 @@ export class DiscordBot {
     this._presenceUpdateInFlight = (async () => {
       let activity = "Server offline";
       try {
-        const details = await this.serverManager.getServerProcessDetails();
-        if (details.scanFailed) {
+        // See handleStart()'s comment: the raw local scan alone can't see a
+        // split-container/docker-managed server, and this presence text was
+        // stuck on "Server offline" forever for that topology even with
+        // RCON connected.
+        const observedRunning = await resolveObservedServerRunning(
+          this.serverManager,
+          this.rconService,
+        );
+        if (observedRunning === null) {
           activity = "Status unknown";
-        } else if (details.running) {
+        } else if (observedRunning) {
           if (this.rconService?.connected) {
             const result = await this.rconService.getPlayers();
             if (result?.success) {
