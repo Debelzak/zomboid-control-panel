@@ -37,9 +37,29 @@ function isSupportedLanguage(value: string | null | undefined): value is Support
   return !!value && LANGUAGE_CODES.includes(value)
 }
 
-// Phase 1 covers Login, Setup and the app shell/nav only — every other page
-// still renders hardcoded English. See the i18n scoping report for the plan
-// to roll the remaining strings out namespace by namespace.
+function mapBrowserLanguage(raw: string | null | undefined): SupportedLanguage | null {
+  if (!raw) return null
+  const tag = raw.trim().replace(/_/g, '-')
+  const lower = tag.toLowerCase()
+  if (isSupportedLanguage(tag)) return tag
+  if (
+    lower.startsWith('zh-hant') ||
+    lower.startsWith('zh-tw') ||
+    lower.startsWith('zh-hk') ||
+    lower.startsWith('zh-mo')
+  ) {
+    return 'zh-TW'
+  }
+  if (
+    lower.startsWith('zh-hans') ||
+    lower.startsWith('zh-cn') ||
+    lower.startsWith('zh-sg')
+  ) {
+    return 'zh-CN'
+  }
+  return null
+}
+
 function detectInitialLanguage(): SupportedLanguage {
   try {
     const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY)
@@ -47,8 +67,15 @@ function detectInitialLanguage(): SupportedLanguage {
   } catch {
     // localStorage unavailable (privacy mode, disabled storage) — fall through
   }
-  const browserLang = (navigator.language || SOURCE_LANGUAGE).slice(0, 2).toLowerCase()
-  return isSupportedLanguage(browserLang) ? browserLang : SOURCE_LANGUAGE
+  const candidates = [
+    navigator.language,
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+  ]
+  for (const raw of candidates) {
+    const mapped = mapBrowserLanguage(raw)
+    if (mapped) return mapped
+  }
+  return SOURCE_LANGUAGE
 }
 
 i18n.use(initReactI18next).init({
