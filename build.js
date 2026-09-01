@@ -47,6 +47,24 @@ function createLinuxReleaseArchive(sourceDir, archivePath) {
     archive.finalize();
   });
 }
+const DEFAULT_API_CONTRACT_VERSION = 1;
+
+export function resolveBuildSha(env = process.env) {
+  const configured = String(env.GITHUB_SHA || env.PANEL_BUILD_SHA || "").trim();
+  if (configured) return configured;
+  try {
+    return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export function resolveApiContractVersion(env = process.env) {
+  const parsed = Number(env.PANEL_API_CONTRACT_VERSION);
+  return Number.isInteger(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_API_CONTRACT_VERSION;
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -700,15 +718,11 @@ async function main() {
   const targets = resolveTargets(args);
   const rootPkg = JSON.parse(fs.readFileSync("./package.json", "utf-8"));
   const panelVersion = rootPkg.version || "0.0.0";
-  let buildSha = process.env.GITHUB_SHA || process.env.PANEL_BUILD_SHA || "";
-  if (!buildSha) {
-    try {
-      buildSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-    } catch {
-      buildSha = "unknown";
-    }
-  }
-  const apiContractVersion = 1;
+  const buildSha = resolveBuildSha({
+    GITHUB_SHA: process.env.GITHUB_SHA,
+    PANEL_BUILD_SHA: process.env.PANEL_BUILD_SHA,
+  });
+  const apiContractVersion = resolveApiContractVersion();
 
   await cleanDir(distDir);
   if (!fs.existsSync(distDir)) {
@@ -739,8 +753,9 @@ async function main() {
 
   console.log("Building server bundle...");
 
-  console.log(`Version: ${panelVersion}`);
-  console.log(`Build SHA: ${buildSha}`);
+  console.log(
+    `Version: ${panelVersion} (build ${buildSha}, API contract ${apiContractVersion})`,
+  );
 
   // Read PanelBridge.lua and inline it as a base64 define so it lives INSIDE
   // server.cjs (and therefore inside the pkg binary). pkg's `assets` glob was

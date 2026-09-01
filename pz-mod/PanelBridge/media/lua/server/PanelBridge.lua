@@ -1,10 +1,22 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.45
+    Version: 1.7.47
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.47 Changes:
+                - Bundled with panel v1.2.11. No additional bridge
+                    protocol changes.
+
+                v1.7.46 Changes:
+                - Fix: on a fresh world, Build 42 can report its sandbox
+                    countdown as still powered while the live hydro state is
+                    off. Startup now restores hydro power only when the same
+                    countdown formula the game uses says scheduled power has
+                    not yet shut off; intentional instant/expired settings
+                    remain off.
 
                 v1.7.45 Changes:
                 - Fix: triggerSwarmEvent used to go straight to the
@@ -456,7 +468,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.45",
+    VERSION = "1.7.47",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -5453,6 +5465,29 @@ local function setElectricityOnLoadedSquares(enabled)
     return squareCount, "success"
 end
 
+function PanelBridge.reconcileStartupPower()
+    local world = getWorld()
+    local sandbox = getSandboxOptions()
+    local gameTime = getGameTime()
+    if not world or not sandbox or not gameTime then return false end
+
+    local shutdownDay = tonumber(PanelBridge.tryGet(sandbox, "getElecShutModifier"))
+    local worldAgeHours = tonumber(PanelBridge.tryGet(gameTime, "getWorldAgeHours")) or 0
+    local timeSinceApo = tonumber(PanelBridge.tryGet(sandbox, "getTimeSinceApo")) or 1
+    local worldAgeDays = worldAgeHours / 24 + (timeSinceApo - 1) * 30
+    if not shutdownDay or shutdownDay < 0 or worldAgeDays >= shutdownDay then
+        return false
+    end
+
+    if PanelBridge.tryGet(world, "isHydroPowerOn") ~= false then return false end
+    if not PanelBridge.invoke(world, "setHydroPowerOn", true) then return false end
+    if PanelBridge.tryGet(world, "isHydroPowerOn") ~= true then return false end
+
+    setElectricityOnLoadedSquares(true)
+    PanelBridge.invoke(world, "transmitWeather")
+    return true
+end
+
 -- Helper function to activate light switches in loaded chunks around all players
 -- Drives a light switch to `enabled`.
 -- Returns: inRequestedState, didChange
@@ -8992,6 +9027,10 @@ function PanelBridge.onServerStarted()
 
     -- Detect version and available APIs
     PanelBridge.detectVersion()
+
+    if PanelBridge.reconcileStartupPower() then
+        print("[PanelBridge] Restored startup power from the configured sandbox countdown")
+    end
 
     -- Write initial status
     PanelBridge.updateStatus()

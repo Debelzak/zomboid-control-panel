@@ -400,19 +400,22 @@ export default function Dashboard() {
 
   /* ---------------------------- fetchers ---------------------------------- */
   const fetchStatus = useCallback(async () => {
-    try { const data = await serverApi.getStatus(); setStatus(data); setFetchError(null); setLastUpdated(new Date()) }
+    try { const data = await serverApi.getStatus({ retries: 0 }); setStatus(data); setFetchError(null); setLastUpdated(new Date()) }
     catch { setFetchError(t('errors.failedToConnect')) }
   }, [t])
 
   const fetchComposedStatus = useCallback(async () => {
-    try { setComposedStatus(await serversApi.getComposedStatus()) }
+    try { setComposedStatus(await serversApi.getComposedStatus({ retries: 0 })) }
     catch { setComposedStatus(null) }
   }, [])
 
   usePageShortcut('r', () => { if (loading === null) { fetchStatus(); fetchComposedStatus() } })
 
   const fetchPlayers = useCallback(async () => {
-    try { const d = await playersApi.getPlayers(); if (d.players) setPlayers(d.players) } catch { setPlayers([]) }
+    try {
+      const d = await playersApi.getPlayers({ retries: 0 })
+      if (d.players) setPlayers(d.players)
+    } catch { setPlayers([]) }
   }, [])
   const fetchBridgeStatus = useCallback(async () => {
     try { setBridgeStatus(await panelBridgeApi.getStatus()) } catch { setBridgeStatus(null) }
@@ -766,7 +769,7 @@ export default function Dashboard() {
         pollIntervalRef.current = setInterval(async () => {
           attempts++
           try {
-            const data = await serverApi.getStatus()
+            const data = await serverApi.getStatus({ retries: 0 })
             setStatus(data)
             if (data?.running || attempts >= 15) {
               if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null }

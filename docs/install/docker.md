@@ -188,6 +188,44 @@ container as the panel.
    [CORS_ORIGINS](#cors_origins-when-accessed-from-anywhere-other-than-localhost)
    below before continuing.
 
+### Optional: let the panel control a PZ container
+
+Path B can start, stop, and restart a Project Zomboid container on the same
+Docker host. This is deliberately opt-in: mounting `docker.sock` gives the
+panel control over every container on that host.
+
+Before `docker compose up -d`:
+
+1. In `.env`, set:
+   ```dotenv
+   PANEL_DOCKER_CONTROL_ENABLED=true
+   DOCKER_GID=999
+   ```
+   Replace `999` with the numeric group that owns the host socket:
+   `stat -c '%g' /var/run/docker.sock`.
+2. In `docker-compose.yml`, uncomment the Docker socket volume and the
+   `group_add` block. The supplementary group is required when the panel's
+   `PUID`/`PGID` is not already allowed to read and write the socket.
+3. Add the management label to the PZ container. For Compose, add this to
+   the PZ service and recreate it:
+   ```yaml
+   labels:
+     zomboid-panel.managed: "true"
+   ```
+   For an existing container, the equivalent one-time command is:
+   ```sh
+   docker update --label-add zomboid-panel.managed=true <pz-container>
+   ```
+4. In **Servers**, put the PZ container's name or ID in **Docker container**
+   on the server profile. Use the Compose service/container name when the
+   panel and PZ share a Docker network.
+
+**You know it worked when:** the Docker page lists the labeled container,
+the server profile shows its container name, and Start/Stop uses the
+container lifecycle instead of sending RCON `quit` to PID 1. If the Docker
+page says the daemon is unavailable, check the socket mount and the numeric
+socket group before changing the PZ configuration.
+
 **You know it worked when:** rereading the volumes block, the left side of
 each `:` is a real path on this machine, not a placeholder.
 
@@ -323,9 +361,29 @@ configured.
    folder.
 
 **You know it worked when:** the dashboard shows the server status card and
-RCON shows connected. The panel can monitor and administer the game through
-RCON, but it cannot start, stop, or auto-update a PZ container it doesn't
-own — leave lifecycle management with Unraid/your PZ template.
+RCON shows connected. By default, the panel can monitor and administer the
+game through RCON, but it does not start, stop, or auto-update a PZ container
+owned by Unraid.
+
+### Optional: let the panel control the Unraid PZ container
+
+Only enable this when you want the panel to own the container lifecycle
+instead of Unraid. In the Unraid template editor:
+
+1. Add a bind mount from the host `/var/run/docker.sock` to the container
+   `/var/run/docker.sock` with read/write access.
+2. Add the environment variable `PANEL_DOCKER_CONTROL_ENABLED=true`.
+3. Add the Docker socket's numeric group to the container's **Extra
+   Parameters**, for example `--group-add=281`. Find the real value on the
+   Unraid host with `stat -c '%g' /var/run/docker.sock`; do not assume the
+   example value.
+4. Add the label `zomboid-panel.managed=true` to the existing PZ container
+   and put that container's name in the panel's **Docker container** field.
+
+The Docker socket is equivalent to host-level container control, so leave
+this disabled unless the panel is trusted. If it is enabled but the Docker
+page still reports the daemon as unavailable, check the socket mount and
+the supplementary group first.
 
 ---
 

@@ -61,4 +61,18 @@ describe("Docker deployment guidance", () => {
     expect(compose).not.toContain("16261:16261/udp");
     expect(compose).not.toContain("16262:16262/udp");
   });
+
+  it("documents the opt-in Docker lifecycle prerequisites", () => {
+    const compose = readRepoFile("docker-compose.yml");
+    const docs = readRepoFile("docs/install/docker.md");
+
+    expect(compose).toContain("/var/run/docker.sock:/var/run/docker.sock");
+    expect(compose).toContain("PANEL_DOCKER_CONTROL_ENABLED");
+    expect(compose).toContain("group_add:");
+    expect(docs).toContain("zomboid-panel.managed: \"true\"");
+    expect(docs).toContain("docker update --label-add zomboid-panel.managed=true");
+    expect(docs).toContain("PANEL_DOCKER_CONTROL_ENABLED=true");
+    expect(docs).toContain("/var/run/docker.sock");
+    expect(docs).toContain("--group-add=281");
+  });
 });

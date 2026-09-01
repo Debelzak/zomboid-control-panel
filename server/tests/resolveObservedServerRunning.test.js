@@ -40,8 +40,8 @@ describe("resolveObservedServerRunning -- split-container / cross-container RCON
     resolveDockerHostSignal.mockReset();
   });
 
-  it("reports RUNNING when the local scan finds nothing but RCON is connected (native/unmapped provider) -- the exact split-container shape", async () => {
-    getActiveServer.mockResolvedValue({ id: "s1" }); // no provider, no docker mapping, not remote
+  it("reports RUNNING when the local scan finds nothing but RCON is connected (remote provider) -- the exact split-container shape", async () => {
+    getActiveServer.mockResolvedValue({ id: "s1", isRemote: true });
     const serverManager = fakeServerManager({ running: false, scanFailed: false });
     const rconService = { connected: true };
 
@@ -49,7 +49,7 @@ describe("resolveObservedServerRunning -- split-container / cross-container RCON
   });
 
   it("reports RUNNING off the bridge alone when RCON is also disconnected", async () => {
-    getActiveServer.mockResolvedValue({ id: "s1" });
+    getActiveServer.mockResolvedValue({ id: "s1", isRemote: true });
     const serverManager = fakeServerManager({ running: false, scanFailed: false });
     fakeBridge.isModConnected.mockReturnValue(true);
 

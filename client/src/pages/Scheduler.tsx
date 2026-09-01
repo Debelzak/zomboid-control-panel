@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -68,6 +69,8 @@ import { DisabledReason } from '@/components/DisabledReason'
 import { HelpTip } from '@/components/HelpTip'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+
+const RESTART_WARNING_LOCALES = ['en', 'zh-CN', 'fr', 'de', 'es', 'ht'] as const
 
 interface ScheduledTask {
   id: number
@@ -399,9 +402,15 @@ export default function Scheduler() {
     timezone?: string
     configuredTimezone?: string | null
     timezoneFallback?: { configured: string; effective: string } | null
+    restartWarning?: { locale: typeof RESTART_WARNING_LOCALES[number]; template: string }
+    restartWarningPresets?: Record<typeof RESTART_WARNING_LOCALES[number], string>
   } | null>(null)
   const [timezoneInput, setTimezoneInput] = useState('')
   const [timezoneSaving, setTimezoneSaving] = useState(false)
+  const [restartWarningLocale, setRestartWarningLocale] = useState<typeof RESTART_WARNING_LOCALES[number]>('en')
+  const [restartWarningTemplate, setRestartWarningTemplate] = useState('')
+  const [restartWarningSaving, setRestartWarningSaving] = useState(false)
+  const restartWarningDirtyRef = useRef(false)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null)
@@ -495,6 +504,13 @@ export default function Scheduler() {
     }
   }, [status?.configuredTimezone, timezoneInput])
 
+  useEffect(() => {
+    if (!restartWarningDirtyRef.current && status?.restartWarning) {
+      setRestartWarningLocale(status.restartWarning.locale)
+      setRestartWarningTemplate(status.restartWarning.template)
+    }
+  }, [status?.restartWarning])
+
   const handleSaveTimezone = async () => {
     const trimmed = timezoneInput.trim()
     if (!trimmed) return
@@ -515,6 +531,46 @@ export default function Scheduler() {
       })
     } finally {
       setTimezoneSaving(false)
+    }
+  }
+
+  const selectRestartWarningLocale = (locale: typeof RESTART_WARNING_LOCALES[number]) => {
+    restartWarningDirtyRef.current = true
+    setRestartWarningLocale(locale)
+    setRestartWarningTemplate(status?.restartWarningPresets?.[locale] || '')
+  }
+
+  const resetRestartWarningTemplate = () => {
+    restartWarningDirtyRef.current = true
+    setRestartWarningTemplate(status?.restartWarningPresets?.[restartWarningLocale] || '')
+  }
+
+  const handleSaveRestartWarning = async () => {
+    if (!restartWarningTemplate.trim()) return
+    setRestartWarningSaving(true)
+    try {
+      const result = await schedulerApi.setRestartWarning({
+        locale: restartWarningLocale,
+        template: restartWarningTemplate,
+      })
+      restartWarningDirtyRef.current = false
+      setRestartWarningTemplate(result.restartWarning.template)
+      setStatus((previous) => previous
+        ? { ...previous, restartWarning: result.restartWarning }
+        : previous)
+      toast({
+        title: t('toasts.successTitle'),
+        description: t('restartWarning.saved'),
+        variant: 'success' as const,
+      })
+    } catch (error) {
+      toast({
+        title: t('toasts.errorTitle'),
+        description: getUserErrorMessage(error, t('restartWarning.saveFailed')),
+        variant: 'destructive',
+      })
+    } finally {
+      setRestartWarningSaving(false)
     }
   }
 
@@ -1245,6 +1301,68 @@ export default function Scheduler() {
           <p className="text-xs text-muted-foreground">
             {t('timezone.currentlyEffective', { tz: status?.timezone || '...' })}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="p-4 pb-3">
+          <div className="flex items-center gap-1.5">
+            <CardTitle className="text-base">{t('restartWarning.title')}</CardTitle>
+            <HelpTip label={t('restartWarning.title')}>{t('restartWarning.description')}</HelpTip>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 p-4 pt-0">
+          <div className="grid gap-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
+            <div className="space-y-1.5">
+              <Label htmlFor="restart-warning-language">{t('restartWarning.languageLabel')}</Label>
+              <Select
+                value={restartWarningLocale}
+                onValueChange={(locale: typeof RESTART_WARNING_LOCALES[number]) => selectRestartWarningLocale(locale)}
+                disabled={restartWarningSaving}
+              >
+                <SelectTrigger id="restart-warning-language">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RESTART_WARNING_LOCALES.map((locale) => (
+                    <SelectItem key={locale} value={locale}>
+                      {t(`restartWarning.languages.${locale}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="restart-warning-template">{t('restartWarning.templateLabel')}</Label>
+              <Textarea
+                id="restart-warning-template"
+                value={restartWarningTemplate}
+                onChange={(event) => {
+                  restartWarningDirtyRef.current = true
+                  setRestartWarningTemplate(event.target.value)
+                }}
+                maxLength={300}
+                disabled={restartWarningSaving}
+              />
+              <p className="text-xs text-muted-foreground">{t('restartWarning.templateHint')}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={resetRestartWarningTemplate}
+              disabled={restartWarningSaving || !status?.restartWarningPresets?.[restartWarningLocale]}
+            >
+              {t('restartWarning.presetButton')}
+            </Button>
+            <Button
+              onClick={handleSaveRestartWarning}
+              disabled={restartWarningSaving || !restartWarningTemplate.trim()}
+            >
+              {restartWarningSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t('restartWarning.saveButton')}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

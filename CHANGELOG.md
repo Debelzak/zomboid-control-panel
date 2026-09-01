@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-09-01
+
 ### Security
 
 - **A local user on the same machine could read fragments of files the panel can read**, by
@@ -16,10 +18,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Automatic restart warnings were fixed English strings with no operator control**, leaving
+  multilingual servers unable to communicate countdowns consistently; operators can now select
+  English, Chinese, French, German, Spanish, or Haitian Creole presets and safely customize the
+  countdown template with `{count}` and `{unit}` placeholders.
 - **Saving RCON, port or UPnP settings could rewrite an unrelated line of the server config** if
   its text happened to contain one of those setting names - each now matches only its own line.
 - **Discord reported the server as offline when the panel and the game server run in separate
   containers** - and start, stop, restart and player commands all misjudged it the same way.
+- **Server Stop and Force Stop no longer wait through the RCON reconnect loop when the server
+  connection has already dropped**, and native Force Stop also terminates the detached launcher
+  process tree.
+- **Standalone builds now inject the same build SHA and API contract metadata into the frontend
+  and backend**, preventing a false update-recovery screen with an `unknown` backend.
+- **The Dashboard could keep reporting `Request failed, retrying` while a server was intentionally
+  stopping**, because its player poll started a second retry loop; dashboard player reads are now
+  single-attempt and the normal poll interval remains the retry mechanism.
+- **A supervised Linux panel restart could launch a second panel instead of letting `start.sh`
+  relaunch the newly activated binary**, leaving the staged `.new` file behind or causing a port
+  race; the supervisor now owns that relaunch.
+- **A fresh Build 42 world could start with no power even while its sandbox shutdown countdown
+  still allowed electricity**, leaving the Events toggle unable to repair the contradictory live
+  state; PanelBridge now restores startup hydro power only while that countdown remains active.
+- **Scheduled server messages stripped Chinese and other non-ASCII text before the UTF-8 RCON
+  transport could send it**, causing garbled or empty broadcasts; messages now preserve readable
+  Unicode while still removing command delimiters and control characters.
+- **Editing a server with no Docker container saved the JSON value `null` as the literal string
+  `"null"`**, making a native process look like an unavailable container; null is now preserved.
 
 ## [1.2.10] - 2026-08-31
 

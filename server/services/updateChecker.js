@@ -11,6 +11,7 @@ import {
   getActiveSteamOperations,
   clearActiveSteamOperation,
 } from "./activeSteamOperations.js";
+import { acquireLifecycleLock } from "./lifecycleCoordinator.js";
 
 export function parseAutoUpdateWarningMinutes(value) {
   if (value === null || value === undefined) return 15;
@@ -536,6 +537,13 @@ export class UpdateChecker {
   }
 
   async runAutoUpdate(updateInfo) {
+    const lifecycleLock = acquireLifecycleLock("automatic-update");
+    if (!lifecycleLock) {
+      this.autoUpdateRunning = false;
+      log.warn("Automatic update skipped because another lifecycle operation is in progress");
+      return { success: false, message: "Another server lifecycle operation is in progress" };
+    }
+
     let shouldRestart = false;
     // Set right before the SteamCMD spawn below claims activeSteamOperations
     // for this path; the outer finally() releases it defensively too (a
@@ -543,6 +551,7 @@ export class UpdateChecker {
     // thrown error can never leave a permanent claim, per the same
     // requirement as every other guarded spawn site.
     let normalizedInstallPath = null;
+    let targetServerId = null;
     // Tracks how far the job got, recorded on failure alongside a stable
     // reason key -- see the class doc comment on _recordAutoUpdateResult()
     // for why phase (not a per-reason serverUp guess) is the source of
@@ -574,6 +583,7 @@ export class UpdateChecker {
         return;
       }
       const activeServer = await getActiveServer();
+      targetServerId = activeServer?.id ?? null;
       const steamcmdPath = await getSetting("steamcmdPath");
       // Refuse a container-managed server outright. Its image owns the game
       // install, and the stop below would RCON-quit a process the container's
@@ -727,7 +737,9 @@ export class UpdateChecker {
       // completed" -- the same predicate, no new state.
       if (shouldRestart && phase !== "before-stop") {
         try {
-          const started = await this.serverManager.startServer();
+          const started = await this.serverManager.startServer({
+            serverId: targetServerId,
+          });
           if (started?.success) {
             await this._patchAutoUpdateResultServerUp(true);
           } else {
@@ -739,6 +751,7 @@ export class UpdateChecker {
           await this._patchAutoUpdateResultServerUp(false);
         }
       }
+      lifecycleLock.release();
     }
   }
 

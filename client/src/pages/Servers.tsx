@@ -443,7 +443,7 @@ export default function Servers() {
   const fetchServerStatuses = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     try {
-      const data = await serversApi.getStatus()
+      const data = await serversApi.getStatus({ retries: 0 })
       const next: Record<string, { running: boolean; pid: string | null }> = {}
       for (const s of data.servers || []) {
         next[String(s.id)] = { running: !!s.running, pid: s.pid }
@@ -532,7 +532,7 @@ export default function Servers() {
   const fetchActiveStatus = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     try {
-      setActiveStatus(await serversApi.getComposedStatus())
+      setActiveStatus(await serversApi.getComposedStatus({ retries: 0 }))
     } catch (error) {
       setActiveStatus(null)
       reportClientWarning('Failed to fetch active server status.', error)
@@ -968,7 +968,7 @@ export default function Servers() {
   const [serverActionPending, setServerActionPending] = useState<string | null>(null)
   const waitForActionState = useCallback(async (serverId: string | number, expectedRunning: boolean) => {
     return waitForServerState(
-      serversApi.getStatus,
+      () => serversApi.getStatus({ retries: 0 }),
       serverId,
       expectedRunning,
       (serverStatus) => {

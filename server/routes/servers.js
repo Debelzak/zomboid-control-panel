@@ -25,6 +25,10 @@ import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
 import { normalizeUserPath, inspectZomboidPath } from "../utils/zomboidPaths.js";
 import { requirePermission } from "../services/permissions.js";
 import {
+  acquireLifecycleLock,
+  lifecycleInProgressResponse,
+} from "../services/lifecycleCoordinator.js";
+import {
   canAutoInstall,
   checkBridgeInstalled,
   installBridge,
@@ -1220,6 +1224,10 @@ export function parseServerId(value) {
 
 // Update a server
 router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("server-profile-change");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     const id = req.params.id;
     if (!id) {
@@ -1269,7 +1277,15 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     }
 
     if (updates.dockerContainerName !== undefined) {
-      const value = String(updates.dockerContainerName).trim();
+      if (
+        updates.dockerContainerName !== null &&
+        typeof updates.dockerContainerName !== "string"
+      ) {
+        return res.status(400).json({
+          error: "Invalid Docker container name",
+        });
+      }
+      const value = (updates.dockerContainerName || "").trim();
       if (value && !isValidDockerContainerRef(value)) {
         return res.status(400).json({
           error: "Invalid Docker container name",
@@ -1537,11 +1553,17 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
   } catch (error) {
     log.error(`Failed to update server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 
 // Delete a server
 router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("server-profile-change");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     const id = req.params.id;
     if (!id) {
@@ -1593,6 +1615,8 @@ router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
   } catch (error) {
     log.error(`Failed to delete server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 
@@ -1635,6 +1659,10 @@ async function reloadServicesForNewActiveServer(req, server) {
 
 // Set active server
 router.post("/:id/activate", requirePermission("servers.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("server-profile-change");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     const id = req.params.id;
     if (!id) {
@@ -1666,6 +1694,8 @@ router.post("/:id/activate", requirePermission("servers.manage"), async (req, re
   } catch (error) {
     log.error(`Failed to activate server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 

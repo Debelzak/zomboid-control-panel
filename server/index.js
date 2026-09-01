@@ -91,6 +91,8 @@ import {
 import { resolveObservedServerRunning } from "./utils/serverStatus.js";
 import { discoverMounts } from "./services/mountDiscovery.js";
 import { shouldAutoOpenBrowser } from "./utils/browserLaunch.js";
+import { isLinuxPanelSupervisor } from "./utils/restartSupervisor.js";
+import { acquireLifecycleLock } from "./services/lifecycleCoordinator.js";
 
 // === Supervisor bootstrap ===
 // If the .exe was double-clicked directly (no PANEL_SUPERVISOR_V env var) and
@@ -1630,6 +1632,7 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     // Respawning ourselves under systemd causes a duplicate process; under
     // Docker (PID 1) the detached child dies with the container anyway.
     let orchestrated = false;
+    const linuxSupervisor = isLinuxPanelSupervisor();
     if (isPackaged) {
       try {
         if (process.env.INVOCATION_ID || process.env.NOTIFY_SOCKET)
@@ -1644,7 +1647,7 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
         /* best effort */
       }
 
-      if (!orchestrated) {
+      if (!orchestrated && !linuxSupervisor) {
         // Running as packaged exe standalone — spawn self, then exit.
         // On Linux, prefer the freshly-applied binary path (linuxRespawnPath)
         // since process.execPath may point at a .new slot we just renamed away.
@@ -1652,9 +1655,13 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
         // (the helper handles it), so process.execPath is safe.
         const respawnTarget = linuxRespawnPath || process.execPath;
         spawn(respawnTarget, [], { detached: true, stdio: "ignore" }).unref();
-      } else {
+      } else if (orchestrated) {
         log.info(
           "Running under orchestrator (systemd/Docker) — exiting for external restart",
+        );
+      } else {
+        log.info(
+          "Running under the Linux supervisor — exiting for start.sh to relaunch",
         );
       }
     }
@@ -1665,10 +1672,6 @@ app.post("/api/panel/restart", requireRole("admin"), async (req, res) => {
     // non-zero so `on-failure`/`always` units respawn us; Docker
     // `restart: unless-stopped`/`always` restart regardless of code, so this is
     // safe there too. Standalone (already self-respawned) exits 0 as normal.
-    const linuxSupervisor =
-      process.platform === "linux" &&
-      process.env.PANEL_SUPERVISOR_V === "2" &&
-      process.env.PANEL_PRESERVE_GAME_SERVERS === "1";
     process.exit(linuxSupervisor ? 75 : orchestrated ? 1 : 0);
   }, 1000);
 });
@@ -2962,88 +2965,99 @@ async function start() {
               );
               rconService.setServerStarting(false);
             } else {
-              log.info("Auto-start is enabled - starting PZ server...");
+              const lifecycleLock = acquireLifecycleLock("startup-auto-start");
+              if (!lifecycleLock) {
+                log.warn(
+                  "Auto-start skipped because another lifecycle operation is in progress",
+                );
+                rconService.setServerStarting(false);
+              } else {
+                log.info("Auto-start is enabled - starting PZ server...");
 
-              // Set flag to prevent auto-reconnect from interfering
-              rconService.setServerStarting(true);
+                // Set flag to prevent auto-reconnect from interfering
+                rconService.setServerStarting(true);
 
-              try {
-                const startResult = await serverManager.startServer();
-                if (startResult.success) {
-                  log.info("PZ server auto-started successfully");
+                try {
+                  const startResult = await serverManager.startServer({
+                    serverId: activeServer?.id ?? null,
+                  });
+                  if (startResult.success) {
+                    log.info("PZ server auto-started successfully");
 
-                  // Wait for server to fully start before connecting RCON
-                  // Monitor the TCP port instead of hard waiting
-                  log.info("PZ server auto-started - Monitoring RCON port...");
+                    // Wait for server to fully start before connecting RCON
+                    // Monitor the TCP port instead of hard waiting
+                    log.info("PZ server auto-started - Monitoring RCON port...");
 
-                  await rconService.loadConfig(); // Ensure clean config
-                  const rconHost = rconService.config.host || "127.0.0.1";
-                  const rconPort = rconService.config.port || 27015;
+                    await rconService.loadConfig(); // Ensure clean config
+                    const rconHost = rconService.config.host || "127.0.0.1";
+                    const rconPort = rconService.config.port || 27015;
 
-                  const maxPollAttempts = 60; // 5 minutes max
+                    const maxPollAttempts = 60; // 5 minutes max
 
-                  for (let i = 0; i < maxPollAttempts; i++) {
-                    // Check port readiness
-                    const portOpen = await rconService.checkPortOpen(
-                      rconHost,
-                      rconPort,
-                    );
+                    for (let i = 0; i < maxPollAttempts; i++) {
+                      // Check port readiness
+                      const portOpen = await rconService.checkPortOpen(
+                        rconHost,
+                        rconPort,
+                      );
 
-                    if (!portOpen) {
-                      // Log every 30s
-                      if (i % 6 === 0) {
-                        log.debug(
-                          `Auto-start: Waiting for RCON port ${rconHost}:${rconPort}...`,
-                        );
+                      if (!portOpen) {
+                        // Log every 30s
+                        if (i % 6 === 0) {
+                          log.debug(
+                            `Auto-start: Waiting for RCON port ${rconHost}:${rconPort}...`,
+                          );
+                        }
+                        await new Promise((r) => setTimeout(r, 5000));
+                        continue;
                       }
-                      await new Promise((r) => setTimeout(r, 5000));
-                      continue;
-                    }
 
-                    // Port is open, try to connect
-                    log.info(`RCON port open! Attempting connection...`);
+                      // Port is open, try to connect
+                      log.info(`RCON port open! Attempting connection...`);
 
-                    try {
-                      await Promise.race([
-                        rconService.connect(),
-                        new Promise((_, reject) =>
-                          setTimeout(
-                            () => reject(new Error("RCON connection timeout")),
-                            15000,
+                      try {
+                        await Promise.race([
+                          rconService.connect(),
+                          new Promise((_, reject) =>
+                            setTimeout(
+                              () => reject(new Error("RCON connection timeout")),
+                              15000,
+                            ),
                           ),
-                        ),
-                      ]);
+                        ]);
 
-                      if (rconService.connected) {
-                        log.info(
-                          "RCON connected successfully after auto-start",
-                        );
-                        break;
-                      } else {
-                        // Port open but auth/handshake failed
+                        if (rconService.connected) {
+                          log.info(
+                            "RCON connected successfully after auto-start",
+                          );
+                          break;
+                        } else {
+                          // Port open but auth/handshake failed
+                          log.debug(
+                            "RCON port open but connection failed, retrying in 5s...",
+                          );
+                          await new Promise((r) => setTimeout(r, 5000));
+                        }
+                      } catch (e) {
                         log.debug(
-                          "RCON port open but connection failed, retrying in 5s...",
+                          `Auto-start RCON connection failed: ${e.message}`,
                         );
                         await new Promise((r) => setTimeout(r, 5000));
                       }
-                    } catch (e) {
-                      log.debug(
-                        `Auto-start RCON connection failed: ${e.message}`,
-                      );
-                      await new Promise((r) => setTimeout(r, 5000));
                     }
+                  } else {
+                    log.error(
+                      "Failed to auto-start PZ server:",
+                      startResult.error,
+                    );
                   }
-                } else {
-                  log.error(
-                    "Failed to auto-start PZ server:",
-                    startResult.error,
-                  );
+                } catch (e) {
+                  log.error("Error during auto-start:", e.message);
+                } finally {
+                  // Clear the flag so auto-reconnect can resume normally
+                  rconService.setServerStarting(false);
+                  lifecycleLock.release();
                 }
-              } catch (e) {
-                log.error("Error during auto-start:", e.message);
-              } finally {
-                // Clear the flag so auto-reconnect can resume normally
-                rconService.setServerStarting(false);
               }
             }
           }

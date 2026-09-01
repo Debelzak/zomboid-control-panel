@@ -611,7 +611,7 @@ export default function Players() {
 
   const fetchPlayers = useCallback(async () => {
     try {
-      const data = await playersApi.getPlayers()
+      const data = await playersApi.getPlayers({ retries: 0 })
       if (data.players) {
         setPlayers(data.players)
         setLastRefresh(new Date())
