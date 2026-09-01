@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.12] - 2026-09-01
+
+### Fixed
+
+- **The German system-status label translated a healthy server as “Gesund”**, which sounds like a
+  medical status; it now uses the operational wording “Betriebsbereit”.
+
+- **Server Configuration lifecycle help and path placeholders remained in English** in the German,
+  French, Spanish, Haitian Creole, and Simplified Chinese locales; the full profile-editing help
+  block is now translated while technical commands, paths, and identifiers remain unchanged.
+- **The panel update confirmation could show English preflight warnings inside a translated
+  dialog**, including the staged-update message; preflight messages now carry translation keys and
+  are localized across all supported panel languages.
+- **A deleted Workshop warning could remain after its ID was removed with the X action**, because
+  the cached Steam result outlived the tracking record; removed and ignored IDs are now excluded
+  from the warning while still-tracked deleted mods remain visible.
+
 ## [1.2.11] - 2026-09-01
 
 ### Security

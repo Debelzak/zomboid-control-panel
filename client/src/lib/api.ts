@@ -3334,10 +3334,17 @@ export interface PanelUpdateApplyResult {
   panelFolder?: string;
 }
 
+export interface PanelUpdateMessage {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
 export interface PanelUpdatePreflight {
   ok: boolean;
   blockers: string[];
   warnings: string[];
+  blockerDetails?: PanelUpdateMessage[];
+  warningDetails?: PanelUpdateMessage[];
   info: {
     isPackaged?: boolean;
     platform?: string;

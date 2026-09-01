@@ -1058,12 +1058,9 @@ export default function Mods() {
     [groupedMods]
   )
 
-  // hunt-wave7-2026-08-29: status.removedWorkshopIds is bare workshop ids
-  // (Steam confirmed EResult 9 -- FileNotFound, permanently gone) -- resolve
-  // to names for a message an operator can actually act on. A removed item
-  // still shows by its raw id if it's somehow not in the tracked list (e.g.
-  // the tracking record itself was deleted separately) rather than being
-  // silently dropped from the count.
+  // status.removedWorkshopIds contains Workshop IDs still present in tracking
+  // after Steam confirmed EResult 9 (FileNotFound); removed subscriptions are
+  // filtered server-side so this warning disappears after the X action.
   const removedWorkshopMods = useMemo(() => {
     const byId = new Map(mods.map((m) => [m.workshop_id, m]))
     return (status?.removedWorkshopIds || []).map((id) => ({

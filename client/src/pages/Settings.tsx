@@ -102,6 +102,7 @@ import {
   ServerBackupArchive,
   PanelUpdateStatus,
   PanelUpdatePreflight,
+  PanelUpdateMessage,
   ServerInstance,
 } from "@/lib/api";
 import { getUserErrorMessage } from "@/lib/errorMessage";
@@ -846,6 +847,17 @@ export default function Settings() {
     }
     return t(`${scope}.${scope === "general" ? "restartGameServerUnknown" : "gameServerUnknown"}`);
   };
+
+  const translatePanelUpdateMessages = (
+    messages: string[],
+    details?: PanelUpdateMessage[],
+  ) =>
+    messages.map((message, index) => {
+      const detail = details?.[index];
+      return detail
+        ? t(detail.key, { ...detail.params, defaultValue: message })
+        : message;
+    });
 
   // Run preflight once status tells us we're in a packaged build and there is
   // anything actionable (either an available update or a staged file on disk).
@@ -3102,7 +3114,10 @@ export default function Settings() {
                         <AlertTitle>{t("updates.updateBlockedTitle")}</AlertTitle>
                         <AlertDescription>
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-                            {panelUpdatePreflight.blockers.map((b, i) => (
+                            {translatePanelUpdateMessages(
+                              panelUpdatePreflight.blockers,
+                              panelUpdatePreflight.blockerDetails,
+                            ).map((b, i) => (
                               <li key={`blk-${i}`} className="break-words">
                                 {b}
                               </li>
@@ -3126,7 +3141,10 @@ export default function Settings() {
                         <AlertTitle>{t("updates.beforeYouRestartTitle")}</AlertTitle>
                         <AlertDescription>
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-                            {panelUpdatePreflight.warnings.map((w, i) => (
+                            {translatePanelUpdateMessages(
+                              panelUpdatePreflight.warnings,
+                              panelUpdatePreflight.warningDetails,
+                            ).map((w, i) => (
                               <li key={`wrn-${i}`} className="break-words">
                                 {w}
                               </li>
@@ -3276,7 +3294,10 @@ export default function Settings() {
                                     {t("updates.confirmBeforeContinuing")}
                                   </p>
                                   <ul className="mt-1 list-disc space-y-1 pl-5">
-                                    {panelUpdatePreflight.warnings.map(
+                                    {translatePanelUpdateMessages(
+                                      panelUpdatePreflight.warnings,
+                                      panelUpdatePreflight.warningDetails,
+                                    ).map(
                                       (w, i) => (
                                         <li
                                           key={`confirm-wrn-${i}`}
