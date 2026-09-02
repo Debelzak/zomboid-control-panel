@@ -1057,7 +1057,7 @@
       },
       "BackupsPeriod": {
         "label": "定期備份間隔",
-        "description": "自動建立世界備份的間隔時間（分鐘）。0 代表停用。"
+        "description": "自動建立伺服器備份的間隔時間（分鐘）。0 代表停用。"
       }
     },
     "vehicles": {

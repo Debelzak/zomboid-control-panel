@@ -47,7 +47,7 @@
     "startContainer": "啟動容器",
     "stopContainer": "停止容器",
     "stopContainerConfirmTitle": "停止此容器？",
-    "stopContainerConfirmDescription": "{{name}} 會先通過 RCON 儲存，但容器本身是由 Docker 停止的——如果未能及時退出，Docker 會強制終止它。與常規的停止按鈕不同，這可能會以非正常終止結束。",
+    "stopContainerConfirmDescription": "{{name}} 會先通過 RCON 儲存，但容器本身是由 Docker 停止的——如果未能及時退出，Docker 會強制終止它。與一般的停止按鈕不同，這可能會以非正常終止結束。",
     "restartContainer": "重新啟動容器",
     "startContainerAria": "啟動 {{name}}",
     "stopContainerAria": "停止 {{name}}",

@@ -62,6 +62,7 @@ Also never translated: file paths, folder names, environment variable names, err
 | quality | 品質 | not 質量 |
 | video | 影片 | not 視頻 |
 | configuration (noun) | 設定 / 設定檔 / 組態 | avoid 配置; use 設定 for general configuration, 設定檔 for config files/profiles |
+| general (settings / group) | 一般 | not 常規 (zh-CN uses 常规; Taiwan UI says 一般) |
 | navigation | 導覽 / 移動 | not 導航 unless referring to vehicular/GPS navigation; use 導覽 for menus/sections and 移動 for list keyboard cues |
 
 ## Access control

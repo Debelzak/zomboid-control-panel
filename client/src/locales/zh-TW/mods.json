@@ -70,7 +70,7 @@
   "unknownWorkshopResult": {
     "label_one": "{{count}} 個專案在本次檢查中收到 Steam 無法識別的響應：",
     "label_other": "{{count}} 個專案在本次檢查中收到 Steam 無法識別的響應：",
-    "item": "{{id}}（程式碼 {{code}}）"
+    "item": "{{id}}（代碼 {{code}}）"
   },
   "duplicateKeysWarning": {
     "title_one": "此設定檔中「{{keys}}」出現了不止一次",

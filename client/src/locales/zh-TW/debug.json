@@ -30,7 +30,7 @@
       "autoDetect": "自動檢測",
       "openSettings": "開啟設定",
       "openServerFinder": "開啟伺服器查詢器",
-      "openChunkCleaner": "開啟地圖清理",
+      "openChunkCleaner": "開啟區塊重設",
       "openBackups": "開啟備份",
       "openDiscord": "開啟 Discord",
       "openBridgeSettings": "開啟PanelBridge 設定",
@@ -168,7 +168,7 @@
       "note": "釋放磁碟空間——刪除舊備份或清理未使用的區塊。"
     },
     "storageSaveSize": {
-      "label": "開啟地圖清理",
+      "label": "開啟區塊重設",
       "note": "通過移除不可達的區塊來精簡存檔。"
     },
     "runtimeHeapOrHostMem": {
@@ -208,10 +208,10 @@
     "copy": "複製",
     "copied": "已複製",
     "copyFailed": "複製失敗",
-    "couldNotAccessClipboard": "無法訪問剪貼簿。",
+    "couldNotAccessClipboard": "無法存取剪貼簿。",
     "refresh": "重新整理",
     "rerun": "重新執行",
-    "hidePassing": "隱藏通過項",
+    "hidePassing": "隱藏已通過項目",
     "fixLabel": "修復：",
     "sourceRcon": "RCON",
     "sourceBridge": "PanelBridge",
@@ -235,11 +235,11 @@
     "daysAgo": "{{count}} 天前"
   },
   "diagnostics": {
-    "overallFail": "存在需要處理的問題",
-    "overallWarn": "存在輕微警告",
-    "overallOk": "系統執行正常",
-    "overallPending": "正在執行檢查……",
-    "lastChecked": "上次檢查：{{time}} · 耗時 {{duration}} 毫秒 · 每 30 秒自動重新整理",
+    "overallFail": "有需要處理的問題",
+    "overallWarn": "輕微警告",
+    "overallOk": "所有系統運作正常",
+    "overallPending": "正在執行檢查…",
+    "lastChecked": "上次檢查：{{time}} · {{duration}} 毫秒 · 每 30 秒自動重新整理",
     "runningDescription": "正在對服務、路徑、儲存和更新執行智慧檢查……",
     "skippedCount": "{{count}} 項已跳過",
     "runningDiagnostics": "正在執行診斷……",
@@ -247,7 +247,7 @@
     "checkCount_one": "{{count}} 項檢查",
     "checkCount_other": "{{count}} 項檢查",
     "allChecksPassTitle": "所有檢查均已通過",
-    "allChecksPassDesc": "隱藏通過項後沒有可顯示的內容。取消勾選「隱藏通過項」以檢視完整報告。",
+    "allChecksPassDesc": "隱藏已通過項目後無任何可顯示的內容。取消勾選「隱藏已通過項目」以檢視完整報告。",
     "manualFixTitle": "建議手動修復",
     "manualFixFallback": "開啟建議的頁面並套用列出的修復方法。",
     "noPermissionFix": "您的角色沒有套用此修復的權限。",
@@ -409,6 +409,16 @@
             "message": "{{serverName}}.ini 不在 <zomboidData>/Server/ 中。伺服器將在首次執行時建立預設設定。"
           }
         },
+        "configDrift": {
+          "ok": {
+            "label": "面板設定與 server.ini 一致",
+            "message": "RCON 埠、密碼及遊戲埠均與 server.ini 一致。"
+          },
+          "fail": {
+            "label": "面板設定與 server.ini 不一致",
+            "hint": "在「伺服器 → 編輯」中修改以符合 server.ini，或透過「伺服器設定」更新 server.ini。"
+          }
+        },
         "rconPassword": {
           "warn": {
             "label": "未設定 RCON 密碼",
@@ -524,6 +534,16 @@
             "label": "RCON 已斷開",
             "message": "伺服器正在執行，但 RCON 未連線。請檢查 RCON 埠和密碼。",
             "hint": "設定 → RCON · server.ini → RCONPassword"
+          }
+        },
+        "commandRejections": {
+          "ok": {
+            "label": "無 RCON 命令被拒絕",
+            "message": "近期遊戲伺服器未拒絕任何 RCON 命令。"
+          },
+          "warn": {
+            "label": "遊戲伺服器拒絕了部分 RCON 命令",
+            "message": "過去 24 小時內遊戲伺服器拒絕了 {{total}} 個命令：{{list}}。"
           }
         }
       },
@@ -674,8 +694,8 @@
         "saveSize": {
           "warn": {
             "label": "存檔資料夾過大",
-            "message": "共 {{size}}，分佈在 {{chunks}} 個區塊中{{truncatedSuffix}}。備份、還原和區塊清理都會變慢。",
-            "hint": "執行地圖清理以精簡未載入的區域，或歸檔舊存檔。"
+            "message": "共 {{size}}，分佈在 {{chunks}} 個區塊中{{truncatedSuffix}}。備份、還原和區塊重設都會變慢。",
+            "hint": "執行區塊重設以精簡未載入的區域，或歸檔舊存檔。"
           },
           "info": {
             "label": "存檔資料夾較大",
@@ -909,6 +929,22 @@
             "hint": "通常是拼寫錯誤、缺少 WorkshopItems= ID，或模組尚未下載完成。請在伺服器設定中修復。"
           }
         },
+        "thumbnailResolution": {
+          "ok": {
+            "label": "模組縮圖正常解析",
+            "message": "共 {{total}} 個已追蹤模組，所有縮圖均正常解析。"
+          },
+          "warn": {
+            "label": "部分模組縮圖無法解析",
+            "message": "{{total}} 個已追蹤模組中有 {{failing}} 個目前沒有縮圖。最近一次失敗原因：{{reason}}（Workshop ID {{workshopId}}，{{age}}前）。",
+            "hint": "通常表示這些特定的 Workshop 項目在 Steam 上已被刪除、設為私密或受地區限制——請在 steamcommunity.com 上檢查上方的 Workshop ID。系統每 5 分鐘會自動重試解析；若項目為公開且 Steam 可連線，此警告將自動解除。"
+          },
+          "fail": {
+            "label": "所有模組縮圖均無法解析",
+            "message": "全部 {{total}} 個已追蹤模組目前都沒有縮圖。最近一次失敗原因：{{reason}}。",
+            "hint": "所有模組同時失敗（而非少數幾個）通常表示此主機完全無法連線至 Steam，而非單一模組問題——請檢查至 api.steampowered.com 與 steamuserimages-a.akamaihd.net / *.steamstatic.com / *.akamaihd.net / images.steamusercontent.com 的輸出 HTTPS 連線（防火牆、代理或 DNS）。一旦連線恢復，縮圖將在 5 分鐘內自動解析——無需重新啟動。"
+          }
+        },
         "orphanWorkshop": {
           "warn": {
             "both": {
@@ -1009,7 +1045,7 @@
             },
             "fail": {
               "label": "B42 俯檢視塊無法使用",
-              "message": "構建版本 {{build}} 未提供 .{{format}} 格式的俯檢視塊（{{detail}}）。地圖清理頁面中的區塊將不顯示底圖。",
+              "message": "構建版本 {{build}} 未提供 .{{format}} 格式的俯檢視塊（{{detail}}）。區塊重設頁面中的區塊將不顯示底圖。",
               "hint": "上游可能已用不同的影像格式重新發布此構建版本。請幾分鐘後重新執行診斷；面板每 24 小時或在重新啟動時會重新讀取 base_top/layer0.dzi 中的格式。"
             },
             "warn": {
@@ -1118,10 +1154,10 @@
     }
   },
   "worldMapTab": {
-    "overallFail": "世界地圖狀態下降",
-    "overallWarn": "世界地圖存在警告",
-    "overallOk": "世界地圖執行正常",
-    "overallPending": "正在執行地圖檢查……",
+    "overallFail": "世界地圖異常",
+    "overallWarn": "世界地圖有警告",
+    "overallOk": "世界地圖運作正常",
+    "overallPending": "正在執行地圖檢查…",
     "ageNever": "—",
     "ageJustNow": "剛剛",
     "ageSecondsAgo": "{{s}} 秒前",

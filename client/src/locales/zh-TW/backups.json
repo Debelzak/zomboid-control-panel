@@ -5,8 +5,8 @@
     "noDownload": "下載備份需要 backups.download 權限，而該角色沒有此權限。"
   },
   "pageHeader": {
-    "title": "世界備份",
-    "description": "建立、恢復和管理伺服器世界備份",
+    "title": "伺服器備份管理",
+    "description": "建立、還原、下載與排程自動伺服器備份",
     "createBackup": "建立備份",
     "creating": "建立中…",
     "uploadZip": "上傳 .zip",
