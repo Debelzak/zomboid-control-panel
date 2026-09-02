@@ -39,6 +39,7 @@ import { invalidateMapFolderScan } from "./chunks.js";
 import { emitActionResult } from "./scheduler.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 import { confineToRoots } from "../utils/browseRoots.js";
+import { isContainerized } from "../utils/dockerDetect.js";
 
 const router = express.Router();
 
@@ -647,9 +648,7 @@ export function formatWritablePathError(
   platformIsWindows = isWindows,
 ) {
   const label = WRITABLE_PATH_LABELS[kind];
-  const isContainer =
-    !platformIsWindows &&
-    (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv"));
+  const isContainer = !platformIsWindows && isContainerized();
   const baseMessage = `${label} is not writable: ${directoryPath}.`;
 
   // Wording sharpened 2026-08-29 (Linux bug hunt, "raw EACCES with no

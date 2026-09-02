@@ -15,6 +15,7 @@ import {
 } from "../utils/serverRconSecrets.js";
 import { redactRconCommandSecrets } from "../utils/rconCommandRedaction.js";
 import { readUiSecretFile, writeUiSecretFile } from "../utils/uiSecretFile.js";
+import { isPidAlive } from "../utils/pidLiveness.js";
 const log = createLogger("DB");
 
 // ============================================
@@ -556,23 +557,6 @@ const TMP_FILE_RE = /^db\.json\.(\d+)\.[0-9a-z]+\.tmp$/i;
 // cannot still be an in-progress write even in a pid-reuse edge case.
 // Belt-and-suspenders alongside the pid check below, not a substitute for it.
 const MIN_ORPHAN_AGE_MS = 60_000;
-
-/**
- * Same liveness judgement as pidLock.js's isProcessAlive() — signal 0:
- * ESRCH (or other error) means dead, EPERM means alive but not ours, no
- * error means alive. Duplicated locally rather than imported: pidLock.js is
- * owned by another fix in flight right now and doesn't export it.
- */
-function isPidAlive(pid) {
-  if (!pid || !Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    if (err.code === "EPERM") return true;
-    return false;
-  }
-}
 
 /**
  * Remove orphaned write-temp files left by a crash, but only ones provably
