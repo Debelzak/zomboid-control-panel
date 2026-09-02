@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the simulation-template list response; demo mode now supplies valid built-in templates and preview
   data, while the page also handles malformed list payloads safely.
 
+### Added
+
+- **The panel is now available in Traditional Chinese.** 繁體中文 joins the other six languages -
+  every screen, dialog, error message and health check. The language picker remembers the choice in
+  your browser, and a browser already set to Taiwan, Hong Kong or Macau Traditional Chinese is
+  offered zh-TW instead of Simplified Chinese or English. Project Zomboid's own vocabulary is kept
+  where a player would expect it: mod IDs, Workshop IDs, chat tags and SteamCMD output stay as the
+  game prints them. Judgment calls versus the existing Simplified Chinese strings are listed in
+  `client/src/locales/GLOSSARY.zh-TW.md`.
+
 ## [1.2.14] - 2026-09-02
 
 ### Fixed
