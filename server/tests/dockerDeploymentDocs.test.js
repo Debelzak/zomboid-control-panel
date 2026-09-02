@@ -61,6 +61,16 @@ describe("Docker deployment guidance", () => {
     expect(workflow).toContain("path: release/${{ matrix.archive_file }}");
   });
 
+  it("verifies all release versions before tag publication", () => {
+    const workflow = readRepoFile(".github/workflows/release-artifacts.yml");
+    const verifier = readRepoFile("scripts/verify-release-version.mjs");
+
+    expect(workflow).toContain("node scripts/verify-release-version.mjs");
+    expect(verifier).toContain("package-lock.json root package");
+    expect(verifier).toContain("PanelBridge must contain exactly one");
+    expect(verifier).toContain("release-manifest.json client file inventory differs");
+  });
+
   it("keeps the generic installer explicitly panel-only", () => {
     const compose = readRepoFile("docker-compose.install.yml");
 
