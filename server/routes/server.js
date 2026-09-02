@@ -37,6 +37,7 @@ import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
 import { invalidateMapFolderScan } from "./chunks.js";
 import { emitActionResult } from "./scheduler.js";
+import { autoInstallBridgeIfNeeded } from "../services/panelBridgeInstaller.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 import { confineToRoots } from "../utils/browseRoots.js";
 import { isContainerized } from "../utils/dockerDetect.js";
@@ -1396,6 +1397,16 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
     const serverManager = req.app.get("serverManager");
     const rconService = req.app.get("rconService");
 
+    // Keep PanelBridge.lua current on disk before anything spawns -- PZ
+    // loads Lua at Java-process startup, so this is the last moment a write
+    // here can reach the launch that's about to happen. Must run before
+    // BOTH branches below: runManagedLifecycle() below is itself the spawn
+    // for a docker-local (bind-mounted) server, and serverManager.startServer()
+    // further down is the spawn for a native one. Best-effort and silent by
+    // design (autoInstallBridgeIfNeeded's own comment) -- a failed install
+    // must never block starting the server (2026-09-02 bridge-enforcement).
+    autoInstallBridgeIfNeeded(activeServer);
+
     // A container-managed server is started through Docker: the panel has no
     // process to spawn, and after a `docker stop` there is nothing left running
     // for it to reattach to.
@@ -1920,6 +1931,14 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
     // it had the identical blind-success shape that route used to have
     // before the 2026-08-26 bug hunt fixed it there, just never fixed here.
     const io = req.app.get("io");
+
+    // Same reasoning as POST /start: this must run before performRestart()
+    // actually respawns the process, not after. A restart can carry a
+    // multi-minute warning countdown, so doing this now (synchronously,
+    // before performRestart is even invoked) is strictly earlier than
+    // necessary, not just early enough (2026-09-02 bridge-enforcement).
+    autoInstallBridgeIfNeeded(activeServer);
+
     const restartPromise = Promise.resolve(
       scheduler.performRestart(warningMinutes, {
         label: "Manual restart",
