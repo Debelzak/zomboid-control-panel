@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The diagnostics page warned that the server process was missing** when the panel and the game
+  server run in separate containers - it now says the check does not apply there.
+
 ## [1.2.12] - 2026-09-01
 
 ### Fixed
