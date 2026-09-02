@@ -58,7 +58,14 @@ describe("Docker deployment guidance", () => {
   it("uploads the Linux archive from the release tree created by build.js", () => {
     const workflow = readRepoFile(".github/workflows/release-artifacts.yml");
 
-    expect(workflow).toContain("path: release/${{ matrix.archive_file }}");
+    expect(workflow).toContain("archive_path: release/ZomboidControlPanel-linux.tar.gz");
+    expect(workflow).toContain("path: ${{ matrix.archive_path }}");
+  });
+
+  it("uploads the Windows archive from the root path created by Compress-Archive", () => {
+    const workflow = readRepoFile(".github/workflows/release-artifacts.yml");
+
+    expect(workflow).toContain("archive_path: ZomboidControlPanel-windows.zip");
   });
 
   it("verifies all release versions before tag publication", () => {
