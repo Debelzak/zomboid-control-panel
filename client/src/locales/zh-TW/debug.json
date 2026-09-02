@@ -409,16 +409,6 @@
             "message": "{{serverName}}.ini 不在 <zomboidData>/Server/ 中。伺服器將在首次執行時建立預設設定。"
           }
         },
-        "configDrift": {
-          "ok": {
-            "label": "面板設定與 server.ini 一致",
-            "message": "RCON 埠、密碼及遊戲埠均與 server.ini 一致。"
-          },
-          "fail": {
-            "label": "面板設定與 server.ini 不一致",
-            "hint": "在「伺服器 → 編輯」中修改以符合 server.ini，或透過「伺服器設定」更新 server.ini。"
-          }
-        },
         "rconPassword": {
           "warn": {
             "label": "未設定 RCON 密碼",
@@ -534,16 +524,6 @@
             "label": "RCON 已斷開",
             "message": "伺服器正在執行，但 RCON 未連線。請檢查 RCON 埠和密碼。",
             "hint": "設定 → RCON · server.ini → RCONPassword"
-          }
-        },
-        "commandRejections": {
-          "ok": {
-            "label": "無 RCON 命令被拒絕",
-            "message": "近期遊戲伺服器未拒絕任何 RCON 命令。"
-          },
-          "warn": {
-            "label": "遊戲伺服器拒絕了部分 RCON 命令",
-            "message": "過去 24 小時內遊戲伺服器拒絕了 {{total}} 個命令：{{list}}。"
           }
         }
       },
@@ -927,22 +907,6 @@
             "label": "Mods= 條目無法解析",
             "message": "{{total}} 個 Mods= 條目中有 {{count}} 個未匹配到任何已安裝的 Workshop 或本地模組 ID：{{list}}。",
             "hint": "通常是拼寫錯誤、缺少 WorkshopItems= ID，或模組尚未下載完成。請在伺服器設定中修復。"
-          }
-        },
-        "thumbnailResolution": {
-          "ok": {
-            "label": "模組縮圖正常解析",
-            "message": "共 {{total}} 個已追蹤模組，所有縮圖均正常解析。"
-          },
-          "warn": {
-            "label": "部分模組縮圖無法解析",
-            "message": "{{total}} 個已追蹤模組中有 {{failing}} 個目前沒有縮圖。最近一次失敗原因：{{reason}}（Workshop ID {{workshopId}}，{{age}}前）。",
-            "hint": "通常表示這些特定的 Workshop 項目在 Steam 上已被刪除、設為私密或受地區限制——請在 steamcommunity.com 上檢查上方的 Workshop ID。系統每 5 分鐘會自動重試解析；若項目為公開且 Steam 可連線，此警告將自動解除。"
-          },
-          "fail": {
-            "label": "所有模組縮圖均無法解析",
-            "message": "全部 {{total}} 個已追蹤模組目前都沒有縮圖。最近一次失敗原因：{{reason}}。",
-            "hint": "所有模組同時失敗（而非少數幾個）通常表示此主機完全無法連線至 Steam，而非單一模組問題——請檢查至 api.steampowered.com 與 steamuserimages-a.akamaihd.net / *.steamstatic.com / *.akamaihd.net / images.steamusercontent.com 的輸出 HTTPS 連線（防火牆、代理或 DNS）。一旦連線恢復，縮圖將在 5 分鐘內自動解析——無需重新啟動。"
           }
         },
         "orphanWorkshop": {
@@ -1329,6 +1293,8 @@
     "resumeLiveUpdates": "恢復即時更新",
     "pauseLiveUpdates": "暫停即時更新",
     "refreshLogsTooltip": "重新整理日誌",
+    "logsFetchFailedTitle": "無法重新整理日誌",
+    "logsFetchFailedDesc": "日誌列表未更新。請檢查面板連線後重試。",
     "exportTrigger": "匯出",
     "exportPlaceholder": "匯出日誌……",
     "exportFullTxt": "完整日誌檔案（.txt）",
@@ -1368,9 +1334,7 @@
     "downloadArchiveFailedDesc": "下載日誌壓縮檔失敗",
     "supportBundleReadyTitle": "支援包已下載",
     "supportBundleReadyDesc": "其中包含真實日誌。已知形態的憑證會被打碼處理，但這並非絕對安全保證——分享給團隊以外的人之前請自行檢查內容。",
-    "logEntryCopiedDesc": "日誌條目已複製到剪貼簿。",
-    "logsFetchFailedTitle": "無法重新整理日誌",
-    "logsFetchFailedDesc": "日誌列表未更新。請檢查面板連線後重試。"
+    "logEntryCopiedDesc": "日誌條目已複製到剪貼簿。"
   },
   "crashesTab": {
     "crashLogsTitle": "當機日誌",
