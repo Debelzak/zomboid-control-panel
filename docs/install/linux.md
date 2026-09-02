@@ -26,8 +26,12 @@ you did it right before moving to the next one.
    ```
 
 **You know it worked when:** the terminal prints `Starting Zomboid Control
-Panel...` followed by `Open your browser to: http://localhost:3001`, and
-that URL loads the setup screen in a browser.
+Panel...`, then — a few seconds later, once the panel process itself has
+bound its port — a boxed **Ready** section listing a `Local:` URL (for
+example `http://localhost:3001`). Use whatever port that box actually
+shows, not blindly `3001` (see [Phase 7 of the Windows
+guide](windows.md#phase-7-what-to-do-if-port-3001-is-already-taken) for why
+it can differ). That URL loads the setup screen in a browser.
 
 **If this goes wrong:** `./start.sh: Permission denied` means step 3's
 `chmod +x` didn't run or didn't apply — repeat it. `ERROR: ./ZomboidControlPanel

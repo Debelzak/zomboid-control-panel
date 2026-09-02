@@ -268,8 +268,8 @@ RCON shows connected.
   GHCR access), it builds from source automatically and tags the result the
   same, so later `up -d` runs won't try to pull again. Each tagged release
   also publishes a version-pinned image with a matching name (for example
-  `ghcr.io/fpsacha/zomboid-panel:v1.2.4`), if you'd rather pin a version
-  than track `:latest`.
+  `ghcr.io/fpsacha/zomboid-panel:1.2.4` — no `v` prefix, unlike the git tag
+  it's built from), if you'd rather pin a version than track `:latest`.
 
 ---
 

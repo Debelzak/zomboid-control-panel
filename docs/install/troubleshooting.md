@@ -222,8 +222,11 @@ remote host and never claims otherwise.
 panel service account needs read and execute permission on this folder and
 every parent folder.`
 
-**What you see (Windows):** `Cannot read C:\some\path (EACCES). Run the
-panel as an account that can read this folder.`
+**What you see (Windows):** `Cannot read C:\some\path (EPERM). Run the
+panel as an account that can read this folder.` (Windows permission errors
+surface as `EPERM`, not `EACCES` — the code in parentheses is whatever the
+OS actually returned, so treat the exact code as informational, not a
+required match.)
 
 **What it means:** the panel process's user doesn't have permission to
 read a folder you pointed it at — almost always a PZ install or save
