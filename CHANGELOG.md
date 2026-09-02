@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The diagnostics page warned that the server process was missing** when the panel and the game
   server run in separate containers - it now says the check does not apply there.
 
+## [1.2.13] - 2026-09-02
+
+### Fixed
+
+- **A standalone executable could be paired with an older on-disk web interface** when users replaced only the raw binary or a supervisor handoff left `client/dist` behind; packaged binaries now carry and serve their matching frontend, and legacy mixed installs stop on an explicit recovery page instead of serving mismatched code.
+- **The AIO or updater image could inherit GHCR's moving `latest` tag** through Docker metadata's automatic semver flavor and replace the generic panel image; those image pipelines now publish only their explicit `aio-*` and `updater-*` tags.
+- **Build 42 vehicle polling could flood the dedicated log with `VehicleParts` `getClass` errors**, and World Map/Events kept polling vehicle details when that data was not needed; PanelBridge now avoids the invalid userdata probe, while both pages pause vehicle enumeration when hidden or inactive.
+- **A standalone release could still be assembled with a stale or drifted frontend**, even when its metadata claimed the right version; releases now embed the exact frontend, record every client-file hash, and refuse mismatched source or packaged trees.
+- **Linux release archives could lose executable permissions on Windows**, and an archive staged inside its own source tree could grow indefinitely; the build now stages outside `release/` and preserves explicit modes through the release script.
+- **The Servers page could offer Start while status was unknown or borrow a local process match for a Docker server**; lifecycle selection now respects the provider, preserves scan uncertainty, and fails closed while active status is unavailable.
+- **A late status response could be displayed for the wrong active server after switching profiles**; responses are now tied to the requesting server and invalidated on transitions.
+- **PanelBridge diagnostics and player cheat fallbacks could index Java userdata as a Lua table**, producing the same Build 42 Kahlua error outside vehicle polling; all dynamic probes now use the guarded invocation path.
+
 ## [1.2.12] - 2026-09-01
 
 ### Fixed

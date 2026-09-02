@@ -1700,6 +1700,7 @@ export const serversApi = {
         running: boolean;
         pid: string | null;
         isActive: boolean;
+        stateUnknown?: boolean;
       }>;
       detectedProcesses: number;
       detectionError: string | null;

@@ -1025,41 +1025,48 @@ export default function Dashboard() {
 
   const workItems: WorkItem[] = [
     {
+      id: 'players',
       to: '/players', icon: Activity, label: t('workItems.players'),
       state: online ? String(players.length) : t('liveActivity.offline'),
       tone: !online ? 'bad' : players.length > 0 ? 'good' : 'default',
     },
     {
+      id: 'zombies',
       to: '/events', icon: Skull, label: t('workItems.zombies'),
       state: bridgeStatus?.modConnected ? (zombieCount !== null ? String(zombieCount) : t('connLine.pending')) : t('liveActivity.offline'),
       tone: !bridgeStatus?.modConnected ? 'default' : zombieCount !== null ? 'good' : 'default',
     },
     {
+      id: 'console',
       to: '/console', icon: Wifi, label: t('workItems.console'),
       state: status?.rcon?.connected ? t('workItems.rconReady') : t('workItems.rconOffline'),
       tone: status?.rcon?.connected ? 'good' : 'warning',
     },
     {
+      id: 'mods',
       to: '/mods', icon: Gamepad2, label: t('workItems.mods'),
       state: modsPending ? t('workItems.modsToUpdate', { count: maintenance.modUpdatesAvailable }) : t('workItems.modsTracked', { count: maintenance.modsTracked }),
       tone: modsPending ? 'warning' : 'default',
     },
     {
+      id: 'schedule',
       to: '/scheduler', icon: CalendarClock, label: t('workItems.schedule'),
       state: scheduleState,
       tone: nextRunEta ? 'good' : maintenance.scheduledTasksCount > 0 ? 'good' : 'default',
     },
     ...(errorCount != null ? [{
+      id: 'errors',
       to: '/console', icon: ScrollText, label: t('workItems.errors'),
       state: errorCount === 0 ? t('workItems.errorsNone') : t('workItems.errorsLogged', { count: errorCount }),
       tone: errorCount === 0 ? 'good' : errorCount >= 50 ? 'warning' : 'default',
     } as WorkItem] : []),
     {
+      id: 'backups',
       to: '/backups', icon: Archive, label: t('workItems.backups'),
       state: backupState,
       tone: maintenance.backupCount === 0 ? 'warning' : 'good',
     },
-    { to: '/server-config', icon: Server, label: t('workItems.config') },
+    { id: 'config', to: '/server-config', icon: Server, label: t('workItems.config') },
   ]
 
   // WORK_STATE_TONE (DashboardVerdict.tsx) already colors each row by

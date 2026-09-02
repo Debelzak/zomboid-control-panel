@@ -217,6 +217,7 @@ export function VerdictBand({
 /* -------------------------------------------------------------------------- */
 
 export interface WorkItem {
+  id: string
   to: string
   icon: LucideIcon
   label: string
@@ -239,9 +240,9 @@ const WORK_STATE_TONE: Record<'default' | 'good' | 'warning' | 'bad', string> = 
 export function WorkList({ items }: { items: WorkItem[] }) {
   return (
     <nav aria-label="Server sections" className="divide-y divide-border/25">
-      {items.map(({ to, icon: Icon, label, state, tone }) => (
+      {items.map(({ id, to, icon: Icon, label, state, tone }) => (
         <Link
-          key={to}
+          key={id}
           to={to}
           className="group flex items-center gap-3 py-2.5 pl-1 pr-1.5 transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >

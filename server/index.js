@@ -88,6 +88,12 @@ import {
   compareModVersions,
   writeLuaAtomic,
 } from "./utils/embeddedLua.js";
+import {
+  clientDistMatchesMetadata,
+  getEmbeddedClientDistPath,
+  readClientDistMetadata,
+  resolveClientDistPath,
+} from "./utils/embeddedClient.js";
 import { resolveObservedServerRunning } from "./utils/serverStatus.js";
 import { discoverMounts } from "./services/mountDiscovery.js";
 import { shouldAutoOpenBrowser } from "./utils/browserLaunch.js";
@@ -708,10 +714,17 @@ const httpsDetected =
 // further down this file) because CSP has to be registered before that
 // point — this is the one thing both need, computed early rather than
 // reordering the rest of the file around it.
-const cspClientDistPath =
+const externalClientDistPath =
   typeof process.pkg !== "undefined"
     ? path.join(path.dirname(process.execPath), "client", "dist")
     : path.join(__dirname, "../client/dist");
+const embeddedClientDistPath =
+  typeof process.pkg !== "undefined" ? getEmbeddedClientDistPath() : null;
+const cspClientDistPath = resolveClientDistPath({
+  packaged: typeof process.pkg !== "undefined",
+  embeddedPath: embeddedClientDistPath,
+  externalPath: externalClientDistPath,
+});
 // See utils/cspScriptHash.js: computed at startup by hashing the real
 // shipped file rather than a hardcoded hash, so this can never go stale.
 // Returns null if the script can't be found (dist not built, the tag
@@ -1842,30 +1855,65 @@ app.post(
 // Serve static files in production
 // Detect if running as packaged exe (pkg sets process.pkg)
 const isPackaged = typeof process.pkg !== "undefined";
-let clientDistPath;
+const clientDistPath = cspClientDistPath;
+const legacyClientMetadata =
+  isPackaged && !embeddedClientDistPath
+    ? readClientDistMetadata(clientDistPath)
+    : null;
+const legacyClientMismatch =
+  isPackaged &&
+  !embeddedClientDistPath &&
+  !clientDistMatchesMetadata(clientDistPath, _buildMetadata);
 
-if (isPackaged) {
-  // When packaged, client/dist is next to the exe
-  clientDistPath = path.join(path.dirname(process.execPath), "client", "dist");
-} else {
-  // Development mode
-  clientDistPath = path.join(__dirname, "../client/dist");
+function buildLegacyClientRecoveryPage() {
+  const escapeHtml = (value) =>
+    String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  const frontendMetadata = legacyClientMetadata || "unavailable";
+  return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel update required</title></head>
+<body><main>
+<h1>Panel update required</h1>
+<p>The executable and web interface are from different releases.</p>
+<p>Executable: ${escapeHtml(`${_buildMetadata.panelVersion} / ${_buildMetadata.buildSha.slice(0, 12)}`)}</p>
+<p>Frontend: ${escapeHtml(typeof frontendMetadata === "string" ? frontendMetadata : `${frontendMetadata.panelVersion} / ${frontendMetadata.buildSha.slice(0, 12)}`)}</p>
+<p>Download the latest full package, extract it over this installation without replacing the <code>data</code> folder, then start the panel again.</p>
+<p><a href="https://github.com/fpsacha/zomboid-control-panel/releases/latest">Download the latest release</a></p>
+</main></body>
+</html>`;
+}
+
+if (legacyClientMismatch) {
+  log.error(
+    `Packaged frontend does not match executable ${_buildMetadata.panelVersion}/${_buildMetadata.buildSha}; serving recovery page instead of mixed client/dist`,
+  );
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    res.status(503).type("html").send(buildLegacyClientRecoveryPage());
+  });
 }
 
 log.debug(`Serving client from: ${clientDistPath}`);
 // Serve hashed assets with long cache, HTML with no-cache
-app.use(
-  express.static(clientDistPath, {
-    maxAge: "7d",
-    immutable: true,
-    setHeaders(res, filePath) {
-      // HTML must not be cached — it references hashed assets
-      if (filePath.endsWith(".html")) {
-        res.setHeader("Cache-Control", "no-cache");
-      }
-    },
-  }),
-);
+if (!legacyClientMismatch) {
+  app.use(
+    express.static(clientDistPath, {
+      maxAge: "7d",
+      immutable: true,
+      setHeaders(res, filePath) {
+        // HTML must not be cached — it references hashed assets
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
+}
 
 // Global API error handler — sanitize internal details from error responses
 // Must be defined before the catch-all route but after all API routes

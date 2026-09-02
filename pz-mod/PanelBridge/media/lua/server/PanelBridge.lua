@@ -1,10 +1,17 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
     PanelBridge - Server-side mod for Zomboid Control Panel
-    Version: 1.7.48
+    Version: 1.7.49
 
     This mod enables external control panel communication with the PZ server.
     Communication happens via JSON files in the server save folder.
+
+                v1.7.49 Changes:
+                - Fix: Build 42 exposes VehicleParts as Java userdata;
+                    capabilityKey() no longer indexes getClass on userdata,
+                    which was flooding the dedicated log with Kahlua
+                    "attempted index: getClass of non-table" traces during
+                    vehicle detail polling.
 
                 v1.7.48 Changes:
                 - Bundled with panel v1.2.12. No additional bridge
@@ -472,7 +479,7 @@
 local json
 
 local PanelBridge = {
-    VERSION = "1.7.48",
+    VERSION = "1.7.49",
     PROTOCOL_VERSION = "queue-v1",
     CHECK_INTERVAL = 250, -- milliseconds (fast command polling)
     lastCheck = 0,
@@ -645,10 +652,17 @@ end
 -- vehicle's getter) is NOT marked unavailable, so one bad object cannot
 -- disable a working accessor server-wide.
 local function capabilityKey(obj, methodName)
-    local ok, classValue = pcall(function() return obj:getClass() end)
-    if ok and classValue then
-        -- Build 42.20 class wrappers stringify correctly but reject getName().
-        return tostring(classValue) .. "#" .. methodName
+    -- Kahlua exposes some B42 Java wrappers as userdata rather than Lua
+    -- tables. Indexing one with `obj:getClass()` raises "attempted index ...
+    -- of non-table" before pcall can turn it into a quiet result (notably
+    -- zombie.vehicles.VehicleParts). Only Lua tables may take this probe;
+    -- userdata uses the default-toString fallback below.
+    if type(obj) == "table" then
+        local ok, classValue = pcall(function() return obj:getClass() end)
+        if ok and classValue then
+            -- Build 42.20 class wrappers stringify correctly but reject getName().
+            return tostring(classValue) .. "#" .. methodName
+        end
     end
     -- Some Java wrappers reject getClass(). Strip the identity hash so the key
     -- still identifies the class rather than the individual instance. This
@@ -741,8 +755,16 @@ end
 -- PanelBridge.invoke). Never gate an action on this; use invoke instead.
 function PanelBridge.hasMethod(obj, methodName)
     if not obj then return false end
-    if type(obj[methodName]) == "function" then return true end
+    -- This is an advisory diagnostic only: never invoke an arbitrary method
+    -- just to answer whether it exists. Java userdata cannot be indexed as a
+    -- Lua table, so only inspect fields on actual Lua tables and otherwise
+    -- rely on a capability result cached by a real invoke() caller.
+    if type(obj) == "table" then
+        local ok, method = pcall(function() return obj[methodName] end)
+        if ok and type(method) == "function" then return true end
+    end
     local key = capabilityKey(obj, methodName)
+    if key and PanelBridge.methodCapabilities[key] == false then return false end
     return key ~= nil and PanelBridge.methodCapabilities[key] == true
 end
 
@@ -773,17 +795,18 @@ end
 -- but no 2-arg overload exists for it on this build -- no bypass is possible
 -- through this method.
 function PanelBridge.setCharacterCheatBypassingRoleGate(player, methodName, enabled)
-    if not player or not player[methodName] then
+    if not player then
         return false, methodName .. " method not available in this PZ version"
     end
-    if pcall(function() player[methodName](player, enabled, true) end) then
+    local bypassOk, bypassErr = PanelBridge.invoke(player, methodName, enabled, true)
+    if bypassOk then
         return true
     end
-    local ok, err = pcall(function() player[methodName](player, enabled) end)
+    local ok, err = PanelBridge.invoke(player, methodName, enabled)
     if ok then
         return true
     end
-    return false, err
+    return false, err or bypassErr
 end
 
 -- Safely get a value from a method, with default fallback
@@ -6334,11 +6357,9 @@ handlers.setGodMode = function(args)
     -- players an admin tool needs to act on.
     local method = nil
     local success, err
-    if player.setGodMod then
-        success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMod", enabled)
-        if success then method = "setGodMod" end
-    end
-    if not success and player.setGodMode then
+    success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMod", enabled)
+    if success then method = "setGodMod" end
+    if not success then
         success, err = PanelBridge.setCharacterCheatBypassingRoleGate(player, "setGodMode", enabled)
         if success then method = "setGodMode" end
     end

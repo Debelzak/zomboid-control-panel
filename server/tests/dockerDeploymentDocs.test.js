@@ -52,6 +52,13 @@ describe("Docker deployment guidance", () => {
     expect(workflow).toContain(
       "type=semver,pattern={{version}},prefix=updater-",
     );
+    expect(workflow.match(/flavor: latest=false/g) || []).toHaveLength(2);
+  });
+
+  it("uploads the Linux archive from the release tree created by build.js", () => {
+    const workflow = readRepoFile(".github/workflows/release-artifacts.yml");
+
+    expect(workflow).toContain("path: release/${{ matrix.archive_file }}");
   });
 
   it("keeps the generic installer explicitly panel-only", () => {

@@ -637,6 +637,9 @@ router.get("/status", async (req, res) => {
       try {
         const result = await serverManager.getServerProcessDetails();
         matched = Array.isArray(result?.matched) ? result.matched : [];
+        if (result?.scanFailed) {
+          detectionError = result.error || "Process detection failed";
+        }
       } catch (err) {
         detectionError = err.message;
         log.debug(`Per-server status detection failed: ${err.message}`);
@@ -707,6 +710,7 @@ router.get("/status", async (req, res) => {
         pid: pid || null,
         isActive: server.id === activeId,
         provider: "direct",
+        stateUnknown: Boolean(detectionError),
       };
     }));
 

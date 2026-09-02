@@ -454,6 +454,9 @@ function createRedactingLogStream(knownSecrets) {
 }
 
 async function readPanelVersion() {
+  if (typeof PANEL_VERSION !== "undefined" && PANEL_VERSION) {
+    return String(PANEL_VERSION);
+  }
   const candidates = [
     path.join(__dirname, "..", "..", "package.json"),
     path.join(process.cwd(), "package.json"),

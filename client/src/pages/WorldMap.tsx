@@ -1358,29 +1358,31 @@ export default function WorldMap() {
     if (!overlayFetchGateRef.current.enter()) return
     try {
       const [vRes, persistedRes, sRes] = await Promise.allSettled([
-        panelBridgeApi.sendCommand('getVehiclesDetailed'),
-        mapApi.vehicles(),
+        showVehicles ? panelBridgeApi.sendCommand('getVehiclesDetailed') : Promise.resolve(null),
+        showVehicles ? mapApi.vehicles() : Promise.resolve(null),
         panelBridgeApi.sendCommand('getSafehouses'),
       ])
       if (!mountedRef.current) return
-      const vehicleById = new Map<number, MapVehicle>()
-      if (persistedRes.status === 'fulfilled') {
-        for (const vehicle of persistedRes.value.vehicles) {
-          if (Number.isFinite(vehicle.id) && Number.isFinite(vehicle.x) && Number.isFinite(vehicle.y)) {
-            vehicleById.set(vehicle.id, { ...vehicle, persisted: true })
+      if (showVehicles) {
+        const vehicleById = new Map<number, MapVehicle>()
+        if (persistedRes.status === 'fulfilled' && persistedRes.value) {
+          for (const vehicle of persistedRes.value.vehicles) {
+            if (Number.isFinite(vehicle.id) && Number.isFinite(vehicle.x) && Number.isFinite(vehicle.y)) {
+              vehicleById.set(vehicle.id, { ...vehicle, persisted: true })
+            }
           }
         }
-      }
-      if (vRes.status === 'fulfilled' && vRes.value.success && vRes.value.data) {
-        const vData = vRes.value.data as Record<string, unknown>
-        const vList = Array.isArray(vData) ? vData : Array.isArray(vData.vehicles) ? vData.vehicles : []
-        for (const vehicle of vList as MapVehicle[]) {
-          if (typeof vehicle.id === 'number' && typeof vehicle.x === 'number' && typeof vehicle.y === 'number' && isFinite(vehicle.x) && isFinite(vehicle.y)) {
-            vehicleById.set(vehicle.id, vehicle)
+        if (vRes.status === 'fulfilled' && vRes.value && vRes.value.success && vRes.value.data) {
+          const vData = vRes.value.data as Record<string, unknown>
+          const vList = Array.isArray(vData) ? vData : Array.isArray(vData.vehicles) ? vData.vehicles : []
+          for (const vehicle of vList as MapVehicle[]) {
+            if (typeof vehicle.id === 'number' && typeof vehicle.x === 'number' && typeof vehicle.y === 'number' && isFinite(vehicle.x) && isFinite(vehicle.y)) {
+              vehicleById.set(vehicle.id, vehicle)
+            }
           }
         }
+        setVehicles([...vehicleById.values()])
       }
-      setVehicles([...vehicleById.values()])
       if (sRes.status === 'fulfilled' && sRes.value.success && sRes.value.data) {
         const sData = sRes.value.data as Record<string, unknown>
         const sList = Array.isArray(sData) ? sData : Array.isArray(sData.safehouses) ? sData.safehouses : []
@@ -1390,7 +1392,7 @@ export default function WorldMap() {
     } finally {
       overlayFetchGateRef.current.leave()
     }
-  }, [hasActiveServer])
+  }, [hasActiveServer, showVehicles])
 
   // ─── Polling ────────────────────────────────────────────
   useEffect(() => {
