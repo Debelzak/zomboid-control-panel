@@ -28,11 +28,7 @@ import {
   acquireLifecycleLock,
   lifecycleInProgressResponse,
 } from "../services/lifecycleCoordinator.js";
-import {
-  canAutoInstall,
-  checkBridgeInstalled,
-  installBridge,
-} from "../services/panelBridgeInstaller.js";
+import { autoInstallBridgeIfNeeded } from "../services/panelBridgeInstaller.js";
 import { refreshWorkshopChecker } from "../services/modChecker.js";
 import {
   parseBoundedInteger,
@@ -143,28 +139,6 @@ async function mapWithConcurrency(items, limit, mapper) {
   });
   await Promise.all(workers);
   return results;
-}
-
-// Auto-install/update PanelBridge.lua on the newly-activated server when the
-// panel has direct filesystem access to its install directory. Best-effort:
-// logs and swallows any failure rather than affecting activation.
-function autoInstallBridgeIfNeeded(server) {
-  try {
-    if (!canAutoInstall(server)) return;
-    const status = checkBridgeInstalled(server);
-    if (status.installed && !status.needsUpdate) return;
-
-    const result = installBridge(server);
-    if (result.success) {
-      log.info(
-        `PanelBridge ${status.installed ? "updated" : "installed"} at ${result.targetPath} (v${result.version || "unknown"})`,
-      );
-    } else {
-      log.warn(`PanelBridge auto-install failed: ${result.error}`);
-    }
-  } catch (error) {
-    log.warn(`PanelBridge auto-install check failed: ${error.message}`);
-  }
 }
 
 async function refreshWorkshopCheckerIfAvailable(req) {
