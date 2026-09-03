@@ -176,6 +176,7 @@ describe('WorldMap.tsx dossier: hunger/thirst/fatigue from getServerInfo are act
     expect(await screen.findByRole('button', { name: 'Heal' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'God' })).toBeInTheDocument()
     expect(screen.getAllByText('Kate')).toHaveLength(2)
+    expect(screen.getByRole('link', { name: 'Open player controls' })).toHaveAttribute('href', '/players?player=Kate')
   })
 
   it('opens the dossier when the player marker is tapped without panning', async () => {

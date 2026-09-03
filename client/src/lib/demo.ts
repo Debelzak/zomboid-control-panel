@@ -515,56 +515,6 @@ function demoComposedStatus() {
   }
 }
 
-const demoMapPlayers = [
-  {
-    name: 'Slinaxe',
-    displayName: 'Slinaxe',
-    x: 6123,
-    y: 5262,
-    z: 0,
-    health: 81,
-    hunger: 0.15,
-    thirst: 0.05,
-    fatigue: 0,
-    isAlive: true,
-    isInfected: false,
-    accessLevel: 'admin',
-  },
-  {
-    name: 'StepVan',
-    displayName: 'StepVan',
-    x: 6178,
-    y: 5290,
-    z: 0,
-    health: 77,
-    hunger: 0.2,
-    thirst: 0.1,
-    fatigue: 0.08,
-    isAlive: true,
-    isInfected: false,
-    accessLevel: 'user',
-  },
-]
-
-const demoMapResolution = {
-  root: 'https://tiles.pzmap.org',
-  b42Dir: '42.20.0',
-  b41Path: '41.78.16/base/layer0_files',
-  tileSize: 2048,
-  width: 2318656,
-  height: 1019040,
-  maxLevel: 22,
-  renderedMaxLevel: 22,
-  x0: 1040384,
-  y0: -139296,
-  sqr: 128,
-  scale: 1,
-}
-
-export function getDemoMapPlayers() {
-  return demoMapPlayers
-}
-
 export function installDemoFetchShim(): void {
   if (!isDemoMode() || demoFetchInstalled) return
 
@@ -616,17 +566,7 @@ export function installDemoFetchShim(): void {
       return jsonResponse({ players: [] })
     }
     if (path === '/api/panel-bridge/status') {
-      return jsonResponse({ configured: true, isRunning: true, modConnected: true, modStatus: { version: '1.7.49' } })
-    }
-    if (path === '/api/panel-bridge/server-info') {
-      return jsonResponse({ success: true, data: { players: getDemoMapPlayers() } })
-    }
-    if (path === '/api/panel-bridge/command' && method === 'POST') {
-      const body = await readJsonBody(init)
-      const action = typeof body.action === 'string' ? body.action : 'command'
-      if (action === 'getVehiclesDetailed') return jsonResponse({ success: true, data: { vehicles: [] } })
-      if (action === 'getSafehouses') return jsonResponse({ success: true, data: { safehouses: [] } })
-      return jsonResponse({ success: true, data: { verified: 'confirmed', action } })
+      return jsonResponse({ configured: true, isRunning: false, modConnected: false, modStatus: null })
     }
     if (path === '/api/panel-info') {
       return jsonResponse({ localIp: '127.0.0.1', port: 3001, url: 'http://demo.local:3001' })
@@ -727,12 +667,6 @@ export function installDemoFetchShim(): void {
     }
     if (path === '/api/server-files/templates') {
       return jsonResponse({ templates: [] })
-    }
-    if (path === '/api/map/resolve') {
-      return jsonResponse(demoMapResolution)
-    }
-    if (path === '/api/map/vehicles') {
-      return jsonResponse({ vehicles: [] })
     }
     if (path === '/api/templates') {
       return jsonResponse(getDemoTemplates())

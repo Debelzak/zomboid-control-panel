@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { reportClientError } from '@/lib/client-errors'
@@ -357,6 +357,8 @@ export default function Players() {
   // it's meant to have. See server/routes/panelBridge.js's
   // BRIDGE_ACTION_CAPABILITY / GM_TOOLS_ONLY_ACTIONS.
   const { can } = useAuth()
+  const [searchParams] = useSearchParams()
+  const requestedPlayer = searchParams.get('player')?.trim() || ''
   const canModerate = can('players.moderate')
   const canGmTools = can('players.gm_tools')
   const [players, setPlayers] = useState<Player[]>([])
@@ -872,6 +874,14 @@ export default function Players() {
       clearInterval(interval)
     }
   }, [fetchPlayers, fetchData, fetchNotesAndStats, fetchBannedSteamIds, fetchWhitelist, fetchAccessLevels, fetchRosterVitals, canGmTools])
+
+  const requestedPlayerAppliedRef = useRef(false)
+  useEffect(() => {
+    if (requestedPlayerAppliedRef.current || !requestedPlayer || initialLoading) return
+    requestedPlayerAppliedRef.current = true
+    const matchingPlayer = players.find((player) => player.name.toLowerCase() === requestedPlayer.toLowerCase())
+    setSelectedPlayer(matchingPlayer?.name || requestedPlayer)
+  }, [initialLoading, players, requestedPlayer])
 
   // Load note/tags when selected player changes
   useEffect(() => {

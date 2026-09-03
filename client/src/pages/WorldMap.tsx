@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useSocket } from '@/contexts/SocketContext'
@@ -44,6 +45,7 @@ import {
   Megaphone,
   Save,
   AlertTriangle,
+  ArrowUpRight,
 } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { BridgeStatusBadge } from '@/components/BridgeStatusBadge'
@@ -3181,10 +3183,11 @@ export default function WorldMap() {
                   </div>
                 )}
               </div>
-              <div className="px-2 py-1.5 border-t border-border/40 bg-muted/20 flex gap-1">
-                <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1">
+              <div className="space-y-1 border-t border-border/40 bg-muted/20 px-2 py-1.5">
+                <div className="grid grid-cols-2 gap-1">
+                <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null}>
                   <Button
-                    size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
+                    size="sm" variant="ghost" className="h-7 min-w-0 w-full px-1.5 text-xs gap-1"
                     disabled={actionLoading !== null || !canGmTools}
                     onClick={() => {
                       if (!canGmTools) return
@@ -3198,10 +3201,10 @@ export default function WorldMap() {
                     <Heart className="w-3 h-3" /> {t('dossier.heal')}
                   </Button>
                 </DisabledReason>
-                <div className="flex-1 flex items-center gap-1 min-w-0">
-                  <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="flex-1 min-w-0">
+                <div className="flex min-w-0 items-center gap-1">
+                  <DisabledReason reason={!canGmTools ? t('permissions.noGmToolsBridgeAction') : null} className="min-w-0 flex-1">
                     <Button
-                      size="sm" variant="ghost" className="h-7 text-xs gap-1 w-full"
+                      size="sm" variant="ghost" className="h-7 min-w-0 w-full px-1.5 text-xs gap-1"
                       disabled={actionLoading !== null || !canGmTools}
                       onClick={() => {
                         if (!canGmTools) return
@@ -3226,6 +3229,16 @@ export default function WorldMap() {
                   </DisabledReason>
                   <HelpTip label={t('dossier.god')} className="shrink-0">{t('dossier.godTip')}</HelpTip>
                 </div>
+                </div>
+                <Link
+                  to={`/players?player=${encodeURIComponent(selectedPlayer.username)}`}
+                  onClick={() => setSelectedPlayer(null)}
+                  className="flex min-h-7 items-center justify-center gap-1.5 rounded-sm border border-border/50 px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                >
+                  <Users className="h-3 w-3" />
+                  <span>{t('dossier.openPlayerControls')}</span>
+                  <ArrowUpRight className="h-3 w-3" />
+                </Link>
               </div>
             </div>
           </div>
