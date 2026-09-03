@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Clicking a player marker on the World Map could fail to open the player dossier**, especially
+  while the marker was moving or on touch devices; selection now follows the rendered marker and
+  exposes the player details and available actions consistently.
 - **The GitHub Pages demo crashed on the Templates route** because its fetch shim did not implement
   the simulation-template list response; demo mode now supplies valid built-in templates and preview
   data, while the page also handles malformed list payloads safely.

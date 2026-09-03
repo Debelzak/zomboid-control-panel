@@ -634,6 +634,7 @@ export default function WorldMap() {
   const playerFetchGateRef = useRef(createInFlightGate())
   const overlayFetchGateRef = useRef(createInFlightGate())
   const playersRef = useRef<MapPlayer[]>([])
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null)
   const drawRequestRef = useRef<number>(0)
   const canvasColorsRef = useRef<CanvasColors>(resolveCanvasColors())
 
@@ -1270,6 +1271,37 @@ export default function WorldMap() {
     }, [dziToCanvas]
   )
 
+  const playerRenderPosition = useCallback(
+    (player: MapPlayer, s?: number, off?: { x: number; y: number }) => {
+      let drawX = player.x
+      let drawY = player.y
+      if (!prefersReducedMotion.current && player.animProgress !== undefined && player.animProgress < 1) {
+        const progress = easeOutCubic(Math.min(1, player.animProgress))
+        drawX = (player.prevX ?? player.x) + (player.x - (player.prevX ?? player.x)) * progress
+        drawY = (player.prevY ?? player.y) + (player.y - (player.prevY ?? player.y)) * progress
+      }
+      return playerToScreen(drawX, drawY, s, off)
+    }, [playerToScreen]
+  )
+
+  const playerAtScreenPoint = useCallback(
+    (mx: number, my: number) => {
+      const markerRadius = Math.max(5, Math.min(16, scaleRef.current * 1400))
+      let closest: MapPlayer | null = null
+      let closestDistance = Number.POSITIVE_INFINITY
+      for (const player of playersRef.current) {
+        const point = playerRenderPosition(player)
+        const distance = Math.hypot(mx - point.x, my - point.y)
+        const hitRadius = Math.max(MARKER_HIT_RADIUS, markerRadius + 8)
+        if (distance < hitRadius && distance < closestDistance) {
+          closest = player
+          closestDistance = distance
+        }
+      }
+      return closest
+    }, [playerRenderPosition]
+  )
+
   // Canvas pixel → game-tile (inverse isometric)
   const screenToTile = useCallback(
     (cx: number, cy: number, s?: number, off?: { x: number; y: number }) => {
@@ -1714,16 +1746,7 @@ export default function WorldMap() {
     const mRadius = Math.max(5, Math.min(16, s * 1400))
 
     for (const player of currentPlayers) {
-      // Interpolate position (skip if reduced motion)
-      let drawX = player.x
-      let drawY = player.y
-      if (!prefersReducedMotion.current && player.animProgress !== undefined && player.animProgress < 1) {
-        const t = easeOutCubic(Math.min(1, player.animProgress))
-        drawX = (player.prevX ?? player.x) + (player.x - (player.prevX ?? player.x)) * t
-        drawY = (player.prevY ?? player.y) + (player.y - (player.prevY ?? player.y)) * t
-      }
-
-      const p = playerToScreen(drawX, drawY, s, off)
+      const p = playerRenderPosition(player, s, off)
       if (p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) continue
 
       const isHovered = hoveredPlayer === player.username
@@ -2029,7 +2052,7 @@ export default function WorldMap() {
       ctx.stroke()
       ctx.setLineDash([])
     }
-  }, [canvasSize, loadDziTile, drawTileWithFallback, playerToScreen, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle, t, presetLabel])
+  }, [canvasSize, loadDziTile, drawTileWithFallback, playerToScreen, playerRenderPosition, hoveredPlayer, selectedPlayer, cursorWorldPos, isDragging, showVehicles, showSafehouses, hoveredVehicle, t, presetLabel])
 
   // ─── Animation loop ─────────────────────────────────────
   useEffect(() => {
@@ -2184,6 +2207,7 @@ export default function WorldMap() {
   // ─── Mouse interactions ─────────────────────────────────
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 0) {
+      pointerDownRef.current = { x: e.clientX, y: e.clientY }
       setIsDragging(true)
       setDragStart({ x: e.clientX, y: e.clientY, offX: offsetRef.current.x, offY: offsetRef.current.y })
       setContextMenu(null)
@@ -2213,8 +2237,8 @@ export default function WorldMap() {
       // Hit test players — the token is centred on the tile position
       let found: string | null = null
       for (const player of playersRef.current) {
-        const p = playerToScreen(player.x, player.y)
-        const hitR = Math.max(MARKER_HIT_RADIUS, Math.max(5, Math.min(16, scaleRef.current * 1400)) + 4)
+        const p = playerRenderPosition(player)
+        const hitR = Math.max(MARKER_HIT_RADIUS, Math.max(5, Math.min(16, scaleRef.current * 1400)) + 8)
         if (Math.hypot(mx - p.x, my - p.y) < hitR) {
           found = player.username
           break
@@ -2237,36 +2261,27 @@ export default function WorldMap() {
       }
       setHoveredVehicle(foundVehicle)
     },
-    [isDragging, dragStart, screenToTile, playerToScreen, showVehicles]
+    [isDragging, dragStart, screenToTile, playerRenderPosition, playerToScreen, showVehicles]
   )
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
-      if (isDragging) {
-        const dx = Math.abs(e.clientX - dragStart.x)
-        const dy = Math.abs(e.clientY - dragStart.y)
-        setIsDragging(false)
+      const start = pointerDownRef.current
+      pointerDownRef.current = null
+      if (!start) return
 
-        if (dx < 3 && dy < 3) {
-          const canvas = canvasRef.current
-          if (!canvas) return
-          const rect = canvas.getBoundingClientRect()
-          const mx = e.clientX - rect.left
-          const my = e.clientY - rect.top
+      const dx = Math.abs(e.clientX - start.x)
+      const dy = Math.abs(e.clientY - start.y)
+      setIsDragging(false)
 
-          for (const player of playersRef.current) {
-            const p = playerToScreen(player.x, player.y)
-            const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2)
-            if (dist < MARKER_HIT_RADIUS) {
-              setSelectedPlayer(player)
-              return
-            }
-          }
-          setSelectedPlayer(null)
-        }
-      }
+      if (dx >= 3 || dy >= 3) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const clickedPlayer = playerAtScreenPoint(e.clientX - rect.left, e.clientY - rect.top)
+      setSelectedPlayer(clickedPlayer)
     },
-    [isDragging, dragStart, playerToScreen]
+    [playerAtScreenPoint]
   )
 
   const handleContextMenu = useCallback(
@@ -2281,7 +2296,7 @@ export default function WorldMap() {
 
       let clickedPlayer: MapPlayer | undefined
       for (const player of playersRef.current) {
-        const p = playerToScreen(player.x, player.y)
+        const p = playerRenderPosition(player)
         const hitR = Math.max(MARKER_HIT_RADIUS, Math.max(5, Math.min(16, scaleRef.current * 1400)) + 4)
         if (Math.hypot(mx - p.x, my - p.y) < hitR) {
           clickedPlayer = player
@@ -2311,10 +2326,11 @@ export default function WorldMap() {
         vehicle: clickedVehicle,
       })
     },
-    [screenToTile, playerToScreen, showVehicles]
+    [screenToTile, playerRenderPosition, playerToScreen, showVehicles]
   )
 
   const handleMouseLeave = useCallback(() => {
+    pointerDownRef.current = null
     setIsDragging(false)
     setHoveredPlayer(null)
     setHoveredVehicle(null)
@@ -2322,8 +2338,8 @@ export default function WorldMap() {
   }, [])
 
   // ─── Touch support ─────────────────────────────────────
-  const touchRef = useRef<{ startX: number; startY: number; offX: number; offY: number; pinchDist: number | null }>({
-    startX: 0, startY: 0, offX: 0, offY: 0, pinchDist: null,
+  const touchRef = useRef<{ startX: number; startY: number; offX: number; offY: number; pinchDist: number | null; moved: boolean; hadPinch: boolean }>({
+    startX: 0, startY: 0, offX: 0, offY: 0, pinchDist: null, moved: false, hadPinch: false,
   })
 
   const getTouchDist = (touches: React.TouchList) => {
@@ -2335,10 +2351,12 @@ export default function WorldMap() {
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       const t = e.touches[0]
-      touchRef.current = { startX: t.clientX, startY: t.clientY, offX: offsetRef.current.x, offY: offsetRef.current.y, pinchDist: null }
+      touchRef.current = { startX: t.clientX, startY: t.clientY, offX: offsetRef.current.x, offY: offsetRef.current.y, pinchDist: null, moved: false, hadPinch: false }
       setIsDragging(true)
     } else if (e.touches.length === 2) {
       touchRef.current.pinchDist = getTouchDist(e.touches)
+      touchRef.current.moved = true
+      touchRef.current.hadPinch = true
     }
   }, [])
 
@@ -2364,14 +2382,24 @@ export default function WorldMap() {
     } else if (e.touches.length === 1) {
       const t = e.touches[0]
       const tr = touchRef.current
+      if (Math.hypot(t.clientX - tr.startX, t.clientY - tr.startY) >= 3) tr.moved = true
       setOffset({ x: tr.offX + (t.clientX - tr.startX), y: tr.offY + (t.clientY - tr.startY) })
     }
   }, [])
 
-  const handleTouchEnd = useCallback(() => {
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const tr = touchRef.current
+    const touch = e.changedTouches[0]
+    if (!tr.moved && !tr.hadPinch && touch) {
+      const canvas = canvasRef.current
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        setSelectedPlayer(playerAtScreenPoint(touch.clientX - rect.left, touch.clientY - rect.top))
+      }
+    }
     setIsDragging(false)
     touchRef.current.pinchDist = null
-  }, [])
+  }, [playerAtScreenPoint])
 
   // ─── Zoom controls ─────────────────────────────────────
   const zoomIn = useCallback(() => {
@@ -2485,7 +2513,7 @@ export default function WorldMap() {
         setContextMenu(null)
       }
     },
-    [toast, canWorldEvents]
+    [toast, canWorldEvents, t]
   )
 
   const createNoiseAt = useCallback(
@@ -2504,7 +2532,7 @@ export default function WorldMap() {
         setContextMenu(null)
       }
     },
-    [toast, canWorldEvents]
+    [toast, canWorldEvents, t]
   )
 
   const callAirdrop = useCallback(
