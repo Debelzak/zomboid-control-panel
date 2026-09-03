@@ -177,11 +177,11 @@ function Assert-DirectoryMatchesManifest($source, $manifestFiles, $label) {
 
 function Assert-ReleaseVersionParity($expectedPanelVersion, $expectedBridgeVersion) {
     $rootPackage = Get-Content (Join-Path $RepoDir "package.json") -Raw | ConvertFrom-Json
-    $rootLock = Get-Content (Join-Path $RepoDir "package-lock.json") -Raw | ConvertFrom-Json
+    $rootLock = Get-Content (Join-Path $RepoDir "package-lock.json") -Raw | ConvertFrom-Json -AsHashtable
     $clientPackage = Get-Content (Join-Path $RepoDir "client\package.json") -Raw | ConvertFrom-Json
-    $clientLock = Get-Content (Join-Path $RepoDir "client\package-lock.json") -Raw | ConvertFrom-Json
-    $rootLockPackage = $rootLock.packages.PSObject.Properties.Item("").Value
-    $clientLockPackage = $clientLock.packages.PSObject.Properties.Item("").Value
+    $clientLock = Get-Content (Join-Path $RepoDir "client\package-lock.json") -Raw | ConvertFrom-Json -AsHashtable
+    $rootLockPackage = $rootLock["packages"][""]
+    $clientLockPackage = $clientLock["packages"][""]
     $versions = @(
         @{ Label = "package.json"; Value = $rootPackage.version },
         @{ Label = "package-lock.json"; Value = $rootLock.version },
@@ -200,9 +200,9 @@ function Assert-ReleaseVersionParity($expectedPanelVersion, $expectedBridgeVersi
     $modInfoPath = Join-Path $RepoDir "pz-mod\PanelBridge\mod.info"
     $lua = Get-Content $luaPath -Raw
     $modInfo = Get-Content $modInfoPath -Raw
-    $header = [regex]::Matches($lua, '(?m)^\s*Version:\s*([^\r\n]+)$')
+    $header = [regex]::Matches($lua, '(?m)^\s*Version:\s*([^\r\n]+)\r?$')
     $runtime = [regex]::Matches($lua, '(?m)^\s*VERSION\s*=\s*"([^"]+)"')
-    $manifest = [regex]::Matches($modInfo, '(?m)^modversion=([^\r\n]+)$')
+    $manifest = [regex]::Matches($modInfo, '(?m)^modversion=([^\r\n]+)\r?$')
     if ($header.Count -ne 1 -or $runtime.Count -ne 1 -or $manifest.Count -ne 1) {
         throw "PanelBridge version declarations are missing or duplicated"
     }

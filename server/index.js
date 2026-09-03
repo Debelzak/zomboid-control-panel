@@ -1915,6 +1915,10 @@ if (!legacyClientMismatch) {
   );
 }
 
+export function sendClientIndex(res, clientDistPath, callback) {
+  return res.sendFile("index.html", { root: clientDistPath }, callback);
+}
+
 // Global API error handler — sanitize internal details from error responses
 // Must be defined before the catch-all route but after all API routes
 //
@@ -1961,7 +1965,7 @@ app.use((req, res, next) => {
   if (req.path.startsWith("/api")) {
     res.status(404).json({ error: "API endpoint not found" });
   } else {
-    res.sendFile(path.join(clientDistPath, "index.html"), (err) => {
+    sendClientIndex(res, clientDistPath, (err) => {
       if (err) {
         log.error(`Failed to serve index.html: ${err.message}`);
         res.status(500).send("Page not available");

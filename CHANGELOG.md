@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.14] - 2026-09-02
+
 ### Fixed
 
+- **Refreshing a client-side route in a standalone build could show “Page not available”** because
+  Express rejected the embedded frontend’s hidden parent directories; the SPA fallback now resolves
+  `index.html` relative to its configured client root.
 - **The diagnostics page warned that the server process was missing** when the panel and the game
   server run in separate containers - it now says the check does not apply there.
 
