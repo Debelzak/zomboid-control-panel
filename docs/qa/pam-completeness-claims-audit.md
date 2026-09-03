@@ -100,8 +100,7 @@ reaches both trigger paths for free instead of one.
 **Owner:** `server/index.js` is Dwight's file. Not touched beyond the one comment block, per the
 explicit one-file, one-comment grant for this task.
 
-## Two more low-severity wording overclaims (verified, not fixed — outside ownership, not worth a
-## separate card)
+## Two more low-severity wording overclaims (verified, not fixed — outside ownership, not worth a separate card)
 
 **status: FIXED** (re-verified 2026-09-02, HEAD `5f913567` — fixed since this doc was written, which described it as "verified, not fixed"). `index.js:2014-2018`'s comment now explicitly names `POST /debug/client-errors` as the one deliberate exception, citing this exact finding ("bughunt-2026-08-31-b, completeness-claims audit") and stating it "was already false the day it was written" instead of claiming universality.
 
