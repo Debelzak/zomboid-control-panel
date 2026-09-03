@@ -1016,6 +1016,19 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       // valid importIniFrom can't stick.
       config.rconPassword = importedSettings.RCONPassword;
       if (!config.serverName) config.serverName = importServerName;
+      // discovery.js's create-from-discovery (the sibling this route's own
+      // comment says it mirrors) sets `zomboidDataPath: discovered.dataPath`
+      // -- this branch validated and read the ini from that exact same
+      // folder above but never wrote it back to `config`, so the created
+      // server had a real, working rconPassword and a null
+      // zomboidDataPath: it saved, then could not launch (serverManager
+      // needs zomboidDataPath to resolve the cachedir), with nothing at
+      // create time to connect the failure back to a bad import. Same
+      // "freshly-verified value wins" precedence as rconPassword above --
+      // this is the folder we just confirmed contains Server/<name>.ini,
+      // so a stale/mismatched client-supplied zomboidDataPath must not
+      // override it either.
+      config.zomboidDataPath = resolvedImportData;
     }
 
     // Fall back to env-configured paths (docker-compose PZ_SERVER_PATH /
