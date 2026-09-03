@@ -638,18 +638,27 @@ function pruneBackups() {
   }
 }
 
-function getLatestBackup() {
+// Newest-first, full paths. Recovery below needs to fall through past a
+// corrupt "latest" backup to the next-older one rather than giving up --
+// see the recovery loop in getDb() for why a single bad candidate must not
+// mean the whole ring is abandoned.
+function listBackupsNewestFirst() {
   try {
-    const files = fs
+    return fs
       .readdirSync(backupDir)
       .filter((f) => f.startsWith("db-") && f.endsWith(".json"))
       .sort()
-      .reverse();
-    return files.length > 0 ? path.join(backupDir, files[0]) : null;
+      .reverse()
+      .map((f) => path.join(backupDir, f));
   } catch {
     log.debug(`No backups found to list`);
-    return null;
+    return [];
   }
+}
+
+function getLatestBackup() {
+  const files = listBackupsNewestFirst();
+  return files.length > 0 ? files[0] : null;
 }
 
 function startBackupSchedule() {
@@ -924,36 +933,59 @@ export async function getDb() {
         // fallback for that case.
       }
 
-      // Attempt recovery from backup. Do NOT snapshot the corrupt file first —
-      // that would poison the backup ring (pruneBackups keeps newest 5 and
-      // could evict the last known-good backup) AND make getLatestBackup
-      // return the corrupt copy.
-      const backup = getLatestBackup();
-      if (backup) {
-        log.warn(`Attempting recovery from ${path.basename(backup)}...`);
+      // Attempt recovery from backup, newest first, falling through to the
+      // next-older candidate if one is also unreadable. A single corrupted
+      // "latest" backup must not mean the whole ring is abandoned in favour
+      // of a full reset -- pruneBackups only evicts past MAX_BACKUPS, so
+      // several older, structurally-independent backups usually still exist
+      // (2026-09-03, destructive-paths-sweep: the previous single-candidate
+      // version fell straight to defaultData -- discarding every setting,
+      // server and user -- the moment that one backup also failed to read,
+      // even when an older good one was sitting right next to it).
+      //
+      // Do NOT snapshot the corrupt file first — that would poison the
+      // backup ring (pruneBackups keeps newest 5 and could evict the last
+      // known-good backup) AND make listBackupsNewestFirst() return the
+      // corrupt copy as a candidate.
+      const backups = listBackupsNewestFirst();
+      if (backups.length > 0) {
+        // Preserve the corrupt file for forensics ONCE, before trying any
+        // candidate, OUTSIDE the rotation ring so pruneBackups never touches
+        // it.
         try {
-          // Preserve the corrupt file for forensics, OUTSIDE the rotation ring
-          // so pruneBackups never touches it.
+          const corruptPath = path.join(
+            backupDir,
+            `corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+          );
+          fs.copyFileSync(dbPath, corruptPath);
           try {
-            const corruptPath = path.join(
-              backupDir,
-              `corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
-            );
-            fs.copyFileSync(dbPath, corruptPath);
-            try {
-              fs.chmodSync(corruptPath, 0o600);
-            } catch (_) {
-              /* best-effort */
-            }
+            fs.chmodSync(corruptPath, 0o600);
           } catch (_) {
             /* best-effort */
           }
+        } catch (_) {
+          /* best-effort */
+        }
 
-          fs.copyFileSync(backup, dbPath);
-          await db.read();
-          log.info("Database recovery successful!");
-        } catch (recoverErr) {
-          log.error(`Recovery failed: ${recoverErr.message} — starting fresh`);
+        let recovered = false;
+        for (const backup of backups) {
+          log.warn(`Attempting recovery from ${path.basename(backup)}...`);
+          try {
+            fs.copyFileSync(backup, dbPath);
+            await db.read();
+            log.info(
+              `Database recovery successful from ${path.basename(backup)}!`,
+            );
+            recovered = true;
+            break;
+          } catch (recoverErr) {
+            log.error(
+              `Recovery from ${path.basename(backup)} failed: ${recoverErr.message}`,
+            );
+          }
+        }
+        if (!recovered) {
+          log.error("All backups failed to recover — starting fresh");
           db.data = { ...defaultData };
         }
       } else {
