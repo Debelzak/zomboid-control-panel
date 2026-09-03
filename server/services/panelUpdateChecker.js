@@ -1630,6 +1630,25 @@ export class PanelUpdateChecker {
 
     if (this.dockerUpdateProxy.enabled) {
       info.dockerUpdater = true;
+      // Everything binary mode checks below (disk space, write permissions,
+      // database readability) is about THIS process's own filesystem
+      // access -- none of it applies here, since a separate update
+      // controller container does the build/health-check/rollback for
+      // docker mode. Returning bare ok:true with empty warnings used to
+      // look identical to "we checked, you are fine" when the truth is "we
+      // cannot check this from here" -- an honest warning instead of a
+      // silently clean list, rather than inventing docker-side checks this
+      // process has no way to actually perform. ok stays true: there is no
+      // known blocker, so a docker update should still be allowed to
+      // proceed.
+      info.checksPerformed = false;
+      addPreflightMessage(
+        warnings,
+        warningDetails,
+        "updates.preflight.dockerNotChecked",
+        {},
+        "Docker updates are applied by a separate update controller container. The panel does not run its own preflight checks (disk space, permissions, etc.) for this mode -- those are the controller's responsibility.",
+      );
       return { ok: true, blockers, warnings, blockerDetails, warningDetails, info };
     }
 
