@@ -690,11 +690,43 @@ export class UpdateChecker {
         clearActiveSteamOperation(normalizedInstallPath);
       }
       if (code !== 0) fail("STEAMCMD_EXIT_CODE", `SteamCMD exited with code ${code}`, { code });
+
+      // SteamCMD's own exit code is not proof the install actually changed --
+      // it can exit 0 on a no-op (stale/corrupt local manifest cache, a
+      // branch that silently resolved to what's already installed, etc).
+      // Re-read the manifest we just asked SteamCMD to rewrite and confirm
+      // the buildId actually advanced before declaring success, the same
+      // "observe the effect, don't trust the exit code" discipline
+      // reconcilePendingUpdate() already applies to the panel's own binary
+      // updater (it re-checks the running version rather than trusting that
+      // staging happened).
+      const postUpdate = await this.getInstalledBuildInfo(
+        activeServer.installPath,
+      );
+      const postBuildId = postUpdate?.buildId
+        ? parseInt(postUpdate.buildId, 10)
+        : NaN;
+      const preBuildId = parseInt(updateInfo.installed.buildId, 10);
+      if (isNaN(postBuildId) || postBuildId <= preBuildId) {
+        fail(
+          "BUILD_DID_NOT_ADVANCE",
+          `SteamCMD exited successfully but the installed build did not change (still ${postUpdate?.buildId ?? "unreadable"}, expected newer than ${updateInfo.installed.buildId})`,
+          {
+            installedBuildId: sanitizeError(postUpdate?.buildId ?? "unknown"),
+            previousBuildId: sanitizeError(updateInfo.installed.buildId),
+          },
+        );
+      }
+
       this.io.emit("server:autoUpdateComplete", { success: true });
       await this._recordAutoUpdateResult({
         status: "success",
         at: new Date().toISOString(),
-        appliedVersion: updateInfo?.latest?.version ?? updateInfo?.installed?.version ?? null,
+        // `updateInfo.latest`/`.installed` only ever carry `.buildId`, never
+        // a `.version` field -- the old `?.version` lookups here always
+        // evaluated to undefined, so this was silently `null` on every real
+        // success. Report the build ID we just verified actually landed.
+        appliedVersion: postUpdate?.buildId ?? null,
       });
     } catch (error) {
       this.io.emit("server:autoUpdateComplete", { success: false, error: error.message });
