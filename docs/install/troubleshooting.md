@@ -178,6 +178,43 @@ these in the console/log — they map to the same two root causes:
 
 ---
 
+### Broadcast messages show garbled text for Chinese or other non-Latin characters
+
+**What you see:** a Scheduled Task server message, or a manually sent
+broadcast, shows up in-game as garbled or mismatched characters instead of
+the Chinese (or other non-Latin) text you typed — not blank boxes, but
+wrong-looking text.
+
+**What it means:** the panel sends the message to the PZ server as correct
+UTF-8 over RCON — this has been independently verified byte-for-byte,
+including the packet's length field, for exactly this kind of text.
+Garbled-but-present characters are the signature of a *charset mismatch* on
+the receiving side, not a transmission problem: something decoded valid
+UTF-8 bytes using the wrong text encoding. The most likely cause is Project
+Zomboid's own dedicated server — a Java process — falling back to the host
+OS's default text encoding instead of UTF-8 when it reads the RCON command.
+On a Chinese-locale Windows machine, that default is typically GBK, not
+UTF-8.
+
+**What to do:**
+- On the machine running the **PZ dedicated server** (not the panel, and
+  not the game client) — if it's Windows: **Settings → Time & Language →
+  Language & Region → Administrative language settings → Change system
+  locale → check "Beta: Use Unicode UTF-8 for worldwide language support"**,
+  then restart the machine and restart the PZ server. This forces Java's
+  default text encoding to UTF-8 system-wide and is the most likely fix.
+- If you launch the PZ server yourself rather than through the panel's
+  generated startup script, you can instead add `-Dfile.encoding=UTF-8` to
+  the `java` command line that starts `zombie.network.GameServer` — same
+  effect, scoped to that one process instead of the whole machine.
+- If neither helps, try sending the same text through a different broadcast
+  method (for example PanelBridge's in-game chat action instead of RCON
+  `servermsg`, where available) to see whether the problem is specific to
+  RCON or affects every broadcast path — that narrows down whether this is
+  an RCON-decode issue or something in PZ's text rendering more generally.
+
+---
+
 ### Panel says it cannot determine whether the server is running
 
 **What you see:** an error like `Can't verify whether the server is
