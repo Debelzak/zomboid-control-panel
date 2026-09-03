@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GitHub Pages demo crashed on the Templates route** because its fetch shim did not implement
+  the simulation-template list response; demo mode now supplies valid built-in templates and preview
+  data, while the page also handles malformed list payloads safely.
+
 ## [1.2.14] - 2026-09-02
 
 ### Fixed
