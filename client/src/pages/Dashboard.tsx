@@ -1076,8 +1076,19 @@ export default function Dashboard() {
   // their original relative order) puts what needs attention where the
   // operator's own "actionable items on top" ask actually lands: the top
   // of the list, not just a different color partway down it.
+  //
+  // 'warning' collapses into the same bucket as 'default'/'good' rather
+  // than getting its own rank (GH#137): 'warning' is the tone a normal
+  // Stop/Restart passes through on the way to disconnecting RCON, so
+  // ranking it above 'default' reshuffled the whole list on every
+  // ordinary status poll while a server was merely stopping or starting
+  // -- rows visibly swapping places for a state the operator caused
+  // themselves and already knows about, not something that needed
+  // surfacing. 'bad' (the server is actually unreachable) is the state
+  // worth interrupting the list's order for; the rest stay in place and
+  // let color alone carry the signal, same as they always did.
   const WORK_ITEM_SEVERITY: Record<'bad' | 'warning' | 'default' | 'good', number> = {
-    bad: 0, warning: 1, default: 2, good: 3,
+    bad: 0, warning: 1, default: 1, good: 1,
   }
   const sortedWorkItems = [...workItems].sort(
     (a, b) => WORK_ITEM_SEVERITY[a.tone ?? 'default'] - WORK_ITEM_SEVERITY[b.tone ?? 'default'],
