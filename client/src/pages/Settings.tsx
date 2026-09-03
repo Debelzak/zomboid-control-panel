@@ -779,7 +779,22 @@ export default function Settings() {
       setPanelUpdateStatusError(null);
       // "Ready to apply" reflects whether a binary is staged on disk, not just
       // whether the last click finished. Survives page reloads.
-      if (status.stagedUpdate) {
+      //
+      // GH#141: once a failed apply reports canRetryApply:false, the staged
+      // binary is gone and NOTHING re-stages it -- clicking Restart again is
+      // guaranteed to fail identically (server/services/panelUpdateChecker.js's
+      // reconcilePendingUpdate() leaves pendingPanelUpdate set on purpose so a
+      // fresh download can still retry, but that means status.updateAvailable
+      // stays true with status.stagedUpdate now null, and neither branch below
+      // would otherwise touch panelUpdateReady -- leaving it stuck at whatever
+      // it was before the apply failed. Checked first and explicitly so a
+      // stuck-true "ready" from before the failure can't survive it.
+      if (
+        status.lastApplyResult?.status === "failed" &&
+        status.lastApplyResult.canRetryApply === false
+      ) {
+        setPanelUpdateReady(false);
+      } else if (status.stagedUpdate) {
         setPanelUpdateReady(true);
       } else if (!status.updateAvailable) {
         setPanelUpdateReady(false);
