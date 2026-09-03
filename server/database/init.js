@@ -1717,8 +1717,14 @@ export async function getAllSettings() {
 // ============================================
 
 // Falls back to the docker-compose PZ_SERVER_PATH / PZ_SAVE_PATH env vars when
-// a stored server profile has no path configured, and auto-detects isRemote
-// from whether the resolved paths exist on this host.
+// a stored server profile has no path configured. isRemote is inferred from
+// whether the resolved paths exist on this host ONLY for legacy records that
+// predate the isRemote field (server.isRemote is genuinely undefined/null —
+// every server created via POST /api/servers since 94c5520e always stores an
+// explicit boolean). A stored isRemote, true or false, always wins: it is the
+// operator's choice, and fs.existsSync() at read time is not — a local server
+// whose install hasn't run yet (or whose drive is momentarily unmounted) must
+// not be silently reclassified as remote on every read.
 export function normalizeServerMemory(server) {
   if (!server) return server;
   const installPath = server.installPath || process.env.PZ_SERVER_PATH || "";
@@ -1729,12 +1735,18 @@ export function normalizeServerMemory(server) {
   const pathsExistLocally =
     Boolean(installPath && fs.existsSync(installPath)) ||
     Boolean(zomboidDataPath && fs.existsSync(zomboidDataPath));
+  const hasStoredIsRemote =
+    server.isRemote !== undefined && server.isRemote !== null;
 
   return {
     ...server,
     installPath,
     zomboidDataPath,
-    isRemote: pathsConfigured ? !pathsExistLocally : server.isRemote || false,
+    isRemote: hasStoredIsRemote
+      ? server.isRemote
+      : pathsConfigured
+        ? !pathsExistLocally
+        : false,
     lifecycleProvider: ["systemd", "openrc"].includes(server.lifecycleProvider)
       ? server.lifecycleProvider
       : "direct",
