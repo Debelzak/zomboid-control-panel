@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.15] - 2026-09-03
+
 ### Fixed
 
 - **Clicking a player marker on the World Map could fail to open the player dossier**, especially
