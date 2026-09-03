@@ -656,11 +656,6 @@ function listBackupsNewestFirst() {
   }
 }
 
-function getLatestBackup() {
-  const files = listBackupsNewestFirst();
-  return files.length > 0 ? files[0] : null;
-}
-
 function startBackupSchedule() {
   if (_backupTimer) clearInterval(_backupTimer);
   _backupTimer = setInterval(() => {
