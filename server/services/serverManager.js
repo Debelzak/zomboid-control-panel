@@ -1417,10 +1417,20 @@ export class ServerManager {
         const launchStdio = ["ignore", this._launchLogFd, this._launchLogFd];
 
         if (isWindows && (ext === ".bat" || ext === ".cmd")) {
-          this.serverProcess = spawn("cmd.exe", ["/c", resolvedCmd, ...args], {
+          // 2026-09-03, Windows spawn bugs (Dwight's pz-verify repro): do
+          // NOT pass launchStdio's raw fd here -- see the isWindows branch
+          // in the default-bat path below for why cmd.exe now does its own
+          // `>`/`2>&1` redirection instead. We don't need our own copy of
+          // the fd for this branch at all, so close it now rather than
+          // leaving it open across the spawn call for no reason.
+          this._closeLaunchLogFd();
+          const cmdArgs = launchLogPath
+            ? ["/c", resolvedCmd, ...args, ">", launchLogPath, "2>&1"]
+            : ["/c", resolvedCmd, ...args];
+          this.serverProcess = spawn("cmd.exe", cmdArgs, {
             cwd,
             detached: true,
-            stdio: launchStdio,
+            stdio: "ignore",
           });
         } else if (!isWindows && ext === ".sh") {
           try {
@@ -1511,10 +1521,43 @@ export class ServerManager {
       const launchStdio = ["ignore", this._launchLogFd, this._launchLogFd];
 
       if (isWindows) {
-        this.serverProcess = spawn("cmd.exe", ["/c", this.serverBat], {
+        // Two fixes, 2026-09-03 Windows spawn bugs (Dwight's pz-verify
+        // repro, both real, neither an artifact of his setup):
+        //
+        // (a) this.serverBat is a bare filename (e.g.
+        // "StartServer_pz-verify.bat"). cmd.exe's own implicit
+        // search-cwd-for-a-bare-name behavior is the only reason that ever
+        // worked, and NoDefaultCurrentDirectoryInExePath=1 -- a real,
+        // non-exotic Windows hardening option -- turns that off, breaking
+        // every server start on such a host with "... is not recognized as
+        // an internal or external command", independent of PanelBridge.
+        // Dwight confirmed by running the identical `cmd /c
+        // "StartServer_pz-verify.bat"` from the same cwd outside Node
+        // entirely. Fixed by spawning the already-resolved batPath (used
+        // for the existsSync check above) instead of the bare name.
+        //
+        // (b) Passing launchStdio's raw fd through Node's stdio array
+        // silently failed to carry the JVM's output into
+        // server-launch.log through the cmd.exe hop when combined with
+        // detached:true -- proved by Dwight: PZ's own DebugLog was
+        // populated for the same boot, but server-launch.log stayed at 0
+        // bytes throughout. Rather than depend on exactly how Node's
+        // stdio-fd-to-child-then-grandchild inheritance behaves under
+        // DETACHED_PROCESS on Windows (an interaction this floor can't
+        // fully instrument), cmd.exe now does its own file redirection via
+        // `>`/`2>&1` on the reconstructed command line -- one hop
+        // (cmd.exe's own CreateFile, inherited directly by the java.exe it
+        // launches) instead of a handle passed two processes deep. We
+        // don't need our own copy of the fd for this branch, so close it
+        // now rather than across the spawn call.
+        this._closeLaunchLogFd();
+        const cmdArgs = launchLogPath
+          ? ["/c", batPath, ">", launchLogPath, "2>&1"]
+          : ["/c", batPath];
+        this.serverProcess = spawn("cmd.exe", cmdArgs, {
           cwd: this.serverPath,
           detached: true,
-          stdio: launchStdio,
+          stdio: "ignore",
         });
       } else {
         // Ensure the script is executable
