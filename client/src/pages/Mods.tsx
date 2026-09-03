@@ -1569,9 +1569,9 @@ export default function Mods() {
       if (result.skippedIgnored > 0) parts.push(t('toasts.skippedIgnored', { count: result.skippedIgnored }))
       // Sentence separator/terminator is a language property, not something
       // every locale's untranslated fragment can be assumed to want a Latin
-      // ". " for -- zh-CN's own fragments carry no punctuation and expect a
+      // ". " for -- zh-CN / zh-TW's own fragments carry no punctuation and expect a
       // full-width terminator instead.
-      const sentenceEnd = i18n.language === 'zh-CN' ? '。' : '. '
+      const sentenceEnd = i18n.language.startsWith('zh') ? '。' : '. '
       toast({
         title: t('toasts.modsSyncedTitle'),
         description: parts.join(sentenceEnd) + sentenceEnd.trim(),

@@ -1375,9 +1375,9 @@ export default function Debug() {
           }
           // Clause separator/terminator is a language property, not something
           // every locale's untranslated fragment can be assumed to want a
-          // Latin "; "/"." for -- zh-CN's own fragments carry no punctuation
+          // Latin "; "/"." for -- zh-CN / zh-TW's own fragments carry no punctuation
           // and expect full-width equivalents instead.
-          const isZh = i18n.language === "zh-CN";
+          const isZh = i18n.language.startsWith("zh");
           const clauseSep = isZh ? "；" : "; ";
           const clauseEnd = isZh ? "。" : ".";
           toast({

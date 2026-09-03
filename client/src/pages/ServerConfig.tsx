@@ -782,8 +782,8 @@ export default function ServerConfig() {
   const initialDeepLink = resolveServerConfigDeepLink(searchParams)
   // List separator is a language property, not something a joined list of
   // translated setting labels can be assumed to want a Latin ", " for --
-  // zh-CN enumerates nouns with the ideographic comma instead.
-  const listSep = i18n.language === 'zh-CN' ? '、' : ', '
+  // zh-CN / zh-TW enumerates nouns with the ideographic comma instead.
+  const listSep = i18n.language.startsWith('zh') ? '、' : ', '
   const [activeTab, setActiveTab] = useState(initialDeepLink.tab)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
