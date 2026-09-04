@@ -25,10 +25,10 @@ import { isRemoteConfigConfigured } from "../services/remoteConfigFiles.js";
 import { normalizeUserPath, inspectZomboidPath } from "../utils/zomboidPaths.js";
 import { requirePermission } from "../services/permissions.js";
 import {
-  canAutoInstall,
-  checkBridgeInstalled,
-  installBridge,
-} from "../services/panelBridgeInstaller.js";
+  acquireLifecycleLock,
+  lifecycleInProgressResponse,
+} from "../services/lifecycleCoordinator.js";
+import { autoInstallBridgeIfNeeded } from "../services/panelBridgeInstaller.js";
 import { refreshWorkshopChecker } from "../services/modChecker.js";
 import {
   parseBoundedInteger,
@@ -139,28 +139,6 @@ async function mapWithConcurrency(items, limit, mapper) {
   });
   await Promise.all(workers);
   return results;
-}
-
-// Auto-install/update PanelBridge.lua on the newly-activated server when the
-// panel has direct filesystem access to its install directory. Best-effort:
-// logs and swallows any failure rather than affecting activation.
-function autoInstallBridgeIfNeeded(server) {
-  try {
-    if (!canAutoInstall(server)) return;
-    const status = checkBridgeInstalled(server);
-    if (status.installed && !status.needsUpdate) return;
-
-    const result = installBridge(server);
-    if (result.success) {
-      log.info(
-        `PanelBridge ${status.installed ? "updated" : "installed"} at ${result.targetPath} (v${result.version || "unknown"})`,
-      );
-    } else {
-      log.warn(`PanelBridge auto-install failed: ${result.error}`);
-    }
-  } catch (error) {
-    log.warn(`PanelBridge auto-install check failed: ${error.message}`);
-  }
 }
 
 async function refreshWorkshopCheckerIfAvailable(req) {
@@ -633,6 +611,9 @@ router.get("/status", async (req, res) => {
       try {
         const result = await serverManager.getServerProcessDetails();
         matched = Array.isArray(result?.matched) ? result.matched : [];
+        if (result?.scanFailed) {
+          detectionError = result.error || "Process detection failed";
+        }
       } catch (err) {
         detectionError = err.message;
         log.debug(`Per-server status detection failed: ${err.message}`);
@@ -703,6 +684,7 @@ router.get("/status", async (req, res) => {
         pid: pid || null,
         isActive: server.id === activeId,
         provider: "direct",
+        stateUnknown: Boolean(detectionError),
       };
     }));
 
@@ -1034,6 +1016,19 @@ router.post("/", requirePermission("servers.manage"), async (req, res) => {
       // valid importIniFrom can't stick.
       config.rconPassword = importedSettings.RCONPassword;
       if (!config.serverName) config.serverName = importServerName;
+      // discovery.js's create-from-discovery (the sibling this route's own
+      // comment says it mirrors) sets `zomboidDataPath: discovered.dataPath`
+      // -- this branch validated and read the ini from that exact same
+      // folder above but never wrote it back to `config`, so the created
+      // server had a real, working rconPassword and a null
+      // zomboidDataPath: it saved, then could not launch (serverManager
+      // needs zomboidDataPath to resolve the cachedir), with nothing at
+      // create time to connect the failure back to a bad import. Same
+      // "freshly-verified value wins" precedence as rconPassword above --
+      // this is the folder we just confirmed contains Server/<name>.ini,
+      // so a stale/mismatched client-supplied zomboidDataPath must not
+      // override it either.
+      config.zomboidDataPath = resolvedImportData;
     }
 
     // Fall back to env-configured paths (docker-compose PZ_SERVER_PATH /
@@ -1220,6 +1215,10 @@ export function parseServerId(value) {
 
 // Update a server
 router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("server-profile-change");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     const id = req.params.id;
     if (!id) {
@@ -1269,7 +1268,15 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
     }
 
     if (updates.dockerContainerName !== undefined) {
-      const value = String(updates.dockerContainerName).trim();
+      if (
+        updates.dockerContainerName !== null &&
+        typeof updates.dockerContainerName !== "string"
+      ) {
+        return res.status(400).json({
+          error: "Invalid Docker container name",
+        });
+      }
+      const value = (updates.dockerContainerName || "").trim();
       if (value && !isValidDockerContainerRef(value)) {
         return res.status(400).json({
           error: "Invalid Docker container name",
@@ -1537,11 +1544,17 @@ router.put("/:id", requirePermission("servers.manage"), async (req, res) => {
   } catch (error) {
     log.error(`Failed to update server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 
 // Delete a server
 router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("server-profile-change");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     const id = req.params.id;
     if (!id) {
@@ -1593,6 +1606,8 @@ router.delete("/:id", requirePermission("servers.manage"), async (req, res) => {
   } catch (error) {
     log.error(`Failed to delete server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 
@@ -1635,6 +1650,10 @@ async function reloadServicesForNewActiveServer(req, server) {
 
 // Set active server
 router.post("/:id/activate", requirePermission("servers.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("server-profile-change");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     const id = req.params.id;
     if (!id) {
@@ -1666,6 +1685,8 @@ router.post("/:id/activate", requirePermission("servers.manage"), async (req, re
   } catch (error) {
     log.error(`Failed to activate server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 

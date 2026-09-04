@@ -1188,7 +1188,7 @@ export class ServerManager {
     });
   }
 
-  async startServer({ skipRunningCheck = false } = {}) {
+  async startServer({ skipRunningCheck = false, serverId = this._serverId } = {}) {
     // Prevent concurrent start attempts
     if (this._starting) {
       throw new Error("Server start already in progress");
@@ -1208,8 +1208,8 @@ export class ServerManager {
       // (this._serverId — null means "the active server", unchanged from
       // before) instead of always snapping back to whichever server is
       // active, which would break a throwaway instance mid-restart.
-      this.configLoaded = false;
-      await this.loadConfig(this._serverId);
+      if (serverId !== this._serverId) this.configLoaded = false;
+      await this.loadConfig(serverId);
 
       // SteamCMD (POST /install, POST /steam-update -- see
       // ../services/activeSteamOperations.js) writes game files directly
@@ -1417,10 +1417,20 @@ export class ServerManager {
         const launchStdio = ["ignore", this._launchLogFd, this._launchLogFd];
 
         if (isWindows && (ext === ".bat" || ext === ".cmd")) {
-          this.serverProcess = spawn("cmd.exe", ["/c", resolvedCmd, ...args], {
+          // 2026-09-03, Windows spawn bugs (Dwight's pz-verify repro): do
+          // NOT pass launchStdio's raw fd here -- see the isWindows branch
+          // in the default-bat path below for why cmd.exe now does its own
+          // `>`/`2>&1` redirection instead. We don't need our own copy of
+          // the fd for this branch at all, so close it now rather than
+          // leaving it open across the spawn call for no reason.
+          this._closeLaunchLogFd();
+          const cmdArgs = launchLogPath
+            ? ["/c", resolvedCmd, ...args, ">", launchLogPath, "2>&1"]
+            : ["/c", resolvedCmd, ...args];
+          this.serverProcess = spawn("cmd.exe", cmdArgs, {
             cwd,
             detached: true,
-            stdio: launchStdio,
+            stdio: "ignore",
           });
         } else if (!isWindows && ext === ".sh") {
           try {
@@ -1511,10 +1521,43 @@ export class ServerManager {
       const launchStdio = ["ignore", this._launchLogFd, this._launchLogFd];
 
       if (isWindows) {
-        this.serverProcess = spawn("cmd.exe", ["/c", this.serverBat], {
+        // Two fixes, 2026-09-03 Windows spawn bugs (Dwight's pz-verify
+        // repro, both real, neither an artifact of his setup):
+        //
+        // (a) this.serverBat is a bare filename (e.g.
+        // "StartServer_pz-verify.bat"). cmd.exe's own implicit
+        // search-cwd-for-a-bare-name behavior is the only reason that ever
+        // worked, and NoDefaultCurrentDirectoryInExePath=1 -- a real,
+        // non-exotic Windows hardening option -- turns that off, breaking
+        // every server start on such a host with "... is not recognized as
+        // an internal or external command", independent of PanelBridge.
+        // Dwight confirmed by running the identical `cmd /c
+        // "StartServer_pz-verify.bat"` from the same cwd outside Node
+        // entirely. Fixed by spawning the already-resolved batPath (used
+        // for the existsSync check above) instead of the bare name.
+        //
+        // (b) Passing launchStdio's raw fd through Node's stdio array
+        // silently failed to carry the JVM's output into
+        // server-launch.log through the cmd.exe hop when combined with
+        // detached:true -- proved by Dwight: PZ's own DebugLog was
+        // populated for the same boot, but server-launch.log stayed at 0
+        // bytes throughout. Rather than depend on exactly how Node's
+        // stdio-fd-to-child-then-grandchild inheritance behaves under
+        // DETACHED_PROCESS on Windows (an interaction this floor can't
+        // fully instrument), cmd.exe now does its own file redirection via
+        // `>`/`2>&1` on the reconstructed command line -- one hop
+        // (cmd.exe's own CreateFile, inherited directly by the java.exe it
+        // launches) instead of a handle passed two processes deep. We
+        // don't need our own copy of the fd for this branch, so close it
+        // now rather than across the spawn call.
+        this._closeLaunchLogFd();
+        const cmdArgs = launchLogPath
+          ? ["/c", batPath, ">", launchLogPath, "2>&1"]
+          : ["/c", batPath];
+        this.serverProcess = spawn("cmd.exe", cmdArgs, {
           cwd: this.serverPath,
           detached: true,
-          stdio: launchStdio,
+          stdio: "ignore",
         });
       } else {
         // Ensure the script is executable
@@ -1652,7 +1695,10 @@ export class ServerManager {
     });
   }
 
-  async stopServer(graceful = true) {
+  async stopServer(
+    graceful = true,
+    { serverId = this._serverId } = {},
+  ) {
     if (graceful) {
       // This should be done via RCON 'quit' command
       // This method is for force stopping
@@ -1688,7 +1734,8 @@ export class ServerManager {
     // Block overlapping starts while kill/state-clear is pending.
     this._stopping = true;
     try {
-      await this.loadConfig(this._serverId);
+      if (serverId !== this._serverId) this.configLoaded = false;
+      await this.loadConfig(serverId);
       if (this.usesManagedServiceLifecycle()) {
         const result = await this._getManagedLifecycle().run("stop");
         if (result.success && result.confirmed !== false) this._clearRunState();
@@ -1700,7 +1747,6 @@ export class ServerManager {
         }
         return result;
       }
-
       // Only PIDs this server owns: a host can run several dedicated servers
       // and killing every PZ process would take the others down with it.
       const details = await this.getServerProcessDetails();
@@ -1713,6 +1759,20 @@ export class ServerManager {
         log.info(
           `stopServer: force killing PID(s) for "${this.serverName}": ${pids.join(", ")}`,
         );
+        const launcher = this.serverProcess;
+        if (
+          !isWindows &&
+          launcher?.pid &&
+          launcher.killed !== true &&
+          launcher.exitCode === null
+        ) {
+          const groupResult = this._killProcessGroup(launcher.pid);
+          if (groupResult.failed) {
+            log.debug(
+              `stopServer: launcher process-group kill failed: ${groupResult.errors.join("; ")}`,
+            );
+          }
+        }
         const killResult = await this._killPids(pids);
         const { timedOut, failed, errors = [] } = killResult;
         if (timedOut) {
@@ -1743,6 +1803,15 @@ export class ServerManager {
             message: "The server could not be stopped.",
           };
         }
+        if (!(await this._confirmProcessStopped())) {
+          return {
+            success: true,
+            confirmed: false,
+            timedOut: true,
+            message:
+              "Stop signal sent, but the server is still running or its exit could not be confirmed",
+          };
+        }
         this._clearRunState();
         await logServerEvent(
           "server_stop",
@@ -1771,7 +1840,6 @@ export class ServerManager {
       log.warn(
         "stopServer: process detection failed. Falling back to generic force stop.",
       );
-      this._clearRunState();
       const forceResult = await this._genericForceStop();
       const { timedOut, failed, errors = [] } = forceResult;
       if (timedOut) {
@@ -1798,6 +1866,15 @@ export class ServerManager {
           confirmed: false,
           error: errorMessage,
           message: "The server could not be force-stopped.",
+        };
+      }
+      if (!(await this._confirmProcessStopped())) {
+        return {
+          success: true,
+          confirmed: false,
+          timedOut: true,
+          message:
+            "Stop signal sent, but the server is still running or its exit could not be confirmed",
         };
       }
       this._clearRunState();
@@ -1850,7 +1927,7 @@ export class ServerManager {
         for (const pid of pids) {
           execFile(
             "taskkill",
-            ["/PID", pid, "/F"],
+            ["/PID", pid, "/T", "/F"],
             { timeout: this._killTimeoutMs },
             (killErr) => {
               if (killErr) {
@@ -1889,6 +1966,40 @@ export class ServerManager {
     });
   }
 
+  _killProcessGroup(pid) {
+    if (isWindows || !/^\d+$/.test(String(pid ?? "")) || Number(pid) <= 1) {
+      return { failed: false, errors: [] };
+    }
+
+    try {
+      process.kill(-Number(pid), "SIGKILL");
+      return { failed: false, errors: [] };
+    } catch (error) {
+      const outcome = classifyProcessKillError(error);
+      return {
+        failed: outcome === "failed",
+        errors: outcome === "failed" ? [error.message] : [],
+      };
+    }
+  }
+
+  async _confirmProcessStopped() {
+    let timeoutId;
+    const processDetails = Promise.resolve()
+      .then(() => this.getServerProcessDetails())
+      .catch(() => null);
+    const timeout = new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve(null), 3000);
+    });
+
+    try {
+      const details = await Promise.race([processDetails, timeout]);
+      return Boolean(details && !details.scanFailed && details.running === false);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   // Resolves to { timedOut }, same meaning as _killPids above.
   _genericForceStop() {
     return new Promise((resolve) => {
@@ -1896,7 +2007,7 @@ export class ServerManager {
         let timedOut = false;
         const errors = [];
         exec(
-          "taskkill /IM ProjectZomboid64.exe /F",
+          "taskkill /IM ProjectZomboid64.exe /T /F",
           { timeout: this._killTimeoutMs },
           (err1) => {
             const outcome1 = classifyProcessKillError(err1);

@@ -29,12 +29,18 @@ import { normalizeMemoryGb } from "../utils/memory.js";
 import { withFileLock, writeFileAtomic } from "../utils/fileWriteQueue.js";
 import { requirePermission } from "../services/permissions.js";
 import { runManagedLifecycle } from "../services/managedContainer.js";
+import {
+  acquireLifecycleLock,
+  lifecycleInProgressResponse,
+} from "../services/lifecycleCoordinator.js";
 import { ErrorCode } from "../utils/errorCodes.js";
 import { ProgressCode } from "../utils/progressCodes.js";
 import { invalidateMapFolderScan } from "./chunks.js";
 import { emitActionResult } from "./scheduler.js";
+import { autoInstallBridgeIfNeeded } from "../services/panelBridgeInstaller.js";
 import { parseBoundedInteger } from "../utils/queryNumbers.js";
 import { confineToRoots } from "../utils/browseRoots.js";
+import { isContainerized } from "../utils/dockerDetect.js";
 
 const router = express.Router();
 
@@ -643,9 +649,7 @@ export function formatWritablePathError(
   platformIsWindows = isWindows,
 ) {
   const label = WRITABLE_PATH_LABELS[kind];
-  const isContainer =
-    !platformIsWindows &&
-    (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv"));
+  const isContainer = !platformIsWindows && isContainerized();
   const baseMessage = `${label} is not writable: ${directoryPath}.`;
 
   // Wording sharpened 2026-08-29 (Linux bug hunt, "raw EACCES with no
@@ -1366,6 +1370,17 @@ async function waitForRconAfterStart({ rconService, discordBot }) {
 
 // Start server
 router.post("/start", requirePermission("server.control"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("start");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
+  let lifecycleLockTransferred = false;
+  let lifecycleLockReleased = false;
+  const releaseLifecycleLock = () => {
+    if (lifecycleLockReleased) return;
+    lifecycleLockReleased = true;
+    lifecycleLock.release();
+  };
   try {
     const activeServer = await getActiveServer();
     log.info(
@@ -1382,12 +1397,27 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
     const serverManager = req.app.get("serverManager");
     const rconService = req.app.get("rconService");
 
+    // Keep PanelBridge.lua current on disk before anything spawns -- PZ
+    // loads Lua at Java-process startup, so this is the last moment a write
+    // here can reach the launch that's about to happen. Must run before
+    // BOTH branches below: runManagedLifecycle() below is itself the spawn
+    // for a docker-local (bind-mounted) server, and serverManager.startServer()
+    // further down is the spawn for a native one. Best-effort and silent by
+    // design (autoInstallBridgeIfNeeded's own comment) -- a failed install
+    // must never block starting the server (2026-09-02 bridge-enforcement).
+    autoInstallBridgeIfNeeded(activeServer);
+
     // A container-managed server is started through Docker: the panel has no
     // process to spawn, and after a `docker stop` there is nothing left running
     // for it to reattach to.
-    const managed = await runManagedLifecycle("start");
+    const managed = await runManagedLifecycle("start", {
+      serverId: activeServer?.id ?? null,
+    });
     if (managed.handled && !managed.success) {
       return res.status(502).json({ error: sanitizeError(managed.error) });
+    }
+    if (managed.alreadyRunning) {
+      return res.json(managed);
     }
 
     // A server that has never booted has no world database and no admin
@@ -1425,7 +1455,9 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
 
     const result = managed.handled
       ? { success: true, message: managed.message || "Container starting" }
-      : await serverManager.startServer();
+      : await serverManager.startServer({
+          serverId: activeServer?.id ?? null,
+        });
     if (scriptBackupWarnings.length > 0) {
       result.scriptWarnings = scriptBackupWarnings;
     }
@@ -1454,12 +1486,15 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
     if (managed.handled) {
       if (io) io.emit("server:status", { running: true });
       log.info("Container start confirmed by Docker; skipping local process poll");
-      waitForRconAfterStart({
+      lifecycleLockTransferred = true;
+      void waitForRconAfterStart({
         rconService,
         discordBot: req.app.get("discordBot"),
-      }).catch((err) =>
-        log.error(`Post-start RCON wait failed: ${err.message}`),
-      );
+      })
+        .catch((err) =>
+          log.error(`Post-start RCON wait failed: ${err.message}`),
+        )
+        .finally(() => releaseLifecycleLock());
       res.json(result);
       return;
     }
@@ -1494,6 +1529,7 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
           if (attempts >= maxAttempts) {
             pollCleared = true;
             clearInterval(pollInterval);
+            releaseLifecycleLock();
             if (rconService.setServerStarting) {
               rconService.setServerStarting(false);
             } else {
@@ -1514,9 +1550,11 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
           if (io) io.emit("server:status", { running: true });
           log.info("Server detected as running");
           await waitForRconAfterStart({ rconService, discordBot: req.app.get("discordBot") });
+          releaseLifecycleLock();
         } else if (attempts >= maxAttempts) {
           pollCleared = true;
           clearInterval(pollInterval);
+          releaseLifecycleLock();
           if (rconService.setServerStarting) {
             rconService.setServerStarting(false);
           } else {
@@ -1528,6 +1566,7 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
         // Clear interval on error to prevent memory leak
         pollCleared = true;
         clearInterval(pollInterval);
+        releaseLifecycleLock();
         if (rconService.setServerStarting) {
           rconService.setServerStarting(false);
         } else {
@@ -1536,18 +1575,33 @@ router.post("/start", requirePermission("server.control"), async (req, res) => {
         log.error(`Server status poll failed: ${err.message}`);
       }
     }, 1000);
+    lifecycleLockTransferred = true;
 
     // Send immediate response
     res.json(result);
   } catch (error) {
     log.error(`Failed to start server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    if (!lifecycleLockTransferred) releaseLifecycleLock();
   }
 });
 
 // Stop server (graceful via RCON)
 router.post("/stop", requirePermission("server.control"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("stop");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
+  let lifecycleLockTransferred = false;
+  let lifecycleLockReleased = false;
+  const releaseLifecycleLock = () => {
+    if (lifecycleLockReleased) return;
+    lifecycleLockReleased = true;
+    lifecycleLock.release();
+  };
   try {
+    const activeServer = await getActiveServer();
     const rconService = req.app.get("rconService");
     const serverManager = req.app.get("serverManager");
     log.info("POST /stop — graceful shutdown requested");
@@ -1564,7 +1618,7 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
 
     // Save first — quitting after a failed save discards everything since
     // the last one.
-    const saved = await rconService.save();
+    const saved = await rconService.save({ retryOnConnectionError: false });
     if (!saved?.success) {
       return res.status(502).json({
         error: `Save failed, so the server was left running: ${sanitizeError(saved?.error)}`,
@@ -1575,7 +1629,9 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
     // A container-managed server must go down through Docker. RCON quit kills
     // PID 1 inside the container, which exits the container and lets its
     // restart policy bring the world straight back up.
-    const managed = await runManagedLifecycle("stop");
+    const managed = await runManagedLifecycle("stop", {
+      serverId: activeServer?.id ?? null,
+    });
     if (managed.handled && !managed.success) {
       return res.status(502).json({
         error: `The world was saved, but the container could not be stopped: ${sanitizeError(managed.error)}`,
@@ -1584,7 +1640,7 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
     }
 
     if (!managed.handled && serverManager.loadConfig) {
-      await serverManager.loadConfig();
+      await serverManager.loadConfig(activeServer?.id ?? null);
     }
     const serviceManaged = Boolean(
       !managed.handled && serverManager.usesManagedServiceLifecycle?.(),
@@ -1592,8 +1648,10 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
     const result = managed.handled
       ? { success: true, message: managed.message || "Container stopping" }
       : serviceManaged
-        ? await serverManager.stopServer(false)
-        : await rconService.quit();
+        ? await serverManager.stopServer(false, {
+            serverId: activeServer?.id ?? null,
+          })
+        : await rconService.quit({ retryOnConnectionError: false });
 
     if (!result?.success || result.confirmed === false) {
       return res.status(502).json({
@@ -1611,7 +1669,14 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
       // cached run state) is honest as-is.
       serverManager?.markServerStopped?.();
       const io = req.app.get("io");
-      if (io) io.emit("server:status", { running: false });
+      const checkServerStatusNow = req.app.get("checkServerStatusNow");
+      if (typeof checkServerStatusNow === "function") {
+        Promise.resolve(checkServerStatusNow("managed-stop")).catch((err) =>
+          log.debug(`Post-stop status re-check failed: ${err.message}`),
+        );
+      } else if (io) {
+        io.emit("server:status", { running: false });
+      }
       await logServerEventBestEffort(
         "server_stop",
         serviceManaged
@@ -1646,7 +1711,7 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
       // going stale the way it did before this fix (2026-08-26 bug hunt).
       const checkServerStatusNow = req.app.get("checkServerStatusNow");
       if (typeof checkServerStatusNow === "function") {
-        Promise.resolve(checkServerStatusNow()).catch((err) =>
+        Promise.resolve(checkServerStatusNow("graceful-stop")).catch((err) =>
           log.debug(`Post-stop status re-check failed: ${err.message}`),
         );
       }
@@ -1657,12 +1722,16 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
       result.message =
         result.message || result.response || "Shutdown requested";
       result.confirmed = false;
+      monitorGracefulStop(serverManager, releaseLifecycleLock);
+      lifecycleLockTransferred = true;
     }
 
     res.json(result);
   } catch (error) {
     log.error(`Failed to stop server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    if (!lifecycleLockTransferred) releaseLifecycleLock();
   }
 });
 
@@ -1680,6 +1749,40 @@ router.post("/stop", requirePermission("server.control"), async (req, res) => {
 // us something is wrong and a slow save is exactly the symptom, not
 // something worth waiting out to its normal limit.
 const FORCE_STOP_SAVE_TIMEOUT_MS = 3000;
+const GRACEFUL_STOP_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
+
+function monitorGracefulStop(serverManager, releaseLifecycleLock) {
+  if (typeof serverManager?.getServerProcessDetails !== "function") {
+    releaseLifecycleLock();
+    return;
+  }
+
+  const deadline = Date.now() + GRACEFUL_STOP_CONFIRMATION_TIMEOUT_MS;
+  const poll = async () => {
+    try {
+      const details = await serverManager.getServerProcessDetails();
+      if (details && !details.scanFailed && details.running === false) {
+        releaseLifecycleLock();
+        return;
+      }
+    } catch (error) {
+      log.debug(`Graceful stop confirmation failed: ${error.message}`);
+    }
+
+    if (Date.now() >= deadline) {
+      log.warn("Graceful stop confirmation timed out; releasing lifecycle lock");
+      releaseLifecycleLock();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void poll();
+    }, 1000);
+    timer.unref?.();
+  };
+
+  void poll();
+}
 
 // Attempts a save before a force-stop, bounded and FAIL-OPEN: the caller
 // gets `saveOutcome` ("saved" | "failed" | "timedOut" | "skipped") but the
@@ -1693,7 +1796,7 @@ async function attemptBoundedSaveBeforeForceStop(rconService) {
   if (!rconService?.connected) return "skipped";
   try {
     const saveResult = await Promise.race([
-      rconService.save(),
+      rconService.save({ retryOnConnectionError: false }),
       new Promise((_, reject) =>
         setTimeout(
           () => reject(new Error("Force-stop save timed out")),
@@ -1714,6 +1817,10 @@ async function attemptBoundedSaveBeforeForceStop(rconService) {
 
 // Force stop server
 router.post("/force-stop", requirePermission("server.control"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("force-stop");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   try {
     log.info("POST /force-stop — force kill requested");
     const activeServer = await getActiveServer();
@@ -1732,7 +1839,9 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
     // Killing the PID of a containerized server just triggers its restart
     // policy. Docker's stop escalates SIGTERM to SIGKILL on its own and, unlike
     // a process kill, keeps the container down afterwards.
-    const managed = await runManagedLifecycle("stop");
+    const managed = await runManagedLifecycle("stop", {
+      serverId: activeServer?.id ?? null,
+    });
     if (managed.handled && !managed.success) {
       return res
         .status(502)
@@ -1745,7 +1854,9 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
           success: true,
           message: managed.message || "Container stopped.",
         }
-      : await serverManager.stopServer(false);
+      : await serverManager.stopServer(false, {
+          serverId: activeServer?.id ?? null,
+        });
 
     if (!result?.success || result.confirmed === false) {
       return res.status(502).json({
@@ -1759,17 +1870,31 @@ router.post("/force-stop", requirePermission("server.control"), async (req, res)
     serverManager?.markServerStopped?.();
 
     const io = req.app.get("io");
-    if (io) io.emit("server:status", { running: false });
+    const checkServerStatusNow = req.app.get("checkServerStatusNow");
+    if (typeof checkServerStatusNow === "function") {
+      Promise.resolve(checkServerStatusNow("force-stop")).catch((err) =>
+        log.debug(`Post-stop status re-check failed: ${err.message}`),
+      );
+    } else if (io) {
+      io.emit("server:status", { running: false });
+    }
 
     res.json({ ...result, saveOutcome });
   } catch (error) {
     log.error(`Failed to force stop server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    lifecycleLock.release();
   }
 });
 
 // Restart server
 router.post("/restart", requirePermission("server.control"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock("restart");
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
+  let lifecycleLockTransferred = false;
   try {
     const activeServer = await getActiveServer();
     if (activeServer?.isRemote) {
@@ -1781,6 +1906,10 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
     }
 
     const scheduler = req.app.get("scheduler");
+    if (scheduler.restartInProgress) {
+      lifecycleLock.release();
+      return res.status(409).json(lifecycleInProgressResponse());
+    }
     // Parse and clamp warningMinutes to 0-60 (matches /api/scheduler/restart-now)
     let warningMinutes = parseBoundedInteger(
       req.body?.warningMinutes,
@@ -1802,7 +1931,22 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
     // it had the identical blind-success shape that route used to have
     // before the 2026-08-26 bug hunt fixed it there, just never fixed here.
     const io = req.app.get("io");
-    scheduler.performRestart(warningMinutes, { label: "Manual restart" })
+
+    // Same reasoning as POST /start: this must run before performRestart()
+    // actually respawns the process, not after. A restart can carry a
+    // multi-minute warning countdown, so doing this now (synchronously,
+    // before performRestart is even invoked) is strictly earlier than
+    // necessary, not just early enough (2026-09-02 bridge-enforcement).
+    autoInstallBridgeIfNeeded(activeServer);
+
+    const restartPromise = Promise.resolve(
+      scheduler.performRestart(warningMinutes, {
+        label: "Manual restart",
+        lifecycleLock,
+      }),
+    );
+    lifecycleLockTransferred = true;
+    void restartPromise
       .then((result) => {
         emitActionResult(io, {
           kind: "restart",
@@ -1817,7 +1961,8 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
           success: false,
           message: err.message,
         });
-      });
+      })
+      .finally(() => lifecycleLock.release());
 
     res.json({
       success: true,
@@ -1829,6 +1974,8 @@ router.post("/restart", requirePermission("server.control"), async (req, res) =>
   } catch (error) {
     log.error(`Failed to restart server: ${error.message}`);
     res.status(500).json({ error: sanitizeError(error.message) });
+  } finally {
+    if (!lifecycleLockTransferred) lifecycleLock.release();
   }
 });
 

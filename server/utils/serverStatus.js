@@ -12,7 +12,11 @@ export function isServerObservedRunning({
   rconConnected = false,
   bridgeConnected = false,
   processScanFailed = false,
+  hostStateAuthoritative = false,
 } = {}) {
+  if (hostStateAuthoritative && !processScanFailed) {
+    return Boolean(processRunning);
+  }
   if (processScanFailed && !rconConnected && !bridgeConnected) return null;
   return Boolean(processRunning || rconConnected || bridgeConnected);
 }
@@ -79,6 +83,7 @@ export async function resolveObservedServerRunning(serverManager, rconService, d
       rconConnected: rconService?.connected,
       bridgeConnected: panelBridge.isModConnected(),
       processScanFailed: dockerSignal.scanFailed,
+      hostStateAuthoritative: !dockerSignal.scanFailed,
     });
   }
 
@@ -92,5 +97,9 @@ export async function resolveObservedServerRunning(serverManager, rconService, d
     rconConnected: rconService?.connected,
     bridgeConnected: panelBridge.isModConnected(),
     processScanFailed: !processDetails || processDetails.scanFailed,
+    hostStateAuthoritative:
+      Boolean(processDetails) &&
+      !processDetails.scanFailed &&
+      !["systemd", "openrc"].includes(activeServer?.lifecycleProvider),
   });
 }

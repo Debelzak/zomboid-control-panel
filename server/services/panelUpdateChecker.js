@@ -110,6 +110,11 @@ export function getDevModeUpgradeInstruction(containerized = isContainerized()) 
     : "In dev mode, pull the latest code with git.";
 }
 
+function addPreflightMessage(messages, details, key, params, fallback) {
+  messages.push(fallback);
+  details.push({ key, params });
+}
+
 export function createUpdateDataBackup(dataPaths, version, fsModule = fs) {
   const dbPath = dataPaths?.dbPath;
   if (!dbPath || !fsModule.existsSync(dbPath)) return null;
@@ -1604,12 +1609,14 @@ export class PanelUpdateChecker {
 
   /**
    * Run preflight checks before download/apply. Returns:
-   *   { ok, blockers: string[], warnings: string[], info: {...} }
+  *   { ok, blockers: string[], warnings: string[], blockerDetails: [], warningDetails: [], info: {...} }
    * Blockers prevent the update from proceeding; warnings are shown to the user.
    */
   async preflight() {
     const blockers = [];
     const warnings = [];
+    const blockerDetails = [];
+    const warningDetails = [];
     const info = {};
 
     const isWindows = process.platform === "win32";
@@ -1623,21 +1630,51 @@ export class PanelUpdateChecker {
 
     if (this.dockerUpdateProxy.enabled) {
       info.dockerUpdater = true;
-      return { ok: true, blockers, warnings, info };
+      // Everything binary mode checks below (disk space, write permissions,
+      // database readability) is about THIS process's own filesystem
+      // access -- none of it applies here, since a separate update
+      // controller container does the build/health-check/rollback for
+      // docker mode. Returning bare ok:true with empty warnings used to
+      // look identical to "we checked, you are fine" when the truth is "we
+      // cannot check this from here" -- an honest warning instead of a
+      // silently clean list, rather than inventing docker-side checks this
+      // process has no way to actually perform. ok stays true: there is no
+      // known blocker, so a docker update should still be allowed to
+      // proceed.
+      info.checksPerformed = false;
+      addPreflightMessage(
+        warnings,
+        warningDetails,
+        "updates.preflight.dockerNotChecked",
+        {},
+        "Docker updates are applied by a separate update controller container. The panel does not run its own preflight checks (disk space, permissions, etc.) for this mode -- those are the controller's responsibility.",
+      );
+      return { ok: true, blockers, warnings, blockerDetails, warningDetails, info };
     }
 
     if (!isPackaged) {
-      blockers.push(
-        `Self-update is only available in packaged builds. ${getDevModeUpgradeInstruction()}`,
+      const containerized = isContainerized();
+      addPreflightMessage(
+        blockers,
+        blockerDetails,
+        containerized
+          ? "updates.preflight.packagedBuildDocker"
+          : "updates.preflight.packagedBuildGit",
+        {},
+        `Self-update is only available in packaged builds. ${getDevModeUpgradeInstruction(containerized)}`,
       );
-      return { ok: false, blockers, warnings, info };
+      return { ok: false, blockers, warnings, blockerDetails, warningDetails, info };
     }
 
     if (!this.latestRelease) {
-      warnings.push(
+      addPreflightMessage(
+        warnings,
+        warningDetails,
+        "updates.preflight.noReleaseInfo",
+        {},
         "No release info cached yet — click Check for Updates first.",
       );
-      return { ok: blockers.length === 0, blockers, warnings, info };
+      return { ok: blockers.length === 0, blockers, warnings, blockerDetails, warningDetails, info };
     }
 
     if (!this.updateAvailable) {
@@ -1662,11 +1699,23 @@ export class PanelUpdateChecker {
         info.databaseReadable = true;
       } catch (err) {
         info.databaseReadable = false;
-        blockers.push(`Panel database cannot be read before update: ${err.message}.`);
+        addPreflightMessage(
+          blockers,
+          blockerDetails,
+          "updates.preflight.databaseUnreadable",
+          { error: err.message },
+          `Panel database cannot be read before update: ${err.message}.`,
+        );
       }
     } else {
       info.databaseReadable = false;
-      warnings.push("No data/db.json was found beside the running panel. This looks like a fresh install; verify the data folder before applying the update.");
+      addPreflightMessage(
+        warnings,
+        warningDetails,
+        "updates.preflight.databaseMissing",
+        {},
+        "No data/db.json was found beside the running panel. This looks like a fresh install; verify the data folder before applying the update.",
+      );
     }
 
     // Resolve the asset so we can size-check.
@@ -1690,7 +1739,12 @@ export class PanelUpdateChecker {
       }
     }
     if (!asset) {
-      blockers.push(
+      const platform = isWindows ? "Windows" : "Linux";
+      addPreflightMessage(
+        blockers,
+        blockerDetails,
+        "updates.preflight.binaryMissing",
+        { platform },
         `No ${isWindows ? "Windows" : "Linux"} binary found in the latest release.`,
       );
     } else {
@@ -1706,7 +1760,19 @@ export class PanelUpdateChecker {
       info.writable = true;
     } catch (err) {
       info.writable = false;
-      blockers.push(getPanelFolderPermissionGuidance(process.platform, err.code || err.message));
+      const permissionKey =
+        process.platform === "win32"
+          ? "updates.preflight.folderNotWritableWindows"
+          : process.platform === "linux"
+            ? "updates.preflight.folderNotWritableLinux"
+            : "updates.preflight.folderNotWritableOther";
+      addPreflightMessage(
+        blockers,
+        blockerDetails,
+        permissionKey,
+        { detail: err.code || err.message },
+        getPanelFolderPermissionGuidance(process.platform, err.code || err.message),
+      );
     } finally {
       if (probeCreated) {
         try {
@@ -1726,7 +1792,13 @@ export class PanelUpdateChecker {
         info.freeBytes = free;
         const needed = asset.size * 2;
         if (free !== null && free < needed) {
-          blockers.push(
+          const neededMb = (needed / 1024 / 1024).toFixed(0);
+          const freeMb = (free / 1024 / 1024).toFixed(0);
+          addPreflightMessage(
+            blockers,
+            blockerDetails,
+            "updates.preflight.diskSpace",
+            { neededMb, freeMb },
             `Not enough free disk space. Need ~${(needed / 1024 / 1024).toFixed(0)} MB, have ${(free / 1024 / 1024).toFixed(0)} MB.`,
           );
         }
@@ -1743,12 +1815,20 @@ export class PanelUpdateChecker {
       const onDesktop = /\\desktop(\\|$)/.test(lowered);
       const inDocuments = /\\documents(\\|$)/.test(lowered);
       if (inOneDrive) {
-        warnings.push(
+        addPreflightMessage(
+          warnings,
+          warningDetails,
+          "updates.preflight.oneDrive",
+          {},
           "Panel lives inside a OneDrive-synced folder. Sync can briefly lock the exe while it is being replaced. Pause OneDrive before clicking Restart and Apply, or move the panel to a non-synced location (e.g. C:\\ZomboidPanel).",
         );
         info.oneDrive = true;
       } else if (onDesktop || inDocuments) {
-        warnings.push(
+        addPreflightMessage(
+          warnings,
+          warningDetails,
+          "updates.preflight.syncSuspect",
+          {},
           "Panel lives on the Desktop or in Documents. If you use OneDrive Backup/Known Folder Move, that folder is sync-backed and may lock the exe during apply. Consider moving the panel to a non-synced location.",
         );
         info.syncSuspect = true;
@@ -1756,7 +1836,11 @@ export class PanelUpdateChecker {
 
       const inProgramFiles = /^c:\\program files/i.test(exeDir);
       if (inProgramFiles) {
-        warnings.push(
+        addPreflightMessage(
+          warnings,
+          warningDetails,
+          "updates.preflight.programFiles",
+          {},
           "Panel is installed under Program Files — Windows requires Administrator rights to replace files there. If apply fails, relaunch the panel as Administrator.",
         );
         info.programFiles = true;
@@ -1767,7 +1851,11 @@ export class PanelUpdateChecker {
     const staged = this.getStagedUpdate();
     if (staged) {
       info.stagedUpdate = { version: staged.version, path: staged.stagedPath };
-      warnings.push(
+      addPreflightMessage(
+        warnings,
+        warningDetails,
+        "updates.preflight.previousUpdateStaged",
+        { version: staged.version || "?" },
         `A previous update (v${staged.version || "?"}) is already staged and ready to apply on next restart.`,
       );
     }
@@ -1777,7 +1865,11 @@ export class PanelUpdateChecker {
       const oldPath = exePath + ".old";
       if (fs.existsSync(oldPath)) {
         info.oldPath = oldPath;
-        warnings.push(
+        addPreflightMessage(
+          warnings,
+          warningDetails,
+          "updates.preflight.previousBackup",
+          {},
           "A previous backup (.old) is present next to the exe. It will be cleaned up on the next successful apply.",
         );
       }
@@ -1785,7 +1877,7 @@ export class PanelUpdateChecker {
       log.debug(`.old probe failed: ${err.message}`);
     }
 
-    return { ok: blockers.length === 0, blockers, warnings, info };
+    return { ok: blockers.length === 0, blockers, warnings, blockerDetails, warningDetails, info };
   }
 
   /**

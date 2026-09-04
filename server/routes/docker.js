@@ -4,6 +4,10 @@ import { sanitizeError, sanitizeErrorParams } from "../utils/sanitize.js";
 import { getServer } from "../database/init.js";
 import { RconService } from "../services/rcon.js";
 import { ErrorCode } from "../utils/errorCodes.js";
+import {
+  acquireLifecycleLock,
+  lifecycleInProgressResponse,
+} from "../services/lifecycleCoordinator.js";
 
 const router = express.Router();
 
@@ -69,6 +73,10 @@ router.get("/stats", requirePermission("docker.manage"), async (req, res) => {
 });
 
 router.post("/containers/:id/:action", requirePermission("docker.manage"), async (req, res) => {
+  const lifecycleLock = acquireLifecycleLock(`docker-${req.params.action}`);
+  if (!lifecycleLock) {
+    return res.status(409).json(lifecycleInProgressResponse());
+  }
   let rconService = null;
   try {
     const dockerClient = req.app.get("dockerClient");
@@ -135,6 +143,7 @@ router.post("/containers/:id/:action", requirePermission("docker.manage"), async
     if (rconService?.connected) {
       await rconService.disconnect().catch(() => {});
     }
+    lifecycleLock.release();
   }
 });
 

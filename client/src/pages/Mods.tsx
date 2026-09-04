@@ -1058,12 +1058,9 @@ export default function Mods() {
     [groupedMods]
   )
 
-  // hunt-wave7-2026-08-29: status.removedWorkshopIds is bare workshop ids
-  // (Steam confirmed EResult 9 -- FileNotFound, permanently gone) -- resolve
-  // to names for a message an operator can actually act on. A removed item
-  // still shows by its raw id if it's somehow not in the tracked list (e.g.
-  // the tracking record itself was deleted separately) rather than being
-  // silently dropped from the count.
+  // status.removedWorkshopIds contains Workshop IDs still present in tracking
+  // after Steam confirmed EResult 9 (FileNotFound); removed subscriptions are
+  // filtered server-side so this warning disappears after the X action.
   const removedWorkshopMods = useMemo(() => {
     const byId = new Map(mods.map((m) => [m.workshop_id, m]))
     return (status?.removedWorkshopIds || []).map((id) => ({
@@ -1572,9 +1569,9 @@ export default function Mods() {
       if (result.skippedIgnored > 0) parts.push(t('toasts.skippedIgnored', { count: result.skippedIgnored }))
       // Sentence separator/terminator is a language property, not something
       // every locale's untranslated fragment can be assumed to want a Latin
-      // ". " for -- zh-CN's own fragments carry no punctuation and expect a
+      // ". " for -- zh-CN / zh-TW's own fragments carry no punctuation and expect a
       // full-width terminator instead.
-      const sentenceEnd = i18n.language === 'zh-CN' ? '。' : '. '
+      const sentenceEnd = i18n.language.startsWith('zh') ? '。' : '. '
       toast({
         title: t('toasts.modsSyncedTitle'),
         description: parts.join(sentenceEnd) + sentenceEnd.trim(),

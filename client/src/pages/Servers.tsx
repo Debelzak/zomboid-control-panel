@@ -82,7 +82,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { serversApi, serversDetectApi, dockerApi, DockerContainerStats, DockerContainerSummary, ServerInstance, configApi, serverApi, updateApi, UpdateStatus, DiscoveredMount, ComposedServerStatus } from '@/lib/api'
-import { resolveClientProvider, waitForServerState } from '@/lib/serverStatus'
+import { resolveClientProvider, resolveServerCardRunning, waitForServerState } from '@/lib/serverStatus'
 import { getInstallProgressMessage } from '@/lib/installProgressMessage'
 import { ServerStatusBadge } from '@/components/ServerStatusBadge'
 import { SocketContext } from '@/contexts/SocketContext'
@@ -275,7 +275,7 @@ export default function Servers() {
   const [servers, setServers] = useState<ServerInstance[] | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const serversConfirmedEmpty = servers !== null && servers.length === 0
-  const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null }>>({})
+  const [serverStatuses, setServerStatuses] = useState<Record<string, { running: boolean; pid: string | null; stateUnknown?: boolean }>>({})
   const [rconStatuses, setRconStatuses] = useState<Record<string, string>>({})
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [dockerContainers, setDockerContainers] = useState<DockerContainerSummary[]>([])
@@ -292,6 +292,8 @@ export default function Servers() {
   // (nothing here can verify it without SFTP access). There is no bridge
   // signal on any non-active card, docker or otherwise.
   const [activeStatus, setActiveStatus] = useState<ComposedServerStatus | null>(null)
+  const [activeStatusServerId, setActiveStatusServerId] = useState<string | number | null>(null)
+  const activeStatusRequestRef = useRef(0)
   const [loading, setLoading] = useState(true)
   const [managedLifecycleSupported, setManagedLifecycleSupported] = useState(false)
   const [editingServer, setEditingServer] = useState<ServerInstance | null>(null)
@@ -413,6 +415,11 @@ export default function Servers() {
   const { toast } = useToast()
   const socket = useContext(SocketContext)
   const navigate = useNavigate()
+  const currentActiveStatus = activeServerId !== null &&
+    activeStatusServerId !== null &&
+    String(activeServerId) === String(activeStatusServerId)
+    ? activeStatus
+    : null
 
 
 
@@ -443,10 +450,10 @@ export default function Servers() {
   const fetchServerStatuses = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     try {
-      const data = await serversApi.getStatus()
-      const next: Record<string, { running: boolean; pid: string | null }> = {}
+      const data = await serversApi.getStatus({ retries: 0 })
+      const next: Record<string, { running: boolean; pid: string | null; stateUnknown?: boolean }> = {}
       for (const s of data.servers || []) {
-        next[String(s.id)] = { running: !!s.running, pid: s.pid }
+        next[String(s.id)] = { running: !!s.running, pid: s.pid, stateUnknown: s.stateUnknown === true }
       }
       setServerStatuses(next)
     } catch (error) {
@@ -529,12 +536,18 @@ export default function Servers() {
   // Provider-aware host/RCON/bridge status for whichever server is active —
   // shown on its card via ServerStatusBadge instead of a single Running/
   // Stopped flag that hides RCON/bridge trouble behind a "running" container.
-  const fetchActiveStatus = useCallback(async () => {
+  const fetchActiveStatus = useCallback(async (serverId: string | number) => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    const requestId = ++activeStatusRequestRef.current
     try {
-      setActiveStatus(await serversApi.getComposedStatus())
+      const nextStatus = await serversApi.getComposedStatus({ retries: 0 })
+      if (requestId !== activeStatusRequestRef.current) return
+      setActiveStatus(nextStatus)
+      setActiveStatusServerId(serverId)
     } catch (error) {
+      if (requestId !== activeStatusRequestRef.current) return
       setActiveStatus(null)
+      setActiveStatusServerId(null)
       reportClientWarning('Failed to fetch active server status.', error)
     }
   }, [])
@@ -571,13 +584,18 @@ export default function Servers() {
   }, [fetchServers, fetchServerStatuses, fetchRconStatuses, fetchDockerState])
 
   useEffect(() => {
-    if (!activeServerId) {
-      setActiveStatus(null)
+    activeStatusRequestRef.current += 1
+    setActiveStatus(null)
+    setActiveStatusServerId(null)
+    if (activeServerId === null) {
       return
     }
-    fetchActiveStatus()
-    const interval = setInterval(fetchActiveStatus, 10000)
-    return () => clearInterval(interval)
+    void fetchActiveStatus(activeServerId)
+    const interval = setInterval(() => void fetchActiveStatus(activeServerId), 10000)
+    return () => {
+      clearInterval(interval)
+      activeStatusRequestRef.current += 1
+    }
   }, [activeServerId, fetchActiveStatus])
 
   useEffect(() => {
@@ -589,7 +607,7 @@ export default function Servers() {
         ...prev,
         [String(activeServerId)]: { running: data.running as boolean, pid: null },
       }))
-      fetchActiveStatus()
+      void fetchActiveStatus(activeServerId)
     }
 
     socket.on('server:status', handleServerStatus)
@@ -725,7 +743,9 @@ export default function Servers() {
     if (!socket) return
 
     const handleActiveServerChanged = () => {
+      activeStatusRequestRef.current += 1
       setActiveStatus(null)
+      setActiveStatusServerId(null)
       fetchServers()
     }
 
@@ -968,7 +988,7 @@ export default function Servers() {
   const [serverActionPending, setServerActionPending] = useState<string | null>(null)
   const waitForActionState = useCallback(async (serverId: string | number, expectedRunning: boolean) => {
     return waitForServerState(
-      serversApi.getStatus,
+      () => serversApi.getStatus({ retries: 0 }),
       serverId,
       expectedRunning,
       (serverStatus) => {
@@ -1731,13 +1751,13 @@ export default function Servers() {
                         // composed status endpoint; every other card only knows
                         // whatever its own provider-appropriate source found for it
                         // (see the comment on serverStatuses above this component).
-                        if (server.isActive && activeStatus) {
+                        if (server.isActive && currentActiveStatus) {
                           return (
                             <ServerStatusBadge
                               compact
-                              host={activeStatus.host}
-                              server={activeStatus.server}
-                              bridge={activeStatus.bridge}
+                              host={currentActiveStatus.host}
+                              server={currentActiveStatus.server}
+                              bridge={currentActiveStatus.bridge}
                             />
                           )
                         }
@@ -2011,11 +2031,25 @@ export default function Servers() {
                 <div className="flex flex-wrap gap-2 pt-1">
                   {(() => {
                     const status = serverStatuses[String(server.id)]
-                    const isRunning = status?.running ?? false
+                    const isRunning = resolveServerCardRunning(server, status, currentActiveStatus)
                     const startPending = serverActionPending === `start-${server.id}`
                     const stopPending = serverActionPending === `stop-${server.id}`
                     const hasManagedContainer = dockerAvailable && server.dockerContainerName && dockerContainers.some((item) => item.name === server.dockerContainerName || item.id === server.dockerContainerName)
                     if (server.isRemote || hasManagedContainer) return null
+                    if (isRunning === null) {
+                      return (
+                        <DisabledReason reason={!canInlineStartStop ? t('card.noPermissionStartStop') : t('card.statusUnavailable')}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled
+                            title={t('card.statusUnavailable')}
+                          >
+                            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> {t('card.start')}
+                          </Button>
+                        </DisabledReason>
+                      )
+                    }
                     return isRunning ? (
                       <DisabledReason reason={!canInlineStartStop ? t('card.noPermissionStartStop') : null}>
                         <Button

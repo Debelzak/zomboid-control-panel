@@ -4,11 +4,13 @@ import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { gzipSync } from "zlib";
 import { pathToFileURL } from "url";
 
 const distDir = "./dist-exe";
 const releaseDir = "./release";
-const linuxArchivePath = "./ZomboidControlPanel-linux.tar.gz";
+const linuxArchiveStagingPath = "./ZomboidControlPanel-linux.tar.gz";
+const linuxArchivePath = "./release/ZomboidControlPanel-linux.tar.gz";
 
 // Files in the Linux release tree that must carry the executable bit. NTFS
 // has no POSIX exec bit, so a Windows host's own fs.chmodSync()/writeFileSync
@@ -46,6 +48,74 @@ function createLinuxReleaseArchive(sourceDir, archivePath) {
 
     archive.finalize();
   });
+}
+const DEFAULT_API_CONTRACT_VERSION = 1;
+
+export function resolveBuildSha(env = process.env) {
+  const configured = String(env.GITHUB_SHA || env.PANEL_BUILD_SHA || "").trim();
+  if (configured) return configured;
+  try {
+    return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export function resolveApiContractVersion(env = process.env) {
+  const parsed = Number(env.PANEL_API_CONTRACT_VERSION);
+  return Number.isInteger(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_API_CONTRACT_VERSION;
+}
+
+export function createEmbeddedClientBundle(clientDist, expectedMetadata) {
+  const files = {};
+  const walk = (directory, relativeDirectory = "") => {
+    for (const entry of fs
+      .readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      const absolutePath = path.join(directory, entry.name);
+      const relativePath = path
+        .join(relativeDirectory, entry.name)
+        .split(path.sep)
+        .join("/");
+      if (entry.isDirectory()) {
+        walk(absolutePath, relativePath);
+      } else if (entry.isFile()) {
+        files[relativePath] = fs.readFileSync(absolutePath).toString("base64");
+      } else {
+        throw new Error(`Unsupported client build entry: ${relativePath}`);
+      }
+    }
+  };
+
+  walk(clientDist);
+  if (!files["index.html"] || !files["build-info.json"]) {
+    throw new Error("Client build is missing index.html or build-info.json");
+  }
+
+  let clientMetadata;
+  try {
+    clientMetadata = JSON.parse(
+      Buffer.from(files["build-info.json"], "base64").toString("utf8"),
+    );
+  } catch (error) {
+    throw new Error(`Client build metadata is invalid: ${error.message}`, {
+      cause: error,
+    });
+  }
+  if (
+    clientMetadata.panelVersion !== expectedMetadata.panelVersion ||
+    clientMetadata.buildSha !== expectedMetadata.buildSha ||
+    Number(clientMetadata.apiContractVersion) !==
+      expectedMetadata.apiContractVersion
+  ) {
+    throw new Error("Client build metadata does not match the executable build");
+  }
+
+  return gzipSync(
+    Buffer.from(JSON.stringify({ schemaVersion: 1, files }), "utf8"),
+  ).toString("base64");
 }
 
 function delay(ms) {
@@ -101,6 +171,30 @@ function sha256File(filePath) {
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(filePath));
   return hash.digest("hex");
+}
+
+export function getClientDistFileHashes(clientDist) {
+  const hashes = {};
+  const walk = (directory, relativeDirectory = "") => {
+    for (const entry of fs
+      .readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      const absolutePath = path.join(directory, entry.name);
+      const relativePath = path
+        .join(relativeDirectory, entry.name)
+        .split(path.sep)
+        .join("/");
+      if (entry.isDirectory()) {
+        walk(absolutePath, relativePath);
+      } else if (entry.isFile()) {
+        hashes[relativePath] = sha256File(absolutePath);
+      } else {
+        throw new Error(`Unsupported client build entry: ${relativePath}`);
+      }
+    }
+  };
+  walk(clientDist);
+  return hashes;
 }
 
 function resolveBuiltBinaryPath(target) {
@@ -197,7 +291,7 @@ needs internet).
 - install-linux-service.sh - explicit systemd installer; run with --enable to start the service
 - docker-compose.install.yml - Docker Compose installer (published panel image)
 - docs/install/            - Install guides for every platform (see Where To Go Next, above)
-- client/dist/             - Web interface (required, must stay alongside binary)
+- client/dist/             - Web interface copy for manual upgrades and legacy installs
 - data/db.json             - Configuration database (created on first run; NEVER overwrite when upgrading — see data/README.txt)
 - data/db.example.json     - Reference db structure (safe to delete)
 - data/README.txt          - Upgrade-safety notes for the data/ folder
@@ -206,8 +300,10 @@ needs internet).
 - checksums.txt            - SHA256 hashes for release archives
 - release-manifest.json    - Build metadata for this package
 
-Keep every file in this same folder — the binary needs client/dist/ next to
-it, and won't start without it.
+The standalone binary embeds the matching web interface and can recover from
+an older or missing client/dist folder. Keep client/dist when using the
+journaled updater or a manual archive upgrade; it is still retained in the
+package for compatibility with older binaries.
 
 ## Panel Bridge Setup (Optional)
 The PanelBridge Lua enables advanced features like weather control. It is a
@@ -700,15 +796,11 @@ async function main() {
   const targets = resolveTargets(args);
   const rootPkg = JSON.parse(fs.readFileSync("./package.json", "utf-8"));
   const panelVersion = rootPkg.version || "0.0.0";
-  let buildSha = process.env.GITHUB_SHA || process.env.PANEL_BUILD_SHA || "";
-  if (!buildSha) {
-    try {
-      buildSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-    } catch {
-      buildSha = "unknown";
-    }
-  }
-  const apiContractVersion = 1;
+  const buildSha = resolveBuildSha({
+    GITHUB_SHA: process.env.GITHUB_SHA,
+    PANEL_BUILD_SHA: process.env.PANEL_BUILD_SHA,
+  });
+  const apiContractVersion = resolveApiContractVersion();
 
   await cleanDir(distDir);
   if (!fs.existsSync(distDir)) {
@@ -737,10 +829,21 @@ async function main() {
     process.exit(1);
   }
 
+  const embeddedClientDistB64 = createEmbeddedClientBundle("./client/dist", {
+    panelVersion,
+    buildSha,
+    apiContractVersion,
+  });
+  const clientDistFileHashes = getClientDistFileHashes("./client/dist");
+  console.log(
+    `Embedded client bundle prepared (${embeddedClientDistB64.length} base64 chars)`,
+  );
+
   console.log("Building server bundle...");
 
-  console.log(`Version: ${panelVersion}`);
-  console.log(`Build SHA: ${buildSha}`);
+  console.log(
+    `Version: ${panelVersion} (build ${buildSha}, API contract ${apiContractVersion})`,
+  );
 
   // Read PanelBridge.lua and inline it as a base64 define so it lives INSIDE
   // server.cjs (and therefore inside the pkg binary). pkg's `assets` glob was
@@ -781,6 +884,7 @@ async function main() {
       PANEL_BUILD_SHA: JSON.stringify(buildSha),
       PANEL_API_CONTRACT_VERSION: JSON.stringify(apiContractVersion),
       PANEL_BRIDGE_LUA_B64: JSON.stringify(panelBridgeLuaB64),
+      PANEL_CLIENT_DIST_B64: JSON.stringify(embeddedClientDistB64),
     },
     banner: {
       js: "const import_meta_url = require('url').pathToFileURL(__filename).href;",
@@ -1056,6 +1160,7 @@ Recommended safe-upgrade commands:
         builtAt: new Date().toISOString(),
         hostPlatform: process.platform,
         targets,
+        clientFiles: clientDistFileHashes,
         artifacts: manifestArtifacts,
       },
       null,
@@ -1095,7 +1200,10 @@ Recommended safe-upgrade commands:
 
   if (targets.includes("linux")) {
     console.log("Packaging Linux release archive...");
-    await createLinuxReleaseArchive(releaseDir, linuxArchivePath);
+    // The archive must be created outside sourceDir: placing it inside the
+    // tree being archived makes tar include its own output indefinitely.
+    await createLinuxReleaseArchive(releaseDir, linuxArchiveStagingPath);
+    fs.renameSync(linuxArchiveStagingPath, linuxArchivePath);
     console.log(`Wrote ${linuxArchivePath}`);
   }
 }

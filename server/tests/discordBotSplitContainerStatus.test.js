@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // server IS up, not the old code's confident "Offline"/"not running". The
 // scanFailed variant must say "unknown", never a confident offline either.
 
-const getActiveServer = vi.fn(async () => ({ id: "s1" })); // native/unmapped -> no docker branch
+const getActiveServer = vi.fn(async () => ({ id: "s1", isRemote: true }));
 vi.mock("../database/init.js", () => ({ getActiveServer: (...args) => getActiveServer(...args) }));
 
 const fakeBridge = { isModConnected: vi.fn(() => false) };
@@ -149,6 +149,7 @@ describe("Discord commands vs. a split-container deployment (scan clean, RCON co
 
 describe("Discord commands vs. a genuinely failed detection scan (scanFailed: true)", () => {
   it("handleStatus reports unknown, not a confident offline", async () => {
+    getActiveServer.mockResolvedValue({ id: "s1" });
     const bot = Object.create(DiscordBot.prototype);
     bot.serverManager = splitContainerServerManager({
       getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: true })),
@@ -166,6 +167,7 @@ describe("Discord commands vs. a genuinely failed detection scan (scanFailed: tr
   });
 
   it("handleStart refuses to guess rather than risking a duplicate launch", async () => {
+    getActiveServer.mockResolvedValue({ id: "s1" });
     const bot = Object.create(DiscordBot.prototype);
     bot.serverManager = splitContainerServerManager({
       getServerProcessDetails: vi.fn(async () => ({ running: false, scanFailed: true })),

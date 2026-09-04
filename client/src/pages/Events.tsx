@@ -1476,13 +1476,14 @@ export default function Events() {
     }
 
     let active = true
+    const shouldLoadVehicles = activeSection === 'vehicles'
     const loadBridgeOptions = async () => {
       setBridgeOptionsLoading(true)
       try {
         const [safehouseResult, factionResult, vehicleResult] = await Promise.allSettled([
           panelBridgeApi.sendCommand('getSafehouses', {}),
           panelBridgeApi.sendCommand('getFactions', {}),
-          panelBridgeApi.sendCommand('getVehiclesDetailed', {}),
+          shouldLoadVehicles ? panelBridgeApi.sendCommand('getVehiclesDetailed', {}) : Promise.resolve(null),
         ])
         if (!active) return
 
@@ -1533,7 +1534,7 @@ export default function Events() {
           failureReasons.push(t('toasts.sourceFactions'))
         }
 
-        if (vehicleResult.status === 'fulfilled') {
+        if (vehicleResult.status === 'fulfilled' && vehicleResult.value) {
           const vehiclePayload = (vehicleResult.value as { data?: unknown })?.data ?? vehicleResult.value
           const rawVehicles = Array.isArray(vehiclePayload)
             ? vehiclePayload
@@ -1554,7 +1555,7 @@ export default function Events() {
           const dedupedVehicles = Array.from(new Map(vehicleOptions.map((option) => [option.value, option])).values())
           setBridgeVehicleOptions(dedupedVehicles)
           updatedAnySource = true
-        } else {
+        } else if (shouldLoadVehicles) {
           failureReasons.push(t('toasts.sourceVehicles'))
         }
 
@@ -1589,7 +1590,7 @@ export default function Events() {
       active = false
       clearInterval(interval)
     }
-  }, [bridgeConnected, bridgeOptionsRefreshTick, i18n.language])
+  }, [activeSection, bridgeConnected, bridgeOptionsRefreshTick, i18n.language])
 
   const pushActivity = useCallback((label: string, ok: boolean) => {
     setActivity((prev) => [

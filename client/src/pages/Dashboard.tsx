@@ -400,19 +400,22 @@ export default function Dashboard() {
 
   /* ---------------------------- fetchers ---------------------------------- */
   const fetchStatus = useCallback(async () => {
-    try { const data = await serverApi.getStatus(); setStatus(data); setFetchError(null); setLastUpdated(new Date()) }
+    try { const data = await serverApi.getStatus({ retries: 0 }); setStatus(data); setFetchError(null); setLastUpdated(new Date()) }
     catch { setFetchError(t('errors.failedToConnect')) }
   }, [t])
 
   const fetchComposedStatus = useCallback(async () => {
-    try { setComposedStatus(await serversApi.getComposedStatus()) }
+    try { setComposedStatus(await serversApi.getComposedStatus({ retries: 0 })) }
     catch { setComposedStatus(null) }
   }, [])
 
   usePageShortcut('r', () => { if (loading === null) { fetchStatus(); fetchComposedStatus() } })
 
   const fetchPlayers = useCallback(async () => {
-    try { const d = await playersApi.getPlayers(); if (d.players) setPlayers(d.players) } catch { setPlayers([]) }
+    try {
+      const d = await playersApi.getPlayers({ retries: 0 })
+      if (d.players) setPlayers(d.players)
+    } catch { setPlayers([]) }
   }, [])
   const fetchBridgeStatus = useCallback(async () => {
     try { setBridgeStatus(await panelBridgeApi.getStatus()) } catch { setBridgeStatus(null) }
@@ -766,7 +769,7 @@ export default function Dashboard() {
         pollIntervalRef.current = setInterval(async () => {
           attempts++
           try {
-            const data = await serverApi.getStatus()
+            const data = await serverApi.getStatus({ retries: 0 })
             setStatus(data)
             if (data?.running || attempts >= 15) {
               if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null }
@@ -1022,41 +1025,48 @@ export default function Dashboard() {
 
   const workItems: WorkItem[] = [
     {
+      id: 'players',
       to: '/players', icon: Activity, label: t('workItems.players'),
       state: online ? String(players.length) : t('liveActivity.offline'),
       tone: !online ? 'bad' : players.length > 0 ? 'good' : 'default',
     },
     {
+      id: 'zombies',
       to: '/events', icon: Skull, label: t('workItems.zombies'),
       state: bridgeStatus?.modConnected ? (zombieCount !== null ? String(zombieCount) : t('connLine.pending')) : t('liveActivity.offline'),
       tone: !bridgeStatus?.modConnected ? 'default' : zombieCount !== null ? 'good' : 'default',
     },
     {
+      id: 'console',
       to: '/console', icon: Wifi, label: t('workItems.console'),
       state: status?.rcon?.connected ? t('workItems.rconReady') : t('workItems.rconOffline'),
       tone: status?.rcon?.connected ? 'good' : 'warning',
     },
     {
+      id: 'mods',
       to: '/mods', icon: Gamepad2, label: t('workItems.mods'),
       state: modsPending ? t('workItems.modsToUpdate', { count: maintenance.modUpdatesAvailable }) : t('workItems.modsTracked', { count: maintenance.modsTracked }),
       tone: modsPending ? 'warning' : 'default',
     },
     {
+      id: 'schedule',
       to: '/scheduler', icon: CalendarClock, label: t('workItems.schedule'),
       state: scheduleState,
       tone: nextRunEta ? 'good' : maintenance.scheduledTasksCount > 0 ? 'good' : 'default',
     },
     ...(errorCount != null ? [{
+      id: 'errors',
       to: '/console', icon: ScrollText, label: t('workItems.errors'),
       state: errorCount === 0 ? t('workItems.errorsNone') : t('workItems.errorsLogged', { count: errorCount }),
       tone: errorCount === 0 ? 'good' : errorCount >= 50 ? 'warning' : 'default',
     } as WorkItem] : []),
     {
+      id: 'backups',
       to: '/backups', icon: Archive, label: t('workItems.backups'),
       state: backupState,
       tone: maintenance.backupCount === 0 ? 'warning' : 'good',
     },
-    { to: '/server-config', icon: Server, label: t('workItems.config') },
+    { id: 'config', to: '/server-config', icon: Server, label: t('workItems.config') },
   ]
 
   // WORK_STATE_TONE (DashboardVerdict.tsx) already colors each row by
@@ -1066,8 +1076,19 @@ export default function Dashboard() {
   // their original relative order) puts what needs attention where the
   // operator's own "actionable items on top" ask actually lands: the top
   // of the list, not just a different color partway down it.
+  //
+  // 'warning' collapses into the same bucket as 'default'/'good' rather
+  // than getting its own rank (GH#137): 'warning' is the tone a normal
+  // Stop/Restart passes through on the way to disconnecting RCON, so
+  // ranking it above 'default' reshuffled the whole list on every
+  // ordinary status poll while a server was merely stopping or starting
+  // -- rows visibly swapping places for a state the operator caused
+  // themselves and already knows about, not something that needed
+  // surfacing. 'bad' (the server is actually unreachable) is the state
+  // worth interrupting the list's order for; the rest stay in place and
+  // let color alone carry the signal, same as they always did.
   const WORK_ITEM_SEVERITY: Record<'bad' | 'warning' | 'default' | 'good', number> = {
-    bad: 0, warning: 1, default: 2, good: 3,
+    bad: 0, warning: 1, default: 1, good: 1,
   }
   const sortedWorkItems = [...workItems].sort(
     (a, b) => WORK_ITEM_SEVERITY[a.tone ?? 'default'] - WORK_ITEM_SEVERITY[b.tone ?? 'default'],
