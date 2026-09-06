@@ -161,13 +161,29 @@ class PanelBridge extends EventEmitter {
     // initial remote directory and status sync. A bad replacement must not
     // disconnect an otherwise healthy server.
     const previousTransport = this.sftpTransport;
-    if (this.isRunning) this.stop();
-    if (previousTransport) await previousTransport.stop();
-    this.configure(cachePath, true);
-    this.config.commandTimeoutMs = 60000;
-    this.sftpTransport = transport;
-    this.lastSftpStatus = transport.getStatus();
-    this.start();
+    try {
+      if (this.isRunning) this.stop();
+      if (previousTransport) await previousTransport.stop();
+      this.configure(cachePath, true);
+      this.config.commandTimeoutMs = 60000;
+      this.sftpTransport = transport;
+      this.lastSftpStatus = transport.getStatus();
+      this.start();
+    } catch (error) {
+      // The new transport connected successfully -- the try/catch above
+      // already proved that -- but something in the swap itself failed
+      // (this.configure()/this.start() throwing, or a future edit adding a
+      // step here that can). Without this, the freshly-connected transport
+      // is silently leaked: its SFTP connection and poll timer keep
+      // running, owned by nothing, and this.sftpTransport is left pointing
+      // at whatever it was before -- possibly the OLD transport, which was
+      // already stopped two lines up, so the bridge would report itself
+      // configured against a transport that isn't actually running.
+      this.sftpTransport = null;
+      await transport.stop();
+      this.lastSftpStatus = transport.getStatus();
+      throw error;
+    }
     return this.bridgePath;
   }
 
@@ -656,7 +672,18 @@ class PanelBridge extends EventEmitter {
 
     // Reset state so next start() cycle is clean
     this.processedResults.clear();
-    this.previousPlayers = new Set();
+    // Same reasoning as handleStatusFailure's own comment: close out every
+    // tracked player's session before clearing previousPlayers, rather than
+    // wiping it directly. Wiping it directly (the old behavior) didn't
+    // avoid the problem, it just moved it -- the next checkModStatus() read
+    // after a restart would see the SAME still-connected players as brand
+    // new joins (previous was empty) and fire a phantom "connect" that
+    // silently overwrote their still-open prior session with no
+    // "disconnect" ever recorded, the identical playtime-loss bug via a
+    // different path. This way the session actually closes (playtime
+    // accumulated) before the phantom reconnect opens a new one -- a split
+    // session instead of lost time.
+    this.trackPlayerActivity([]);
     this.watcherRetries = 0;
     this.modStatus = null;
     this.consecutiveFailures = 0;
@@ -1447,6 +1474,24 @@ class PanelBridge extends EventEmitter {
 
     // Update mod status to disconnected after several failures
     if (this.modStatus?.alive && this.consecutiveFailures >= this.maxConsecutiveFailures) {
+      // Close out every currently-tracked player's session BEFORE wiping
+      // modStatus.players below. trackPlayerActivity()'s connect/disconnect
+      // diffing (against this.previousPlayers) only ever ran from a fresh,
+      // alive status read in checkModStatus() -- a player connected at the
+      // moment the mod goes offline (server crash, hang, or stop) never got
+      // a "disconnect" recorded, because nothing here called it. That
+      // matters beyond this in-memory status: recordPlayerSession() only
+      // accumulates total_playtime_seconds on "disconnect" -- with no
+      // matching call, that player's still-open session (last_session_start)
+      // just sits there and gets silently overwritten the next time they
+      // connect, dropping the elapsed time for every ordinary server
+      // crash/stop/restart with anyone online, not some rare edge case.
+      // maxConsecutiveFailures=5 at a 1s poll interval means this only
+      // fires after 5 straight seconds of no fresh status -- long enough
+      // that a transient blip (a single slow disk write, a GC pause)
+      // resolves before ever reaching here, so this isn't trading a real
+      // bug for spurious disconnect noise on routine jitter.
+      this.trackPlayerActivity([]);
       // Preserve last known version, serverName, etc. when going offline
       // Don't set playerCount - undefined means unknown (offline), 0 means online with no players
       this.modStatus = {

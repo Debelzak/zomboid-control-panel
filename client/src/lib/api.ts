@@ -1988,6 +1988,7 @@ export const serverFilesApi = {
       created: boolean;
       message: string;
       path: string;
+      unpersistedKeys?: string[];
       restartRequired?: boolean;
     }>,
   validateSandbox: () =>
@@ -2081,6 +2082,7 @@ export const serverFilesApi = {
       success: boolean;
       applied: string[];
       message: string;
+      backupWarnings?: string[];
     }>,
   updateTemplate: (id: string, data: { name?: string; description?: string }) =>
     apiPut(`/server-files/templates/${id}`, data),
@@ -3330,7 +3332,13 @@ export interface PanelUpdateApplyResult {
     | "rename_locked"
     | "permission"
     | "no_helper_log"
+    | "rollback_failed"
     | "unknown";
+  // Only meaningful when likelyCause is "rollback_failed" -- see
+  // isRollbackRetryLikely()'s doc comment in panelUpdateChecker.js. Absent
+  // for every other cause (this question doesn't apply to them), not a
+  // stale false.
+  rollbackRetryLikely?: boolean;
   canRetryApply?: boolean;
   panelFolder?: string;
 }
@@ -3452,6 +3460,12 @@ export interface DiskSpaceStatus {
   usedPercent: number;
   warning: boolean;
   critical: boolean;
+  // false means the server couldn't verify this reading right now
+  // (unreachable mount, permission error, no path configured) -- warning
+  // and critical are both forced false on that path (see diskMonitor.js's
+  // computeDiskStatus()), NOT a verified "everything is fine". Callers
+  // must not treat that as a real all-clear.
+  ok: boolean;
 }
 
 export interface DiskSpaceReport {

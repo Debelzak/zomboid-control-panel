@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
+import { getCurrentLanguage, isRTL } from '@/i18n'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useSocket } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -2020,23 +2021,32 @@ export default function WorldMap() {
 
     // Empty state
     if (currentPlayers.length === 0) {
-      // The floating control rail (top-3 left-3, w-12) permanently overlaps
-      // the canvas's left edge, so text centered on the full canvas width can
-      // render underneath it on narrow (mobile) viewports. Only nudge right
-      // when a naive center would tuck the text under the rail.
+      // The floating control rail (top-3 start-3, w-12) permanently overlaps
+      // the canvas's start edge -- left in ltr, right in rtl (canvas drawing
+      // is raw pixel math, not CSS, so it does not follow the CSS mirror on
+      // its own) -- so text centered on the full canvas width can render
+      // underneath it on narrow (mobile) viewports. Only nudge away from
+      // that edge when a naive center would tuck the text under the rail.
       const railClearance = 72
+      const rtl = isRTL(getCurrentLanguage())
       ctx.textAlign = 'center'
 
       ctx.fillStyle = C.emptyTitle
       ctx.font = '600 14px ui-sans-serif, system-ui, sans-serif'
       const title = t('emptyState.title')
-      const titleX = Math.max(W / 2, railClearance + ctx.measureText(title).width / 2)
+      const titleHalfWidth = ctx.measureText(title).width / 2
+      const titleX = rtl
+        ? Math.min(W / 2, W - railClearance - titleHalfWidth)
+        : Math.max(W / 2, railClearance + titleHalfWidth)
       ctx.fillText(title, titleX, H / 2 - 8)
 
       ctx.font = '400 11px ui-sans-serif, system-ui, sans-serif'
       ctx.fillStyle = C.emptySubtitle
       const subtitle = t('emptyState.subtitle')
-      const subtitleX = Math.max(W / 2, railClearance + ctx.measureText(subtitle).width / 2)
+      const subtitleHalfWidth = ctx.measureText(subtitle).width / 2
+      const subtitleX = rtl
+        ? Math.min(W / 2, W - railClearance - subtitleHalfWidth)
+        : Math.max(W / 2, railClearance + subtitleHalfWidth)
       ctx.fillText(subtitle, subtitleX, H / 2 + 10)
     }
 
@@ -2792,13 +2802,13 @@ export default function WorldMap() {
 
       <div ref={mapWrapperRef} className="relative rounded-md border border-border/60 overflow-hidden bg-background shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]">
         {/* Corner brackets — tactical control-room frame */}
-        <span aria-hidden className="pointer-events-none absolute top-0 left-0 z-30 h-3 w-3 border-l-2 border-t-2 border-primary/50" />
-        <span aria-hidden className="pointer-events-none absolute top-0 right-0 z-30 h-3 w-3 border-r-2 border-t-2 border-primary/50" />
-        <span aria-hidden className="pointer-events-none absolute bottom-0 left-0 z-30 h-3 w-3 border-l-2 border-b-2 border-primary/50" />
-        <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 z-30 h-3 w-3 border-r-2 border-b-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute top-0 start-0 z-30 h-3 w-3 border-s-2 border-t-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute top-0 end-0 z-30 h-3 w-3 border-e-2 border-t-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute bottom-0 start-0 z-30 h-3 w-3 border-s-2 border-b-2 border-primary/50" />
+        <span aria-hidden className="pointer-events-none absolute bottom-0 end-0 z-30 h-3 w-3 border-e-2 border-b-2 border-primary/50" />
 
         {/* Control rail — top-left */}
-        <div className="absolute top-3 left-3 z-10 w-12 rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
+        <div className="absolute top-3 start-3 z-10 w-12 rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
           <div className="flex items-center justify-center gap-1 px-1.5 py-1 border-b border-border/40 bg-muted/40 font-mono text-[9px] uppercase tracking-[0.24em] text-primary/70">
             <span className="text-primary/60">//</span>
             <span>{t('controlRail.ctrlLabel')}</span>
@@ -2984,7 +2994,7 @@ export default function WorldMap() {
         )}
 
         {/* Roster panel — top-right */}
-        <div className={cn('absolute top-3 right-3 z-10', rosterCollapsed ? 'w-auto' : 'w-56')}>
+        <div className={cn('absolute top-3 end-3 z-10', rosterCollapsed ? 'w-auto' : 'w-56')}>
           <div className="rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg overflow-hidden">
             <button
               type="button"
@@ -3019,7 +3029,7 @@ export default function WorldMap() {
                         : t('roster.panToAria', { name: p.displayName || p.username })
                     }
                     className={cn(
-                      'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-xs transition-colors border-l-2 border-transparent hover:bg-muted/50',
+                      'w-full px-2.5 py-1.5 flex items-center gap-2 text-start text-xs transition-colors border-s-2 border-transparent hover:bg-muted/50',
                       selectedPlayer?.username === p.username && 'bg-muted/50 border-primary/60'
                     )}
                   >
@@ -3051,9 +3061,9 @@ export default function WorldMap() {
         </div>
 
         {/* HUD coordinate bar — bottom-left */}
-        <div className="absolute bottom-3 left-3 z-10">
+        <div className="absolute bottom-3 start-3 z-10">
           <div className="flex items-stretch rounded-md border border-border/55 bg-card/85 backdrop-blur-md shadow-lg font-mono text-[11px] tabular-nums overflow-hidden">
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-r border-border/40">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-e border-border/40">
               <Crosshair className={cn('w-3 h-3', cursorWorldPos ? 'text-primary/80' : 'text-muted-foreground/40')} />
               {cursorWorldPos ? (
                 <span className="text-foreground">
@@ -3063,7 +3073,7 @@ export default function WorldMap() {
                 <span className="text-muted-foreground/50">{t('hud.hoverForCoords')}</span>
               )}
             </div>
-            <div className="flex items-center gap-1 px-2.5 py-1.5 border-r border-border/40">
+            <div className="flex items-center gap-1 px-2.5 py-1.5 border-e border-border/40">
               <span className="text-muted-foreground/50 text-[9px] uppercase tracking-[0.22em]">z</span>
               <span className={cn(floor !== 0 ? 'text-accent' : 'text-muted-foreground/70')}>{floorLabel(floor)}</span>
             </div>
@@ -3079,12 +3089,12 @@ export default function WorldMap() {
             overlays stack instead of colliding; side-by-side once there's
             room (>= sm). */}
         {selectedPlayer && (
-          <div className="absolute right-3 z-10 w-60 bottom-14 sm:bottom-3">
+          <div className="absolute end-3 z-10 w-60 bottom-14 sm:bottom-3">
             <div className="relative rounded-md border border-border/55 bg-card/90 backdrop-blur-md shadow-lg overflow-hidden">
-              <span aria-hidden className="pointer-events-none absolute top-0 left-0 h-2 w-2 border-l-2 border-t-2 border-primary/50" />
-              <span aria-hidden className="pointer-events-none absolute top-0 right-0 h-2 w-2 border-r-2 border-t-2 border-primary/50" />
-              <span aria-hidden className="pointer-events-none absolute bottom-0 left-0 h-2 w-2 border-l-2 border-b-2 border-primary/50" />
-              <span aria-hidden className="pointer-events-none absolute bottom-0 right-0 h-2 w-2 border-r-2 border-b-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute top-0 start-0 h-2 w-2 border-s-2 border-t-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute top-0 end-0 h-2 w-2 border-e-2 border-t-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute bottom-0 start-0 h-2 w-2 border-s-2 border-b-2 border-primary/50" />
+              <span aria-hidden className="pointer-events-none absolute bottom-0 end-0 h-2 w-2 border-e-2 border-b-2 border-primary/50" />
               <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-border/40 bg-muted/40 font-mono text-[10px] uppercase tracking-[0.22em] text-primary/70">
                 <span className="flex items-center gap-1.5">
                   <span className="text-primary/60">//</span>
@@ -3136,7 +3146,7 @@ export default function WorldMap() {
                           }}
                         />
                       </div>
-                      <span className="font-mono tabular-nums w-8 text-right">{Math.round(selectedPlayer.health)}%</span>
+                      <span className="font-mono tabular-nums w-8 text-end">{Math.round(selectedPlayer.health)}%</span>
                     </div>
                   </div>
                 )}
@@ -3163,7 +3173,7 @@ export default function WorldMap() {
                           }}
                         />
                       </div>
-                      <span className="font-mono tabular-nums w-8 text-right">{Math.round(value * 100)}%</span>
+                      <span className="font-mono tabular-nums w-8 text-end">{Math.round(value * 100)}%</span>
                     </div>
                   </div>
                 ))}
@@ -3365,7 +3375,7 @@ export default function WorldMap() {
                             style={{ width: `${Math.round(contextMenu.vehicle.fuelPct)}%` }}
                           />
                         </div>
-                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80 w-8 text-right">{Math.round(contextMenu.vehicle.fuelPct)}%</span>
+                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80 w-8 text-end">{Math.round(contextMenu.vehicle.fuelPct)}%</span>
                       </div>
                     )}
                     {contextMenu.vehicle.batteryCharge != null && (
@@ -3377,7 +3387,7 @@ export default function WorldMap() {
                             style={{ width: `${Math.round(contextMenu.vehicle.batteryCharge)}%` }}
                           />
                         </div>
-                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80 w-8 text-right">{Math.round(contextMenu.vehicle.batteryCharge)}%</span>
+                        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80 w-8 text-end">{Math.round(contextMenu.vehicle.batteryCharge)}%</span>
                       </div>
                     )}
                     {contextMenu.vehicle.fuelPct == null && contextMenu.vehicle.batteryCharge == null && (
@@ -3753,7 +3763,7 @@ export default function WorldMap() {
                   .finally(() => setActionLoading(null))
               }}
             >
-              {actionLoading === 'spawn-vehicle' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              {actionLoading === 'spawn-vehicle' ? <Loader2 className="w-4 h-4 me-2 animate-spin" /> : <Plus className="w-4 h-4 me-2" />}
               {t('spawnDialog.spawn')}
             </Button>
             </DisabledReason>
@@ -3771,7 +3781,7 @@ export default function WorldMap() {
               {activeTemplateId && (() => {
                 const tpl = dropTemplates.find((t) => t.id === activeTemplateId)
                 return tpl ? (
-                  <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-normal text-muted-foreground">
+                  <span className="ms-1 inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-normal text-muted-foreground">
                     <Save className="w-3 h-3" />
                     {tpl.name}
                   </span>
@@ -3800,7 +3810,7 @@ export default function WorldMap() {
 
             {/* Templates bar */}
             <div className="flex items-center gap-2 flex-wrap">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1.5 mr-auto">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5 me-auto">
                 <Save className="w-3.5 h-3.5" />
                 {t('dropDialog.packageTemplates')}
               </Label>
@@ -3914,7 +3924,7 @@ export default function WorldMap() {
                   setActiveTemplateId(null)
                 }}
               >
-                <Plus className="w-3.5 h-3.5 mr-1" />
+                <Plus className="w-3.5 h-3.5 me-1" />
                 {t('dropDialog.addItem')}
               </Button>
               <div className="text-[11px] text-muted-foreground/70 tabular-nums">
@@ -3988,7 +3998,7 @@ export default function WorldMap() {
                 disabled={dropItems.filter((it) => it.itemType.trim()).length === 0}
                 onClick={() => { setSavingTemplate(true); setTemplateNameInput('') }}
               >
-                <Save className="w-3.5 h-3.5 mr-2" />
+                <Save className="w-3.5 h-3.5 me-2" />
                 {t('dropDialog.saveCurrentAsPackage')}
               </Button>
             )}
@@ -4066,8 +4076,8 @@ export default function WorldMap() {
               }}
             >
               {actionLoading === 'drop'
-                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                : <Flame className="w-4 h-4 mr-2" />}
+                ? <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                : <Flame className="w-4 h-4 me-2" />}
               {(() => {
                 const validCount = dropItems.filter((it) => it.itemType.trim()).length
                 const totalQty = dropItems.filter((it) => it.itemType.trim()).reduce((s, it) => s + it.count, 0)
@@ -4156,8 +4166,8 @@ export default function WorldMap() {
               }}
             >
               {actionLoading === 'vehicle-remove'
-                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                : <Trash2 className="w-4 h-4 mr-2" />}
+                ? <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                : <Trash2 className="w-4 h-4 me-2" />}
               {t('removeVehicleDialog.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -4180,12 +4190,12 @@ function ContextMenuItem({ icon, label, onClick, loading, description, disabled,
   tone?: ContextMenuTone
 }) {
   const toneAccent: Record<ContextMenuTone, string> = {
-    default: 'group-hover:border-l-primary/60 group-focus-visible:border-l-primary/60',
-    primary: 'group-hover:border-l-primary/70 group-focus-visible:border-l-primary/70',
-    warning: 'group-hover:border-l-amber-400/80 group-focus-visible:border-l-amber-400/80',
-    danger: 'group-hover:border-l-destructive/80 group-focus-visible:border-l-destructive/80',
-    info: 'group-hover:border-l-info/80 group-focus-visible:border-l-info/80',
-    success: 'group-hover:border-l-emerald-400/80 group-focus-visible:border-l-emerald-400/80',
+    default: 'group-hover:border-s-primary/60 group-focus-visible:border-s-primary/60',
+    primary: 'group-hover:border-s-primary/70 group-focus-visible:border-s-primary/70',
+    warning: 'group-hover:border-s-amber-400/80 group-focus-visible:border-s-amber-400/80',
+    danger: 'group-hover:border-s-destructive/80 group-focus-visible:border-s-destructive/80',
+    info: 'group-hover:border-s-info/80 group-focus-visible:border-s-info/80',
+    success: 'group-hover:border-s-emerald-400/80 group-focus-visible:border-s-emerald-400/80',
   }
   return (
     <button
@@ -4194,21 +4204,21 @@ function ContextMenuItem({ icon, label, onClick, loading, description, disabled,
       disabled={loading || disabled}
       // eslint-disable-next-line local/no-dead-disabled-title -- description is also rendered as a visible line below (`{description && <span ...>}` a few lines down), so this title is redundant, not a hidden disabled-reason. Adjudicated 2026-08-27 (god chased the "hidden reason" hypothesis and refuted it against the actual JSX).
       title={description}
-      className="group relative w-full pr-2 py-1.5 text-xs flex items-stretch gap-2.5 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:outline-none"
+      className="group relative w-full pe-2 py-1.5 text-xs flex items-stretch gap-2.5 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:outline-none"
     >
       <span
         aria-hidden
         className={cn(
-          'w-[2px] -my-px shrink-0 border-l-2 border-transparent transition-colors',
+          'w-[2px] -my-px shrink-0 border-s-2 border-transparent transition-colors',
           toneAccent[tone]
         )}
       />
-      <span className="flex-none w-4 flex items-center justify-center pl-1">
+      <span className="flex-none w-4 flex items-center justify-center ps-1">
         {loading
           ? <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/70" />
           : icon}
       </span>
-      <span className="flex flex-col min-w-0 text-left flex-1">
+      <span className="flex flex-col min-w-0 text-start flex-1">
         <span className="truncate text-foreground">{label}</span>
         {description && <span className="text-[10px] text-muted-foreground/60 truncate leading-tight">{description}</span>}
       </span>

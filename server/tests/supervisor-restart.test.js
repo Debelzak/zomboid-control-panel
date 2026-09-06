@@ -1,8 +1,42 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFileSync, spawn } from "child_process";
+import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { generateStartBat as generateStartBatForStaticChecks } from "../../build.js";
+
+// main-is-red, 2026-09-05: both staged-bundle hash checks used to call
+// Get-FileHash -- and on a clean, unprivileged GitHub windows-2022 runner,
+// Get-FileHash is not recognized at all (Windows PowerShell 5.1's module
+// autoload for it silently fails there, confirmed via a two-round CI
+// diagnostic), which every scenario below that reaches either check read
+// as a hash MISMATCH and refused a perfectly good update. Fixed by
+// computing SHA256 via .NET types directly, which don't depend on module
+// autoload. Runs everywhere (not gated behind win32/csc.exe like the
+// scenarios below) since it's a static check, not a behavioral one --
+// deliberately so, unlike this file's usual philosophy (see the header
+// comment on the describe block below): a *dynamic* repro of "Get-FileHash
+// is unavailable but everything else still works" turned out to be
+// unreliable to force on a machine where module autoload genuinely works,
+// because ConvertFrom-Json (called earlier in the same script) triggers
+// loading the whole Microsoft.PowerShell.Utility module as a side effect,
+// which then satisfies Get-FileHash too regardless of any PSModulePath
+// shim aimed only at that one cmdlet -- confirmed empirically while
+// building this test. A plain textual guard is what actually catches a
+// regression here, including god's specific warning that a fully-qualified
+// `Microsoft.PowerShell.Utility\Get-FileHash` would NOT be enough -- that
+// still contains the name, so it still fails this.
+describe("Start.bat never depends on the Get-FileHash cmdlet for staged-bundle integrity", () => {
+  it("does not invoke Get-FileHash anywhere in the generated script", () => {
+    // Matches an actual invocation (`Get-FileHash -LiteralPath ...` or a
+    // module-qualified `Microsoft.PowerShell.Utility\Get-FileHash ...`),
+    // not the several `rem` comments in build.js that mention the cmdlet
+    // by name to explain why it was removed -- those are prose, never
+    // followed by a parameter.
+    expect(generateStartBatForStaticChecks()).not.toMatch(/Get-FileHash\s+-/);
+  });
+});
 
 // Behavioral test for build.js's generated Start.bat crash-loop supervisor
 // (build.js's generateStartBat()). This does NOT grep the template text --
@@ -27,6 +61,40 @@ const skipReason = !isWindows
   : !hasCsc
     ? "legacy .NET Framework csc.exe not found -- cannot build the stub exe"
     : null;
+
+// main-is-red, 2026-09-05: `for %I in ("<path>") do @echo %~sI` is cmd's
+// own 8.3-short-name accessor -- no PowerShell/Get-Item involved, so this
+// can't accidentally exercise (or be masked by) the very code path it's
+// used to test.
+function getShortPathName(longPath) {
+  const batPath = path.join(os.tmpdir(), `pz-shortname-probe-${process.pid}-${Date.now()}.bat`);
+  fs.writeFileSync(batPath, `@echo off\r\nfor %%I in ("${longPath}") do echo %%~sI\r\n`);
+  try {
+    return execFileSync("cmd.exe", ["/c", batPath], { encoding: "utf8" }).trim();
+  } finally {
+    fs.rmSync(batPath, { force: true });
+  }
+}
+
+// Whether THIS box's temp volume actually generates 8.3 short names at
+// all -- some volumes have them disabled outright (`fsutil 8dot3name`),
+// in which case no path here will ever come back shortened and the
+// dedicated test below must skip rather than false-pass. Probed once at
+// collection time (matching hasCsc's own pattern above) against a
+// deliberately-long, dot-free directory name guaranteed to need
+// shortening if the feature is on at all.
+let shortNamesGeneratedOnTempVolume = false;
+if (!skipReason) {
+  const probeParent = fs.mkdtempSync(path.join(os.tmpdir(), "pz-shortname-probe-"));
+  try {
+    const probeLeaf = path.join(probeParent, "eightpointthreetestdirectory");
+    fs.mkdirSync(probeLeaf);
+    shortNamesGeneratedOnTempVolume =
+      getShortPathName(probeLeaf).toLowerCase() !== probeLeaf.toLowerCase();
+  } finally {
+    fs.rmSync(probeParent, { recursive: true, force: true });
+  }
+}
 
 const STUB_SOURCE = `
 using System;
@@ -85,6 +153,48 @@ function setupStub(dir, exitCodes, sleepMsList) {
   );
 }
 
+// Mirrors sha256Directory() in updateBundle.js exactly -- ordinal sort, same
+// "<relPath>\0<sha256hex>\n" canonical form -- so a fixture built here
+// produces the identical hash Start.bat's embedded PowerShell recomputes.
+// Duplicated rather than imported to keep this file's fixtures independent
+// of updateBundle.js internals, matching how binarySha256 below already
+// replicates sha256File()'s algorithm inline instead of importing it.
+// Returns { hash, pairs } -- pairs (one "relPath:fileHash" string per file)
+// mirrors updateBundle.js's own sha256Directory() return shape (main-is-red,
+// 2026-09-05), so this fixture's journal can carry the same clientFiles
+// diagnostic the real stageUpdateBundle() now writes, for comparison
+// against the PowerShell mirror's own pairs on a genuine mismatch.
+function sha256DirectoryForFixture(dirPath) {
+  const pairs = [];
+  const walk = (dir, rel) => {
+    const entries = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      const absolutePath = path.join(dir, entry.name);
+      const relativePath = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(absolutePath, relativePath);
+      } else {
+        const fileHash = crypto
+          .createHash("sha256")
+          .update(fs.readFileSync(absolutePath))
+          .digest("hex");
+        pairs.push(`${relativePath}:${fileHash}`);
+      }
+    }
+  };
+  walk(dirPath, "");
+  const parts = pairs.map((pair) => {
+    const separatorIndex = pair.indexOf(":");
+    const relativePath = pair.slice(0, separatorIndex);
+    const fileHash = pair.slice(separatorIndex + 1);
+    return `${relativePath}\0${fileHash}\n`;
+  });
+  const hash = crypto.createHash("sha256").update(parts.join(""), "utf8").digest("hex");
+  return { hash, pairs };
+}
+
 function setupPendingUpdate(dir) {
   const stagedBinaryPath = path.join(dir, "ZomboidControlPanel.exe.new");
   fs.copyFileSync(stubExePath, stagedBinaryPath);
@@ -95,9 +205,25 @@ function setupPendingUpdate(dir) {
   fs.mkdirSync(stagedClientPath, { recursive: true });
   fs.writeFileSync(path.join(liveClientPath, "index.html"), "old-client");
   fs.writeFileSync(path.join(stagedClientPath, "index.html"), "new-client");
+  // Matches the real journal shape stageUpdateBundle() writes
+  // (updateBundle.js): hashes.binarySha256 of the staged binary AS
+  // STAGED, computed the same way (Node crypto, sha256, hex) -- Start.bat
+  // now verifies against this before every apply, so a fixture missing it
+  // would make every pending-update scenario in this file trip the new
+  // [av_quarantine] refusal instead of exercising what each test actually
+  // means to test. hashes.clientSha256 is the same idea, one level up, for
+  // the staged frontend directory as a whole.
+  const binarySha256 = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(stagedBinaryPath))
+    .digest("hex");
+  const { hash: clientSha256, pairs: clientFiles } = sha256DirectoryForFixture(stagedClientPath);
   fs.writeFileSync(
     path.join(dir, "update-bundle.json"),
-    JSON.stringify({ paths: { stagedClient: stagedClientPath } }),
+    JSON.stringify({
+      hashes: { binarySha256, clientSha256, clientFiles },
+      paths: { stagedClient: stagedClientPath },
+    }),
   );
   fs.writeFileSync(path.join(dir, ".update-pending"), "pending");
 }
@@ -115,13 +241,39 @@ function allowDelete(targetPath) {
   });
 }
 
-async function waitForCondition(check, timeoutMs, description) {
+// Reproduces Dwight's actual finding (a read handle held on a file inside
+// client\\dist, opened without FILE_SHARE_DELETE) so that renaming the
+// directory itself fails with a clean sharing violation -- the way an AV
+// scan or an editor with the file open would. An icacls deny-delete ACE on
+// the DIRECTORY itself was tried first and rejected: it made cmd.exe's own
+// `move` behave unreliably (observed hanging, and once mis-ordering which
+// of the two backup moves actually failed) rather than the clean
+// errorlevel 1 a real sharing violation produces, confirmed with a
+// standalone repro outside this file. FileShare.Read excludes Delete,
+// matching what actually blocks a rename on NTFS.
+function holdFileOpenWithoutDelete(filePath, durationSeconds) {
+  const psScript = `$fs = [System.IO.File]::Open('${filePath.replace(/'/g, "''")}', 'Open', 'Read', 'Read'); Start-Sleep -Seconds ${durationSeconds}; $fs.Close()`;
+  return spawn("powershell.exe", ["-NoProfile", "-Command", psScript], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+}
+
+// main-is-red, 2026-09-05: four tests in this file were timing out here on
+// a clean GitHub windows-2022 runner with nothing but "Timed out waiting
+// for X" to go on -- no visibility into what the supervisor actually did
+// (or didn't do) before giving up. getDiagnostic is optional so existing
+// call sites are unaffected; passing it in lets a future timeout name the
+// actual state (typically readSupervisorLog(dir)) instead of leaving that
+// to be re-diagnosed by hand from a bare timeout every time.
+async function waitForCondition(check, timeoutMs, description, getDiagnostic) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (check()) return true;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(`Timed out waiting for ${description}`);
+  const diagnostic = getDiagnostic ? `\n--- supervisor.log at timeout ---\n${getDiagnostic()}` : "";
+  throw new Error(`Timed out waiting for ${description}${diagnostic}`);
 }
 
 // Async, not spawnSync -- spawnSync's own timeout only SIGTERMs the direct
@@ -200,6 +352,29 @@ function countLaunches(stdout) {
 function readSupervisorLog(dir) {
   const p = path.join(dir, "logs", "supervisor.log");
   return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+}
+
+// main-is-red, 2026-09-05: the supervisor log alone was not enough to
+// diagnose a genuine (non-Get-FileHash) client-hash mismatch on the CI
+// runner -- Start.bat's PowerShell mirror now logs the pairs it computed
+// on a mismatch, but Node's own pairs (what setupPendingUpdate() actually
+// hashed into the journal) were nowhere to be seen for comparison. This
+// combines both into one diagnostic string for waitForCondition() to
+// attach to a timeout, so a real failure shows the two (path, hash) lists
+// side by side instead of requiring the journal to be fetched separately.
+function readSupervisorLogWithJournalDiagnostic(dir) {
+  const log = readSupervisorLog(dir);
+  const journalPath = path.join(dir, "update-bundle.json");
+  let journalFiles = "(update-bundle.json not present)";
+  if (fs.existsSync(journalPath)) {
+    try {
+      const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+      journalFiles = JSON.stringify(journal.hashes?.clientFiles ?? null);
+    } catch (error) {
+      journalFiles = `(could not parse update-bundle.json: ${error.message})`;
+    }
+  }
+  return `${log}\n--- journal hashes.clientFiles (what Node hashed) ---\n${journalFiles}`;
 }
 
 // Real elapsed seconds between the FIRST log line matching `pattern` and
@@ -550,6 +725,255 @@ describe.skipIf(!!skipReason)(
     );
 
     it(
+      "refuses to apply a staged binary whose hash no longer matches the journal, instead of installing it over a working install",
+      async () => {
+        // 2026-09-04, Dwight's finding (code-grounded, not live-tested at
+        // the time): the Windows apply path only ever checked that a file
+        // named right existed -- never that its CONTENT still matched what
+        // was staged. A file partially overwritten or corrupted in the
+        // window between staging and apply would pass that presence check
+        // and get renamed into place anyway. Linux's applyUpdateBundle()
+        // already hashes and refuses (updateBundle.js:376-385); this is
+        // the same check, same [av_quarantine] failure code, now in
+        // Start.bat's :apply_update.
+        const dir = freshScenarioDir("staged-hash-mismatch");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+        setupPendingUpdate(dir);
+
+        // Corrupt the staged binary AFTER setupPendingUpdate() already
+        // hashed and journaled the good copy -- exactly Dwight's window: a
+        // file that still exists under the right name (passes the
+        // presence check) but no longer matches what was staged.
+        const stagedBinaryPath = path.join(dir, "ZomboidControlPanel.exe.new");
+        const corrupted = fs.readFileSync(stagedBinaryPath);
+        corrupted[corrupted.length - 1] ^= 0xff;
+        fs.writeFileSync(stagedBinaryPath, corrupted);
+
+        const result = await runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
+          60000,
+        );
+
+        // The pre-existing exe (set up by setupStub, untouched) is what
+        // actually launches -- the corrupted staged binary is never
+        // installed, and this must not read as a crash or trigger a retry.
+        expect(countLaunches(result.stdout)).toBe(1);
+        expect(result.status).toBe(0);
+        const log = readSupervisorLog(dir);
+        // main-is-red follow-up: the status now carries actual/expected
+        // hashes (or an exception message) instead of a bare MISMATCH, so
+        // a real CI failure names what actually happened instead of
+        // requiring another round trip -- match the prefix, not the exact
+        // bracket contents.
+        expect(log).toMatch(/staged binary hash check \[MISMATCH[^\]]*\].*av_quarantine/i);
+        expect(log).not.toMatch(/bundle activated/i);
+        // Nothing was renamed: old client stays live, no binary backup was
+        // ever created (the hash check runs before any backup/rename step).
+        expect(
+          fs.readFileSync(path.join(dir, "client", "dist", "index.html"), "utf8"),
+        ).toBe("old-client");
+        expect(
+          fs.existsSync(
+            path.join(dir, "ZomboidControlPanel.exe.bundle-previous"),
+          ),
+        ).toBe(false);
+        // The refused marker is consumed (not left to retry forever against
+        // an unrepairable corrupted file) -- matches the existing
+        // "staged binary missing or quarantined" branch's own posture.
+        expect(fs.existsSync(path.join(dir, ".update-pending"))).toBe(false);
+      },
+      75000,
+    );
+
+    it(
+      "refuses to apply a staged client bundle whose hash no longer matches the journal, instead of installing it over a working install",
+      async () => {
+        // 2026-09-05, client-bundle-integrity: the staged binary has always
+        // been hash-verified (see the test above); the staged CLIENT bundle
+        // never was, on either platform -- same corruption window Dwight
+        // measured for the binary applies here too, and a corrupt client
+        // bundle is arguably worse (a panel that starts and serves a broken
+        // UI, instead of failing loudly).
+        const dir = freshScenarioDir("staged-client-hash-mismatch");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+        setupPendingUpdate(dir);
+
+        // Corrupt the staged client file AFTER setupPendingUpdate() already
+        // hashed and journaled the good copy -- exactly the same window as
+        // the binary test: a file that still exists under the right name
+        // (passes the frontend_swap_failed presence check) but no longer
+        // matches what was staged.
+        const stagedClientIndexPath = path.join(
+          dir,
+          "client",
+          "dist.new-test",
+          "index.html",
+        );
+        fs.writeFileSync(stagedClientIndexPath, "tampered-client");
+
+        const result = await runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
+          60000,
+        );
+
+        // The pre-existing exe and client (set up by setupStub /
+        // setupPendingUpdate, untouched) are what actually launch -- the
+        // tampered staged client is never installed.
+        expect(countLaunches(result.stdout)).toBe(1);
+        expect(result.status).toBe(0);
+        const log = readSupervisorLog(dir);
+        // main-is-red follow-up: the status now carries actual/expected
+        // hashes (or an UNVERIFIABLE exception message) instead of a bare
+        // MISMATCH -- match the prefix, not the exact bracket contents,
+        // same as the binary check's own test above.
+        expect(log).toMatch(/staged frontend hash check \[MISMATCH[^\]]*\].*av_quarantine/i);
+        expect(log).not.toMatch(/bundle activated/i);
+        expect(
+          fs.readFileSync(path.join(dir, "client", "dist", "index.html"), "utf8"),
+        ).toBe("old-client");
+        expect(
+          fs.existsSync(
+            path.join(dir, "ZomboidControlPanel.exe.bundle-previous"),
+          ),
+        ).toBe(false);
+        expect(fs.existsSync(path.join(dir, ".update-pending"))).toBe(false);
+      },
+      75000,
+    );
+
+    // main-is-red, 2026-09-05: a genuine (not Get-FileHash-related) client
+    // hash mismatch reproduced on a clean GitHub windows-2022 runner and
+    // never once locally -- god's candidate theories were Resolve-Path
+    // canonicalizing a runner temp path (case, 8.3 short name, trailing
+    // separator) into something that no longer lines up with
+    // Get-ChildItem's own FullName values, corrupting the
+    // Substring($root.Length + 1) cut used to build each relative path.
+    // Reproduced locally: a trailing separator on journal.paths.stagedClient
+    // is NOT stripped by Resolve-Path's .Path, so $root.Length ends up one
+    // character too long and the cut drops the relative path's leading
+    // character ("ndex.html" instead of "index.html"). Case was checked
+    // too and confirmed NOT a factor on its own -- Get-ChildItem's FullName
+    // values are built by appending each child name to $root's own string,
+    // so they always share $root's exact casing by construction; per-file
+    // content hashes came back correct even with $root entirely
+    // upper-cased in an earlier version of this test, only the relative
+    // path was ever corrupted, and only by the trailing separator. Forward
+    // slashes were also tried combined with the above and found to break a
+    // DIFFERENT, later step (the actual frontend "move") rather than this
+    // check -- not exercised here since Node's path module never emits
+    // forward slashes on Windows for this field in the first place, making
+    // it a much less realistic input than a trailing separator.
+    it(
+      "verifies the staged client bundle correctly even when its journal path has a trailing separator Resolve-Path does not strip",
+      async () => {
+        const dir = freshScenarioDir("client-noncanonical-path");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+        setupPendingUpdate(dir);
+
+        // Trailing separator only, backslash direction and case otherwise
+        // untouched -- the actual "move" step later in :apply_update uses
+        // this same journal value directly on its source path, and a more
+        // aggressively mangled one (forward slashes, upper-cased) breaks
+        // THAT step too, which is a real but separate concern from the
+        // hash check this test targets. A bare trailing separator is
+        // exactly what Resolve-Path was observed not to strip, and is
+        // otherwise a value "move" tolerates fine.
+        const journalPath = path.join(dir, "update-bundle.json");
+        const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+        const canonicalStagedClient = journal.paths.stagedClient;
+        journal.paths.stagedClient = `${canonicalStagedClient}\\`;
+        fs.writeFileSync(journalPath, JSON.stringify(journal));
+
+        const result = await runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
+          60000,
+        );
+
+        expect(result.status).toBe(0);
+        const log = readSupervisorLogWithJournalDiagnostic(dir);
+        // Scoped to the hash check itself, not the whole apply pipeline: a
+        // trailing separator on this same journal value ALSO breaks the
+        // later "move" step (cmd.exe's move does not tolerate one on a
+        // directory source either) -- a real, separate, and much less
+        // consequential finding (the actual stageUpdateBundle() never
+        // produces a trailing separator here, unlike Resolve-Path's own
+        // failure to strip one, which is the thing this test exists to
+        // guard). Not fixed here to stay scoped to the hash check; "backing
+        // up" appearing at all is proof the hash check itself passed,
+        // since build.js only logs a hash check line on FAILURE.
+        expect(log).not.toMatch(/hash_unverifiable/i);
+        expect(log).not.toMatch(/MISMATCH/i);
+        expect(log).toMatch(/Apply: backing up/i);
+      },
+      75000,
+    );
+
+    // main-is-red, 2026-09-05: the THIRD real bug on the same clean
+    // runner, found only once both sides' (path, hash) pairs were visible
+    // side by side. journal.paths.stagedClient there resolved through
+    // Resolve-Path to an 8.3 SHORT NAME (C:\Users\RUNNER~1\... for the
+    // "runneradmin" account -- 11 letters, over the 8.3 limit);
+    // Get-ChildItem's own FullName for each child came back LONG-form.
+    // $root ends up SHORTER than the true prefix, so Substring($root
+    // .Length + 1) cuts too FEW characters and a fragment of the real
+    // directory name survives as a bogus leading path segment ("st/
+    // index.html" instead of "index.html" -- the tail of "dist.new-test"
+    // leaking through). This never fires on a dev machine whose own
+    // username is short -- which is exactly why it is a REAL USER BUG,
+    // not a CI quirk: any install whose temp or install path has a
+    // long-enough component (a username over 8 characters, one with a
+    // space, a redirected TEMP under PROGRA~1) gets every update refused
+    // as [av_quarantine] forever, forever misreporting environment as
+    // corruption. Forces the exact mechanism for real -- not a synthetic
+    // string mutation -- by asking Windows itself for the 8.3 form of a
+    // real staged directory and feeding THAT into the journal, the same
+    // shape a short-%TEMP%-having machine's real stageUpdateBundle() call
+    // would naturally produce. Skips (not false-passes) on a volume where
+    // 8.3 generation is disabled outright, per shortNamesGeneratedOnTempVolume
+    // above.
+    it.skipIf(!shortNamesGeneratedOnTempVolume)(
+      "verifies the staged client bundle correctly when its journal path is given in 8.3 short form while enumeration returns long-form paths",
+      async () => {
+        const dir = freshScenarioDir("shortname-mismatch");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+        setupPendingUpdate(dir);
+
+        const journalPath = path.join(dir, "update-bundle.json");
+        const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+        const longStagedClient = journal.paths.stagedClient;
+        const shortStagedClient = getShortPathName(longStagedClient);
+        // Sanity check on THIS specific path, not just the module-level
+        // probe path: if dist.new-test itself doesn't actually get a
+        // distinct short form for some reason, the rest of this test
+        // would silently prove nothing.
+        expect(shortStagedClient.toLowerCase()).not.toBe(longStagedClient.toLowerCase());
+
+        journal.paths.stagedClient = shortStagedClient;
+        fs.writeFileSync(journalPath, JSON.stringify(journal));
+
+        const result = await runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
+          60000,
+        );
+
+        expect(result.status).toBe(0);
+        const log = readSupervisorLogWithJournalDiagnostic(dir);
+        expect(log).not.toMatch(/hash_unverifiable/i);
+        expect(log).not.toMatch(/MISMATCH/i);
+        expect(log).toMatch(/Apply: bundle activated/i);
+      },
+      75000,
+    );
+
+    it(
       "rolls back instead of launching when the pending marker cannot become the applying marker",
       async () => {
         const dir = freshScenarioDir("marker-move-failure");
@@ -574,6 +998,7 @@ describe.skipIf(!!skipReason)(
               /could not move pending marker/i.test(readSupervisorLog(dir)),
             30000,
             "the supervisor to report the marker transition failure",
+            () => readSupervisorLogWithJournalDiagnostic(dir),
           );
         } finally {
           allowDelete(markerPath);
@@ -618,6 +1043,7 @@ describe.skipIf(!!skipReason)(
             () => fs.existsSync(backupPath),
             30000,
             "the binary backup to be created",
+            () => readSupervisorLogWithJournalDiagnostic(dir),
           );
           denyDelete(backupPath);
           permissionApplied = true;
@@ -640,6 +1066,156 @@ describe.skipIf(!!skipReason)(
         expect(log).not.toMatch(/rollback complete/i);
       },
       135000,
+    );
+
+    it(
+      "does not report a rollback failure when the frontend backup step itself never ran",
+      async () => {
+        // 2026-09-04, Dwight's finding, god-dispatched: the inverse of the
+        // two tests above -- the log said broken, the state was fine. He
+        // forced the client\\dist backup MOVE itself to fail (a locked file
+        // inside it); a failed move leaves its source exactly where it was,
+        // so the live frontend was never disturbed and nothing needed
+        // restoring. The old code inferred "was a backup made?" purely from
+        // whether client\\dist.previous exists on disk, so it read this as
+        // a lost backup and reported "[rollback_failed] ... journal
+        // retained for recovery" -- an operator would reasonably believe
+        // their panel was damaged when it was not. This holds a file inside
+        // the LIVE client\\dist directory open without FILE_SHARE_DELETE,
+        // forcing that first move to fail before any backup is ever
+        // created, while the exe backup (made moments earlier) genuinely
+        // does need restoring -- exercising both the new "skip" path and
+        // the pre-existing "real restore" path in the same run.
+        const dir = freshScenarioDir("client-backup-never-ran");
+        await writeStartBatInto(dir);
+        setupStub(dir, [0], [0]);
+        setupPendingUpdate(dir);
+
+        const liveClientPath = path.join(dir, "client", "dist");
+        const lockedFilePath = path.join(liveClientPath, "index.html");
+        const holder = holdFileOpenWithoutDelete(lockedFilePath, 25);
+        const supervisor = runSupervisor(
+          dir,
+          { PANEL_SUPERVISOR_BACKOFF_SECONDS: "0" },
+          120000,
+        );
+        let result;
+        try {
+          await waitForCondition(
+            () =>
+              /could not back up live frontend/i.test(readSupervisorLog(dir)),
+            30000,
+            "the supervisor to report the client backup failure",
+            () => readSupervisorLogWithJournalDiagnostic(dir),
+          );
+        } finally {
+          holder.kill();
+          result = await supervisor;
+        }
+
+        expect(result.status).toBe(0);
+        expect(countLaunches(result.stdout)).toBeGreaterThanOrEqual(1);
+        const log = readSupervisorLog(dir);
+        expect(log).toMatch(/could not back up live frontend/i);
+        expect(log).toMatch(
+          /frontend restore skipped; backup step never ran/i,
+        );
+        expect(log).not.toMatch(/frontend restore failed/i);
+        expect(log).not.toMatch(/rollback incomplete/i);
+        expect(log).toMatch(/rollback complete/i);
+        // The genuine failure path must still work in the SAME run: the exe
+        // backup (made before the client move was even attempted) really
+        // was disturbed, and really does get restored -- not weakened by
+        // the client-side fix.
+        expect(
+          fs.readFileSync(
+            path.join(dir, "client", "dist", "index.html"),
+            "utf8",
+          ),
+        ).toBe("old-client");
+        expect(fs.existsSync(path.join(dir, ".update-pending"))).toBe(false);
+        expect(fs.existsSync(path.join(dir, "update-bundle.json"))).toBe(
+          false,
+        );
+      },
+      135000,
+    );
+
+    it(
+      "bounds the rollback-retry loop and halts visibly, naming the three recovery files, instead of looping forever",
+      async () => {
+        // 2026-09-04, god's design review of Angela's :rollback_update
+        // proposal: a stuck .update-applying re-triggers ROLLBACK on every
+        // RELAUNCH (not every restart, unlike .update-pending), against an
+        // identical already-failed state each time. Unlike the
+        // "denied-backup-restore" test above, this scenario must NOT let
+        // the live exe get deleted as a side effect of the restore attempt
+        // (that would trip the pre-existing, unrelated "no exe found" halt
+        // on the next iteration and never actually exercise the new bound)
+        // -- so this forces "backup is missing" specifically (delete the
+        // backup outright, don't just deny its own delete permission),
+        // since that branch never touches BASE_EXE at all, letting the
+        // handshake-fail/rollback cycle genuinely repeat.
+        const dir = freshScenarioDir("rollback-retry-cap");
+        await writeStartBatInto(dir);
+        setupStub(dir, [1], [0]);
+        setupPendingUpdate(dir);
+
+        const backupPath = path.join(
+          dir,
+          "ZomboidControlPanel.exe.bundle-previous",
+        );
+        // watchdog 60000: two fast (0ms-sleep) launches plus two rollback
+        // attempts, no crash-loop backoff involved (APPLYING never clears,
+        // so the crash-loop branch below the handshake check is never
+        // reached) -- generous relative to this file's own fastest
+        // multi-launch scenarios given no prior measurement of this exact
+        // one exists yet.
+        const supervisor = runSupervisor(
+          dir,
+          {
+            PANEL_SUPERVISOR_BACKOFF_SECONDS: "0",
+            PANEL_SUPERVISOR_MAX_ROLLBACK_RETRIES: "1",
+          },
+          60000,
+        );
+        let result;
+        try {
+          await waitForCondition(
+            () => fs.existsSync(backupPath),
+            30000,
+            "the binary backup to be created",
+            () => readSupervisorLogWithJournalDiagnostic(dir),
+          );
+          fs.rmSync(backupPath, { force: true });
+        } finally {
+          result = await supervisor;
+        }
+
+        expect(result.status).toBe(1);
+        // cap=1 allows exactly one rollback retry: launch, fail, retry 1 of
+        // 1, launch again, fail again, halt on the second occurrence --
+        // never a third launch.
+        expect(countLaunches(result.stdout)).toBe(2);
+        expect(fs.existsSync(path.join(dir, "ZomboidControlPanel.exe"))).toBe(
+          true,
+        );
+        const log = readSupervisorLog(dir);
+        expect(log).toMatch(/binary restore failed; backup is missing/i);
+        expect(log).toMatch(/retry 1 of 1/);
+        expect(log).not.toMatch(/retry 2 of 1/);
+        expect(log).toMatch(/rollback_retry_exhausted/);
+        // The console halt message is the second delivery path for the
+        // same recovery guidance the client's rollback_failed hint already
+        // gives -- this is precisely the case that hint cannot reach, since
+        // the panel isn't running to render it. Checked on stdout (the
+        // plain `echo` lines), not the timestamped log, since that's what
+        // an operator actually sees in the console window.
+        expect(result.stdout).toMatch(/\.update-pending/);
+        expect(result.stdout).toMatch(/\.update-applying/);
+        expect(result.stdout).toMatch(/update-bundle\.json/);
+      },
+      75000,
     );
 
     it(

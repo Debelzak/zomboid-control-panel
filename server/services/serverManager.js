@@ -101,6 +101,90 @@ function buildLdLibraryPath(serverDir) {
   return result;
 }
 
+// 2026-09-04, P0 regression (41d0c6e5/1130108a broke real users): builds the
+// string handed to `cmd.exe /c` ourselves instead of letting Node quote each
+// argv element independently. With an install path containing a space --
+// "C:\Program Files (x86)\..." or just "...\Zomboid Server\..." -- Node
+// quotes BOTH the bat path and launchLogPath (4 quote chars total on the /c
+// line). cmd.exe's documented quote-preservation rule (`cmd /?`) only kicks
+// in with EXACTLY two quote characters; with 4 it falls back to stripping
+// only the first character of the whole line and the last quote character
+// anywhere in it, which mangles the boundary between the two paths and the
+// redirection -- cmd exits 1 before ever launching java.exe, with the launch
+// log never written. Reproduced directly: a bare space in either path was
+// enough on its own, parens weren't even required.
+//
+// Fix: quote each piece ourselves (only where it actually needs it), join
+// into one line, then wrap that ENTIRE line in one more pair of quotes. That
+// gives cmd's fallback-strip exactly one outer pair to remove (first
+// character of the line, and the last quote character in it -- which is
+// now our own closing wrapper quote, since we control where it sits) and
+// leaves every inner per-path quote untouched. This must be paired with
+// `windowsVerbatimArguments: true` on the spawn() call, or Node re-quotes
+// this already-quoted string on top and reintroduces the same bug one layer
+// out.
+// 2026-09-04, P0 follow-up (adversarial review caught the other half of the
+// same regression): this originally only triggered on whitespace/quotes.
+// With windowsVerbatimArguments:true (above), Node's own argv joiner is no
+// longer a backstop -- this regex is now the ENTIRE defence against cmd.exe
+// treating a character as special. cmd's special set is `&<>()@^|`, and
+// batch parameter substitution (%1, %2, ...) additionally treats `,`, `;`,
+// and `=` as delimiters equivalent to whitespace (documented behavior, not
+// a cmd.exe quirk) -- so an unquoted path/arg containing any of those splits
+// or breaks identically to the whitespace case this P0 was opened for.
+// Confirmed on a real host: "...\Rock&Roll\..." and "...\PZ(x86)\..." and
+// "...\PZ^1\..." all failed with the same exit-1/empty-log signature before
+// this widening, and passed after. Deliberately NOT adding `%` (quoting
+// does not stop %VAR% expansion, so it buys nothing) or `!` (delayed
+// expansion is off under `cmd /c`, so there's nothing to protect against).
+export function windowsQuoteArgIfNeeded(value) {
+  return /[\s"&<>()^|,;=]/.test(value) ? `"${value}"` : value;
+}
+
+export function buildWindowsCmdLine(exePath, args, launchLogPath) {
+  const parts = [
+    windowsQuoteArgIfNeeded(exePath),
+    ...args.map(windowsQuoteArgIfNeeded),
+  ];
+  if (launchLogPath) {
+    parts.push(">", windowsQuoteArgIfNeeded(launchLogPath), "2>&1");
+  }
+  return `"${parts.join(" ")}"`;
+}
+
+// Splits a custom start command string into a command path and its
+// arguments. The regex glues an unquoted run and an adjacent quoted run
+// together with nothing between them into ONE token (so `-servername="My
+// World"` stays a single argument, not two) -- which means a quote can land
+// anywhere inside a token, not just at its edges.
+//
+// 2026-09-04, carded during the P0 review, pre-existing (not a regression):
+// the previous de-quoting step stripped only a LEADING and a TRAILING quote
+// (`/^"|"$/g`), which assumes every quote sits at a token boundary. For
+// `-servername="My World"` the first character is `-` (leading strip is a
+// no-op) but the last character IS the closing quote (stripped) -- leaving
+// the unbalanced `-servername="My World`, one stray unpaired quote. Handed
+// to buildWindowsCmdLine, that stray quote makes the /c line's total quote
+// count odd, corrupting cmd's parse WORSE than the spaced-path P0: cmd
+// exits 0 and server-launch.log is never created -- no error signal
+// anywhere, silently misfiled as a recurrence of that bug. Reproduced
+// directly against real cmd.exe before this fix, confirmed exit 0/no log.
+//
+// Fix: strip EVERY quote character from a token, not just the outermost
+// pair. Every quote this regex matched is grouping syntax it introduced
+// itself (`"[^"]*"` already captured the space-containing content between a
+// pair as the group's payload), never literal data, so removing all of
+// them recovers the intended bare value regardless of where in the token
+// they land.
+export function parseCustomStartCommand(startCommand) {
+  const parts = startCommand.match(/(?:[^\s"]+|"[^"]*")+/g) || [
+    startCommand,
+  ];
+  const cmd = parts[0].replace(/"/g, "");
+  const args = parts.slice(1).map((a) => a.replace(/"/g, ""));
+  return { cmd, args };
+}
+
 // Locates the actual JVM executable inside a PZ install directory (jre64 for
 // 64-bit installs, jre for older/32-bit ones -- same directories buildLdLibraryPath
 // already knows about). Returns null if neither exists so callers can treat
@@ -1156,7 +1240,21 @@ export class ServerManager {
       cmd,
       this._getOwnershipDescriptor(),
     );
-    if (score === -1) return null; // Cmdline now proves this PID belongs to a different server.
+    // Deliberately stricter than the full scan's `owned` bucket threshold
+    // (score > 0), not merely "not proven wrong" (score !== -1). The full
+    // scan can fall back to an unattributable (score === 0) candidate
+    // because it has visibility into every PZ-looking process on the host
+    // and only does so when NOTHING else positively matched -- exactly the
+    // comparison this single-PID lookup cannot make. Accepting score === 0
+    // here would mean: a live PID whose command line merely "looks like a
+    // dedicated server" but carries no -servername/-cachedir (or carries
+    // one that matches neither this server's name nor its install path) is
+    // trusted as confirmed to BE this server -- which is precisely the PID-
+    // reuse doubt this fast path exists to fall through on, per its own
+    // doc comment above. Falling through here costs one full scan; wrongly
+    // accepting it can misreport another server's process as this one's,
+    // including to stopServer()'s kill path.
+    if (score <= 0) return null;
 
     log.debug(
       `getServerProcessDetails: pidfile fast path hit for pid=${recorded.pid}, skipping full scan`,
@@ -1382,12 +1480,10 @@ export class ServerManager {
           throw new Error(`Invalid start command: ${validation.reason}`);
         }
 
-        // Custom start command — split into command and arguments
-        const parts = this.startCommand.match(/(?:[^\s"]+|"[^"]*")+/g) || [
-          this.startCommand,
-        ];
-        const cmd = parts[0].replace(/^"|"$/g, "");
-        const args = parts.slice(1).map((a) => a.replace(/^"|"$/g, ""));
+        // Custom start command — split into command and arguments (see
+        // parseCustomStartCommand's comment for the carded quote-stripping
+        // fix this went through on 2026-09-04).
+        const { cmd, args } = parseCustomStartCommand(this.startCommand);
         const cwd = this.serverPath || path.dirname(path.resolve(cmd));
 
         // Validate the command file extension is allowed
@@ -1423,14 +1519,22 @@ export class ServerManager {
           // `>`/`2>&1` redirection instead. We don't need our own copy of
           // the fd for this branch at all, so close it now rather than
           // leaving it open across the spawn call for no reason.
+          //
+          // 2026-09-04, P0: build the /c command line ourselves (see
+          // buildWindowsCmdLine's comment) instead of handing cmd.exe loose
+          // argv tokens that Node quotes independently -- that broke every
+          // install path with a space in it.
           this._closeLaunchLogFd();
-          const cmdArgs = launchLogPath
-            ? ["/c", resolvedCmd, ...args, ">", launchLogPath, "2>&1"]
-            : ["/c", resolvedCmd, ...args];
-          this.serverProcess = spawn("cmd.exe", cmdArgs, {
+          const commandLine = buildWindowsCmdLine(
+            resolvedCmd,
+            args,
+            launchLogPath,
+          );
+          this.serverProcess = spawn("cmd.exe", ["/c", commandLine], {
             cwd,
             detached: true,
             stdio: "ignore",
+            windowsVerbatimArguments: true,
           });
         } else if (!isWindows && ext === ".sh") {
           try {
@@ -1550,14 +1654,20 @@ export class ServerManager {
         // launches) instead of a handle passed two processes deep. We
         // don't need our own copy of the fd for this branch, so close it
         // now rather than across the spawn call.
+        //
+        // 2026-09-04, P0: build the /c command line ourselves (see
+        // buildWindowsCmdLine's comment) instead of handing cmd.exe loose
+        // argv tokens that Node quotes independently -- that broke every
+        // install path with a space in it (e.g. "...\Zomboid Server\...",
+        // "C:\Program Files (x86)\..."), which is the common case, not an
+        // edge case.
         this._closeLaunchLogFd();
-        const cmdArgs = launchLogPath
-          ? ["/c", batPath, ">", launchLogPath, "2>&1"]
-          : ["/c", batPath];
-        this.serverProcess = spawn("cmd.exe", cmdArgs, {
+        const commandLine = buildWindowsCmdLine(batPath, [], launchLogPath);
+        this.serverProcess = spawn("cmd.exe", ["/c", commandLine], {
           cwd: this.serverPath,
           detached: true,
           stdio: "ignore",
+          windowsVerbatimArguments: true,
         });
       } else {
         // Ensure the script is executable
@@ -2527,6 +2637,25 @@ export class ServerManager {
         }
 
         writeFileAtomic(configPath, content, "utf-8");
+
+        // 2026-09-03, serverManager.js sweep: read the write back rather
+        // than trusting writeFileAtomic() not throwing as proof the file on
+        // disk now says what we intended -- same "verify the effect, not
+        // just that the call didn't throw" shape as every other fix this
+        // sweep found. Cheap (content is already in memory) and catches a
+        // wrong-encoding or truncated-on-disk write that writeFileAtomic()
+        // itself has no way to detect from inside its own call. This
+        // function has no production caller today (see the comment above),
+        // but it is listed in eslint-rules/require-result-handling.js as a
+        // result callers must check -- closing this gap now means whoever
+        // wires it up later doesn't inherit a config write that reports
+        // success without ever having verified it landed.
+        const writtenBack = fs.readFileSync(configPath, "utf-8");
+        if (writtenBack !== content) {
+          throw new Error(
+            `Config write verification failed: ${configPath} does not match the intended content after write`,
+          );
+        }
       });
       log.info("Server config saved");
       return { success: true };

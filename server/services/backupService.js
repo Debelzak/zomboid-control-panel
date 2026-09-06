@@ -13,6 +13,7 @@ import {
   setSetting,
   logServerEvent,
   getLatestScheduleExecutionByCommand,
+  flushWrites,
 } from "../database/init.js";
 import { sanitizeError } from "../utils/sanitize.js";
 import { captureBackupSnapshot } from "../utils/backupSnapshot.js";
@@ -558,6 +559,13 @@ export class BackupService {
     // Get database path if needed (before entering Promise callback)
     let dbPathToInclude = null;
     if (options.includeDb) {
+      // Same defect class as database/init.js's createDatabaseBackup() (fixed
+      // alongside this, 2026-09-05 backup-restore-round-trip hunt): db.json
+      // writes are debounced (up to WRITE_DEBOUNCE_MS=500ms, longer under
+      // retry backoff) and this archives whatever is CURRENTLY ON DISK --
+      // without flushing first, a world backup taken right after a settings/
+      // server/role change can silently ship a db.json missing that change.
+      await flushWrites();
       const { getDataPaths } = await import("../utils/paths.js");
       const dbPath = getDataPaths().dbPath;
       if (fs.existsSync(dbPath)) {
@@ -666,21 +674,38 @@ export class BackupService {
           );
         }
 
-        // Clean up old backups. cleanupOldBackups() already has its own
-        // full internal try/catch and cannot reject today -- but this
-        // caller must not depend on that staying true forever: this runs
-        // at the end of EVERY successful backup, including the mandatory
-        // pre-wipe and pre-restore ones, so an unguarded reject here would
-        // be an unhandledRejection -> fatalExit() panel kill sitting
-        // directly downstream of every destructive operation in the app
-        // (2026-08-26, same class as the install setSetting crash).
-        // Retention housekeeping failing does NOT mean the backup failed
-        // -- log and continue, never flip the backup result or abort
-        // whatever destructive step is waiting on it.
-        try {
-          await this.cleanupOldBackups();
-        } catch (cleanupError) {
-          log.warn(`Backup retention cleanup failed for ${backupName}: ${cleanupError.message}`);
+        // Clean up old backups -- but NEVER as part of a pre-restore or
+        // pre-wipe safety backup. bug hunt 2026-09-05 (backup-restore-
+        // round-trip sweep, item #1): this used to run unconditionally,
+        // "including the mandatory pre-wipe and pre-restore ones" per the
+        // comment that used to be here -- which meant restoring your OLDEST
+        // backup (an entirely ordinary thing to do) could have its own
+        // pre-restore backup push the count over maxBackups, prune the
+        // oldest survivor, and delete the very archive restoreBackup() was
+        // about to read from a few lines later. Reproduced directly:
+        // maxBackups=1, one existing backup, restore it with the default
+        // createPreRestoreBackup:true -- the prune deletes it and the
+        // restore then fails with ENOENT reading its own source archive.
+        // Deferring retention to the next ROUTINE backup costs nothing (the
+        // panel is never long without one) and removes the interaction
+        // entirely, rather than trying to special-case "protect this one
+        // filename from this one prune pass".
+        //
+        // cleanupOldBackups() already has its own full internal try/catch
+        // and cannot reject today -- but this caller must not depend on
+        // that staying true forever: an unguarded reject here would be an
+        // unhandledRejection -> fatalExit() panel kill sitting directly
+        // downstream of every destructive operation in the app (2026-08-26,
+        // same class as the install setSetting crash). Retention
+        // housekeeping failing does NOT mean the backup failed -- log and
+        // continue, never flip the backup result or abort whatever
+        // destructive step is waiting on it.
+        if (!options.isPreRestore && !options.isPreWipe) {
+          try {
+            await this.cleanupOldBackups();
+          } catch (cleanupError) {
+            log.warn(`Backup retention cleanup failed for ${backupName}: ${cleanupError.message}`);
+          }
         }
 
         emitProgress(
